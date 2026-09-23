@@ -42,8 +42,7 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 - [ ] Verify all 19 SK6812 RGBW pixels, byte order, dedicated white-only output and master brightness at 0, 1, intermediate and full levels on hardware.
 - [ ] Make capture, preview and live-stream illumination consistent; allow responsive intensity changes without exposing an in-flight recognition capture to mixed settings.
-- [ ] Retest the archive SD writer on hardware. The first real capture exposed an `fdopen`/FAT VFS incompatibility; the direct-descriptor correction passes host tests but is not yet verified on the board. [Evidence and limits](ARCHIVE-HARDWARE-TRIAL.md).
-- [ ] Verify optional image archival to a configurable server IP/hostname and folder. Implemented queue/TLS paths need actual-device tests for connectivity, credentials, storage limits and retry/restart behavior. A real server is not required to configure the optional feature.
+- [ ] Verify optional image archival to a configurable server IP/hostname and folder. One queued-image HTTPS delivery and recovery across updates/restarts now pass on the test board. Finish the setup UI and broaden actual-device coverage for server compatibility, rejected credentials, storage limits and sustained retry behavior. A real server is not required to configure the optional feature.
 - [ ] Apply routine settings immediately or at a safe cycle boundary; distinguish saved, active, pending and failed states. Validate rollback on rejected changes.
 - [ ] Verify MQTT/HA reporting, units and freshness separately; no silent entity-ID or historical-total migration.
 

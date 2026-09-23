@@ -57,7 +57,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  if(!hashValid(id)||!hashValid(model))return StageResult::Rejected;
  mz_zip_archive zip{};
  if(!mz_zip_reader_init_file(&zip,zipPath.c_str(),0))return StageResult::Rejected;
- struct CloseZip {mz_zip_archive* p;~CloseZip(){mz_zip_reader_end(p);}} closeZip{&zip};
+ struct CloseZip {mz_zip_archive* p;void close(){if(p){mz_zip_reader_end(p);p=nullptr;}}~CloseZip(){close();}} closeZip{&zip};
  const auto count=mz_zip_reader_get_num_files(&zip);
  if(!count||count>ArchiveInventory::maximumEntries)return StageResult::Rejected;
  ArchiveInventory inventory;std::map<std::string,mz_uint> entries;
@@ -75,19 +75,23 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  if(!extractBounded(zip,found->second,ms.m_uncomp_size,[&](uint64_t offset,const unsigned char* data,size_t size){
   std::memcpy(bytes.get()+offset,data,size);return true;
  }))return StageResult::Rejected;
- const std::string body(bytes.get(),ms.m_uncomp_size);bytes.reset();
+ std::string body(bytes.get(),ms.m_uncomp_size);bytes.reset();
  auto sha=[](const std::string& text){Hash h;return h.update(reinterpret_cast<const unsigned char*>(text.data()),text.size())?h.finish():std::string();};
  Manifest m;
  if(!parse(body,m,sha)||m.id!=id||m.bootPolicy!="required_bundle"||m.modelHash!=model)return StageResult::Rejected;
  auto wanted=m.assets;wanted.emplace("firmware/firmware.bin",m.firmware);
  File manifestFile;manifestFile.bytes=body.size();manifestFile.hash=sha(body);
  wanted.emplace("device-manifest.json",manifestFile);
+ // Parsed fields own their strings. Release redundant manifest/inventory copies
+ // before extraction and FAT readback need internal DMA-capable memory.
+ std::string().swap(body);m=Manifest{};inventory=ArchiveInventory{};
  for(const auto& item:wanted){auto e=entries.find(item.first);mz_zip_archive_file_stat st{};
   if(e==entries.end()||!mz_zip_reader_file_stat(&zip,e->second,&st)||st.m_uncomp_size!=item.second.bytes)return StageResult::Rejected;
  }
  const std::string object=base+"/objects/"+id,pending=base+"/pending/"+id;
  struct stat st{};
- if(stat(object.c_str(),&st)==0){Manifest existing;
+ if(stat(object.c_str(),&st)==0){
+  entries.clear();wanted.clear();closeZip.close();Manifest existing;
   return S_ISDIR(st.st_mode)&&verify<Hash>(object,id,existing,trace).verified?StageResult::Existing:StageResult::Conflict;
  }
  if(errno!=ENOENT)return StageResult::IoError;
@@ -113,6 +117,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   if(close(fd)!=0)ok=false;
   if(!ok||!verifyFile<Hash>(path,item.second,trace))return StageResult::IoError;
  }
+ entries.clear();wanted.clear();closeZip.close();
  Manifest verified;if(!verify<Hash>(pending,id,verified,trace).verified)return StageResult::Rejected;
  if(stat(object.c_str(),&st)==0)return StageResult::Conflict;
  if(errno!=ENOENT||std::rename(pending.c_str(),object.c_str())!=0)return StageResult::IoError;

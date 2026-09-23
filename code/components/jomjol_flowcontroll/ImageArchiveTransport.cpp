@@ -5,6 +5,12 @@
 #include "ImageArchiveSettings.h"
 #include "ImageSettingsFile.h"
 #include "esp_http_client.h"
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#if !defined(CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS) || !CONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS
+#error "Image archiving requires ESP HTTP client HTTPS support"
+#endif
+#endif
 #include "esp_timer.h"
 #include "mbedtls/base64.h"
 #include <algorithm>
@@ -79,6 +85,10 @@ UploadAttempt uploadSpool(const std::string& root,const Ticket& ticket,const Des
     config.url=url.c_str();config.cert_pem=d.certificatePem.c_str();
     config.method=HTTP_METHOD_POST;config.timeout_ms=d.timeoutMs;
     config.disable_auto_redirect=true;config.skip_cert_common_name_check=false;
+    // ESP-IDF cannot split a single header across its transmit buffer.
+    // Metadata is bounded to 4096 encoded bytes above; leave room for the
+    // header name, terminators and the ordinary request headers.
+    config.buffer_size_tx=static_cast<int>(metadataHeader.size()+1024);
     auto client=esp_http_client_init(&config);
     if(!client){result.error="client_init_failed";return result;}
     struct ClientCleanup {esp_http_client_handle_t value;~ClientCleanup(){esp_http_client_close(value);esp_http_client_cleanup(value);}} cleanup{client};

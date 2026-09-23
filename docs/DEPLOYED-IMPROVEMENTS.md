@@ -61,3 +61,16 @@ The flow wrapper now preserves the controller result; the scheduler distinguishe
 The candidate was installed using loader 0.1.11-test7 after verifying the test board MAC on COM8. Its normal camera cycle rejected missing/mismatched meter markers and logged `Round #1 failed (12 seconds)` at warning level, matching the failure telemetry. Original configuration was restored byte-for-byte and the camera remained available. This verifies failure reporting, not successful recognition accuracy. Wi-Fi and SD contents were preserved; no formatting.
 
 Evidence: `recorded-20260923T171859Z`, `normal-pipeline-outcome-retest-20260923`. Application SHA-256: `cbd4bd4dbe3f93ce292d44a876e46394e780c64e444253745252519b72d5ea65`. The private test package and public installer remain separate; no public binary release is implied.
+
+## Test board: archive SD writer — September 23, 2026
+
+The direct-descriptor archive writer was installed using loader 0.1.11-test8 and verified with one actual capture: one image saved on SD, zero enqueue rejections. Partial-write/sync/close fault tests also pass on the host. This closes the `fdopen`/FAT VFS write failure only. HTTPS delivery remains open because the application's HTTP-client HTTPS support was disabled. The queued image is preserved, original settings restored, and temporary receiver/firewall removed. See [hardware evidence](ARCHIVE-HARDWARE-TRIAL.md).
+
+
+## Test board: verified HTTPS archive delivery and installer memory fix — September 23, 2026
+
+Installed with loader 0.1.11-test11; application SHA-256 `67d7fd877bed293cbe0ff792c81d9c36f4e3f0850028f797080fa20a82296166`. HTTPS is enabled and guarded at build time. A bounded transmit buffer fits the capture metadata header. The bundle verifier releases redundant manifest/ZIP allocations before final readback, avoiding the observed SD DMA allocation failure while preserving all verification checks.
+
+One original queued camera JPEG was delivered with matching hashes and original capture provenance after application updates/restarts. The board acknowledged delivery and cleared its queue, with zero new captures or upload/cleanup failures in the final retry. Original configuration and disabled archive state were restored; temporary receiver, credentials and firewall access removed. Actual-source host verification/transaction and transport tests passed. See [full evidence and limits](ARCHIVE-HARDWARE-TRIAL.md).
+
+This closes the observed SD writer, disabled-HTTPS, metadata-buffer and verification-memory defects on the test board. Sustained operation, wider server compatibility, concurrent recognition and physical interruption tests remain open. No private fixture was published, and the public installer binary remains unchanged.

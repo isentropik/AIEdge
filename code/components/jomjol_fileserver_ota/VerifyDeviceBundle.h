@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <memory>
 #include <new>
+#include <utility>
 #include <sys/stat.h>
 namespace MeterBundle {
 using Checkpoint=void (*)(const char*,const char*,uint64_t);
@@ -15,14 +16,14 @@ template<class Hash> bool verifyFile(const std::string& path,const File& expecte
  checkpoint(trace,"open.begin",path);
  FILE* input=std::fopen(path.c_str(),"rb");if(!input)return false;
  checkpoint(trace,"hash.init",path);
- Hash hash;std::unique_ptr<unsigned char[]> buffer(new(std::nothrow) unsigned char[4096]);
+ Hash hash;std::unique_ptr<unsigned char[]> buffer(new(std::nothrow) unsigned char[1024]);
  if(!buffer){std::fclose(input);return false;}
  uint64_t total=0;bool ok=true;
- while(true){checkpoint(trace,"read.begin",path,total);const size_t n=std::fread(buffer.get(),1,4096,input);
+ while(true){checkpoint(trace,"read.begin",path,total);const size_t n=std::fread(buffer.get(),1,1024,input);
   checkpoint(trace,"hash.begin",path,total);
   if(total+n>expected.bytes||!hash.update(buffer.get(),n)){ok=false;break;}
   checkpoint(trace,"block.done",path,total);total+=n;
-  if(n<4096){if(std::ferror(input))ok=false;break;}
+  if(n<1024){if(std::ferror(input))ok=false;break;}
  }
  checkpoint(trace,"close.begin",path,total);
  if(std::fclose(input)!=0)ok=false;
@@ -48,9 +49,12 @@ template<class Hash> Verification verify(const std::string& root,const std::stri
   if(n<4096){if(std::ferror(input))ok=false;break;}
  }
  if(std::fclose(input)!=0)ok=false;
+ // Neither the read buffer nor JSON text is needed while checking assets.
+ chunk.reset();
  Manifest parsed;
  auto sha=[](const std::string& value){Hash h;if(!h.update(reinterpret_cast<const unsigned char*>(value.data()),value.size()))return std::string();return h.finish();};
  if(!ok||!parse(body,parsed,sha)||parsed.id!=expectedId)return report;
+ std::string().swap(body);
  report.failedPath="firmware/firmware.bin";
  if(!verifyFile<Hash>(root+"/"+report.failedPath,parsed.firmware,trace))return report;
  ++report.files;report.bytes+=parsed.firmware.bytes;
@@ -58,6 +62,6 @@ template<class Hash> Verification verify(const std::string& root,const std::stri
   if(!verifyFile<Hash>(root+"/"+item.first,item.second,trace))return report;
   ++report.files;report.bytes+=item.second.bytes;
  }
- manifest=parsed;report.failedPath.clear();report.verified=true;return report;
+ manifest=std::move(parsed);report.failedPath.clear();report.verified=true;return report;
 }
 }
