@@ -1,6 +1,7 @@
 #pragma once
 #include "VerifyDeviceBundle.h"
 #include "miniz/miniz.h"
+#include "BundleZipMemory.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <cerrno>
@@ -74,6 +75,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  checkpoint(trace,"archive.open",zipPath);
  if(!hashValid(id)||!hashValid(model))return StageResult::Rejected;
  mz_zip_archive zip{};
+ configureZipMemory(zip);
  if(!mz_zip_reader_init_file(&zip,zipPath.c_str(),0))return StageResult::Rejected;
  ArchiveReadDiagnostic readDiagnostic{zip.m_pRead,zip.m_pIO_opaque,trace,zipPath.c_str()};
  zip.m_pRead=ArchiveReadDiagnostic::read;zip.m_pIO_opaque=&readDiagnostic;
