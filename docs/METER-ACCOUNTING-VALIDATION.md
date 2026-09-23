@@ -37,5 +37,20 @@ the complete in-memory turn path, so historical upper bounds can widen and an
 estimate can become unavailable after restart. New-boot intervals remain explicit
 gaps; the code does not manufacture elapsed time or hidden revolutions.
 
-This source change still requires test-board deployment and real-image validation.
-It does not establish reading accuracy, a lifetime total, or the 30-second target.
+## Test-board integration
+
+The correction was installed by authenticated compressed OTA on September 23.
+Bundle `f17e155012edc3e9b5b9c1adb2dfafb501129653d9f909552e966a687e51d7a8`
+booted and verified its runtime files. Configuration and password were preserved.
+All six frozen inference vectors matched every expected output byte. The diagnostic
+left meter accounting and configuration unchanged. Nine representative website
+routes, including configuration, cached images, logs and accounting, returned 401
+without credentials. This is endpoint denial evidence, not an exhaustive security
+audit or proof of encrypted transport.
+
+Private records are in `aiedge-turn-tracking-candidate/ota/result.json` and
+`aiedge-turn-tracking-candidate/runtime-verification/result.json` under the workspace
+firmware-port-tests directory. The turn sequences themselves were tested on the
+host; this integration check did not feed a physical meter sequence through ESP32
+accounting. Real-image validation remains open. These results do not establish
+reading accuracy, a lifetime total, or the 30-second target.

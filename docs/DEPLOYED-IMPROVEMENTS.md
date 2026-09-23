@@ -4,6 +4,12 @@
 
 This archive records released changes and their actual evidence. It does not imply every feature has passed long-term testing. Local-only edits stay in the open backlog.
 
+## Test-board cumulative turn tracking — September 23, 2026
+
+Installed source `7cf92c8` through authenticated compressed OTA. Uniquely established wheel turns are retained between observations without summing positive jitter. Portable cumulative, checkpoint, session and history checks and the ESP32 build pass. Startup verified the expected bundle, unchanged configuration and retained password. Six frozen inference vectors matched all output bytes; running this diagnostic left accounting unchanged. Nine representative web routes denied unauthenticated requests.
+
+Physical-sequence accounting, real-image accuracy and sustained cadence remain open. The firmware uses default uncertainty with no assumed maximum-flow bound; the synthetic test's bound is not silently applied to the meter. [Validation details](METER-ACCOUNTING-VALIDATION.md).
+
 ## Test-board alignment preview encoding — September 23, 2026
 
 Removed a raw-preview JPEG encode that was overwritten by the annotated preview during the same stage. Preview length is initialized and cleared before processing. The actual-method host test covers both alignment modes and temporary-image allocation failure. After deployment, one before/after hardware pair measured the stage at 3.887154 and 3.498432 seconds; both previews decoded at 640 by 480. Both trials restored configuration exactly. Recognition rejected both scenes, so this is not accepted-reading accuracy or full-cycle performance evidence. See [measurement scope and evidence](PERFORMANCE-MEASUREMENTS.md).
