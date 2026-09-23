@@ -48,6 +48,17 @@ int main(){Fake f;WebsiteAccess state(f);WebsiteHttp http(state);httpd_req_t r;
  r={};r.headers["Authorization"]=correct;r.headerFail=true;http.handle(&r,target);assert(r.status=="401 Unauthorized"&&!r.calls);
  for(auto bad:{encode("other:"+pass),std::string(300,'a'),std::string("Basic !")}){r={};r.headers["Authorization"]=bad;http.handle(&r,target);assert(r.status=="401 Unauthorized"&&!r.calls);}
  r={};r.headers["Authorization"]=encode("admin:wrong");http.handle(&r,target);assert(r.status=="401 Unauthorized");r={};r.headers["Authorization"]=encode("admin:anotherwrong");http.handle(&r,target);assert(r.status=="429 Too Many Requests");r={};r.headers["Authorization"]=correct;assert(http.handle(&r,target)==777);
+ r={};r.uri="/auth/password";r.headers["Authorization"]=correct;http.handle(&r,target);assert(r.status=="200 OK"&&r.response.find("Change website password")!=std::string::npos&&!r.calls);
+ auto change=[&](const std::string& authorization,const std::string& action,const std::string& next,bool readFail=false){r={};r.uri="/auth/password";r.method=HTTP_POST;r.headers["Authorization"]=authorization;r.headers["X-AIEdge-Password-Change"]=action;r.body=next;r.content_len=next.size();r.readFail=readFail;http.handle(&r,target);};
+ const std::string next="another-new-password";const auto nextAuth=encode("admin:"+next);
+ change(correct,"",next);assert(r.status=="400 Bad Request"&&f.writes==1);
+ change(correct,"confirm",next,true);assert(r.status=="400 Bad Request"&&f.writes==1);
+ change(correct,"confirm","short");assert(r.status=="400 Bad Request"&&f.writes==1);
+ change(correct,"confirm",next);assert(r.status=="200 OK"&&f.writes==2);
+ now=2000000;r={};r.headers["Authorization"]=correct;http.handle(&r,target);assert(r.status=="401 Unauthorized"&&!r.calls);
+ now=3000000;r={};r.headers["Authorization"]=nextAuth;assert(http.handle(&r,target)==777);
+ change("","confirm",pass);assert(r.status=="401 Unauthorized"&&f.writes==2);
+ f.writeError=true;change(nextAuth,"confirm",pass);assert(r.status=="503 Service Unavailable");r={};r.headers["Authorization"]=nextAuth;http.handle(&r,target);assert(r.status=="503 Service Unavailable"&&!r.calls);f.writeError=false;http.initialize();r={};r.headers["Authorization"]=nextAuth;assert(http.handle(&r,target)==777);
  f.readError=true;http.initialize();r={};r.headers["Authorization"]=correct;http.handle(&r,target);assert(r.status=="503 Service Unavailable"&&!r.calls);
  Fake noRandom;noRandom.randomError=true;WebsiteAccess a(noRandom);WebsiteHttp h(a);h.initialize();r={};h.handle(&r,target);assert(r.status=="503 Service Unavailable");
 }

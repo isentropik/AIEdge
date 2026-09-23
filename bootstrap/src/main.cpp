@@ -443,6 +443,8 @@ extern "C" void app_main(){
  httpd_config_t http=HTTPD_DEFAULT_CONFIG();http.max_uri_handlers=12;http.stack_size=8192;http.max_open_sockets=4;http.lru_purge_enable=true;http.recv_wait_timeout=5;http.send_wait_timeout=5;httpd_handle_t server=nullptr;ESP_ERROR_CHECK(httpd_start(&server,&http));
  httpd_uri_t h={};h.uri="/auth/setup";h.method=HTTP_POST;h.handler=website_setup;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.method=HTTP_GET;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/auth/password";h.method=HTTP_POST;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.method=HTTP_GET;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/";h.method=HTTP_GET;h.handler=WEBSITE_AUTH(home);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/status";h.handler=WEBSITE_AUTH(status);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.uri="/wifi";h.method=HTTP_POST;h.handler=WEBSITE_AUTH(credentials);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/debug-log";h.method=HTTP_GET;h.handler=WEBSITE_AUTH(debug_log);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.method=HTTP_POST;

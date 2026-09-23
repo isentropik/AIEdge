@@ -1,6 +1,7 @@
 #pragma once
 #include "WebsiteAccess.h"
 #include "WebsiteSetupPage.h"
+#include "WebsitePasswordPage.h"
 #include "esp_http_server.h"
 #include "mbedtls/base64.h"
 #include "esp_timer.h"
@@ -43,6 +44,17 @@ class WebsiteHttp {
         if(access.state()==State::StorageError)return unavailable(req);
         return reply(req,ok?"200 OK":"400 Bad Request",ok?"Password saved. Continue and sign in as admin.":"Password was not saved. Check the setup code and password requirements.");
     }
+    esp_err_t change(httpd_req_t* req){
+        char action[8]={};uint8_t oldValue[128]={},newValue[128]={};size_t oldSize=0,newSize=0;
+        bool ok=httpd_req_get_hdr_value_len(req,"X-AIEdge-Password-Change")==7&&
+            httpd_req_get_hdr_value_str(req,"X-AIEdge-Password-Change",action,sizeof action)==ESP_OK&&
+            !std::memcmp(action,"confirm",7)&&password(req,oldValue,oldSize)&&body(req,newValue,newSize)&&
+            access.change(oldValue,oldSize,newValue,newSize,esp_timer_get_time());
+        wipe(oldValue,sizeof oldValue);wipe(newValue,sizeof newValue);wipe(action,sizeof action);
+        if(access.state()==State::StorageError)return unavailable(req);
+        return reply(req,ok?"200 OK":"400 Bad Request",ok?"Password changed. Sign in again with the new password.":"Password was not changed. Check the password requirements and try again.");
+    }
+
 public:
     explicit WebsiteHttp(WebsiteAccess& state):access(state){}
     void initialize(){
@@ -75,6 +87,13 @@ public:
         if(decision==Access::StorageError)return unavailable(req);
         if(decision!=Access::Allowed)return challenge(req);
         if(setupPath)return reply(req,"200 OK","Website password is already configured.");
+        if(!std::strcmp(req->uri,"/auth/password")){
+            if(req->method==HTTP_POST)return change(req);
+            if(req->method==HTTP_GET){
+                httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+                return httpd_resp_send(req,passwordPage,sizeof passwordPage-1);
+            }
+        }
         return handler(req);
     }
 };
