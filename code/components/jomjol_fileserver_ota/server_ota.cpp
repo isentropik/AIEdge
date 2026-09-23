@@ -1,5 +1,6 @@
 #include "server_ota.h"
 #include "UpdateAccess.h"
+#include "RuntimeBundle.h"
 #include "ManagedBundleTransaction.h"
 #include "StageDeviceBundle.h"
 #include "../jomjol_flowcontroll/ImageArchiveSha.h"
@@ -733,7 +734,12 @@ static esp_err_t handler_bundle_install(httpd_req_t* req){return handle_bundle_a
 static esp_err_t handler_bundle_status(httpd_req_t* req){
     if(!basic_auth_configured())return bundleResponse(req,"403 Forbidden","authentication_must_be_configured");
     portENTER_CRITICAL(&bundleJobMux);const auto job=bundleStageJob;portEXIT_CRITICAL(&bundleJobMux);
-    const std::string body=std::string("{\"active\":")+(job.active?"true":"false")+
+    const auto& running=MeterBundle::bootSelection();
+    const bool verified=running.state()==MeterBundle::SelectionState::Selected;
+    const std::string runningId=verified?running.id():"";
+    const std::string body=std::string("{\"running_bundle_id\":\"")+runningId+
+        "\",\"running_bundle_verified\":"+(verified?"true":"false")+
+        ",\"active\":"+(job.active?"true":"false")+
         ",\"bundle_id\":\""+job.id+"\",\"status\":\""+job.status+"\",\"installed\":false,\"boot_selected\":"+(job.bootSelected?"true":"false")+"}";
     httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
     return httpd_resp_send(req,body.c_str(),body.size());
