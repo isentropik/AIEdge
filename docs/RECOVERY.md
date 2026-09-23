@@ -26,7 +26,7 @@ That is expected on **AIEdge-Setup**. Choose to stay connected. It connects your
 
 Press **Rescan networks**, check the password with **Show password**, and move closer to the router if needed. Network names and passwords are case-sensitive.
 
-The router must offer compatible **2.4 GHz Wi-Fi**, such as WPA2-Personal. A 5 GHz-only or WPA3-only network is unsupported. For a hidden password-protected network, choose **Hidden network / enter manually**. See [installation](INSTALLATION.md) for name and password limits.
+The router must offer compatible **2.4 GHz Wi-Fi**, such as WPA2-Personal. A 5 GHz-only or WPA3-only network is unsupported. For a hidden password-protected network, choose **Hidden network / enter manually**. See [Wi-Fi compatibility](MANUAL-INSTALLATION.md#wi-fi-compatibility) for name and password limits.
 
 ## Setting the clock fails
 
