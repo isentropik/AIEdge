@@ -16,12 +16,30 @@ template<class Hash> std::string hashBytes(const std::string& bytes) {
     Hash hash;
     return hash.update(reinterpret_cast<const unsigned char*>(bytes.data()),bytes.size()) ? hash.finish() : "";
 }
-inline int syncSpoolFile(FILE* f) {
+// Use the VFS descriptor directly: fdopen may require fcntl support which
+// the ESP-IDF FAT VFS does not register. Preserve exclusive creation/readback.
+inline int syncSpoolDescriptor(int fd) {
 #ifdef _WIN32
-    return _commit(_fileno(f));
+    return _commit(fd);
 #else
-    return fsync(fileno(f));
+    return fsync(fd);
 #endif
+}
+template<class Write>
+bool writeSpoolBytesWith(int fd,const unsigned char* bytes,size_t length,Write output) {
+    if(!bytes && length)return false;
+    while(length) {
+        const size_t chunk=length>4096?4096:length;
+        const auto written=output(fd,bytes,chunk);
+        if(written<0 && errno==EINTR)continue;
+        if(written<=0 || static_cast<size_t>(written)>chunk)return false;
+        bytes+=written;length-=static_cast<size_t>(written);
+    }
+    return true;
+}
+inline bool writeSpoolBytes(int fd,const void* bytes,size_t length) {
+    return writeSpoolBytesWith(fd,static_cast<const unsigned char*>(bytes),length,
+        [](int descriptor,const unsigned char* data,size_t size){return write(descriptor,data,size);});
 }
 // Hash implements incremental update(bytes,size) -> bool and finish() -> hex.
 // Its errors must yield an empty hash, never a fabricated digest.
@@ -76,13 +94,11 @@ SpoolResult writeSpoolFile(const std::string& root, const CaptureMetadata& metad
 #endif
                       ,0600);
     if(fd<0) return errno==EEXIST ? SpoolResult::PendingExists : SpoolResult::IoError;
-    FILE* f=fdopen(fd,"wb");
-    if(!f) {close(fd);return SpoolResult::IoError;}
     const auto header=encodeSpoolRecord(metadata,hashBytes<Hash>);
-    bool ok=header.size()==SpoolRecordBytes && std::fwrite(header.data(),1,header.size(),f)==header.size();
-    if(ok) ok=std::fwrite(image,1,length,f)==length;
-    if(ok) ok=std::fflush(f)==0 && syncSpoolFile(f)==0;
-    if(std::fclose(f)!=0) ok=false;
+    bool ok=header.size()==SpoolRecordBytes && writeSpoolBytes(fd,header.data(),header.size());
+    if(ok) ok=writeSpoolBytes(fd,image,length);
+    if(ok) ok=syncSpoolDescriptor(fd)==0;
+    if(close(fd)!=0) ok=false;
     if(!ok) return SpoolResult::IoError; // preserve failure evidence
     status=readSpoolFile<Hash>(pending,existing,observed);
     if(status!=SpoolResult::Saved) return status;

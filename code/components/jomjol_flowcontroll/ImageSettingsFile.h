@@ -44,10 +44,9 @@ SpoolResult writeSettingsFile(const std::string& root,const std::string& hash,co
 #endif
                           ,0600);
         if(fd<0)return errno==EEXIST ? SpoolResult::PendingExists : SpoolResult::IoError;
-        FILE* f=fdopen(fd,"wb");if(!f){close(fd);return SpoolResult::IoError;}
-        bool ok=std::fwrite(descriptor.data(),1,descriptor.size(),f)==descriptor.size();
-        if(ok)ok=std::fflush(f)==0 && syncSpoolFile(f)==0;
-        if(std::fclose(f)!=0)ok=false;
+        bool ok=writeSpoolBytes(fd,descriptor.data(),descriptor.size());
+        if(ok)ok=syncSpoolDescriptor(fd)==0;
+        if(close(fd)!=0)ok=false;
         if(!ok)return SpoolResult::IoError;
         result=readSettingsPath<Hash>(pending,hash,existing);
     }
