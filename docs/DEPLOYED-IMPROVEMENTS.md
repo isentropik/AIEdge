@@ -8,7 +8,13 @@ This archive records released changes and their actual evidence. It does not imp
 
 The private test application now requires website authentication. USB password setup and password-only recovery passed; configuration bytes and the Wi-Fi connection were preserved. An authenticated OTA using an uncompressed ZIP completed installation and restart with the password retained. The corrected application also accepted a console command immediately after binary installer traffic, without the previous extra-newline workaround. The loader version of that boundary fix remains unverified on hardware. These results do not establish encrypted transport, power-loss recovery or a public release.
 
-Compressed-package staging still fails because the SD driver runs out of memory during extraction, confirmed through USB logs. The fix remains in the open backlog until hardware verification.
+## Test-board compressed OTA staging memory fix — September 23, 2026
+
+USB recording identified SDMMC `ESP_ERR_NO_MEM` while reading a compressed ZIP. The read returned 543 of 1,672 requested bytes; SD log writes failed at the same time, concealing the detailed failure from the web log. ZIP inflater, dictionary and index allocations now request PSRAM explicitly so they do not consume the internal memory needed by SDMMC.
+
+The fix was installed through authenticated OTA using an uncompressed package. Restart verification confirmed the expected running bundle, unchanged configuration and retained website password. A new compressed staging-only trial then verified all runtime files successfully; USB recording contained no staging or SD read/write failures. The probe was not installed. Allocator host checks cover PSRAM-only requests, multiplication overflow and failed-reallocation preservation; device staging regression checks and the ESP32 build also passed.
+
+Private evidence: `aiedge-zip-memory-candidate/ota/result.json` and `aiedge-compressed-memory-probe/ota/result.json` under the workspace firmware-port-tests directory. This is one successful compressed staging trial, not sustained-load, power-loss or public-release validation. Broader update/recovery coverage remains in the open backlog.
 
 ## 0.1.10 development release — September 22, 2026
 
