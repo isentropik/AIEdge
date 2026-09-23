@@ -23,19 +23,23 @@ struct ArchiveReadDiagnostic {
 };
 // The convenience extract functions put the large inflater on the task stack.
 // The iterator keeps it on the heap and retains miniz's length/CRC checks.
-template<class Sink> bool extractBounded(mz_zip_archive& zip,mz_uint index,uint64_t expected,Sink sink){
+template<class Sink> bool extractBounded(mz_zip_archive& zip,mz_uint index,uint64_t expected,Sink sink,Checkpoint trace=nullptr,const std::string& path=""){
  auto* iterator=mz_zip_reader_extract_iter_new(&zip,index,0);
- if(!iterator)return false;
+ if(!iterator){checkpoint(trace,"extract.iterator_start_failed",path,mz_zip_get_last_error(&zip));return false;}
  std::unique_ptr<unsigned char[]> buffer(new(std::nothrow) unsigned char[4096]);
  uint64_t total=0;bool ok=bool(buffer);
+ if(!ok)checkpoint(trace,"extract.buffer_alloc_failed",path,4096);
  while(ok){
   const size_t n=mz_zip_reader_extract_iter_read(iterator,buffer.get(),4096);
   if(!n)break;
-  if(total>expected||n>expected-total||!sink(total,buffer.get(),n)){ok=false;break;}
+  if(total>expected||n>expected-total){checkpoint(trace,"extract.length_failed",path,total);ok=false;break;}
+  if(!sink(total,buffer.get(),n)){checkpoint(trace,"extract.sink_failed",path,total);ok=false;break;}
   total+=n;
  }
  // Always free; finalization also rejects truncated output and CRC failures.
  const bool complete=mz_zip_reader_extract_iter_free(iterator)!=0;
+ if(!complete)checkpoint(trace,"extract.finalize_failed",path,mz_zip_get_last_error(&zip));
+ if(total!=expected)checkpoint(trace,"extract.byte_count_failed",path,total);
  return ok&&complete&&total==expected;
 }
 inline bool bundleDirectory(const std::string& path){
@@ -90,7 +94,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  if(!bytes)return StageResult::IoError;
  if(!extractBounded(zip,found->second,ms.m_uncomp_size,[&](uint64_t offset,const unsigned char* data,size_t size){
   std::memcpy(bytes.get()+offset,data,size);return true;
- }))return StageResult::Rejected;
+ },trace,"device-manifest.json"))return StageResult::Rejected;
  std::string body(bytes.get(),ms.m_uncomp_size);bytes.reset();
  auto sha=[](const std::string& text){Hash h;return h.update(reinterpret_cast<const unsigned char*>(text.data()),text.size())?h.finish():std::string();};
  Manifest m;
@@ -126,7 +130,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   BundleSink<Hash> sink(fd,item.second.bytes,trace,path);
   bool ok=extractBounded(zip,entries.at(item.first),item.second.bytes,[&](uint64_t offset,const unsigned char* data,size_t size){
            return BundleSink<Hash>::append(&sink,offset,data,size)==size;
-          });
+          },trace,path);
   if(!ok)checkpoint(trace,"extract.failed",path,static_cast<uint64_t>(mz_zip_get_last_error(&zip)));
   if(ok){ok=sink.ok&&sink.written==item.second.bytes&&sink.hash.finish()==item.second.hash;
    if(!ok)checkpoint(trace,"extract.integrity_failed",path,sink.written);}
