@@ -3,7 +3,9 @@
 <title>Managed firmware update</title>
 <style>
 body{font:16px/1.5 system-ui,sans-serif;margin:24px auto;padding:0 20px;max-width:680px;color:#202b36;background:#fafbfc}h1{font-size:1.7rem}label{display:block;font-weight:600;margin-top:20px}input{box-sizing:border-box;max-width:100%;padding:10px;font:inherit}input[type=text]{width:100%;font-family:monospace}button{font:inherit;padding:10px 16px;border:1px solid #738397;border-radius:6px;background:white;cursor:pointer;margin:16px 8px 0 0}button.primary{background:#174d70;color:white}button:disabled{opacity:.5;cursor:default}progress{width:100%;height:16px}#status{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;background:#edf2f6;border-radius:6px}small{display:block;color:#4f5d6b}.panel{border:1px solid #d4dce3;padding:20px;border-radius:10px;background:white}
-</style><script src="managed_update.js" defer></script></head>
+</style><script src="managed_update.js" defer></script><script src="aiedge-theme.js"></script>
+<link rel="stylesheet" href="aiedge-theme.css">
+</head>
 <body><h1>Managed firmware update</h1><p>Upload a managed firmware package and verify it on the SD card. This step does not install firmware or restart the meter.</p>
 <div class="panel"><form id="stage-form">
 <label for="archive">Firmware bundle</label><input id="archive" type="file" accept=".zip" required><small>ZIP file, up to 8,192,000 bytes. Replaces the previous temporary bundle upload.</small>

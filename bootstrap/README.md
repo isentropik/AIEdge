@@ -19,3 +19,13 @@ The loader now implements Improv Serial on UART0 at 115200 baud: state, device i
 A successful Wi-Fi response means the network is connected, not that package installation has completed. Visit the returned local address for progress. This service belongs to the loader, not the subsequently installed main application. The hotspot remains available as a fallback.
 
 Host protocol tests: compile `tests/improv_test.cpp` with a C++11 compiler and `src` as an include directory, then run the result. Device provisioning, bad-password recovery, USB reset behavior and complete package installation still require hardware testing.
+
+## Saved Wi-Fi and recovery (0.1.2 loader)
+
+After a successful Wi-Fi connection, the loader commits the credentials to internal nonvolatile storage and verifies them before downloading the package. A reset or power interruption can then reconnect automatically, even if the package download previously failed. Invalid or unsuccessful connection attempts do not replace the last verified saved network. A fresh USB installation or erase can remove these settings; reconnecting alone should not.
+
+Visit Device shows connection and installation status. If Wi-Fi is connected but the package fails, use **Retry download and installation** without reentering the network password. Download diagnostics report error codes or byte counts, never passwords or signed download URLs. The main application still receives its own SD-backed Wi-Fi configuration during installation.
+
+The loader and installed device pages have a **Theme** selector: System, Light or Dark. The choice is saved in that browser for the device address. Images and calibration canvases are not recolored.
+
+Validation: firmware compilation, host persistence tests (restart, malformed records, failed replacement save and unchanged-credential write avoidance), local package staging and browser theme/retry presentation checks passed. The reported device download failure still needs its detailed device-side error; this release does not claim the download root cause is resolved. Full hardware installation and reconnect testing remain necessary.

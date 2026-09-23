@@ -103,3 +103,10 @@ Include:
 - Relevant tool output or device logs, with private details removed.
 
 A **serial log** is text the board sends through its USB programmer. It helps when the website will not open. If you have never used one, say so in your report so the next steps can be tailored to your hardware.
+
+
+## Wi-Fi disappears after resetting the loader
+
+Loader 0.1.1 kept credentials only in memory until the main package installed. If that download failed, a reset could make it ask for Wi-Fi again. Install loader **0.1.2 or later** using the web installer, then connect once. It saves Wi-Fi after a successful connection and reuses it on restart. An erase or fresh USB flash can still clear saved settings.
+
+If Visit Device says Wi-Fi is connected but the package failed, choose **Retry download and installation**. Share the error detail if it fails again; do not share your Wi-Fi password. A successful Wi-Fi connection is separate from a completed application installation.

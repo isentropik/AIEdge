@@ -1,16 +1,16 @@
 {
-  "version": "0.1.1-dev.20260922",
+  "version": "0.1.2-dev.20260922",
   "files": {
-    "releases/v0.1.1-dev.20260922/aiedge-web-installer.bin": {
-      "bytes": 1338144,
-      "sha256": "c8d43cf08d14b3c4d09cd5bc15c5e6bc4df1b44a0fa27a2c768b4e5e2686b8b5"
+    "releases/v0.1.2-dev.20260922/aiedge-web-installer.bin": {
+      "bytes": 1346752,
+      "sha256": "5d32c7169dd600f3c3d802340e04c29b27bc6638242149433c9edf903c535edd"
     }
   },
   "source_parts": {
     "bootloader.bin": {
       "offset": 4096,
       "bytes": 27472,
-      "sha256": "5871839384665da7c38a42aba7ac390ccf375467c5d27309348be31eae4b32a3"
+      "sha256": "97287556e39b2213aa29815579635d73cb82a87de32a6f1dbc83baf92cfa6346"
     },
     "partitions.bin": {
       "offset": 32768,
@@ -24,9 +24,9 @@
     },
     "aiedge-bootstrap.bin": {
       "offset": 65536,
-      "bytes": 1272608,
-      "sha256": "4d5c014d3cb41b8ffc02507c46e6b886fdb30fc8fe9cf59c1b2fe6117cf937ac"
+      "bytes": 1281216,
+      "sha256": "616cf75bb9f6ced9035e0653e0d8a3ae6743c8bf5084373a3a56469dd1f8152e"
     }
   },
-  "package_sha256": "78d734258251395bc4c60dddd3cbae49f0c2f596ae7567aef10b09f2652cc405"
+  "package_sha256": "6c024947f9a381703bae293eb6a901047ec2f81dfe517905d0e38d5f00bc8dc3"
 }

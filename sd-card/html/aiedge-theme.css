@@ -1,0 +1,17 @@
+/* AIEdge device themes; meter images and canvas pixels are not recolored. */
+:root{color-scheme:light;--ae-ink:#172a36;--ae-muted:#526876;--ae-line:#a5bac5;--ae-accent:#006e69;--ae-surface:#fff;--ae-bg:#f3f7f8;--ae-hover:#e4f2ef;--ae-expert:#ffefef}
+:root[data-aiedge-theme=dark]{color-scheme:dark;--ae-ink:#e8f0f4;--ae-muted:#b0c4ce;--ae-line:#526874;--ae-accent:#7cddd0;--ae-surface:#1b2931;--ae-bg:#101b22;--ae-hover:#29423f;--ae-expert:#422c35}
+html,body{background:var(--ae-bg);color:var(--ae-ink)}
+a{color:var(--ae-accent)}
+.aiedge-theme-picker{display:flex;align-items:center;gap:8px;font:14px system-ui;color:var(--ae-ink);margin:8px 0}
+.aiedge-header .aiedge-theme-picker{margin-left:auto;flex-shrink:0}
+.aiedge-theme-picker select{width:auto!important;margin:0!important;min-height:36px;padding:5px 10px;border:1px solid var(--ae-line);border-radius:7px;background:var(--ae-surface);color:var(--ae-ink)}
+:root[data-aiedge-theme=dark] input:not([type=range]):not([type=checkbox]):not([type=radio]),:root[data-aiedge-theme=dark] select,:root[data-aiedge-theme=dark] textarea,:root[data-aiedge-theme=dark] button{background-color:var(--ae-surface);color:var(--ae-ink);border-color:var(--ae-line)}
+:root[data-aiedge-theme=dark] .expert{background-color:var(--ae-expert)}
+:root[data-aiedge-theme=dark] .tg{color:var(--ae-ink)}
+:root[data-aiedge-theme=dark] .tg th{background-color:var(--ae-surface)}
+:root[data-aiedge-theme=dark] input:invalid,:root[data-aiedge-theme=dark] input:out-of-range{background-color:#512c31;border-color:#ff8e89}
+:root[data-aiedge-theme=dark] .aiedge-header,:root[data-aiedge-theme=dark] .aiedge-credit,:root[data-aiedge-theme=dark] .aiedge-shell #Version,:root[data-aiedge-theme=dark] .aiedge-shell .menu,:root[data-aiedge-theme=dark] .aiedge-shell .menu li a,:root[data-aiedge-theme=dark] .aiedge-shell .menu li ul,:root[data-aiedge-theme=dark] .aiedge-shell .menu li:hover li a{background:var(--ae-surface);color:var(--ae-ink)}
+:root[data-aiedge-theme=dark] .aiedge-shell .menu li a:hover,:root[data-aiedge-theme=dark] .aiedge-shell .menu li:hover>a{background:var(--ae-hover);color:var(--ae-accent)}
+:root[data-aiedge-theme=dark] .aiedge-mark{color:#102a26}
+@media(max-width:600px){.aiedge-header{flex-wrap:wrap}.aiedge-header .aiedge-theme-picker{margin-left:0}}
