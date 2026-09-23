@@ -161,7 +161,7 @@ static bool install_package() {
  MeterBundle::Manifest manifest;
  std::string object=std::string("/sdcard/bundles/objects/")+PACKAGE_BUNDLE;
  if(!MeterBundle::verify<ImageArchive::Sha256>(object,PACKAGE_BUNDLE,manifest).verified)return false;
- if(!AIEdge::seedSetupConfig("/sdcard")){phase=-5;return false;}
+ if(!AIEdge::seedSetupConfig("/sdcard",device_hostname)){phase=-5;return false;}
  if(!save_wifi()){phase=-5;return false;}
  phase=4;
  const auto* target=esp_ota_get_next_update_partition(nullptr);
@@ -266,7 +266,7 @@ static void improv_command(const AIEdgeImprov::Bytes& data){
   improv_state(current_improv_state());
   if(current_improv_state()==4)improv_send(AIEdgeImprov::result(2,{device_url()}));
   break;
- case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.3-dev.20260922","ESP32",device_hostname}));break;
+ case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.4-dev.20260922","ESP32",device_hostname}));break;
  case 4:
   if(begin_scan())serial_scan_pending=true;
   else improv_send(AIEdgeImprov::result(4,{}));

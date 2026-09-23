@@ -37,3 +37,5 @@ The default hostname is `aiedge-xxxxxx`, using the last three bytes of the Wi-Fi
 The downloader now sizes its HTTP transmit buffer for the full bounded redirect URL plus the request-line overhead. The ESP-IDF default was 512 bytes; an observed GitHub release redirect required an 890-byte request line. This fixes a verified source-level failure before downloading any package bytes. TLS verification, allowed redirect hosts, byte count and SHA-256 checks remain enforced. Complete hardware download validation remains pending.
 
 This loader continues to use the immutable 0.1.2 application package. The new interface redesign remains a separate local preview. Existing SD Wi-Fi files are not silently overwritten; a mismatch stops installation for review.
+
+Version 0.1.4 carries the generated hostname into both wlan.ini and the System section of the initial config.ini, preventing a reset to the old generic name on application startup. Existing configurations remain protected.
