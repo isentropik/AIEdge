@@ -1,53 +1,65 @@
 # AIEdge
 
-**Experimental ESP32-CAM firmware for reading analog meters locally.**
+**Read an analog meter with a small camera and an ESP32.**
 
-AIEdge is a modified fork of [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device), focused on analog dial recognition, controllable lighting, clearer diagnostics, and simpler installation. Recognition runs on the device; Internet access is needed for the GitHub installer, not for every reading.
+AIEdge takes pictures of a meter, estimates where its needles point, and can send readings to Home Assistant. Once installed, readings are processed on the device rather than sent to an online AI service.
 
-> **Development preview.** The included polar model and geometry are specific to the development meter. Accurate readings on another meter require calibration and independent validation. The upstream authors do not provide or endorse this modified firmware.
+**Built on [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device), created by jomjol and its contributors.** Their firmware, camera and meter-reading work provide the foundation. AIEdge is an independent modified fork, not an entirely new implementation or an official upstream release. See [credits](CREDITS.md).
 
-[Installation](docs/INSTALLATION.md) · [Configuration](docs/CONFIGURATION.md) · [Recovery](docs/RECOVERY.md) · [Build instructions](docs/DEVELOPMENT.md) · [Validation status](docs/STATUS.md) · [Releases](https://github.com/isentropik/AIEdge/releases)
+> **Early development release:** the new GitHub installer has been built but still needs complete testing on the board. The included new needle-reading model was developed for one particular meter. Installing it does not make it ready to read every meter accurately. See [what has been tested](docs/STATUS.md).
 
-## What changes
+## Start here
 
-| Area | AIEdge work |
+| What do you want to do? | Guide |
 | --- | --- |
-| Installation | USB Wi-Fi loader, then a hash-pinned package download to SD and the inactive firmware slot. |
-| Setup | Nearby 2.4 GHz network selection, rescan, hidden-network entry, password visibility, and `aiedge.local`. |
-| Lighting | External LED master intensity and RGBW handling with a dedicated white channel. |
-| Recognition | Perspective-aware polar dial pipeline, fixed calibration identities, and explicit invalid/unknown outcomes. Upstream numeral support remains present. |
-| Consumption | Rollover-aware cumulative accounting and secondary-wheel reconciliation; ambiguous missing rotations are not invented. |
-| Updates | Firmware and matching SD assets are verified together. An app binary alone is not a complete managed update. |
-| Operations | Cycle diagnostics, coordinated camera access, configuration activation tracking, and optional image archival. |
-| Interface | AIEdge branding and a first shared visual refresh. Some inherited pages still need further mobile work. |
+| Install AIEdge for the first time | [Step-by-step installation](docs/INSTALLATION.md) |
+| Set up the camera and meter readings | [First-time configuration](docs/CONFIGURATION.md) |
+| Fix a connection or installation problem | [Troubleshooting](docs/RECOVERY.md) |
+| Understand an unfamiliar word | [Plain-language glossary](docs/GLOSSARY.md) |
+| Download the installer | [Development releases](https://github.com/isentropik/AIEdge/releases) |
+| Change or build the software | [Developer guide](docs/DEVELOPMENT.md) |
 
-Implementation does not imply hardware validation. See the [status table](docs/STATUS.md) for evidence and outstanding checks.
+## What you need
 
-## Hardware
+- A supported **AI-Thinker-style ESP32-CAM** with **4 MB flash** and working **PSRAM**. These are the board's storage and extra memory; check its specifications. Other ESP32 variants are not verified by this release.
+- A compatible camera and stable power supply.
+- A **microSD card formatted as FAT32**. It stores the website, reading model and settings, and stays inserted during use.
+- A compatible USB programming base or adapter, a data-capable USB cable, and a computer. A bare ESP32-CAM cannot connect directly to USB by itself.
+- Home **2.4 GHz Wi-Fi**, its password, and Internet access for installation.
+- A phone or computer with a web browser.
 
-The development target is a classic AI-Thinker-style **ESP32-CAM**, with **4 MB flash**, working PSRAM, a supported camera, and a **FAT32 microSD card**. USB/serial access is required for the first flash and recovery. This release does not establish ESP32-S3, C3 or other-board compatibility.
+## How installation works
 
-The SD card holds the web interface, model, bundle metadata and configuration. The loader does not format it automatically. Use a compatible 2.4 GHz personal Wi-Fi network; enterprise authentication is not implemented by the setup page.
+1. **Install a small loader over USB.** This program sets up Wi-Fi and downloads the rest of AIEdge. Follow the [installation guide](docs/INSTALLATION.md) for the files and commands.
+2. **Join its setup Wi-Fi.** Select **AIEdge-Setup**, enter **AIEdgeSetup**, then open **http://aiedge.local**. If that fails, use **http://192.168.4.1**.
+3. **Choose home Wi-Fi.** Select your network, enter its password and press **Connect and install**. Keep the board powered while it installs.
+4. **Return to home Wi-Fi.** Open **http://aiedge.local** again and follow the [configuration guide](docs/CONFIGURATION.md).
 
-## Quick start
+You do not need to build the software to use the release files. This preview does require a USB command for the first installation; it does not yet provide an AIEdge one-click browser flasher.
 
-1. Read the release notes and [installation guide](docs/INSTALLATION.md). Download the matched AIEdge installer flash set.
-2. Flash the loader over USB and leave a formatted microSD card inserted.
-3. On your phone, join **AIEdge-Setup**, password **AIEdgeSetup**.
-4. Open **http://aiedge.local**, or **http://192.168.4.1** if name discovery is unavailable.
-5. Select home Wi-Fi and choose **Connect and install**. Keep power connected during download, verification and installation.
-6. Rejoin home Wi-Fi and open **http://aiedge.local**. Complete camera, lighting, meter and integration configuration before enabling recognition.
+## What AIEdge changes
 
-The older local-server loader requires the IP address and cannot switch itself to GitHub downloads. Reflash the newer loader first. See [recovery](docs/RECOVERY.md).
+The underlying camera, meter-reading, web interface and integration foundations come from upstream. Work in this fork includes:
 
-## Development
+| Area | AIEdge additions and changes |
+| --- | --- |
+| Installation | A small USB loader followed by a checked GitHub package download. |
+| Setup | A nearby Wi-Fi network list, rescan and manual entry. |
+| Lighting | External LED brightness control and RGBW handling with a separate white channel. |
+| Dial reading | A perspective-aware polar reading pipeline with meter-specific calibration. |
+| Consumption | Secondary-wheel calculations and checks for contradictory or uncertain readings. |
+| Updates | Matching firmware, website and model files kept together in a checked package. |
+| Operations | Additional diagnostics, configuration activation tracking and optional image uploads. |
+| Interface | AIEdge branding and initial style changes; some pages remain inherited and need more work. |
 
-Initial firmware source is pinned to upstream commit `a1ccda2e88f8924d6633b285f7b3334f3263cc2f` (16.1.0), with AIEdge modifications. Use a recursive checkout and the documented tool versions. An arbitrary upstream `main` build is not equivalent to an AIEdge release.
+Implementation does not mean every feature has been verified on hardware. Read the [status page](docs/STATUS.md) before relying on this preview.
 
-Include board/release version, reproduction steps and redacted diagnostics in reports. Never publish credentials, complete flash backups or private meter images. See [CONTRIBUTING.md](CONTRIBUTING.md).
+## Help
 
-## License and attribution
+Start with [troubleshooting](docs/RECOVERY.md). When reporting a problem, include the board type, AIEdge version, exact error and what you tried. Remove passwords and private information first. See [contributing](CONTRIBUTING.md).
 
-The unchanged [upstream Dual Use License](Licence.md) applies: private, non-commercial use is permitted under its terms; commercial use requires the rights holder's separate license. This fork is not MIT- or GPL-licensed. Third-party components retain their own licenses. See [third-party notices](third-party-notices) and the original [upstream README](README.upstream.md).
+## Credits and license
 
-Thanks to jomjol and the AI-on-the-edge-device contributors, Espressif, and the other component authors. AIEdge is an independent modified version.
+Thanks to jomjol and the [AI-on-the-edge-device contributors](https://github.com/jomjol/AI-on-the-edge-device/graphs/contributors), Espressif and the other component authors. Their work remains credited in the source, [credits page](CREDITS.md) and [third-party notices](third-party-notices). Upstream authors do not provide or endorse this modified firmware.
+
+The unchanged [upstream Dual Use License](Licence.md) applies. It permits private, non-commercial use under its terms; commercial use requires a separate license from the rights holder. This fork is not MIT- or GPL-licensed.

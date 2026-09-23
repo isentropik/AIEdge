@@ -1,5 +1,7 @@
 # AIEdge Wi-Fi bootstrap
 
+**Installing for the first time?** Use the [step-by-step installation guide](../docs/INSTALLATION.md). The notes below explain how the loader works internally and are intended for developers.
+
 USB installs the loader. It starts AIEdge-Setup (WPA2 password AIEdgeSetup), advertises http://aiedge.local and provides http://192.168.4.1 as the setup fallback. A mobile-sized page scans 2.4 GHz networks, supports rescanning and manual entry, and can show the entered password.
 
 The next build downloads an immutable GitHub release asset over HTTPS. NTP sets the clock, certificates are checked, and redirects are limited to the GitHub release hosts. The exact URL, size, SHA-256, bundle ID and model identity are compiled into src/package_pin.h. No PC server is required for this version.

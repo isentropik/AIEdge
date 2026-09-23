@@ -1,5 +1,11 @@
 # Development status
 
+[Back to AIEdge](../README.md) · [Installation](INSTALLATION.md) · [Glossary](GLOSSARY.md)
+
+**The release is ready for development testing, not yet proven as a complete installation on the board.** Passing a computer-based check does not prove a meter is read accurately or that a device will recover after a failed update.
+
+In the table, the *loader* is the small Wi-Fi installer, *package integrity* means the files match their expected fingerprints, and *mDNS* is the name discovery used by `aiedge.local`.
+
 | Check | Evidence / limitation |
 | --- | --- |
 | Main package | Clean ESP32 build and 73 completed local test scripts. These are not 73 hardware tests. |
