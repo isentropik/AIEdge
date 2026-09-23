@@ -45,3 +45,13 @@ decoding after each failure and no retained host allocations. Allocator, logging
 and lock operations are host substitutes. Fourteen camera cleanup checks also
 passed with a substituted decoder. These checks do not establish hardware fault
 recovery or prove that every damaged JPEG will be rejected by stb.
+
+### Test-board installation
+
+The controller and decoder changes were installed on the test board in the
+September 23 build at 20:49:16 UTC. The application booted, detected its camera,
+and preserved configuration byte-for-byte. Three saved-JPEG regressions matched
+all six expected feature/output vectors, with a median 28.109 seconds at 160 MHz.
+These runs took no new camera images and did not inject a physical decode fault.
+Hardware bad-frame recovery and full live capture cadence remain unverified.
+This private test build is not a public installer release.
