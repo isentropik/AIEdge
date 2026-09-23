@@ -62,7 +62,7 @@ progress{display:block;width:100%;height:10px;margin:14px 0 10px;accent-color:va
 <section class="download-status"><p id="state" role="status">Checking device…</p><p id="detail" class="hint"></p><progress id="progress" max="100" value="0" aria-label="Package download"></progress>
 <div class="download-details"><p id="transfer" class="hint"></p><p id="speed" class="hint"></p></div><button id="retry" hidden>Retry download and installation</button>
 <button id="refresh" type="button" class="secondary" hidden>Refresh device page</button></section>
-<footer class="setup-footer"><p class="hint">Keep AIEdge powered during installation.</p><p class="hint">Device address: <a id="device-address" hidden></a><span id="address-pending">waiting for network details</span></p></footer></main>
+<footer class="setup-footer"><p class="hint">Keep AIEdge powered during installation.</p><p class="hint">Device address: <a id="device-address" hidden></a><span id="address-pending">waiting for network details</span></p><p class="hint"><a href="/debug-log" download="aiedge-loader-debug.txt">Download debug log</a> · Current boot only. If the device stops responding, use USB Logs &amp; Console.</p></footer></main>
 <script>
 const $=id=>document.getElementById(id), state=$('state'), fields=$('fields'), networks=$('networks'), password=$('password');
 let busy=true, scanning=false, started=false, choices=[];

@@ -20,10 +20,12 @@ inline bool bundleParents(const std::string& root,const std::string& name){
 }
 template<class Hash> struct BundleSink {
  int fd;uint64_t written=0,limit;Hash hash;bool ok=true;
- BundleSink(int f,uint64_t size):fd(f),limit(size){}
+ Checkpoint trace;std::string path;
+ BundleSink(int f,uint64_t size,Checkpoint cb=nullptr,const std::string& name=""):fd(f),limit(size),trace(cb),path(name){}
  static size_t append(void* opaque,mz_uint64 offset,const void* data,size_t size){
   auto& self=*static_cast<BundleSink*>(opaque);
   if(!self.ok||offset!=self.written||self.written>self.limit||size>self.limit-self.written){self.ok=false;return 0;}
+  checkpoint(self.trace,"extract.write",self.path,self.written);
   if(size && (write(self.fd,data,size)!=static_cast<ssize_t>(size)||
      !self.hash.update(static_cast<const unsigned char*>(data),size))){self.ok=false;return 0;}
   self.written+=size;return size;
@@ -32,7 +34,8 @@ template<class Hash> struct BundleSink {
 // Only from the exclusive managed installer. Never writes current HTML, apps
 // indexes, flash, or existing objects. Failed pending directories are retained.
 template<class Hash> StageResult stageZip(const std::string& zipPath,const std::string& base,
- const std::string& id,const std::string& model){
+ const std::string& id,const std::string& model,Checkpoint trace=nullptr){
+ checkpoint(trace,"archive.open",zipPath);
  if(!hashValid(id)||!hashValid(model))return StageResult::Rejected;
  mz_zip_archive zip{};
  if(!mz_zip_reader_init_file(&zip,zipPath.c_str(),0))return StageResult::Rejected;
@@ -65,7 +68,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  const std::string object=base+"/objects/"+id,pending=base+"/pending/"+id;
  struct stat st{};
  if(stat(object.c_str(),&st)==0){Manifest existing;
-  return S_ISDIR(st.st_mode)&&verify<Hash>(object,id,existing).verified?StageResult::Existing:StageResult::Conflict;
+  return S_ISDIR(st.st_mode)&&verify<Hash>(object,id,existing,trace).verified?StageResult::Existing:StageResult::Conflict;
  }
  if(errno!=ENOENT)return StageResult::IoError;
  if(!bundleDirectory(base)||!bundleDirectory(base+"/objects")||!bundleDirectory(base+"/pending")||
@@ -79,14 +82,16 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
 #endif
   const std::string path=pending+"/"+item.first;int fd=open(path.c_str(),flags,0600);
   if(fd<0)return StageResult::IoError;
-  BundleSink<Hash> sink(fd,item.second.bytes);
+  checkpoint(trace,"extract.begin",path);
+  BundleSink<Hash> sink(fd,item.second.bytes,trace,path);
   bool ok=mz_zip_reader_extract_to_callback(&zip,entries.at(item.first),BundleSink<Hash>::append,&sink,0)&&
           sink.ok&&sink.written==item.second.bytes&&sink.hash.finish()==item.second.hash;
+  checkpoint(trace,"extract.sync",path,sink.written);
   if(ok&&fsync(fd)!=0)ok=false;
   if(close(fd)!=0)ok=false;
-  if(!ok||!verifyFile<Hash>(path,item.second))return StageResult::IoError;
+  if(!ok||!verifyFile<Hash>(path,item.second,trace))return StageResult::IoError;
  }
- Manifest verified;if(!verify<Hash>(pending,id,verified).verified)return StageResult::Rejected;
+ Manifest verified;if(!verify<Hash>(pending,id,verified,trace).verified)return StageResult::Rejected;
  if(stat(object.c_str(),&st)==0)return StageResult::Conflict;
  if(errno!=ENOENT||std::rename(pending.c_str(),object.c_str())!=0)return StageResult::IoError;
  return StageResult::Staged;

@@ -31,6 +31,8 @@
 #include "DownloadProgress.h"
 #include "InstallConsent.h"
 #include "CooperativeHash.h"
+#include "InstallDiagnostics.h"
+#include "esp_heap_caps.h"
 #include "mdns.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -58,12 +60,39 @@ static std::atomic<int> scan_state{0}; // 1 scanning, 2 results ready, -1 failed
 static wifi_ap_record_t scan_records[24];
 static uint16_t scan_count=0;
 static SemaphoreHandle_t setup_lock;
+static SemaphoreHandle_t diagnostic_lock;
+static AIEdgeSetup::InstallJournal journal;
+static void diagnostic_record(const char* message){
+ char line[256];snprintf(line,sizeof line,"[%lu ms] %s | free=%lu internal=%lu largest=%lu",
+  (unsigned long)(esp_timer_get_time()/1000),message,(unsigned long)esp_get_free_heap_size(),
+  (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+ if(xSemaphoreTake(diagnostic_lock,pdMS_TO_TICKS(20))==pdTRUE){journal.append(line);xSemaphoreGive(diagnostic_lock);}
+ printf("%s\n",line);
+}
+static void diagnostic_checkpoint(const char* step,const char* path,uint64_t offset){
+ if(xSemaphoreTake(diagnostic_lock,pdMS_TO_TICKS(20))==pdTRUE){journal.current(step,path,offset,uint32_t(esp_timer_get_time()/1000));xSemaphoreGive(diagnostic_lock);}
+ // Track every operation in RAM, but sample block messages to bound USB traffic.
+ const bool block=!strcmp(step,"read.begin")||!strcmp(step,"hash.begin")||!strcmp(step,"block.done")||!strcmp(step,"extract.write")||!strcmp(step,"flash.write");
+ if(block && offset%65536)return;
+ char message[176];snprintf(message,sizeof message,"%s %s offset=%llu",step,path,(unsigned long long)offset);diagnostic_record(message);
+}
+static void diagnostic_task(void*){
+ for(;;){vTaskDelay(pdMS_TO_TICKS(10000));if(phase<2||phase>6)continue;
+  char message[208];bool ready=false;
+  if(xSemaphoreTake(diagnostic_lock,pdMS_TO_TICKS(20))==pdTRUE){
+   snprintf(message,sizeof message,"heartbeat phase=%d wifi=%d op_age_ms=%lu %.150s",int(phase),(xEventGroupGetBits(wifi_events)&1)!=0,
+    (unsigned long)journal.age(uint32_t(esp_timer_get_time()/1000)),journal.active());ready=true;xSemaphoreGive(diagnostic_lock);
+  }
+  if(ready)diagnostic_record(message);
+ }
+}
 struct SetupGuard { SetupGuard(){xSemaphoreTake(setup_lock,portMAX_DELAY);} ~SetupGuard(){xSemaphoreGive(setup_lock);} };
 static void yield_to_system(){vTaskDelay(1);}
 using LoaderSha=AIEdgeSetup::CooperativeHash<ImageArchive::Sha256,yield_to_system>;
 static void installation_stage(const char* detail){
  {SetupGuard guard;install_detail=detail;}
- printf("AIEdge install: %s\n",detail);
+ diagnostic_checkpoint("stage",detail,0);
 }
 static std::atomic<bool> serial_provisioning{false};
 static bool serial_scan_pending=false;
@@ -133,7 +162,7 @@ static esp_err_t download_event(esp_http_client_event_t* event){
   auto* location=static_cast<std::string*>(event->user_data);if(strlen(event->header_value)<=AIEdgeIdentity::maxReleaseUrlBytes)*location=event->header_value;
  }return ESP_OK;
 }
-static void download_failure(const std::string& message){SetupGuard guard;download_error=message;printf("AIEdge download: %s\n",message.c_str());}
+static void download_failure(const std::string& message){{SetupGuard guard;download_error=message;}diagnostic_record(message.c_str());}
 static bool fetch_package() {
  {SetupGuard guard;download_error.clear();install_detail.clear();downloaded=0;download_progress.begin(uint32_t(esp_timer_get_time()/1000));}
  std::string url=PACKAGE_URL,location;esp_http_client_handle_t client=nullptr;bool ok=false;
@@ -172,16 +201,16 @@ static bool fetch_package() {
  if(count!=PACKAGE_BYTES||hash.finish()!=PACKAGE_SHA256){download_failure("Package size or SHA-256 did not match; installation blocked");return false;}
  phase=3;installation_stage("Checking the downloaded package on SD");
  MeterBundle::File expected;expected.bytes=PACKAGE_BYTES;expected.hash=PACKAGE_SHA256;
- return MeterBundle::verifyFile<LoaderSha>("/sdcard/aiedge-download.zip",expected);
+ return MeterBundle::verifyFile<LoaderSha>("/sdcard/aiedge-download.zip",expected,diagnostic_checkpoint);
 }
 static bool install_package() {
  installation_stage("Unpacking and checking SD files");
- auto stage=MeterBundle::stageZip<LoaderSha>("/sdcard/aiedge-download.zip","/sdcard/bundles",PACKAGE_BUNDLE,PACKAGE_MODEL);
+ auto stage=MeterBundle::stageZip<LoaderSha>("/sdcard/aiedge-download.zip","/sdcard/bundles",PACKAGE_BUNDLE,PACKAGE_MODEL,diagnostic_checkpoint);
  if(stage!=MeterBundle::StageResult::Staged&&stage!=MeterBundle::StageResult::Existing){download_failure("SD package staging failed (code "+std::to_string(static_cast<int>(stage))+")");return false;}
  MeterBundle::Manifest manifest;
  std::string object=std::string("/sdcard/bundles/objects/")+PACKAGE_BUNDLE;
  installation_stage("Verifying the installed SD files");
- if(!MeterBundle::verify<LoaderSha>(object,PACKAGE_BUNDLE,manifest).verified)return false;
+ if(!MeterBundle::verify<LoaderSha>(object,PACKAGE_BUNDLE,manifest,diagnostic_checkpoint).verified)return false;
  installation_stage("Saving initial device settings");
  if(!AIEdge::seedSetupConfig("/sdcard",device_hostname)){phase=-5;return false;}
  if(!save_wifi()){phase=-5;return false;}
@@ -190,11 +219,13 @@ static bool install_package() {
  const auto* target=esp_ota_get_next_update_partition(nullptr);
  esp_ota_handle_t handle=0;
  FILE* f=fopen((object+"/firmware/firmware.bin").c_str(),"rb");if(!f)return false;
+ diagnostic_checkpoint("flash.begin","inactive partition",0);
  if(!target||esp_ota_begin(target,manifest.firmware.bytes,&handle)!=ESP_OK){fclose(f);return false;}
  unsigned char buffer[4096];size_t count=0;bool ok=true;
- while(ok){size_t n=fread(buffer,1,sizeof buffer,f);if(n){ok=esp_ota_write(handle,buffer,n)==ESP_OK;count+=n;vTaskDelay(1);}if(n<sizeof buffer){if(ferror(f))ok=false;break;}}
+ while(ok){diagnostic_checkpoint("read.begin","firmware.bin",count);size_t n=fread(buffer,1,sizeof buffer,f);if(n){diagnostic_checkpoint("flash.write","inactive partition",count);ok=esp_ota_write(handle,buffer,n)==ESP_OK;count+=n;vTaskDelay(1);}if(n<sizeof buffer){if(ferror(f))ok=false;break;}}
  fclose(f);
  if(!ok||count!=manifest.firmware.bytes){esp_ota_abort(handle);return false;}
+ diagnostic_checkpoint("flash.verify","inactive partition",count);
  if(esp_ota_end(handle)!=ESP_OK||digest_partition(target)!=manifest.appHash)return false;
  installation_stage("Verifying firmware and preparing startup");
  auto index=MeterBundle::prepareIndex<LoaderSha>("/sdcard/bundles",PACKAGE_BUNDLE,digest_partition(esp_ota_get_running_partition()),PACKAGE_MODEL);
@@ -225,7 +256,7 @@ static void install_worker(void*) {
  if(!fetch_package()){phase=-3;vTaskDelete(nullptr);return;}
  phase=3;
  if(!install_package()){if(phase>=0)phase=-6;vTaskDelete(nullptr);return;}
- phase=5;vTaskDelay(pdMS_TO_TICKS(4000));esp_restart();
+ phase=5;diagnostic_record("installation complete; restart requested");vTaskDelay(pdMS_TO_TICKS(4000));esp_restart();
 }
 static void wifi_event(void*,esp_event_base_t base,int32_t id,void* data) {
  if(base==IP_EVENT&&id==IP_EVENT_STA_GOT_IP)xEventGroupSetBits(wifi_events,1);
@@ -240,6 +271,13 @@ static void wifi_event(void*,esp_event_base_t base,int32_t id,void* data) {
 }
 
 static esp_err_t home(httpd_req_t* req){httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Cache-Control","no-store");return httpd_resp_send(req,page,HTTPD_RESP_USE_STRLEN);}
+static esp_err_t debug_log(httpd_req_t* req){
+ if(xSemaphoreTake(diagnostic_lock,pdMS_TO_TICKS(20))!=pdTRUE)return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Debug log busy; try again");
+ std::string text=journal.snapshot();xSemaphoreGive(diagnostic_lock);
+ httpd_resp_set_type(req,"text/plain; charset=utf-8");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+ httpd_resp_set_hdr(req,"Content-Disposition","attachment; filename=aiedge-loader-debug.txt");
+ return httpd_resp_send(req,text.data(),text.size());
+}
 static esp_err_t status(httpd_req_t* req){
  const int n=phase;
  cJSON* j=cJSON_CreateObject();if(!j)return ESP_ERR_NO_MEM;
@@ -312,7 +350,7 @@ static void improv_command(const AIEdgeImprov::Bytes& data){
   improv_state(current_improv_state());
   if(current_improv_state()==4)improv_send(AIEdgeImprov::result(2,{device_url()}));
   break;
- case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.6-dev.20260922","ESP32",device_hostname}));break;
+ case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.7-dev.20260922","ESP32",device_hostname}));break;
  case 4:
   if(begin_scan())serial_scan_pending=true;
   else improv_send(AIEdgeImprov::result(4,{}));
@@ -363,6 +401,8 @@ static esp_err_t scan_results(httpd_req_t* req){
 extern "C" void app_main(){
  uint8_t station_mac[6];ESP_ERROR_CHECK(esp_read_mac(station_mac,ESP_MAC_WIFI_STA));device_hostname=AIEdgeIdentity::hostname(station_mac);
  setup_lock=xSemaphoreCreateMutex();configASSERT(setup_lock);
+ diagnostic_lock=xSemaphoreCreateMutex();configASSERT(diagnostic_lock);
+ char boot[96];snprintf(boot,sizeof boot,"loader=0.1.7 reset_reason=%d",int(esp_reset_reason()));diagnostic_record(boot);
  gpio_set_direction(GPIO_NUM_4,GPIO_MODE_OUTPUT);gpio_set_level(GPIO_NUM_4,0);
  sdmmc_host_t host=SDMMC_HOST_DEFAULT();sdmmc_slot_config_t slot=SDMMC_SLOT_CONFIG_DEFAULT();slot.width=1;slot.flags|=SDMMC_SLOT_FLAG_INTERNAL_PULLUP;gpio_set_pull_mode(GPIO_NUM_13,GPIO_PULLUP_ONLY);
  esp_vfs_fat_sdmmc_mount_config_t cfg={};cfg.format_if_mount_failed=false;cfg.max_files=8;sdmmc_card_t* card=nullptr;
@@ -376,6 +416,7 @@ extern "C" void app_main(){
  httpd_config_t http=HTTPD_DEFAULT_CONFIG();http.stack_size=8192;http.max_open_sockets=4;http.lru_purge_enable=true;http.recv_wait_timeout=5;http.send_wait_timeout=5;httpd_handle_t server=nullptr;ESP_ERROR_CHECK(httpd_start(&server,&http));
  httpd_uri_t h={};h.uri="/";h.method=HTTP_GET;h.handler=home;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/status";h.handler=status;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.uri="/wifi";h.method=HTTP_POST;h.handler=credentials;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/debug-log";h.method=HTTP_GET;h.handler=debug_log;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.method=HTTP_POST;
  h.uri="/retry";h.handler=retry_install;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/install";h.handler=retry_install;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/scan";h.handler=scan_start;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
@@ -394,7 +435,9 @@ extern "C" void app_main(){
   if(xTaskCreate(improv_task,"improv",6144,nullptr,3,nullptr)!=pdPASS)printf("USB Wi-Fi setup unavailable; use the setup hotspot\n");
  }else printf("USB Wi-Fi setup unavailable; use the setup hotspot\n");
  printf("AIEdge Wi-Fi loader ready: AIEdge-Setup, http://192.168.4.1; SD=%s\n",sd_ready?"mounted":"failed");
- printf("AIEdge loader 0.1.6: hostname=%s.local; mDNS initialization=%s\n",device_hostname.c_str(),esp_err_to_name(discovery));
+ diagnostic_record(sd_ready?"SD mounted; setup ready":"SD mount failed");
+ if(xTaskCreate(diagnostic_task,"install_log",4096,nullptr,2,nullptr)!=pdPASS)diagnostic_record("Could not start diagnostic heartbeat");
+ printf("AIEdge loader 0.1.7: hostname=%s.local; mDNS initialization=%s\n",device_hostname.c_str(),esp_err_to_name(discovery));
  std::string saved_name,saved_pass;
  if(read_saved_wifi(saved_name,saved_pass)){wifi_saved=true;if(sd_ready)begin_wifi(saved_name,saved_pass,false);}
 }

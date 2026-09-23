@@ -57,3 +57,13 @@ Connecting Wi-Fi now stops at **Ready to download and install**. Choose **Visit 
 Package hashing yields periodically so lower-priority system tasks can run. The page and USB log report SD verification, unpacking, initial configuration, firmware writing and startup preparation separately. All package and file hashes remain enforced. These changes improve diagnostics and scheduling; they do not establish the cause or resolution of the reported post-download lockup. Loader 0.1.5 reported successful mDNS initialization, but hostname reachability remains unverified.
 
 Validation: firmware build, saved-Wi-Fi tests, connected/reboot consent gates, failed connection/save paths, SHA-256 equivalence across different chunk sizes and browser consent behavior passed. Hardware installation and recovery testing remain necessary. The main application package is unchanged.
+
+## Installation debug log (0.1.7 loader)
+
+Choose **Download debug log** on the device setup page to save a text file. It contains the most recent 96 diagnostic entries from the current boot: elapsed milliseconds, loader version, reset reason, available memory, and the operation/file offset being processed. It does not include Wi-Fi credentials, network names or signed package URLs.
+
+Read-back verification records file open/read, hashing and completion checkpoints. Unpacking and firmware writing have their own checkpoints. Block-level messages are sampled every 64 KiB; a separate task reports the current operation and its age every ten seconds during installation. These heartbeat messages can help distinguish a slow operation from one that has stopped progressing.
+
+The log is held in bounded RAM and also sent over USB at 115,200 baud. It does not write to the SD card, because an SD fault could also block a log stored there. RAM history clears after restart, and a stopped web server cannot serve the download. For a lockup test, open USB **Logs & Console** before starting the package download and save that log afterward. Only one program can own the USB port at a time.
+
+The diagnostic loader preserves explicit download consent, package verification and the pinned application package. A debug log is evidence, not a lockup fix. Host tests cover bounded log retention, timestamps, actual verifier checkpoints, corrupt and missing files, and the existing staging/recovery checks. Hardware diagnosis remains pending.
