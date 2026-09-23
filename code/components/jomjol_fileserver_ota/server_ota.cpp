@@ -1,6 +1,14 @@
 #include "server_ota.h"
+#include "UpdateAccess.h"
+#include "ManagedBundleTransaction.h"
+#include "StageDeviceBundle.h"
+#include "../jomjol_flowcontroll/ImageArchiveSha.h"
+#include "ProcessingAccess.h"
+#include "CameraAccess.h"
+#include "PolarIdentity.h"
 
 #include <string>
+#include <atomic>
 #include "string.h"
 
 /* TODO Rethink the usage of the int watchdog. It is no longer to be used, see
@@ -51,10 +59,11 @@ static char ota_write_data[SERVER_OTA_SCRATCH_BUFSIZE + 1] = { 0 };
 static const char *TAG = "OTA";
 
 esp_err_t handler_reboot(httpd_req_t *req);
-static bool ota_update_task(std::string fn);
+static bool ota_update_task(std::string fn, bool (*prepareBoot)(const esp_partition_t*, void*) = nullptr, void* context = nullptr);
 
 std::string _file_name_update;
 bool initial_setup = false;
+static std::atomic<bool> startupUpdateFinished{true};
 
 
 static void infinite_loop(void)
@@ -68,7 +77,7 @@ static void infinite_loop(void)
 }
 
 
-void task_do_Update_ZIP(void *pvParameter)
+static bool performStartupUpdate()
 {
     StatusLED(AP_OR_OTA, 1, true);  // Signaling an OTA update
     
@@ -92,6 +101,10 @@ void task_do_Update_ZIP(void *pvParameter)
         /* Extract the ZIP file. The content of the html folder gets extracted to the temporar folder html-temp. */
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Extracting ZIP file " + _file_name_update + "...");
         retfirmware = unzip_new(_file_name_update, outHtmlTmp+"/", outHtml+"/", outbin+"/", "/sdcard/", initial_setup);
+        if (retfirmware.empty() || retfirmware == "ERROR") {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "OTA extraction failed or firmware image missing");
+            return false;
+        }
     	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Files unzipped.");
 
         /* ZIP file got extracted, replace the old html folder with the new one */
@@ -105,7 +118,7 @@ void task_do_Update_ZIP(void *pvParameter)
         if (retfirmware.length() > 0)
         {
             LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Found firmware.bin");
-            ota_update_task(retfirmware);
+            if (!ota_update_task(retfirmware)) return false;
         }
 
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Trigger reboot due to firmware update");
@@ -113,7 +126,7 @@ void task_do_Update_ZIP(void *pvParameter)
     } else if (filetype == "BIN")
     {
        	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Do firmware update - file: " + _file_name_update);
-        ota_update_task(_file_name_update);
+        if (!ota_update_task(_file_name_update)) return false;
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Trigger reboot due to firmware update");
         doRebootOTA();
     }
@@ -121,6 +134,15 @@ void task_do_Update_ZIP(void *pvParameter)
     {
     	LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Only ZIP-Files support for update during startup!");
     }
+    return false; // Successful reboot does not return.
+}
+
+void task_do_Update_ZIP(void *pvParameter)
+{
+    performStartupUpdate(); // Local buffers are destroyed before deleting task.
+    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Startup update failed; continuing existing firmware");
+    startupUpdateFinished.store(true, std::memory_order_release);
+    vTaskDelete(nullptr);
 }
 
 
@@ -150,149 +172,118 @@ void CheckUpdate()
 	LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Start update process (" + _file_name_update + ")");
 
 
-    xTaskCreate(&task_do_Update_ZIP, "task_do_Update_ZIP", configMINIMAL_STACK_SIZE * 35, NULL, tskIDLE_PRIORITY+1, NULL);
-    while(1) { // wait until reboot within task_do_Update_ZIP
+    startupUpdateFinished.store(false, std::memory_order_release);
+    if (xTaskCreate(&task_do_Update_ZIP, "task_do_Update_ZIP", configMINIMAL_STACK_SIZE * 35, NULL, tskIDLE_PRIORITY+1, NULL) != pdPASS) {
+        startupUpdateFinished.store(true, std::memory_order_release);
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Could not start OTA task; continuing existing firmware");
+        return;
+    }
+    while(!startupUpdateFinished.load(std::memory_order_acquire)) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
 
-static bool ota_update_task(std::string fn)
+static bool ota_update_task(std::string fn, bool (*prepareBoot)(const esp_partition_t*, void*), void* context)
 {
-    esp_err_t err;
-    /* update handle : set by esp_ota_begin(), must be freed via esp_ota_end() */
-    esp_ota_handle_t update_handle = 0 ;
-    const esp_partition_t *update_partition = NULL;
-
-    ESP_LOGI(TAG, "Starting OTA update");
-
-    const esp_partition_t *configured = esp_ota_get_boot_partition();
-    const esp_partition_t *running = esp_ota_get_running_partition();
-
-    if (configured != running) {        
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Configured OTA boot partition at offset " + to_string(configured->address) + 
-                ", but running from offset " + to_string(running->address));
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "(This can happen if either the OTA boot data or preferred boot image become somehow corrupted.)");
-    }
-    ESP_LOGI(TAG, "Running partition type %d subtype %d (offset 0x%08x)",
-             running->type, running->subtype, (unsigned int)running->address);
-
-
-    update_partition = esp_ota_get_next_update_partition(NULL);
-    ESP_LOGI(TAG, "Writing to partition subtype %d at offset 0x%x",
-             update_partition->subtype, (unsigned int)update_partition->address);
-//    assert(update_partition != NULL);
-
-    int binary_file_length = 0;
-
-    // deal with all receive packet 
-    bool image_header_was_checked = false;
-
-    int data_read;     
-
-    FILE* f = fopen(fn.c_str(), "rb");     // previously only "r
-
-    if (f == NULL) { // File does not exist
+    UpdateAccess update;if(!update)return false;
+    const esp_partition_t* configured = esp_ota_get_boot_partition();
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    const esp_partition_t* target = esp_ota_get_next_update_partition(nullptr);
+    if (!configured || !running || !target || configured->address != running->address ||
+        target->address == running->address) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "OTA partition state is missing or conflicting");
         return false;
     }
-
-    data_read = fread(ota_write_data, 1, SERVER_OTA_SCRATCH_BUFSIZE, f);
-
-    while (data_read > 0) {
-        if (data_read < 0) {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Error: SSL data read error");
-            return false;
-        } else if (data_read > 0) {
-            if (image_header_was_checked == false) {
-                esp_app_desc_t new_app_info;
-                if (data_read > sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t)) {
-                    // check current version with downloading
-                    memcpy(&new_app_info, &ota_write_data[sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t)], sizeof(esp_app_desc_t));
-                    ESP_LOGI(TAG, "New firmware version: %s", new_app_info.version);
-
-                    esp_app_desc_t running_app_info;
-                    if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
-                        ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
-                    }
-
-                    const esp_partition_t* last_invalid_app = esp_ota_get_last_invalid_partition();
-                    esp_app_desc_t invalid_app_info;
-                    if (esp_ota_get_partition_description(last_invalid_app, &invalid_app_info) == ESP_OK) {
-                        ESP_LOGI(TAG, "Last invalid firmware version: %s", invalid_app_info.version);
-                    }
-
-                    // check current version with last invalid partition
-                    if (last_invalid_app != NULL) {
-                        if (memcmp(invalid_app_info.version, new_app_info.version, sizeof(new_app_info.version)) == 0) {
-                            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "New version is the same as invalid version");
-                            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Previously, there was an attempt to launch the firmware with " + 
-                                    string(invalid_app_info.version) + " version, but it failed");
-                            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "The firmware has been rolled back to the previous version");
-                            infinite_loop();
-                        }
-                    }
-
-/*
-                    if (memcmp(new_app_info.version, running_app_info.version, sizeof(new_app_info.version)) == 0) {
-                        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Current running version is the same as a new. We will not continue the update");
-                        infinite_loop();
-                    }
-*/
-                    image_header_was_checked = true;
-
-                    err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &update_handle);
-                    if (err != ESP_OK) {
-                        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "esp_ota_begin failed (" + string(esp_err_to_name(err)) + ")");
-                        return false;
-                    }
-                    ESP_LOGI(TAG, "esp_ota_begin succeeded");
-                } else {
-                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "received package is not fit len");
-                    return false;
-                }
-            }            
-            err = esp_ota_write( update_handle, (const void *)ota_write_data, data_read);
-            if (err != ESP_OK) {
-                return false;
-            }
-            binary_file_length += data_read;
-            ESP_LOGD(TAG, "Written image length %d", binary_file_length);
-        } else if (data_read == 0) {
-           //
-           // * As esp_http_client_read never returns negative error code, we rely on
-           // * `errno` to check for underlying transport connectivity closure if any
-           //
-            if (errno == ECONNRESET || errno == ENOTCONN) {
-                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Connection closed, errno = " + to_string(errno));
-                break;
-            }
-        }
-        data_read = fread(ota_write_data, 1, SERVER_OTA_SCRATCH_BUFSIZE, f);
-    }
-    fclose(f);  
-
-    ESP_LOGI(TAG, "Total Write binary data length: %d", binary_file_length);
-
-    err = esp_ota_end(update_handle);
-    if (err != ESP_OK) {
-        if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Image validation failed, image is corrupted");
-        }
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "esp_ota_end failed (" + string(esp_err_to_name(err)) + ")!");
+    FILE* file = fopen(fn.c_str(), "rb");
+    if (!file) return false;
+    esp_ota_handle_t handle = 0;
+    bool active = false;
+    auto fail = [&]() {
+        if (active) { esp_ota_abort(handle); active = false; }
+        if (file) { fclose(file); file = nullptr; }
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "OTA failed; inspect boot state before retrying");
         return false;
+    };
+    if (fseek(file, 0, SEEK_END) != 0) return fail();
+    const long length = ftell(file);
+    constexpr size_t headerBytes = sizeof(esp_image_header_t) +
+        sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t);
+    if (length <= 0 || static_cast<size_t>(length) < headerBytes ||
+        static_cast<size_t>(length) > target->size || fseek(file, 0, SEEK_SET) != 0)
+        return fail();
+    size_t count = fread(ota_write_data, 1, SERVER_OTA_SCRATCH_BUFSIZE, file);
+    if (count < headerBytes || ferror(file)) return fail();
+    esp_app_desc_t candidate{};
+    memcpy(&candidate, ota_write_data + sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t), sizeof(candidate));
+    const esp_partition_t* invalid = esp_ota_get_last_invalid_partition();
+    esp_app_desc_t invalidInfo{};
+    if (invalid && esp_ota_get_partition_description(invalid, &invalidInfo) == ESP_OK &&
+        memcmp(invalidInfo.version, candidate.version, sizeof(candidate.version)) == 0) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "OTA version matches previously invalid firmware");
+        return fail();
     }
-
-    err = esp_ota_set_boot_partition(update_partition);
-    if (err != ESP_OK) {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "esp_ota_set_boot_partition failed (" + string(esp_err_to_name(err)) + ")!");
-
+    if (esp_ota_begin(target, static_cast<size_t>(length), &handle) != ESP_OK) return fail();
+    active = true;
+    size_t written = 0;
+    while (count) {
+        if (count > static_cast<size_t>(length) - written ||
+            esp_ota_write(handle, ota_write_data, count) != ESP_OK) return fail();
+        written += count;
+        vTaskDelay(1);
+        count = fread(ota_write_data, 1, SERVER_OTA_SCRATCH_BUFSIZE, file);
+        if (ferror(file)) return fail();
     }
-//    ESP_LOGI(TAG, "Prepare to restart system!");
-//    esp_restart();
-
-    return true ;
+    if (written != static_cast<size_t>(length)) return fail();
+    const int closed = fclose(file); file = nullptr;
+    if (closed != 0) return fail();
+    const esp_err_t validated = esp_ota_end(handle);
+    active = false; // esp_ota_end consumes the handle even on validation failure.
+    if (validated != ESP_OK) return fail();
+    // Managed bundles must verify flashed identity and publish their asset index
+    // after SDK validation, before any boot-partition change. Failure leaves the
+    // running image selected; the inactive flash contents may have changed.
+    if (prepareBoot && !prepareBoot(target, context)) return fail();
+    if (esp_ota_set_boot_partition(target) != ESP_OK) return fail();
+    const auto* selected=esp_ota_get_boot_partition();
+    if(!selected || selected->address!=target->address || selected->size!=target->size)
+        return fail(); // Boot metadata may have changed; do not automatically retry.
+    return true;
 }
 
+
+// This coordinator is not registered as an HTTP handler. The managed update
+// route must first establish exclusive immutable-tree ownership and approval.
+static std::string bundlePartitionHash(const esp_partition_t* partition) {
+    uint8_t digest[32];
+    if (!partition || esp_partition_get_sha256(partition,digest)!=ESP_OK) return "";
+    const char* hex="0123456789abcdef";std::string value;
+    for (uint8_t b:digest) {value+=hex[b>>4];value+=hex[b&15];}
+    return value;
+}
+struct BundleFlashAdapter {
+    bool writeAndSelect(const std::string& path,
+                        std::function<bool(const std::string&)> prepare) {
+        auto callback=[](const esp_partition_t* target,void* context) {
+            const auto* action=static_cast<const std::function<bool(const std::string&)>*>(context);
+            const auto hash=bundlePartitionHash(target);
+            return !hash.empty() && (*action)(hash);
+        };
+        return ota_update_task(path,callback,&prepare);
+    }
+};
+// Not an HTTP endpoint: caller must use a worker and an approved managed route.
+MeterBundle::StageResult stageManagedBundle(const std::string& zip,const std::string& id) {
+    UpdateAccess update;if(!update)return MeterBundle::StageResult::Conflict;
+    return MeterBundle::stageZip<ImageArchive::Sha256>(zip,"/sdcard/bundles",id,polar::modelIdentity);
+}
+bool installManagedBundle(const std::string& id) {
+    ProcessingAccess processing;if(!processing)return false;
+    CameraAccess camera;if(!camera)return false;
+    const auto running=bundlePartitionHash(esp_ota_get_running_partition());
+    BundleFlashAdapter flash;
+    return MeterBundle::install<ImageArchive::Sha256>("/sdcard/bundles",id,running,polar::modelIdentity,flash);
+}
 
 static void print_sha256 (const uint8_t *image_hash, const char *label)
 {
@@ -305,81 +296,33 @@ static void print_sha256 (const uint8_t *image_hash, const char *label)
 }
 
 
-static bool diagnostic(void)
-{
-    return true;
-}
-
-
+// Called before PSRAM/camera/reader initialization. It cannot establish health.
 void CheckOTAUpdate(void)
 {
-    ESP_LOGI(TAG, "Start CheckOTAUpdateCheck...");
-
-    uint8_t sha_256[HASH_LEN] = { 0 };
-    esp_partition_t partition;
-
-    // get sha256 digest for the partition table
-    partition.address   = ESP_PARTITION_TABLE_OFFSET;
-    partition.size      = ESP_PARTITION_TABLE_MAX_LEN;
-    partition.type      = ESP_PARTITION_TYPE_DATA;
-    esp_partition_get_sha256(&partition, sha_256);
-    print_sha256(sha_256, "SHA-256 for the partition table: ");
-
-    // get sha256 digest for bootloader
-    partition.address   = ESP_BOOTLOADER_OFFSET;
-    partition.size      = ESP_PARTITION_TABLE_OFFSET;
-    partition.type      = ESP_PARTITION_TYPE_APP;
-    esp_partition_get_sha256(&partition, sha_256);
-    print_sha256(sha_256, "SHA-256 for bootloader: ");
-
-    // get sha256 digest for running partition
-    esp_partition_get_sha256(esp_ota_get_running_partition(), sha_256);
-    print_sha256(sha_256, "SHA-256 for current firmware: ");
-
-    const esp_partition_t *running = esp_ota_get_running_partition();
-    esp_ota_img_states_t ota_state;
-    esp_err_t res_stat_partition = esp_ota_get_state_partition(running, &ota_state);
-    switch (res_stat_partition)
-    {
-        case ESP_OK:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_OK");
-            if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
-                if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-                    // run diagnostic function ...
-                    bool diagnostic_is_ok = diagnostic();
-                    if (diagnostic_is_ok) {
-                        ESP_LOGI(TAG, "Diagnostics completed successfully! Continuing execution...");
-                        esp_ota_mark_app_valid_cancel_rollback();
-                    } else {
-                        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Diagnostics failed! Start rollback to the previous version...");
-                        esp_ota_mark_app_invalid_rollback_and_reboot();
-                    }
-                }
-            }            
-            break;
-        case ESP_ERR_INVALID_ARG:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_ERR_INVALID_ARG");
-            break;
-        case ESP_ERR_NOT_SUPPORTED:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_ERR_NOT_SUPPORTED");
-            break;
-        case ESP_ERR_NOT_FOUND:
-            ESP_LOGD(TAG, "CheckOTAUpdate Partition: ESP_ERR_NOT_FOUND");
-            break;
+    const esp_partition_t* running=esp_ota_get_running_partition();
+    if(!running){
+        LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"OTA running partition unavailable; boot health unverified");
+        return;
     }
-    if (esp_ota_get_state_partition(running, &ota_state) == ESP_OK) {
-        if (ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-            // run diagnostic function ...
-            bool diagnostic_is_ok = diagnostic();
-            if (diagnostic_is_ok) {
-                ESP_LOGI(TAG, "Diagnostics completed successfully! Continuing execution...");
-                esp_ota_mark_app_valid_cancel_rollback();
-            } else {
-                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Diagnostics failed! Start rollback to the previous version...");
-                esp_ota_mark_app_invalid_rollback_and_reboot();
-            }
-        }
+    uint8_t digest[HASH_LEN]={};
+    if(esp_partition_get_sha256(running,digest)==ESP_OK)
+        print_sha256(digest,"SHA-256 for current firmware: ");
+    else LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"OTA running image hash unavailable");
+    esp_ota_img_states_t state;
+    const esp_err_t result=esp_ota_get_state_partition(running,&state);
+    if(result==ESP_ERR_NOT_SUPPORTED){
+        LogFile.WriteToFile(ESP_LOG_WARN,TAG,"OTA bootloader rollback is not supported; no recovery guarantee");
+        return;
     }
+    if(result!=ESP_OK){
+        LogFile.WriteToFile(ESP_LOG_WARN,TAG,"OTA image state unavailable; boot health unverified");
+        return;
+    }
+    if(state==ESP_OTA_IMG_PENDING_VERIFY){
+        LogFile.WriteToFile(ESP_LOG_WARN,TAG,"OTA image pending verification; not accepted before hardware and reader health checks");
+    }
+    // Never mark valid or trigger rollback from this early observation.
+    // A supported bootloader retains its pending-image policy across restart.
 }
 
 
@@ -698,9 +641,106 @@ esp_err_t handler_reboot(httpd_req_t *req)
 }
 
 
+// Managed staging is an explicitly requested background operation. The upload
+// location is fixed; request text selects only its expected manifest identity.
+static portMUX_TYPE bundleJobMux=portMUX_INITIALIZER_UNLOCKED;
+struct BundleStageJob {bool active=false,install=false,bootSelected=false;char id[65]{};const char* status="idle";};
+static BundleStageJob bundleStageJob;
+static void bundleStageWorker(void*) {
+    portENTER_CRITICAL(&bundleJobMux);
+    const auto job=bundleStageJob;
+    portEXIT_CRITICAL(&bundleJobMux);
+    if(job.install){
+        const bool selected=installManagedBundle(job.id);
+        portENTER_CRITICAL(&bundleJobMux);
+        bundleStageJob.bootSelected=selected;
+        bundleStageJob.status=selected?"boot_selected_reboot_required":"install_failed_or_uncertain";
+        bundleStageJob.active=false;
+        portEXIT_CRITICAL(&bundleJobMux);
+        vTaskDelete(nullptr);
+        return;
+    }
+    const auto result=stageManagedBundle("/sdcard/firmware/managed-bundle.zip",job.id);
+    const char* status="rejected";
+    switch(result){
+    case MeterBundle::StageResult::Staged:status="staged";break;
+    case MeterBundle::StageResult::Existing:status="already_staged";break;
+    case MeterBundle::StageResult::Conflict:status="busy_or_staging_conflict";break;
+    case MeterBundle::StageResult::IoError:status="storage_error";break;
+    default:break;
+    }
+    portENTER_CRITICAL(&bundleJobMux);
+    bundleStageJob.status=status;bundleStageJob.active=false;
+    portEXIT_CRITICAL(&bundleJobMux);
+    vTaskDelete(nullptr);
+}
+static esp_err_t bundleResponse(httpd_req_t* req,const char* code,const char* status){
+    httpd_resp_set_status(req,code);httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    const std::string body=std::string("{\"status\":\"")+status+"\"}";
+    return httpd_resp_send(req,body.c_str(),body.size());
+}
+static esp_err_t handle_bundle_action(httpd_req_t* req,bool install){
+    if(!basic_auth_configured())return bundleResponse(req,"403 Forbidden","authentication_must_be_configured");
+    char action[8]{};
+    if(httpd_req_get_hdr_value_str(req,"X-Meter-Bundle-Action",action,sizeof(action))!=ESP_OK ||
+       std::strcmp(action,install?"install":"stage")!=0 || req->content_len!=64 || httpd_req_get_url_query_len(req))
+        return bundleResponse(req,"400 Bad Request","expected_action_header_and_64_byte_bundle_id");
+    char id[65]{};size_t received=0;
+    while(received<64){const int n=httpd_req_recv(req,id+received,64-received);
+        if(n<=0)return bundleResponse(req,"400 Bad Request","incomplete_bundle_id");
+        received+=n;
+    }
+    if(!MeterBundle::hashValid(std::string(id,64)))return bundleResponse(req,"400 Bad Request","invalid_bundle_id");
+    portENTER_CRITICAL(&bundleJobMux);
+    const bool busy=bundleStageJob.active;
+    const bool staged=std::strcmp(bundleStageJob.id,id)==0 &&
+        (std::strcmp(bundleStageJob.status,"staged")==0 || std::strcmp(bundleStageJob.status,"already_staged")==0);
+    const bool selected=bundleStageJob.bootSelected;
+    if(!busy && !selected && (!install || staged)){
+        bundleStageJob.active=true;bundleStageJob.install=install;
+        std::memcpy(bundleStageJob.id,id,65);bundleStageJob.status="queued_or_running";
+    }
+    portEXIT_CRITICAL(&bundleJobMux);
+    if(busy)return bundleResponse(req,"409 Conflict","bundle_operation_active");
+    if(selected)return bundleResponse(req,"409 Conflict","boot_already_selected");
+    if(install && !staged)return bundleResponse(req,"409 Conflict","stage_matching_bundle_first");
+    if(xTaskCreate(bundleStageWorker,"bundle_stage",24576,nullptr,1,nullptr)!=pdPASS){
+        portENTER_CRITICAL(&bundleJobMux);
+        bundleStageJob.active=false;bundleStageJob.status="task_creation_failed";
+        portEXIT_CRITICAL(&bundleJobMux);
+        return bundleResponse(req,"503 Service Unavailable","task_creation_failed");
+    }
+    return bundleResponse(req,"202 Accepted","accepted");
+}
+static esp_err_t handler_bundle_stage(httpd_req_t* req){return handle_bundle_action(req,false);}
+static esp_err_t handler_bundle_install(httpd_req_t* req){return handle_bundle_action(req,true);}
+static esp_err_t handler_bundle_status(httpd_req_t* req){
+    if(!basic_auth_configured())return bundleResponse(req,"403 Forbidden","authentication_must_be_configured");
+    portENTER_CRITICAL(&bundleJobMux);const auto job=bundleStageJob;portEXIT_CRITICAL(&bundleJobMux);
+    const std::string body=std::string("{\"active\":")+(job.active?"true":"false")+
+        ",\"bundle_id\":\""+job.id+"\",\"status\":\""+job.status+"\",\"installed\":false,\"boot_selected\":"+(job.bootSelected?"true":"false")+"}";
+    httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    return httpd_resp_send(req,body.c_str(),body.size());
+}
+
 void register_server_ota_sdcard_uri(httpd_handle_t server)
 {
     ESP_LOGI(TAG, "Registering URI handlers");
+    httpd_uri_t stageUri{};
+    stageUri.uri="/bundle_stage";stageUri.method=HTTP_POST;
+    stageUri.handler=APPLY_BASIC_AUTH_FILTER(handler_bundle_stage);
+    if(httpd_register_uri_handler(server,&stageUri)!=ESP_OK)
+        LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register bundle staging endpoint");
+    stageUri.uri="/bundle_install";stageUri.method=HTTP_POST;
+    stageUri.handler=APPLY_BASIC_AUTH_FILTER(handler_bundle_install);
+    if(httpd_register_uri_handler(server,&stageUri)!=ESP_OK)
+        LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register bundle installation endpoint");
+    stageUri.uri="/bundle_status";stageUri.method=HTTP_GET;
+    stageUri.handler=APPLY_BASIC_AUTH_FILTER(handler_bundle_status);
+    if(httpd_register_uri_handler(server,&stageUri)!=ESP_OK)
+        LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register bundle status endpoint");
+
     
     httpd_uri_t camuri = { };
     camuri.method    = HTTP_GET;

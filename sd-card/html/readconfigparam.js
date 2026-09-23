@@ -159,6 +159,8 @@ function ParseConfig() {
     category[catname]["enabled"] = false;
     category[catname]["found"] = false;
     param[catname] = new Object();
+    ParamAddValue(param, catname, "Reader", 1, false, "PolarV1");
+    param[catname]["Reader"]["value1"] = "PolarV1";
     ParamAddValue(param, catname, "Model");
     ParamAddValue(param, catname, "ROIImagesLocation");
     ParamAddValue(param, catname, "ROIImagesRetention");
@@ -194,6 +196,7 @@ function ParseConfig() {
     ParamAddValue(param, catname, "user");
     ParamAddValue(param, catname, "password");
     ParamAddValue(param, catname, "RetainMessages");
+    ParamAddValue(param, catname, "PublishAccountingStatus", 1, false, "false");
     ParamAddValue(param, catname, "DomoticzTopicIn");
     ParamAddValue(param, catname, "DomoticzIDX", 1, true);
     ParamAddValue(param, catname, "HomeassistantDiscovery");
@@ -251,13 +254,14 @@ function ParseConfig() {
     ParamAddValue(param, catname, "IO13", 6, false, "",  [null, null, /^[0-9]*$/, null, null, /^[a-zA-Z0-9_-]*$/]);
     ParamAddValue(param, catname, "LEDType");
     ParamAddValue(param, catname, "LEDNumbers");
-    ParamAddValue(param, catname, "LEDColor", 3);
+    ParamAddValue(param, catname, "LEDColor", 4);
      // Default Values, um abwärtskompatiblität zu gewährleisten
     param[catname]["LEDType"]["value1"] = "WS2812";
     param[catname]["LEDNumbers"]["value1"] = "2";
     param[catname]["LEDColor"]["value1"] = "50";
     param[catname]["LEDColor"]["value2"] = "50";
     param[catname]["LEDColor"]["value3"] = "50";
+    param[catname]["LEDColor"]["value4"] = "0";
 
     var catname = "AutoTimer";
     category[catname] = new Object();
@@ -296,25 +300,22 @@ function ParseConfig() {
     ParamAddValue(param, catname, "CPUFrequency");
     ParamAddValue(param, catname, "SetupMode"); 
      
-    while (aktline < config_split.length){
+    while (aktline < config_split.length) {
+        var matchedCategory = false;
+        var heading = config_split[aktline].trim().toUpperCase();
         for (var cat in category) {
-            zw = cat.toUpperCase();
-            zw1 = "[" + zw + "]";
-            zw2 = ";[" + zw + "]";
-            
-            if ((config_split[aktline].trim().toUpperCase() == zw1) || (config_split[aktline].trim().toUpperCase() == zw2)) {
-                if (config_split[aktline].trim().toUpperCase() == zw1) {
-                    category[cat]["enabled"] = true;
-                }
-                
+            var activeHeading = "[" + cat.toUpperCase() + "]";
+            var commentedHeading = ";" + activeHeading;
+            if (heading == activeHeading || heading == commentedHeading) {
+                category[cat]["enabled"] = heading == activeHeading;
                 category[cat]["found"] = true;
                 category[cat]["line"] = aktline;
                 aktline = ParseConfigParamAll(aktline, cat);
-                continue;
+                matchedCategory = true;
+                break;
             }
         }
-        
-        aktline++;
+        if (!matchedCategory) ++aktline;
     }
 
     // Make the downward compatiblity with DataLogging
@@ -460,7 +461,9 @@ function ParamExtractValueAll(_param, _linesplit, _catname, _aktline, _iscom) {
                 _param[_catname][paramname]["line"] = _aktline;
                     
                 for (var j = 1; j <= _param[_catname][paramname]["anzParam"]; ++j) {
-                    _param[_catname][paramname]["value"+j] = _linesplit[j];
+                    _param[_catname][paramname]["value"+j] =
+                        (_catname === "GPIO" && paramname === "LEDColor" && j === 4 &&
+                         (typeof _linesplit[j] === "undefined" || _linesplit[j] === "")) ? "0" : _linesplit[j];
                 }
             }
         }

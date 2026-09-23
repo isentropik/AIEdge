@@ -25,6 +25,8 @@ class CTfLiteClass
         uint8_t *tensor_arena;
 
         unsigned char *modelfile = NULL;
+        size_t loadedModelBytes = 0;
+        bool verifiedPolarModel = false;
 
 
         float* input;
@@ -39,9 +41,18 @@ class CTfLiteClass
         CTfLiteClass();
         ~CTfLiteClass();        
         bool LoadModel(std::string _fn);
+        bool LoadFrozenPolarModel(std::string filename);
+        // Workspace shares the reserved model region and expires with this object.
+        void* GetPolarWorkspace(size_t bytes);
         bool MakeAllocate();
         void GetInputTensorSize();
         bool LoadInputImageBasis(CImageBasis *rs);
+        // Dedicated polar path; caller supplies frozen-preprocessing int8 features.
+        // False means no reading; result remains unchanged on failure.
+        bool HasPolarTensorContract();
+        bool InferPolar(const int8_t* features, size_t count, bool ccw, float& result);
+        bool InvokePolar(const int8_t* features, size_t count);
+        bool InferPolarScores(const int8_t* features, size_t count, int8_t* scores, size_t scoreCount);
         void Invoke();
         int GetAnzOutPut(bool silent = true);        
         int GetOutClassification(int _von = -1, int _bis = -1);

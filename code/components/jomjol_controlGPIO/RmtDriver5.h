@@ -60,6 +60,7 @@ struct RmtEncoderWrapper {
     size_t frame_idx;
     uint8_t component_idx;
     uint8_t buffer_len;
+    uint8_t bytes_per_pixel;
 };
 
 static_assert(std::is_standard_layout<RmtEncoderWrapper>::value == true);

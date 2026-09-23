@@ -1,0 +1,10 @@
+#pragma once
+#include <cstdint>
+struct PolarRuntimeTestResult {
+    const char* status="not_run";
+    int completed=0;
+    int differingBytes[6]={};
+    int maximumDifference[6]={};
+    int64_t inferenceUs[6]={};
+};
+PolarRuntimeTestResult runPolarRuntimeTest();

@@ -22,6 +22,7 @@ protected:
     std::string caCertFilename, clientCertFilename, clientKeyFilename;
     bool validateServerCert;
     bool SetRetainFlag;
+    bool PublishAccountingStatus;
     int keepAlive; // Seconds
     float roundInterval; // Minutes
     std::string maintopic, domoticzintopic; 

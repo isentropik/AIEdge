@@ -1,3 +1,6 @@
+#include "ArchiveInventory.h"
+#include "BundleWritePolicy.h"
+#include "UpdateAccess.h"
 /* HTTP File Server Example
 
    This example code is in the Public Domain (or CC0 licensed, at your option.)
@@ -9,6 +12,7 @@
 #include "server_file.h"
 
 #include <stdio.h>
+#include <errno.h>
 #include <string.h>
 #include <string>
 #include <sys/param.h>
@@ -604,8 +608,29 @@ static esp_err_t download_get_handler(httpd_req_t *req)
 }
 
 /* Handler to upload a file onto the server */
+// A pending journal owns config.ini until recovery completes. File-manager
+// mutations must not invalidate its before/after snapshots (including deleting
+// the containing directory). Downloads remain available for diagnosis.
+static bool configJournalAllowsMutation()
+{
+    struct stat info;
+    if (stat("/sdcard/config/config.ini.journal", &info) == 0) return false;
+    return errno == ENOENT;
+}
+
 static esp_err_t upload_post_handler(httpd_req_t *req)
 {
+    UpdateAccess update;
+    if(!update){
+        httpd_resp_set_status(req,"503 Service Unavailable");
+        httpd_resp_set_hdr(req,"Retry-After","2");
+        return httpd_resp_send(req,"Update or file mutation busy",HTTPD_RESP_USE_STRLEN);
+    }
+
+    if (!configJournalAllowsMutation())
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+            "Configuration journal pending or unreadable; recover before file mutations");
+
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "upload_post_handler");
     char filepath[FILE_PATH_MAX];
     FILE *fd = NULL;
@@ -624,6 +649,9 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "Filename too long");
         return ESP_FAIL;
     }
+        if (!MeterBundle::genericWriteAllowed(filepath))
+            return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN,
+                "Path is protected or invalid; use the managed bundle installer");
 
     /* Filename cannot have a trailing '/' */
     if (filename[strlen(filename) - 1] == '/') {
@@ -791,6 +819,17 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
 /* Handler to delete a file from the server */
 static esp_err_t delete_post_handler(httpd_req_t *req)
 {
+    UpdateAccess update;
+    if(!update){
+        httpd_resp_set_status(req,"503 Service Unavailable");
+        httpd_resp_set_hdr(req,"Retry-After","2");
+        return httpd_resp_send(req,"Update or file mutation busy",HTTPD_RESP_USE_STRLEN);
+    }
+
+    if (!configJournalAllowsMutation())
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR,
+            "Configuration journal pending or unreadable; recover before file mutations");
+
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "delete_post_handler");
     char filepath[FILE_PATH_MAX];
     struct stat file_stat;
@@ -827,6 +866,9 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
             httpd_resp_send_err(req, HTTPD_414_URI_TOO_LONG, "Filename too long");
             return ESP_FAIL;
         }
+        if (!MeterBundle::genericWriteAllowed(filepath))
+            return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN,
+                "Path is protected or invalid; use the managed bundle installer");
         zw = std::string(filename);
         zw = zw.substr(0, zw.length()-1);
         directory = "/fileserver" + zw + "/";
@@ -854,6 +896,9 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
             return ESP_FAIL;
         }
+        if (!MeterBundle::genericWriteAllowed(filepath))
+            return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN,
+                "Path is protected or invalid; use the managed bundle installer");
 
         /* Filename cannot have a trailing '/' */
         if (filename[strlen(filename) - 1] == '/') {
@@ -924,6 +969,7 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
 
 void delete_all_in_directory(std::string _directory)
 {
+    if(!MeterBundle::genericWriteAllowed(_directory))return;
     struct dirent *entry;
     DIR *dir = opendir(_directory.c_str());
     std::string filename;
@@ -954,7 +1000,7 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
     size_t uncomp_size;
     mz_zip_archive zip_archive;
     void* p;
-    char archive_filename[64];
+    std::string archive_filename;
     std::string zw, ret = "";
     std::string directory = "";
 
@@ -967,37 +1013,47 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
     if (!status)
     {
         ESP_LOGD(TAG, "mz_zip_reader_init_file() failed!");
-        return ret;
+        return "ERROR";
     }
 
     // Get and print information about each file in the archive.
     int numberoffiles = (int)mz_zip_reader_get_num_files(&zip_archive);
     LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Files to be extracted: " + to_string(numberoffiles));
 
-    sort_iter = 0;
-    {
-        memset(&zip_archive, 0, sizeof(zip_archive));
-        status = mz_zip_reader_init_file(&zip_archive, _in_zip_file.c_str(), sort_iter ? MZ_ZIP_FLAG_DO_NOT_SORT_CENTRAL_DIRECTORY : 0);
-        if (!status)
-        {
-            ESP_LOGD(TAG, "mz_zip_reader_init_file() failed!");
-            return ret;
+    ArchiveInventory inventory;
+    if (numberoffiles <= 0 || numberoffiles > int(ArchiveInventory::maximumEntries)) {
+        mz_zip_reader_end(&zip_archive); return "ERROR";
+    }
+    for (int entry = 0; entry < numberoffiles; ++entry) {
+        mz_zip_archive_file_stat info{};
+        if (!mz_zip_reader_file_stat(&zip_archive, entry, &info) ||
+            info.m_is_encrypted || !info.m_is_supported ||
+            !MeterBundle::genericWriteAllowed(std::string("/sdcard/")+info.m_filename) ||
+            !inventory.add(info.m_filename, info.m_is_directory, info.m_uncomp_size)) {
+            mz_zip_reader_end(&zip_archive); return "ERROR";
         }
-
+    }
+    {
         for (i = 0; i < numberoffiles; i++)
         {
             mz_zip_archive_file_stat file_stat;
-            mz_zip_reader_file_stat(&zip_archive, i, &file_stat);
-            sprintf(archive_filename, file_stat.m_filename);
+            if (!mz_zip_reader_file_stat(&zip_archive, i, &file_stat)) {
+                mz_zip_reader_end(&zip_archive); return "ERROR";
+            }
+            archive_filename = file_stat.m_filename;
+            if (!safeArchivePath(archive_filename)) {
+                mz_zip_reader_end(&zip_archive);
+                return "ERROR";
+            }
             
             if (!file_stat.m_is_directory) {
             // Try to extract all the files to the heap.
-            p = mz_zip_reader_extract_file_to_heap(&zip_archive, archive_filename, &uncomp_size, 0);
+            p = mz_zip_reader_extract_file_to_heap(&zip_archive, archive_filename.c_str(), &uncomp_size, 0);
                 if (!p)
                 {
                     LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "mz_zip_reader_extract_file_to_heap() failed on file " + string(archive_filename));
                     mz_zip_reader_end(&zip_archive);
-                    return ret;
+                    return "ERROR";
                 }
             
                 // Save to File.
@@ -1014,6 +1070,7 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
                     std::string _dir = getDirectory(zw);
                     if ((_dir == "config-initial") && !_initial_setup)
                     {
+                        mz_free(p);
                         continue;
                     }
                     else
@@ -1050,12 +1107,15 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
                 DeleteFile(filename_zw);
 
                 FILE* fpTargetFile = fopen(filename_zw.c_str(), "wb");
-                uint writtenbytes = fwrite(p, 1, (uint)uncomp_size, fpTargetFile);
-                fclose(fpTargetFile);
+                if (!fpTargetFile) {
+                    mz_free(p); mz_zip_reader_end(&zip_archive); return "ERROR";
+                }
+                const size_t writtenbytes = fwrite(p, 1, uncomp_size, fpTargetFile);
+                const bool closed = fclose(fpTargetFile) == 0;
                 
                 bool isokay = true;
 
-                if (writtenbytes == (uint)uncomp_size)
+                if (closed && writtenbytes == uncomp_size)
                 {
                     isokay = true;
                 }
@@ -1066,6 +1126,10 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
                             string(archive_filename) + "\", size " + to_string(uncomp_size));
                 }
 
+                if (!isokay) {
+                    DeleteFile(filename_zw);
+                    mz_free(p); mz_zip_reader_end(&zip_archive); return "ERROR";
+                }
                 DeleteFile(zw);
                 if (!isokay)
                     LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in fwrite \"" + string(archive_filename) + "\", size " + to_string(uncomp_size));
@@ -1078,7 +1142,7 @@ std::string unzip_new(std::string _in_zip_file, std::string _html_tmp, std::stri
                 else
                 {
                     LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "ERROR in extracting file \"" + string(archive_filename) + "\", size " + to_string(uncomp_size));
-                    ret = "ERROR";
+                    mz_free(p); mz_zip_reader_end(&zip_archive); return "ERROR";
                 }
                 mz_free(p);
             }
@@ -1098,7 +1162,7 @@ void unzip(std::string _in_zip_file, std::string _target_directory){
     size_t uncomp_size;
     mz_zip_archive zip_archive;
     void* p;
-    char archive_filename[64];
+    std::string archive_filename;
     std::string zw;
 //    static const char* s_Test_archive_filename = "testhtml.zip";
 
@@ -1131,10 +1195,15 @@ void unzip(std::string _in_zip_file, std::string _target_directory){
         {
             mz_zip_archive_file_stat file_stat;
             mz_zip_reader_file_stat(&zip_archive, i, &file_stat);
-            sprintf(archive_filename, file_stat.m_filename);
+            archive_filename = file_stat.m_filename;
+            if (!safeArchivePath(archive_filename) ||
+                !MeterBundle::genericWriteAllowed(_target_directory+archive_filename)) {
+                mz_zip_reader_end(&zip_archive);
+                return;
+            }
  
             // Try to extract all the files to the heap.
-            p = mz_zip_reader_extract_file_to_heap(&zip_archive, archive_filename, &uncomp_size, 0);
+            p = mz_zip_reader_extract_file_to_heap(&zip_archive, archive_filename.c_str(), &uncomp_size, 0);
             if (!p)
             {
                 LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "mz_zip_reader_extract_file_to_heap() failed!");
@@ -1150,7 +1219,7 @@ void unzip(std::string _in_zip_file, std::string _target_directory){
             fwrite(p, 1, (uint)uncomp_size, fpTargetFile);
             fclose(fpTargetFile);
 
-            ESP_LOGD(TAG, "Successfully extracted file \"%s\", size %u", archive_filename, (uint)uncomp_size);
+            ESP_LOGD(TAG, "Successfully extracted file \"%s\", size %u", archive_filename.c_str(), (uint)uncomp_size);
             //            ESP_LOGD(TAG, "File data: \"%s\"", (const char*)p);
 
             // We're done.

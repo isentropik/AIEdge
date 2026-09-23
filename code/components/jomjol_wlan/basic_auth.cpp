@@ -15,6 +15,8 @@ typedef struct {
 
 basic_auth_info_t basic_auth_info = { NULL, NULL };
 
+bool basic_auth_configured() { return basic_auth_info.username && basic_auth_info.password; }
+
 void init_basic_auth() {
     if (!wlan_config.http_username.empty() && !wlan_config.http_password.empty()) {
         basic_auth_info.username = wlan_config.http_username.c_str();
@@ -68,7 +70,7 @@ esp_err_t basic_auth_request_filter(httpd_req_t *req, esp_err_t original_handler
             }
 
             if (httpd_req_get_hdr_value_str(req, "Authorization", buf, buf_len) == ESP_OK) {
-                ESP_LOGI(TAG, "Found header => Authorization: %s", buf);
+                ESP_LOGD(TAG, "Authorization header received");
             } else {
                 ESP_LOGE(TAG, "No auth value received");
             }

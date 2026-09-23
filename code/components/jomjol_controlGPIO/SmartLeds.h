@@ -81,6 +81,7 @@ static const LedType LED_WS2812B_OLDVARIANT = { 400, 800, 850, 450, 50000 };
 // This is timing from datasheet, but does not seem to actually work - try LED_WS2812B
 static const LedType LED_WS2812C = { 250, 550, 550, 250, 280000 };
 static const LedType LED_SK6812 = { 300, 600, 900, 600, 80000 };
+static const LedType LED_SK6812_RGBW = { 300, 600, 900, 600, 80000, 4 };
 static const LedType LED_WS2813 = { 350, 800, 350, 350, 300000 };
 
 // Single buffer == can't touch the Rgbs between show() and wait()
@@ -108,6 +109,12 @@ public:
         , _count(count)
         , _firstBuffer(new Rgb[count])
         , _secondBuffer(doubleBuffer ? new Rgb[count] : nullptr) {
+        // The fourth storage byte is W only for explicit GRBW operation.
+        // Rgb's normal alpha default (255) must never light RGBW pixels at init.
+        if (type.bytesPerPixel == 4) for (int i=0;i<count;++i) {
+            _firstBuffer[i] = Rgb{0,0,0,0};
+            if (_secondBuffer) _secondBuffer[i] = Rgb{0,0,0,0};
+        }
         assert(channel >= 0 && channel < detail::CHANNEL_COUNT);
         assert(ledForChannel(channel) == nullptr);
 
@@ -147,7 +154,7 @@ public:
 
     esp_err_t show() {
         esp_err_t err = startTransmission();
-        swapBuffers();
+        if (err == ESP_OK) swapBuffers();
         return err;
     }
 
@@ -198,12 +205,15 @@ private:
     }
 
     esp_err_t startTransmission() {
-        // Invalid use of the library, you must wait() fir previous frame to get processed first
+        // A busy transmitter is recoverable; do not reboot the entire meter.
         if (xSemaphoreTake(_finishedFlag, 0) != pdTRUE)
-            abort();
+            return ESP_ERR_INVALID_STATE;
 
         auto err = _driver.transmit(_firstBuffer.get());
         if (err != ESP_OK) {
+            // No transaction was accepted, so no completion ISR will return
+            // this token. Preserve the buffer and permit a later explicit call.
+            xSemaphoreGive(_finishedFlag);
             return err;
         }
 

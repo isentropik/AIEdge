@@ -5,6 +5,10 @@
 
 #include "esp_camera.h"
 #include "ClassControllCamera.h"
+#include "CameraAccess.h"
+#include "StreamPreview.h"
+#include "FileConfigStorage.h"
+#include "SaveCameraIntensity.h"
 #include "MainFlowControl.h"
 
 #include "ClassLogFile.h"
@@ -40,6 +44,8 @@ void PowerResetCamera()
 
 esp_err_t handler_lightOn(httpd_req_t *req)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("handler_lightOn - Start");
     ESP_LOGD(TAG, "handler_lightOn uri: %s", req->uri);
@@ -66,6 +72,8 @@ esp_err_t handler_lightOn(httpd_req_t *req)
 
 esp_err_t handler_lightOff(httpd_req_t *req)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("handler_lightOff - Start");
     ESP_LOGD(TAG, "handler_lightOff uri: %s", req->uri);
@@ -92,6 +100,8 @@ esp_err_t handler_lightOff(httpd_req_t *req)
 
 esp_err_t handler_capture(httpd_req_t *req)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("handler_capture - Start");
 #endif
@@ -129,6 +139,8 @@ esp_err_t handler_capture(httpd_req_t *req)
 
 esp_err_t handler_capture_with_light(httpd_req_t *req)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("handler_capture_with_light - Start");
 #endif
@@ -194,6 +206,8 @@ esp_err_t handler_capture_with_light(httpd_req_t *req)
 
 esp_err_t handler_capture_save_to_file(httpd_req_t *req)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("handler_capture_save_to_file - Start");
 #endif
@@ -255,6 +269,10 @@ esp_err_t handler_capture_save_to_file(httpd_req_t *req)
 
         esp_err_t result;
         result = Camera.CaptureToFile(fn, delay);
+        if (result != ESP_OK) {
+            httpd_resp_send_500(req);
+            return result;
+        }
 
         const char *resp_str = (const char *)fn.c_str();
         httpd_resp_send(req, resp_str, strlen(resp_str));
@@ -272,6 +290,58 @@ esp_err_t handler_capture_save_to_file(httpd_req_t *req)
     }
 }
 
+esp_err_t handler_stream_intensity(httpd_req_t* req)
+{
+    if (req->method == HTTP_POST)
+    {
+        char query[32], text[8];
+        int percent;
+        if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+            httpd_query_key_value(query, "value", text, sizeof(text)) != ESP_OK ||
+            !StreamPreview::parse(text, percent) || !StreamPreview::set(percent))
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "value must be an integer from 0 to 100");
+        httpd_resp_set_type(req, "application/json");
+        return httpd_resp_send(req, "{\"status\":\"pending preview frame\",\"saved\":false}", HTTPD_RESP_USE_STRLEN);
+    }
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
+    char response[128];
+    snprintf(response, sizeof(response), "{\"preview\":%d,\"configured\":%d,\"saved\":false}",
+             StreamPreview::get(), (CCstatus.ImageLedIntensity * 100 + 4095) / 8191);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, response, HTTPD_RESP_USE_STRLEN);
+}
+
+esp_err_t handler_save_stream_intensity(httpd_req_t* req)
+{
+    char query[32], text[8];
+    int percent;
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK ||
+        httpd_query_key_value(query, "value", text, sizeof(text)) != ESP_OK ||
+        !StreamPreview::parse(text, percent))
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "value must be an integer from 0 to 100");
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
+    if (!ConfigStorage::safe().load())
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Configuration recovery required; intensity not activated");
+    ConfigStorage::Files storage;
+    const auto result = SaveCameraIntensity::save(storage, "/sdcard/config/config.ini", percent);
+    if (result == SaveCameraIntensity::Status::RecoveryRequired) {
+        ConfigStorage::safe().store(false);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Save state uncertain; recognition blocked pending configuration recovery");
+    }
+    if (result != SaveCameraIntensity::Status::Saved && result != SaveCameraIntensity::Status::SavedCleanupPending)
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Intensity not saved or activated; inspect configuration/journal before retrying");
+    CCstatus.ImageLedIntensity = Camera.SetLEDIntensity(percent);
+    CFstatus.ImageLedIntensity = CCstatus.ImageLedIntensity;
+    StreamPreview::set(percent);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req,
+        result == SaveCameraIntensity::Status::SavedCleanupPending ?
+        "{\"saved\":true,\"active\":true,\"cleanup_pending\":true}" :
+        "{\"saved\":true,\"active\":true,\"cleanup_pending\":false}", HTTPD_RESP_USE_STRLEN);
+}
+
 void register_server_camera_uri(httpd_handle_t server)
 {
 #ifdef DEBUG_DETAIL_ON
@@ -279,6 +349,19 @@ void register_server_camera_uri(httpd_handle_t server)
 #endif
 
     httpd_uri_t camuri = {};
+    camuri.method = HTTP_GET;
+
+    camuri.uri = "/stream_intensity";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_stream_intensity);
+    httpd_register_uri_handler(server, &camuri);
+    camuri.method = HTTP_POST;
+    httpd_register_uri_handler(server, &camuri);
+    camuri.method = HTTP_GET;
+
+    camuri.uri = "/stream_intensity/save";
+    camuri.method = HTTP_POST;
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_save_stream_intensity);
+    httpd_register_uri_handler(server, &camuri);
     camuri.method = HTTP_GET;
 
     camuri.uri = "/lighton";

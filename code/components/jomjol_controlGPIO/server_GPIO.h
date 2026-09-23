@@ -74,8 +74,9 @@ public:
     esp_err_t handleHttpRequest(httpd_req_t *req);
     void taskHandler();
     void gpioInterrupt(GpioResult* gpioResult);  
-    void flashLightEnable(bool value);
+    bool flashLightEnable(bool value, int masterDuty);
     bool isEnabled() { return _isEnabled; }
+    std::string captureLightingDescriptor() const;
 #ifdef ENABLE_MQTT
     void handleMQTTconnect();
 #endif //ENABLE_MQTT
@@ -88,7 +89,7 @@ private:
     bool _isEnabled = false;
 
     int LEDNumbers = 2;
-    Rgb LEDColor = Rgb{ 255, 255, 255 };
+    Rgb LEDColor = Rgb{ 255, 255, 255, 0 }; // Fourth byte is dedicated W for RGBW.
     LedType LEDType = LED_WS2812;
 #ifdef __LEDGLOBAL
     SmartLed *leds_global = NULL;

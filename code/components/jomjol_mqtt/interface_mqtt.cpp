@@ -47,7 +47,7 @@ bool MQTTPublish(std::string _key, std::string _content, int qos, bool retained_
     }
 
     if (failedOnRound == getCountFlowRounds()) {    // we already failed in this round, do not retry until the next round
-        return true; // Fail quietly
+        return false; // Suppressed publication is not success
     }
 
     #ifdef DEBUG_DETAIL_ON  
@@ -64,7 +64,7 @@ bool MQTTPublish(std::string _key, std::string _content, int qos, bool retained_
         #ifdef DEBUG_DETAIL_ON 
             ESP_LOGD(TAG, "Publish msg_id %d in %lld ms", msg_id, (esp_timer_get_time() - starttime)/1000);
         #endif
-        if (msg_id == -1) {
+        if (msg_id < 0) {
             LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Failed to publish topic '" + _key + "', re-trying...");   
             #ifdef DEBUG_DETAIL_ON 
                 starttime = esp_timer_get_time();
@@ -73,7 +73,7 @@ bool MQTTPublish(std::string _key, std::string _content, int qos, bool retained_
             #ifdef DEBUG_DETAIL_ON 
                 ESP_LOGD(TAG, "Publish msg_id %d in %lld ms", msg_id, (esp_timer_get_time() - starttime)/1000);
             #endif
-            if (msg_id == -1) {
+            if (msg_id < 0) {
                 LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to publish topic '" + _key + "', skipping all MQTT publishings in this round!");
                 failedOnRound = getCountFlowRounds();
                 return false;

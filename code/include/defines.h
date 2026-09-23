@@ -329,8 +329,8 @@
 
 //softAP
 #ifdef ENABLE_SOFTAP
-    #define EXAMPLE_ESP_WIFI_SSID      "AI-on-the-Edge"
-    #define EXAMPLE_ESP_WIFI_PASS      ""
+    #define EXAMPLE_ESP_WIFI_SSID      "AIEdge-Setup"
+    #define EXAMPLE_ESP_WIFI_PASS      "AIEdgeSetup"
     #define EXAMPLE_ESP_WIFI_CHANNEL   11
     #define EXAMPLE_MAX_STA_CONN       1
 #endif // ENABLE_SOFTAP

@@ -15,6 +15,8 @@
 #include "../../include/defines.h"
 
 #include "server_GPIO.h"
+#include "LightChannels.h"
+#include "driver/ledc.h"
 
 #include "ClassLogFile.h"
 #include "configFile.h"
@@ -393,24 +395,37 @@ bool GpioHandler::readConfig()
         }
         if (toUpper(splitted[0]) == "LEDCOLOR")
         {
-            uint8_t _r, _g, _b;
-            _r = stoi(splitted[1]);
-            _g = stoi(splitted[2]);
-            _b = stoi(splitted[3]);
-
-            LEDColor = Rgb{_r, _g, _b};
+            uint8_t r=0,g=0,b=0,w=0;
+            if ((splitted.size()!=4 && splitted.size()!=5) ||
+                !illumination::parseChannel(splitted[1],r) ||
+                !illumination::parseChannel(splitted[2],g) ||
+                !illumination::parseChannel(splitted[3],b) ||
+                (splitted.size()==5 && !illumination::parseChannel(splitted[4],w))) {
+                ESP_LOGE(TAG,"LEDColor requires R G B [W], each an integer 0-255");
+                return false;
+            }
+            LEDColor = Rgb{r,g,b,w};
         }
         if (toUpper(splitted[0]) == "LEDTYPE")
         {
+            if (splitted.size()!=2) return false;
             if (splitted[1] == "WS2812")
                 LEDType = LED_WS2812;
-            if (splitted[1] == "WS2812B")
+            else if (splitted[1] == "WS2812B")
                 LEDType = LED_WS2812B;
-            if (splitted[1] == "SK6812")
+            else if (splitted[1] == "SK6812")
                 LEDType = LED_SK6812;
-            if (splitted[1] == "WS2813")
+            else if (splitted[1] == "SK6812_RGBW")
+                LEDType = LED_SK6812_RGBW;
+            else if (splitted[1] == "WS2813")
                 LEDType = LED_WS2813;
+            else { ESP_LOGE(TAG,"Unsupported LEDType"); return false; }
         }
+    }
+
+    if (LEDType.bytesPerPixel==3 && LEDColor.a!=0) {
+        ESP_LOGE(TAG,"Nonzero W requires SK6812_RGBW; RGB strips have no white channel");
+        return false;
     }
 
     if (registerISR) {
@@ -559,8 +574,21 @@ esp_err_t GpioHandler::handleHttpRequest(httpd_req_t *req)
     return ESP_OK;    
 };
 
-void GpioHandler::flashLightEnable(bool value) 
+std::string GpioHandler::captureLightingDescriptor() const
 {
+    std::string result="gpio-enabled="+std::to_string(_isEnabled)+"\n";
+    result+="pixels="+std::to_string(LEDNumbers)+"\nbytes-per-pixel="+std::to_string(LEDType.bytesPerPixel)+"\n";
+    result+="rgba="+std::to_string(LEDColor.r)+","+std::to_string(LEDColor.g)+","+std::to_string(LEDColor.b)+","+std::to_string(LEDColor.a)+"\n";
+    if(gpioMap) for(const auto& pin:*gpioMap)
+        result+="gpio="+std::to_string(pin.first)+",mode="+std::to_string(pin.second->getMode())+"\n";
+    return result;
+}
+
+bool GpioHandler::flashLightEnable(bool value, int masterDuty)
+{
+    bool success = true;
+    const auto channels = illumination::scale({LEDColor.r,LEDColor.g,LEDColor.b,LEDColor.a},masterDuty,value);
+    const Rgb outputColor{channels.r,channels.g,channels.b,channels.w};
     ESP_LOGD(TAG, "GpioHandler::flashLightEnable %s", value ? "true" : "false");
 
     if (gpioMap != NULL) {
@@ -569,12 +597,27 @@ void GpioHandler::flashLightEnable(bool value)
             if (it->second->getMode() == GPIO_PIN_MODE_BUILT_IN_FLASH_LED) //|| (it->second->getMode() == GPIO_PIN_MODE_EXTERNAL_FLASH_PWM) || (it->second->getMode() == GPIO_PIN_MODE_EXTERNAL_FLASH_WS281X))
             {
                 std::string resp_str = "";
-                it->second->setValue(value, GPIO_SET_SOURCE_INTERNAL, &resp_str);
+                #ifdef USE_PWM_LEDFLASH
+                if (it->second->getGPIO() != FLASH_GPIO) {
+                    ESP_LOGE(TAG,"Built-in flash configured on unexpected GPIO");
+                    success = false;
+                    continue;
+                }
+                // Reattach PWM after generic GPIO initialization, using the same
+                // 13-bit master intensity as the camera's direct built-in path.
+                esp_err_t result=ledc_set_pin(FLASH_GPIO,LEDC_MODE,LEDC_CHANNEL);
+                if (result==ESP_OK) result=ledc_set_duty(LEDC_MODE,LEDC_CHANNEL,value?illumination::clampDuty(masterDuty):0);
+                if (result==ESP_OK) result=ledc_update_duty(LEDC_MODE,LEDC_CHANNEL);
+                if (result!=ESP_OK) resp_str="Flash PWM update failed";
+                #else
+                it->second->setValue(value && masterDuty>0, GPIO_SET_SOURCE_INTERNAL, &resp_str);
+                #endif
 
                 if (resp_str == "") {
                     ESP_LOGD(TAG, "Flash light pin GPIO %d switched to %s", (int)it->first, (value ? "on" : "off"));
                 } else {
                     ESP_LOGE(TAG, "Can't set flash light pin GPIO %d.  Error: %s", (int)it->first, resp_str.c_str());
+                    success = false;
                 }
             } else 
                 {
@@ -586,7 +629,13 @@ void GpioHandler::flashLightEnable(bool value)
                             leds_global = new SmartLed( LEDType, LEDNumbers, it->second->getGPIO(), 0, DoubleBuffer );
                         } else {
                             // wait until we can update: https://github.com/RoboticsBrno/SmartLeds/issues/10#issuecomment-386921623
-                            leds_global->wait();
+                            // Never modify an in-flight buffer or wait forever
+                            // for a missing RMT completion interrupt.
+                            if (!leds_global->wait(pdMS_TO_TICKS(100) + 1)) {
+                                ESP_LOGE(TAG, "External LED transmission timed out; update not applied");
+                                success = false;
+                                continue;
+                            }
                         }
 #else
                         SmartLed leds( LEDType, LEDNumbers, it->second->getGPIO(), 0, DoubleBuffer );
@@ -596,32 +645,43 @@ void GpioHandler::flashLightEnable(bool value)
                         {
                             for (int i = 0; i < LEDNumbers; ++i)
 #ifdef __LEDGLOBAL
-                                (*leds_global)[i] = LEDColor;
+                                (*leds_global)[i] = outputColor;
 #else
-                                leds[i] = LEDColor;
+                                leds[i] = outputColor;
 #endif
                         }
                         else
                         {
                             for (int i = 0; i < LEDNumbers; ++i)
 #ifdef __LEDGLOBAL
-                                (*leds_global)[i] = Rgb{0, 0, 0};
+                                (*leds_global)[i] = Rgb{0, 0, 0, 0};
 #else
-                                leds[i] = Rgb{0, 0, 0};
+                                leds[i] = Rgb{0, 0, 0, 0};
 #endif
                         }
 #ifdef __LEDGLOBAL
-                        leds_global->show(); 
+                        const esp_err_t ledResult = leds_global->show();
 #else
-                        leds.show(); 
+                        const esp_err_t ledResult = leds.show();
 #endif 
+                        if (ledResult != ESP_OK) {
+                            ESP_LOGE(TAG, "External LED transmission rejected: %d", int(ledResult));
+                            success = false;
+                        }
+#ifdef __LEDGLOBAL
+                        else if (!leds_global->wait(pdMS_TO_TICKS(100) + 1)) {
+                            ESP_LOGE(TAG, "External LED completion timed out; illumination unverified");
+                            success = false;
+                        }
+#endif
                     }
                 }
         }
     }
+    return success;
 }
 
-gpio_num_t GpioHandler::resolvePinNr(uint8_t pinNr) 
+gpio_num_t GpioHandler::resolvePinNr(uint8_t pinNr)
 {
     switch(pinNr)  {
         case 0:

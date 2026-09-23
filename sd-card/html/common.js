@@ -47,11 +47,11 @@ function LoadHostname() {
     xhttp.addEventListener('load', function(event) {
         if (xhttp.status >= 200 && xhttp.status < 300) {
             hostname = xhttp.responseText;
-                document.title = hostname + " - AI on the edge";
-                document.getElementById("id_title").innerHTML  = "Digitizer - AI on the edge - " + hostname;
+                document.title = hostname + " · AIEdge";
+                document.getElementById("id_title").textContent = "AIEdge · " + hostname;
         } 
         else {
-                console.warn(request.statusText, request.responseText);
+                console.warn(xhttp.statusText);
         }
     });
 
@@ -84,7 +84,7 @@ function LoadFwVersion() {
             compareVersions();
         } 
         else {
-            console.warn(request.statusText, request.responseText);
+            console.warn(xhttp.statusText);
             fwVersion = "NaN";
         }
     });
@@ -110,7 +110,7 @@ function LoadWebUiVersion() {
             compareVersions();
         } 
         else {
-            console.warn(request.statusText, request.responseText);
+            console.warn(xhttp.statusText);
             webUiVersion = "NaN";
         }
     });

@@ -12,6 +12,9 @@
 #include "interface_mqtt.h"
 #include "ClassFlowPostProcessing.h"
 #include "ClassFlowControll.h"
+#include "PolarAccounting.h"
+#include "MeterStatus.h"
+#include "esp_timer.h"
 
 #include "server_mqtt.h"
 
@@ -48,6 +51,7 @@ void ClassFlowMQTT::SetInitialParameter(void)
     user = "";
     password = ""; 
     SetRetainFlag = false;
+    PublishAccountingStatus = false;
     previousElement = NULL;
     ListFlowControll = NULL; 
     disabled = false;
@@ -135,6 +139,10 @@ bool ClassFlowMQTT::ReadParameter(FILE* pfile, string& aktparamgraph)
         if ((toUpper(_param) == "URI") && (splitted.size() > 1))
         {
             this->uri = splitted[1];
+        }
+        if ((toUpper(_param) == "PUBLISHACCOUNTINGSTATUS") && (splitted.size() > 1))
+        {
+            PublishAccountingStatus = toUpper(splitted[1]) == "TRUE";
         }
         if ((toUpper(_param) == "RETAINMESSAGES") && (splitted.size() > 1))
         {
@@ -272,6 +280,7 @@ bool ClassFlowMQTT::doFlow(string zwtime)
     sendDiscovery_and_static_Topics();
 
     success = publishSystemData(qos);
+    if (!getMQTTisConnected()) success = false;
 
     if (flowpostprocessing && getMQTTisConnected())
     {
@@ -299,15 +308,15 @@ bool ClassFlowMQTT::doFlow(string zwtime)
                 namenumber = maintopic + "/" + namenumber + "/";
 
             if ((domoticzintopic.length() > 0) && (result.length() > 0)) 
-                success |= MQTTPublish(domoticzintopic, domoticzpayload, qos, SetRetainFlag);
+                success &= MQTTPublish(domoticzintopic, domoticzpayload, qos, SetRetainFlag);
 
             if (result.length() > 0)
-                success |= MQTTPublish(namenumber + "value", result, qos, SetRetainFlag);
+                success &= MQTTPublish(namenumber + "value", result, qos, SetRetainFlag);
             if (resulterror.length() > 0)  
-                success |= MQTTPublish(namenumber + "error", resulterror, qos, SetRetainFlag);
+                success &= MQTTPublish(namenumber + "error", resulterror, qos, SetRetainFlag);
 
             if (resultrate.length() > 0) {
-                success |= MQTTPublish(namenumber + "rate", resultrate, qos, SetRetainFlag);
+                success &= MQTTPublish(namenumber + "rate", resultrate, qos, SetRetainFlag);
                 
                 std::string resultRatePerTimeUnit;
                 if (getTimeUnit() == "h") { // Need conversion to be per hour
@@ -316,22 +325,22 @@ bool ClassFlowMQTT::doFlow(string zwtime)
                 else { // Keep per minute
                     resultRatePerTimeUnit = resultrate;
                 }
-                success |= MQTTPublish(namenumber + "rate_per_time_unit", resultRatePerTimeUnit, qos, SetRetainFlag);
+                success &= MQTTPublish(namenumber + "rate_per_time_unit", resultRatePerTimeUnit, qos, SetRetainFlag);
             }
 
             if (resultchangabs.length() > 0) {
-                success |= MQTTPublish(namenumber + "changeabsolut", resultchangabs, qos, SetRetainFlag); // Legacy API
-                success |= MQTTPublish(namenumber + "rate_per_digitization_round", resultchangabs, qos, SetRetainFlag);
+                success &= MQTTPublish(namenumber + "changeabsolut", resultchangabs, qos, SetRetainFlag); // Legacy API
+                success &= MQTTPublish(namenumber + "rate_per_digitization_round", resultchangabs, qos, SetRetainFlag);
             }
 
             if (resultraw.length() > 0)   
-                success |= MQTTPublish(namenumber + "raw", resultraw, qos, SetRetainFlag);
+                success &= MQTTPublish(namenumber + "raw", resultraw, qos, SetRetainFlag);
 
             if (resulttimestamp.length() > 0)
-                success |= MQTTPublish(namenumber + "timestamp", resulttimestamp, qos, SetRetainFlag);
+                success &= MQTTPublish(namenumber + "timestamp", resulttimestamp, qos, SetRetainFlag);
 
             std::string json = flowpostprocessing->getJsonFromNumber(i, "\n");
-            success |= MQTTPublish(namenumber + "json", json, qos, SetRetainFlag);
+            success &= MQTTPublish(namenumber + "json", json, qos, SetRetainFlag);
         }
     }
     
@@ -349,16 +358,27 @@ bool ClassFlowMQTT::doFlow(string zwtime)
     //                 result = result + "\t" + zw;
     //         }
     //     }
-    //     success |= MQTTPublish(topic, result, qos, SetRetainFlag);
+    //     success &= MQTTPublish(topic, result, qos, SetRetainFlag);
     // }
     
+    // Separate diagnostic snapshot. Never reinterpret legacy totals or retain an
+    // old accounting estimate as the current state after reconnect/restart.
+    if (PublishAccountingStatus && getMQTTisConnected()) {
+        const auto accounting=PolarAccounting::snapshot();
+        const std::string payload="{\"schema\":\"meter-accounting-v1\",\"published_at_uptime_us\":"+
+            std::to_string(esp_timer_get_time())+",\"current_boot_identity\":\""+
+            std::to_string(PolarAccounting::bootIdentity())+"\",\"snapshot\":"+
+            meter::statusJson(accounting)+"}";
+        success &= MQTTPublish(maintopic+"/accounting/status",payload,qos,false);
+    }
+
     OldValue = result;
 
     if (!success) {
         LogFile.WriteToFile(ESP_LOG_WARN, TAG, "One or more MQTT topics failed to be published!");
     }
     
-    return true;
+    return success;
 }
 void ClassFlowMQTT::handleIdx(string _decsep, string _value)
 {

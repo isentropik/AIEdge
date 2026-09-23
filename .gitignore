@@ -23,5 +23,8 @@ CTestTestfile.cmake
 _deps
 code/edgeAI.code-workspace
 .DS_Store
+__pycache__/
+*.pyc
+bootstrap/sdkconfig.esp32cam
 tools/parameter-tooltip-generator/html
 tools/parameter-tooltip-generator/AI-on-the-edge-device-docs

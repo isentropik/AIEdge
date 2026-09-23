@@ -116,16 +116,15 @@ void IRAM_ATTR RmtDriver::translateSample(const void* src, rmt_item32_t* dest, s
         ++src_components;
         ++consumed_src_bytes;
 
-        // skip alpha byte
-        if (((src_offset + consumed_src_bytes) % 4) == 3) {
+        // RGB skips alpha; explicit GRBW transmits the fourth byte as white.
+        if (self->_timing.bytesPerPixel == 3 && ((src_offset + consumed_src_bytes) % 4) == 3) {
             ++src_components;
             ++consumed_src_bytes;
 
-            // TRST delay after last pixel in strip
-            if (consumed_src_bytes == src_size) {
-                (dest - 1)->duration1 = self->_timing.TRS / (detail::RMT_DURATION_NS * detail::DIVIDER);
-            }
         }
+        // Reset delay after the last transmitted component, for either format.
+        if (consumed_src_bytes == src_size)
+            (dest - 1)->duration1 = self->_timing.TRS / (detail::RMT_DURATION_NS * detail::DIVIDER);
     }
 
     self->_translatorSourceOffset = src_offset + consumed_src_bytes;

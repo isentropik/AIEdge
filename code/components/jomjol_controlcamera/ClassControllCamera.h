@@ -85,7 +85,7 @@ public:
     CCamera(void);
     esp_err_t InitCam(void);
 
-    void LightOnOff(bool status);
+    bool LightOnOff(bool status);
     void LEDOnOff(bool status);
 
     esp_err_t setSensorDatenFromCCstatus(void);

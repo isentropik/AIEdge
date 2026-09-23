@@ -1,89 +1,43 @@
-"""
-Grab all parameter files (markdown) and convert them to html files
-"""
-import os
-import glob
+"""Generate configuration tooltips from any working directory, without shell cp."""
+from pathlib import Path
+import re
+import shutil
 import markdown
 
-
-parameterDocsFolder = "../../param-docs/parameter-pages"
-docsMainFolder = "../../sd-card/html"
-configPageTemplate = "edit_config_template.html"
-configPage = "edit_config.html"
-refImagePage = "edit_reference.html"
-
-htmlTooltipPrefix = """
-    <div class="rst-content"><div class="tooltip"><img src="help.png" width="32px"><span class="tooltiptext">
-"""
+ROOT = Path(__file__).resolve().parents[2]
+DOCS = ROOT / 'param-docs/parameter-pages'
+HTML = ROOT / 'sd-card/html'
+PREFIX = '<div class="rst-content"><div class="tooltip"><img src="help.png" width="32px"><span class="tooltiptext">'
+SUFFIX = '</span></div></div>'
 
 
-htmlTooltipSuffix = """
-    </span></div></div>
-"""
+def generate():
+    pages = {
+        HTML / 'edit_config.html': (HTML / 'edit_config_template.html').read_text(encoding='utf-8'),
+        HTML / 'edit_reference.html': (HTML / 'edit_reference.html').read_text(encoding='utf-8'),
+    }
+    for source in sorted(DOCS.glob('*/*.md')):
+        section = source.parent.name
+        parameter = source.stem.replace('<', '').replace('>', '')
+        rendered = markdown.markdown(source.read_text(encoding='utf-8').replace('# ', '### '), extensions=['admonition'])
+        rendered = rendered.replace('a href', 'a target="_blank" rel="noopener" href')
+        rendered = rendered.replace('href="../', 'href="https://jomjol.github.io/AI-on-the-edge-device-docs/')
+        rendered = rendered.replace('<h3>', '<h3 style="margin: 0">').replace('../img/', '/')
+        token = '<td>$TOOLTIP_' + section + '_' + parameter + '</td>'
+        for path in pages:
+            pages[path] = pages[path].replace(token, '<td>' + PREFIX + rendered + SUFFIX + '</td>')
+    for path, text in pages.items():
+        visible = re.sub(r'<!--.*?-->', '', text, flags=re.S)
+        unresolved = re.findall(r'\$TOOLTIP_[A-Za-z0-9_.]+', visible)
+        if unresolved:
+            raise ValueError(f'{path.name}: unresolved tooltip references: {unresolved}')
+    for path, text in pages.items():
+        path.write_text(text, encoding='utf-8', newline='\n')
+    for source in sorted((DOCS / 'img').glob('*')):
+        if source.is_file():
+            shutil.copyfile(source, HTML / source.name)
+    print('Generated configuration and reference tooltips')
 
 
-os.system("cp " + docsMainFolder + "/" + configPageTemplate + " " + docsMainFolder + "/" + configPage)
-
-folders = sorted( filter( os.path.isdir, glob.glob(parameterDocsFolder + '/*') ) )
-
-
-def generateHtmlTooltip(section, parameter, markdownFile):
-    # print(section, parameter, markdownFile)
-
-    with open(markdownFile, 'r') as markdownFileHandle:
-        markdownFileContent = markdownFileHandle.read()
-
-    markdownFileContent = markdownFileContent.replace("# ", "### ") # Move all headings 2 level down
-
-    htmlTooltip = markdown.markdown(markdownFileContent, extensions=['admonition'])
-
-    # Make all links to be opened in a new page
-    htmlTooltip = htmlTooltip.replace("a href", "a target=_blank href")
-
-    # Replace relative documentation links with absolute ones pointing to the external documentation
-    htmlTooltip = htmlTooltip.replace("href=\"../", "href=\"https://jomjol.github.io/AI-on-the-edge-device-docs/")
-
-    # Add custom styles
-    htmlTooltip = htmlTooltip.replace("<h3>", "<h3 style=\"margin: 0\">")
-
-    # Update image paths and copy images to right folder
-    if "../img/" in htmlTooltip:
-        htmlTooltip = htmlTooltip.replace("../img/", "/")
-
-    htmlTooltip = htmlTooltipPrefix + htmlTooltip + htmlTooltipSuffix
-
-    # Add the tooltip to the config page
-    with open(docsMainFolder + "/" + configPage, 'r') as configPageHandle:
-        configPageContent = configPageHandle.read()
-    configPageContent = configPageContent.replace("<td>$TOOLTIP_" + section + "_" + parameter + "</td>", "<td>" + htmlTooltip + "</td>")
-    with open(docsMainFolder + "/" + configPage, 'w') as configPageHandle:
-        configPageHandle.write(configPageContent)
-
-    # Add the tooltip to the reference image page
-    with open(docsMainFolder + "/" + refImagePage, 'r') as refImagePageHandle:
-        refImagePageContent = refImagePageHandle.read()
-    refImagePageContent = refImagePageContent.replace("<td>$TOOLTIP_" + section + "_" + parameter + "</td>", "<td>" + htmlTooltip + "</td>")
-    with open(docsMainFolder + "/" + refImagePage, 'w') as refImagePageHandle:
-        refImagePageHandle.write(refImagePageContent)
-
-print("Generating Tooltips...")
-
-"""
-Generate a HTML tooltip for each markdown page
-"""
-for folder in folders:
-    folder = folder.split("/")[-1]
-
-    files = sorted(filter(os.path.isfile, glob.glob(parameterDocsFolder + "/" + folder + '/*')))
-    for file in files:
-        if not ".md" in file: # Skip non-markdown files
-            continue
-
-        parameter = file.split("/")[-1].replace(".md", "")
-        parameter = parameter.replace("<", "").replace(">", "")
-        generateHtmlTooltip(folder, parameter, file)
-
-"""
-Copy images to main folder
-"""
-os.system("cp " + parameterDocsFolder + "/img/* " + docsMainFolder + "/")
+if __name__ == '__main__':
+    generate()

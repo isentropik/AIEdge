@@ -238,7 +238,7 @@ bool MQTThomeassistantDiscovery(int qos) {
 }
 
 bool publishSystemData(int qos) {
-    bool allSendsSuccessed = false;
+    bool allSendsSuccessed = true;
 
     if (!getMQTTisConnected()) {
         LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Unable to send System Topics, we are not connected to the MQTT broker!");
@@ -251,21 +251,21 @@ bool publishSystemData(int qos) {
 
 	int aFreeInternalHeapSizeBefore = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
 
-    allSendsSuccessed |= MQTTPublish(maintopic + "/" + std::string(LWT_TOPIC), LWT_CONNECTED, qos, retainFlag); // Publish "connected" to maintopic/connection
+    allSendsSuccessed &= MQTTPublish(maintopic + "/" + std::string(LWT_TOPIC), LWT_CONNECTED, qos, retainFlag); // Publish "connected" to maintopic/connection
 
     sprintf(tmp_char, "%ld", (long)getUpTime());
-    allSendsSuccessed |= MQTTPublish(maintopic + "/" + "uptime", std::string(tmp_char), qos, retainFlag);
+    allSendsSuccessed &= MQTTPublish(maintopic + "/" + "uptime", std::string(tmp_char), qos, retainFlag);
     
     sprintf(tmp_char, "%lu", (long) getESPHeapSize());
-    allSendsSuccessed |= MQTTPublish(maintopic + "/" + "freeMem", std::string(tmp_char), qos, retainFlag);
+    allSendsSuccessed &= MQTTPublish(maintopic + "/" + "freeMem", std::string(tmp_char), qos, retainFlag);
 
     sprintf(tmp_char, "%d", get_WIFI_RSSI());
-    allSendsSuccessed |= MQTTPublish(maintopic + "/" + "wifiRSSI", std::string(tmp_char), qos, retainFlag);
+    allSendsSuccessed &= MQTTPublish(maintopic + "/" + "wifiRSSI", std::string(tmp_char), qos, retainFlag);
 
     sprintf(tmp_char, "%d", (int)temperatureRead());
-    allSendsSuccessed |= MQTTPublish(maintopic + "/" + "CPUtemp", std::string(tmp_char), qos, retainFlag);
+    allSendsSuccessed &= MQTTPublish(maintopic + "/" + "CPUtemp", std::string(tmp_char), qos, retainFlag);
 
-    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Successfully published all System MQTT topics");
+    if (allSendsSuccessed) LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "All System MQTT topics accepted for publication");
 
 	int aFreeInternalHeapSizeAfter = heap_caps_get_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
 	int aMinFreeInternalHeapSize =  heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);

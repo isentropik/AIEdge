@@ -47,6 +47,7 @@ struct TimingParams {
     uint32_t T0L;
     uint32_t T1L;
     uint32_t TRS;
+    uint8_t bytesPerPixel = 3; // GRB by default; explicit GRBW uses four.
 };
 
 using LedType = TimingParams;

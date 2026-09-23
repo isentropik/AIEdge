@@ -18,6 +18,8 @@ CAlignAndCutImage::CAlignAndCutImage(std::string _name, CImageBasis *_org, CImag
     width = _org->width;
     height = _org->height;
     bpp = _org->bpp;
+    captureMonotonicUs = _org->captureMonotonicUs;
+    captureTimestampValid = _org->captureTimestampValid;
     externalImage = true;   
 
     islocked = false; 

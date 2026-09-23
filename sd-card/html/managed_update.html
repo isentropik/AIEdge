@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Managed firmware update</title>
+<style>
+body{font:16px/1.5 system-ui,sans-serif;margin:24px auto;padding:0 20px;max-width:680px;color:#202b36;background:#fafbfc}h1{font-size:1.7rem}label{display:block;font-weight:600;margin-top:20px}input{box-sizing:border-box;max-width:100%;padding:10px;font:inherit}input[type=text]{width:100%;font-family:monospace}button{font:inherit;padding:10px 16px;border:1px solid #738397;border-radius:6px;background:white;cursor:pointer;margin:16px 8px 0 0}button.primary{background:#174d70;color:white}button:disabled{opacity:.5;cursor:default}progress{width:100%;height:16px}#status{white-space:pre-wrap;overflow-wrap:anywhere;padding:16px;background:#edf2f6;border-radius:6px}small{display:block;color:#4f5d6b}.panel{border:1px solid #d4dce3;padding:20px;border-radius:10px;background:white}
+</style><script src="managed_update.js" defer></script></head>
+<body><h1>Managed firmware update</h1><p>Upload a managed firmware package and verify it on the SD card. This step does not install firmware or restart the meter.</p>
+<div class="panel"><form id="stage-form">
+<label for="archive">Firmware bundle</label><input id="archive" type="file" accept=".zip" required><small>ZIP file, up to 8,192,000 bytes. Replaces the previous temporary bundle upload.</small>
+<label for="bundle-id">Bundle ID</label><input id="bundle-id" type="text" pattern="[0-9a-f]{64}" minlength="64" maxlength="64" autocomplete="off" spellcheck="false" required><small>Copy the 64-character ID from the package’s bundle-id.txt file.</small>
+<button class="primary" id="stage" type="submit">Upload and verify</button><button id="refresh" type="button">Check status</button>
+</form><button id="install" type="button" disabled>Install verified bundle</button><p>Installation writes firmware and selects it for the next boot. Keep power connected. It does not restart the meter.</p><p><progress id="progress" max="100" value="0" hidden aria-label="Upload progress"></progress></p>
+<p id="status" role="status" aria-live="polite">Ready. HTTP authentication must be configured on the meter.</p>
+</div><p><a href="ota_page.html">Back to firmware updates</a></p></body></html>

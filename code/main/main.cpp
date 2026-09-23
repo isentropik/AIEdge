@@ -29,6 +29,7 @@
 #include "MainFlowControl.h"
 #include "server_file.h"
 #include "server_ota.h"
+#include "BootBundle.h"
 #include "time_sntp.h"
 #include "configFile.h"
 #include "server_main.h"
@@ -393,6 +394,20 @@ extern "C" void app_main(void)
     // ********************************************
     setCpuFrequency();
 
+    // Development/bootstrap builds permit an absent per-app index. Managed OTA
+    // builds must define METER_REQUIRE_BUNDLE so missing assets fail closed.
+#ifdef METER_REQUIRE_BUNDLE
+    const bool requireBundle=true;
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "METER_BOOT_POLICY:REQUIRED_BUNDLE_V1");
+#else
+    const bool requireBundle=false;
+    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "METER_BOOT_POLICY:OPTIONAL_BUNDLE_V1");
+#endif
+    if (!MeterBundle::initializeBootBundle(requireBundle)) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Application asset bundle rejected");
+        setSystemStatusFlag(SYSTEM_STATUS_FOLDER_CHECK_BAD);
+    }
+
     // Start SoftAP for initial remote setup
     // Note: Start AP if no wlan.ini and/or config.ini available, e.g. SD card empty; function does not exit anymore until reboot
     // ********************************************
@@ -549,8 +564,9 @@ extern "C" void app_main(void)
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Initialization completed successfully");
         InitializeFlowTask();
     }
-    else if (isSetSystemStatusFlag(SYSTEM_STATUS_CAM_FB_BAD) || // Non critical errors occured, we try to continue...
-             isSetSystemStatusFlag(SYSTEM_STATUS_NTP_BAD)) {
+    else if ((getSystemStatus() & ~(SYSTEM_STATUS_CAM_FB_BAD | SYSTEM_STATUS_NTP_BAD)) == 0) {
+        // Continue only when ALL flags are noncritical. A timing warning must
+        // not override a rejected asset bundle or another critical failure.
         LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Initialization completed with non-critical errors!");
         InitializeFlowTask();
     }

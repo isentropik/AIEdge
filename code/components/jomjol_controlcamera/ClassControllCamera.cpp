@@ -1,9 +1,14 @@
 #include "ClassControllCamera.h"
+#include "CameraAccess.h"
+#include "RawCaptureObserver.h"
+#include "CaptureSettingsSnapshot.h"
+#include "StreamPreview.h"
 #include "ClassLogFile.h"
 
 #include <stdio.h>
 #include "driver/gpio.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 
 #include "Helper.h"
@@ -109,6 +114,26 @@ typedef struct
     httpd_req_t *req;
     size_t len;
 } jpg_chunking_t;
+
+SemaphoreHandle_t cameraAccessMutex()
+{
+    static SemaphoreHandle_t mutex = nullptr;
+    static portMUX_TYPE creation = portMUX_INITIALIZER_UNLOCKED;
+    portENTER_CRITICAL(&creation);
+    SemaphoreHandle_t result = mutex;
+    portEXIT_CRITICAL(&creation);
+    if (result) return result;
+
+    // Allocate outside the spinlock; publish only one instance if callers race.
+    SemaphoreHandle_t candidate = xSemaphoreCreateRecursiveMutex();
+    if (!candidate) return nullptr;
+    portENTER_CRITICAL(&creation);
+    if (!mutex) { mutex = candidate; candidate = nullptr; }
+    result = mutex;
+    portEXIT_CRITICAL(&creation);
+    if (candidate) vSemaphoreDelete(candidate);
+    return result;
+}
 
 CCamera::CCamera(void)
 {
@@ -633,8 +658,36 @@ static size_t jpg_encode_stream(void *arg, size_t index, const void *data, size_
     return len;
 }
 
+static std::string captureSettingsForArchive(int delay)
+{
+    const auto* sensor=esp_camera_sensor_get();
+    if(!sensor)return "";
+    auto* gpio=gpio_handler_get();
+    std::string lighting;
+    if(gpio && gpio->isEnabled())lighting=gpio->captureLightingDescriptor();
+    else {
+#ifdef USE_PWM_LEDFLASH
+        lighting="light-path=builtin-pwm\n";
+#else
+        lighting="light-path=builtin-digital\n";
+#endif
+    }
+    lighting+="pixel-format="+std::to_string(sensor->pixformat)+"\nxclk-hz="+std::to_string(sensor->xclk_freq_hz)+"\n";
+    return CaptureSettingsSnapshot::encode(sensor->status,CCstatus,Camera.LedIntensity,delay,lighting);
+}
+
 esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
 {
+    CameraAccess access;
+    if (!access) return ESP_ERR_TIMEOUT;
+    if (!_Image) return ESP_FAIL;
+    _Image->captureTimestampValid = false;
+    _Image->captureMonotonicUs = 0;
+    const int64_t requiredBytes = int64_t(CCstatus.ImageWidth) * CCstatus.ImageHeight * 3;
+    if (!_Image->rgb_image || CCstatus.ImageWidth <= 0 || CCstatus.ImageHeight <= 0 ||
+        requiredBytes > _Image->getBufferSize() || _Image->channels != 3 ||
+        _Image->width != CCstatus.ImageWidth || _Image->height != CCstatus.ImageHeight)
+        return ESP_FAIL;
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("CaptureToBasisImage - Start");
 #endif
@@ -645,7 +698,12 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
 
     if (delay > 0)
     {
-        LightOnOff(true); // Flash-LED on
+        if (!LightOnOff(true)) {
+            LightOnOff(false); // Best effort; physical off is not guaranteed after a driver fault.
+            LEDOnOff(false);
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToBasisImage: illumination failed; cycle rejected");
+            return ESP_FAIL;
+        }
         const TickType_t xDelay = delay / portTICK_PERIOD_MS;
         vTaskDelay(xDelay);
     }
@@ -654,8 +712,9 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
     LogFile.WriteHeapInfo("CaptureToBasisImage - After LightOn");
 #endif
 
+    const std::string archiveSettings=RawCaptureObserver::enabled() ? captureSettingsForArchive(delay) : "";
     camera_fb_t *fb = esp_camera_fb_get();
-    esp_camera_fb_return(fb);
+    if (fb) esp_camera_fb_return(fb);
     fb = esp_camera_fb_get();
 
     if (!fb)
@@ -663,13 +722,15 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
         LEDOnOff(false);   // Status-LED off
         LightOnOff(false); // Flash-LED off
 
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "is not working anymore (CaptureToBasisImage) - most probably caused "
-                                                "by a hardware problem (instablility, ...). System will reboot.");
-        doReboot();
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToBasisImage: framebuffer unavailable; cycle rejected");
 
         return ESP_FAIL;
     }
 
+    const int64_t frameCaptureUs = int64_t(fb->timestamp.tv_sec) * 1000000 + fb->timestamp.tv_usec;
+    const bool frameTimeValid = !CCstatus.DemoMode && fb->timestamp.tv_sec >= 0 &&
+        fb->timestamp.tv_usec >= 0 && fb->timestamp.tv_usec < 1000000 &&
+        frameCaptureUs > 0 && frameCaptureUs <= esp_timer_get_time();
     if (CCstatus.DemoMode)
     {
         // Use images stored on SD-Card instead of camera image
@@ -688,17 +749,18 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToBasisImage: Can't allocate _zwImage");
     }
 
-    esp_camera_fb_return(fb);
-
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("CaptureToBasisImage - After fb_get");
 #endif
 
     LEDOnOff(false); // Status-LED off
 
-    if (delay > 0)
+    if (delay > 0 && !LightOnOff(false))
     {
-        LightOnOff(false); // Flash-LED off
+        esp_camera_fb_return(fb);
+        delete _zwImage;
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToBasisImage: light-off failed; cycle rejected");
+        return ESP_FAIL;
     }
 
     //    TickType_t xDelay = 1000 / portTICK_PERIOD_MS;
@@ -708,10 +770,18 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
     LogFile.WriteHeapInfo("CaptureToBasisImage - After LoadFromMemory");
 #endif
 
-    if (_zwImage == NULL)
+    if (_zwImage == NULL || !_zwImage->rgb_image || _zwImage->channels != 3 ||
+        _zwImage->width != CCstatus.ImageWidth || _zwImage->height != CCstatus.ImageHeight)
     {
-        return ESP_OK;
+        esp_camera_fb_return(fb);
+        delete _zwImage;
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToBasisImage: decoded image missing or incompatible");
+        return ESP_FAIL;
     }
+
+    if(frameTimeValid)
+        RawCaptureObserver::notify(fb->buf,fb->len,frameCaptureUs,CCstatus.ImageWidth,CCstatus.ImageHeight,archiveSettings);
+    esp_camera_fb_return(fb);
 
     stbi_uc *p_target;
     stbi_uc *p_source;
@@ -741,6 +811,9 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
 
     delete _zwImage;
 
+    _Image->captureMonotonicUs = frameCaptureUs;
+    _Image->captureTimestampValid = frameTimeValid;
+
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("CaptureToBasisImage - Done");
 #endif
@@ -750,109 +823,61 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
 
 esp_err_t CCamera::CaptureToFile(std::string nm, int delay)
 {
-    string ftype;
-
-    LEDOnOff(true); // Status-LED on
-
-    if (delay > 0)
-    {
-        LightOnOff(true); // Flash-LED on
-        const TickType_t xDelay = delay / portTICK_PERIOD_MS;
-        vTaskDelay(xDelay);
+    CameraAccess access;
+    if (!access) return ESP_ERR_TIMEOUT;
+    nm = FormatFileName(nm);
+    const string ftype = toUpper(getFileType(nm));
+    if (ftype != "BMP" && ftype != "JPG") return ESP_FAIL;
+    LEDOnOff(true);
+    if (delay > 0) {
+        if (!LightOnOff(true)) {
+            LightOnOff(false); LEDOnOff(false);
+            return ESP_FAIL;
+        }
+        vTaskDelay(delay / portTICK_PERIOD_MS);
     }
-
-    camera_fb_t *fb = esp_camera_fb_get();
-    esp_camera_fb_return(fb);
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (fb) esp_camera_fb_return(fb);
     fb = esp_camera_fb_get();
-
-    if (!fb)
-    {
-        LEDOnOff(false);   // Status-LED off
-        LightOnOff(false); // Flash-LED off
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToFile: Capture Failed. "
-                                                "Check camera module and/or proper electrical connection");
-        // doReboot();
-
+    LEDOnOff(false);
+    const bool offOk = delay <= 0 || LightOnOff(false);
+    if (!fb || !offOk) {
+        if (fb) esp_camera_fb_return(fb);
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToFile: capture or illumination failed");
         return ESP_FAIL;
     }
-
-    LEDOnOff(false); // Status-LED off
-
-#ifdef DEBUG_DETAIL_ON
-    ESP_LOGD(TAG, "w %d, h %d, size %d", fb->width, fb->height, fb->len);
-#endif
-
-    nm = FormatFileName(nm);
-
-#ifdef DEBUG_DETAIL_ON
-    ESP_LOGD(TAG, "Save Camera to: %s", nm.c_str());
-#endif
-
-    ftype = toUpper(getFileType(nm));
-
-#ifdef DEBUG_DETAIL_ON
-    ESP_LOGD(TAG, "Filetype: %s", ftype.c_str());
-#endif
-
-    uint8_t *buf = NULL;
+    uint8_t* buf = nullptr;
     size_t buf_len = 0;
-    bool converted = false;
-
-    if (ftype.compare("BMP") == 0)
-    {
-        frame2bmp(fb, &buf, &buf_len);
+    bool converted = false, valid = false;
+    if (ftype == "BMP") {
         converted = true;
+        valid = frame2bmp(fb, &buf, &buf_len);
+    } else if (fb->format != PIXFORMAT_JPEG) {
+        converted = true;
+        valid = frame2jpg(fb, CCstatus.ImageQuality, &buf, &buf_len);
+    } else {
+        buf = fb->buf; buf_len = fb->len; valid = true;
     }
-
-    if (ftype.compare("JPG") == 0)
-    {
-        if (fb->format != PIXFORMAT_JPEG)
-        {
-            bool jpeg_converted = frame2jpg(fb, CCstatus.ImageQuality, &buf, &buf_len);
-            converted = true;
-
-            if (!jpeg_converted)
-            {
-                ESP_LOGE(TAG, "JPEG compression failed");
-            }
-        }
-        else
-        {
-            buf_len = fb->len;
-            buf = fb->buf;
+    esp_err_t result = ESP_FAIL;
+    if (valid && buf && buf_len) {
+        FILE* fp = fopen(nm.c_str(), "wb");
+        if (fp) {
+            bool written = fwrite(buf, 1, buf_len, fp) == buf_len;
+            if (fclose(fp) != 0) written = false;
+            if (written) result = ESP_OK;
         }
     }
-
-    FILE *fp = fopen(nm.c_str(), "wb");
-
-    if (fp == NULL)
-    {
-        // If an error occurs during the file creation
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToFile: Failed to open file " + nm);
-    }
-    else
-    {
-        fwrite(buf, sizeof(uint8_t), buf_len, fp);
-        fclose(fp);
-    }
-
-    if (converted)
-    {
-        free(buf);
-    }
-
+    if (converted) free(buf);
     esp_camera_fb_return(fb);
-
-    if (delay > 0)
-    {
-        LightOnOff(false); // Flash-LED off
-    }
-
-    return ESP_OK;
+    if (result != ESP_OK)
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToFile: conversion or file write failed");
+    return result;
 }
 
 esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
     esp_err_t res = ESP_OK;
     size_t fb_len = 0;
     int64_t fr_start = esp_timer_get_time();
@@ -861,13 +886,17 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
 
     if (delay > 0)
     {
-        LightOnOff(true); // Flash-LED on
+        if (!LightOnOff(true)) {
+            LightOnOff(false); LEDOnOff(false);
+            httpd_resp_send_500(req);
+            return ESP_FAIL;
+        }
         const TickType_t xDelay = delay / portTICK_PERIOD_MS;
         vTaskDelay(xDelay);
     }
 
     camera_fb_t *fb = esp_camera_fb_get();
-    esp_camera_fb_return(fb);
+    if (fb) esp_camera_fb_return(fb);
     fb = esp_camera_fb_get();
 
     if (!fb)
@@ -883,6 +912,16 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
     }
 
     LEDOnOff(false); // Status-LED off
+    if (delay > 0 && !LightOnOff(false)) {
+        esp_camera_fb_return(fb);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    if (!fb->buf || !fb->len) {
+        esp_camera_fb_return(fb);
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
     res = httpd_resp_set_type(req, "image/jpeg");
 
     if (res == ESP_OK)
@@ -899,7 +938,10 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
             /* Replace Framebuffer with image from SD-Card */
             loadNextDemoImage(fb);
 
-            res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
+            if (!fb->buf || !fb->len) {
+                httpd_resp_send_500(req);
+                res = ESP_FAIL;
+            } else res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
         }
         else
         {
@@ -912,7 +954,7 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
             {
                 jpg_chunking_t jchunk = {req, 0};
                 res = frame2jpg_cb(fb, 80, jpg_encode_stream, &jchunk) ? ESP_OK : ESP_FAIL;
-                httpd_resp_send_chunk(req, NULL, 0);
+                if (res == ESP_OK) res = httpd_resp_send_chunk(req, NULL, 0);
                 fb_len = jchunk.len;
             }
         }
@@ -923,111 +965,101 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
 
     ESP_LOGI(TAG, "JPG: %dKB %dms", (int)(fb_len / 1024), (int)((fr_end - fr_start) / 1000));
 
-    if (delay > 0)
-    {
-        LightOnOff(false); // Flash-LED off
-    }
-
     return res;
 }
 
 esp_err_t CCamera::CaptureToStream(httpd_req_t *req, bool FlashlightOn)
 {
-    esp_err_t res = ESP_OK;
-    size_t fb_len = 0;
-    int64_t fr_start;
-    char *part_buf[64];
+    esp_err_t res = httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
+    if (res == ESP_OK)
+        res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
 
-    // wenn die Kameraeinstellungen durch Erstellen eines neuen Referenzbildes verändert wurden, müssen sie neu gesetzt werden
-    if (CFstatus.changedCameraSettings)
+    while (res == ESP_OK)
     {
-        Camera.setSensorDatenFromCCstatus(); // CCstatus >>> Kamera
-        Camera.SetQualityZoomSize(CCstatus.ImageQuality, CCstatus.ImageFrameSize, CCstatus.ImageZoomEnabled, CCstatus.ImageZoomOffsetX, CCstatus.ImageZoomOffsetY, CCstatus.ImageZoomSize, CCstatus.ImageVflip);
-        Camera.LedIntensity = CCstatus.ImageLedIntensity;
-        CFstatus.changedCameraSettings = false;
-    }
-
-    LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Live stream started");
-
-    if (FlashlightOn)
-    {
-        LEDOnOff(true);   // Status-LED on
-        LightOnOff(true); // Flash-LED on
-    }
-
-    // httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");  //stream is blocking web interface, only serving to local
-
-    httpd_resp_set_type(req, _STREAM_CONTENT_TYPE);
-    httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
-
-    while (1)
-    {
-        fr_start = esp_timer_get_time();
-        camera_fb_t *fb = esp_camera_fb_get();
-        esp_camera_fb_return(fb);
-        fb = esp_camera_fb_get();
-
-        if (!fb)
+        const int64_t frameStart = esp_timer_get_time();
+        uint8_t* jpeg = nullptr;
+        size_t length = 0;
         {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "CaptureToStream: Camera framebuffer not available");
-            break;
+            // Network transmission must not hold the camera or its framebuffer.
+            CameraAccess access(pdMS_TO_TICKS(1000));
+            if (!access) return ESP_ERR_TIMEOUT;
+            if (CFstatus.changedCameraSettings)
+            {
+                Camera.setSensorDatenFromCCstatus();
+                Camera.SetQualityZoomSize(CCstatus.ImageQuality, CCstatus.ImageFrameSize, CCstatus.ImageZoomEnabled, CCstatus.ImageZoomOffsetX, CCstatus.ImageZoomOffsetY, CCstatus.ImageZoomSize, CCstatus.ImageVflip);
+                Camera.LedIntensity = CCstatus.ImageLedIntensity;
+                CFstatus.changedCameraSettings = false;
+            }
+            const int savedIntensity = LedIntensity;
+            const int preview = StreamPreview::get();
+            const bool previewLight = FlashlightOn || preview >= 0;
+            if (preview >= 0) SetLEDIntensity(preview);
+            if (previewLight) {
+                LEDOnOff(true);
+                if (!LightOnOff(true)) {
+                    LightOnOff(false);
+                    LEDOnOff(false);
+                    LedIntensity = savedIntensity;
+                    LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Stream illumination failed; ending preview");
+                    return ESP_FAIL;
+                }
+            }
+            camera_fb_t* fb = esp_camera_fb_get();
+            if (fb) esp_camera_fb_return(fb);
+            fb = esp_camera_fb_get();
+            // Bound temporary PSRAM use; a single frame, never a queue.
+            if (fb && fb->buf && fb->len && fb->len <= 1024 * 1024 && fb->format == PIXFORMAT_JPEG)
+            {
+                length = fb->len;
+                jpeg = static_cast<uint8_t*>(heap_caps_malloc(length, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+                if (jpeg) memcpy(jpeg, fb->buf, length);
+            }
+            if (fb) esp_camera_fb_return(fb);
+            bool lightOffOk = true;
+            if (previewLight) { lightOffOk = LightOnOff(false); LEDOnOff(false); }
+            LedIntensity = savedIntensity;
+            if (!lightOffOk) {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Stream light-off failed; ending preview");
+                res = ESP_FAIL;
+            }
         }
-
-        fb_len = fb->len;
-
-        if (res == ESP_OK)
-        {
-            size_t hlen = snprintf((char *)part_buf, sizeof(part_buf), _STREAM_PART, fb_len);
-            res = httpd_resp_send_chunk(req, (const char *)part_buf, hlen);
+        if (res != ESP_OK) {
+            if (jpeg) heap_caps_free(jpeg);
+            return res;
         }
-
-        if (res == ESP_OK)
+        if (!jpeg)
         {
-            res = httpd_resp_send_chunk(req, (const char *)fb->buf, fb_len);
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Stream frame unavailable, invalid or out of memory");
+            return ESP_FAIL;
         }
-
+        char header[128];
+        int headerLength = snprintf(header, sizeof(header), _STREAM_PART, length);
+        if (headerLength < 0 || static_cast<size_t>(headerLength) >= sizeof(header))
+            res = ESP_FAIL;
+        else
+            res = httpd_resp_send_chunk(req, header, headerLength);
         if (res == ESP_OK)
-        {
+            res = httpd_resp_send_chunk(req, reinterpret_cast<const char*>(jpeg), length);
+        if (res == ESP_OK)
             res = httpd_resp_send_chunk(req, _STREAM_BOUNDARY, strlen(_STREAM_BOUNDARY));
-        }
-
-        esp_camera_fb_return(fb);
-
-        int64_t fr_end = esp_timer_get_time();
-        ESP_LOGD(TAG, "JPG: %dKB %dms", (int)(fb_len / 1024), (int)((fr_end - fr_start) / 1000));
-
-        if (res != ESP_OK)
-        {
-            // Exit loop, e.g. also when closing the webpage
-            break;
-        }
-
-        int64_t fr_delta_ms = (fr_end - fr_start) / 1000;
-
-        if (CAM_LIVESTREAM_REFRESHRATE > fr_delta_ms)
-        {
-            const TickType_t xDelay = (CAM_LIVESTREAM_REFRESHRATE - fr_delta_ms) / portTICK_PERIOD_MS;
-            ESP_LOGD(TAG, "Stream: sleep for: %ldms", (long)xDelay * 10);
-            vTaskDelay(xDelay);
-        }
+        heap_caps_free(jpeg);
+        if (res != ESP_OK) break;
+        const int64_t elapsedMs = (esp_timer_get_time() - frameStart) / 1000;
+        if (elapsedMs < CAM_LIVESTREAM_REFRESHRATE)
+            vTaskDelay(pdMS_TO_TICKS(CAM_LIVESTREAM_REFRESHRATE - elapsedMs) + 1);
     }
-
-    LEDOnOff(false);   // Status-LED off
-    LightOnOff(false); // Flash-LED off
-
     LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Live stream stopped");
-
     return res;
 }
 
-void CCamera::LightOnOff(bool status)
+bool CCamera::LightOnOff(bool status)
 {
     GpioHandler *gpioHandler = gpio_handler_get();
 
     if ((gpioHandler != NULL) && (gpioHandler->isEnabled()))
     {
         ESP_LOGD(TAG, "Use gpioHandler to trigger flashlight");
-        gpioHandler->flashLightEnable(status);
+        return gpioHandler->flashLightEnable(status, Camera.LedIntensity);
     }
     else
     {
@@ -1035,30 +1067,30 @@ void CCamera::LightOnOff(bool status)
         if (status)
         {
             ESP_LOGD(TAG, "Internal Flash-LED turn on with PWM %d", Camera.LedIntensity);
-            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, Camera.LedIntensity));
+            if (ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, Camera.LedIntensity) != ESP_OK) return false;
             // Update duty to apply the new value
-            ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            return ledc_update_duty(LEDC_MODE, LEDC_CHANNEL) == ESP_OK;
         }
         else
         {
             ESP_LOGD(TAG, "Internal Flash-LED turn off PWM");
-            ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0));
-            ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
+            if (ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, 0) != ESP_OK) return false;
+            return ledc_update_duty(LEDC_MODE, LEDC_CHANNEL) == ESP_OK;
         }
 #else
         // Init the GPIO
         gpio_pad_select_gpio(FLASH_GPIO);
 
         // Set the GPIO as a push/pull output
-        gpio_set_direction(FLASH_GPIO, GPIO_MODE_OUTPUT);
+        if (gpio_set_direction(FLASH_GPIO, GPIO_MODE_OUTPUT) != ESP_OK) return false;
 
         if (status)
         {
-            gpio_set_level(FLASH_GPIO, 1);
+            return gpio_set_level(FLASH_GPIO, 1) == ESP_OK;
         }
         else
         {
-            gpio_set_level(FLASH_GPIO, 0);
+            return gpio_set_level(FLASH_GPIO, 0) == ESP_OK;
         }
 #endif
     }

@@ -32,7 +32,10 @@ protected:
     string LogImageSelect;
     ClassFlowAlignment* flowpostalignment;
 
-    bool SaveAllFiles;   
+    bool SaveAllFiles;
+    bool usePolarReader = false;
+    bool validatePolarGeometry();
+    bool doPolarNetwork(string time);
 
     int PointerEvalAnalogNew(float zahl, int numeral_preceder);
     int PointerEvalAnalogToDigitNew(float zahl, float numeral_preceder,  int eval_predecessors, float AnalogToDigitTransitionStart);
@@ -69,6 +72,8 @@ public:
     bool isExtendedResolution(int _number = 0);
 
     void UpdateNameNumbers(std::vector<std::string> *_name_numbers);
+
+    bool hasFrozenArchiveProfile(){return usePolarReader && validatePolarGeometry();}
 
     t_CNNType getCNNType(){return CNNType;};
 

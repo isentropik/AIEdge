@@ -30,6 +30,8 @@
 #include "statusled.h"
 #include "server_ota.h"
 #include "basic_auth.h"
+#include "AIEdgeFirstBoot.h"
+#include "RuntimeBundle.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -81,7 +83,7 @@ void wifi_init_softAP(void)
     strcpy((char*)wifi_config.ap.password, (const char*) EXAMPLE_ESP_WIFI_PASS);
     wifi_config.ap.channel = EXAMPLE_ESP_WIFI_CHANNEL;
     wifi_config.ap.max_connection = EXAMPLE_MAX_STA_CONN;
-    wifi_config.ap.authmode = WIFI_AUTH_WPA_WPA2_PSK;
+    wifi_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
 
     if (strlen(EXAMPLE_ESP_WIFI_PASS) == 0) {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
@@ -98,7 +100,7 @@ void wifi_init_softAP(void)
 
 void SendHTTPResponse(httpd_req_t *req)
 {
-    std::string message = "<h1>AI-on-the-edge - BASIC SETUP</h1><p>This is an access point with a minimal server to setup the minimum required files and information on the device and the SD-card. ";
+    std::string message = "<h1>AIEdge — Wi-Fi setup</h1><p>This is an access point with a minimal server to setup the minimum required files and information on the device and the SD-card. ";
     message += "This mode is always started if one of the following files is missing: /wlan.ini or the /config/config.ini.<p>";
     message += "The setup is done in 3 steps: 1. upload full inital configuration (sd-card content), 2. store WLAN access information, 3. reboot (and connect to WLANs)<p><p>";
     message += "Please follow the below instructions.<p>";
@@ -150,8 +152,8 @@ void SendHTTPResponse(httpd_req_t *req)
 
         message = "<button class=\"button\" type=\"button\" onclick=\"wr()\">Write wlan.ini</button>";
         message += "<script language=\"JavaScript\">async function wr(){";
-        message += "api = \"/config?\"+\"ssid=\"+document.getElementById(\"ssid\").value+\"&pwd=\"+document.getElementById(\"password\").value;";
-//        message += "api = \"/config?\"+\"ssid=\"+document.getElementById(\"ssid\").value+\"&pwd=\"+document.getElementById(\"password\").value+\"&hn=\"+document.getElementById(\"hostname\").value+\"&ip=\"+document.getElementById(\"ip\").value+\"&gw=\"+document.getElementById(\"gateway\").value+\"&nm=\"+document.getElementById(\"netmask\").value+\"&dns=\"+document.getElementById(\"dns\").value+\"&rssithreshold=\"+document.getElementById(\"threshold\").value;";
+        message += "api = \"/config?\"+\"ssid=\"+encodeURIComponent(document.getElementById(\"ssid\").value)+\"&pwd=\"+encodeURIComponent(document.getElementById(\"password\").value);";
+//        message += "api = \"/config?\"+\"ssid=\"+encodeURIComponent(document.getElementById(\"ssid\").value)+\"&pwd=\"+encodeURIComponent(document.getElementById(\"password\").value)+\"&hn=\"+document.getElementById(\"hostname\").value+\"&ip=\"+document.getElementById(\"ip\").value+\"&gw=\"+document.getElementById(\"gateway\").value+\"&nm=\"+document.getElementById(\"netmask\").value+\"&dns=\"+document.getElementById(\"dns\").value+\"&rssithreshold=\"+document.getElementById(\"threshold\").value;";
         message += "fetch(api);await new Promise(resolve => setTimeout(resolve, 1000));location.reload();}</script>";
         httpd_resp_send_chunk(req, message.c_str(), strlen(message.c_str()));
         return;
@@ -211,7 +213,7 @@ esp_err_t config_ini_handler(httpd_req_t *req)
 
     if (httpd_req_get_url_query_str(req, _query, 400) == ESP_OK)
     {
-        ESP_LOGD(TAG, "Query: %s", _query);
+        // Never log the credential-bearing setup query.
         
         if (httpd_query_key_value(_query, "ssid", _valuechar, 100) == ESP_OK)
         {
@@ -221,7 +223,7 @@ esp_err_t config_ini_handler(httpd_req_t *req)
 
         if (httpd_query_key_value(_query, "pwd", _valuechar, 100) == ESP_OK)
         {
-            ESP_LOGD(TAG, "pwd is found: %s", _valuechar);
+            // Password intentionally omitted from logs.
             pwd = UrlDecode(std::string(_valuechar));
         }
 
@@ -505,6 +507,10 @@ httpd_handle_t start_webserverAP(void)
 
 void CheckStartAPMode()
 {
+    if (MeterBundle::bootSelection().state()==MeterBundle::SelectionState::Selected &&
+        !AIEdge::seedSetupConfig("/sdcard")) {
+        ESP_LOGE(TAG,"AIEdge initial setup configuration could not be prepared; existing files preserved");
+    }
     isConfigINI = FileExists(CONFIG_FILE);
     isWlanINI = FileExists(WLAN_CONFIG_FILE);
 

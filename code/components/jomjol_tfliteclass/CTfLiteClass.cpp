@@ -1,4 +1,8 @@
 #include "CTfLiteClass.h"
+#include "PolarDecoder.h"
+#include <cstring>
+#include <cstdint>
+#include "mbedtls/sha256.h"
 #include "ClassLogFile.h"
 #include "Helper.h"
 #include "psram.h"
@@ -158,6 +162,47 @@ void CTfLiteClass::Invoke()
       interpreter->Invoke();
 }
 
+bool CTfLiteClass::HasPolarTensorContract()
+{
+    if (!interpreter) return false;
+    TfLiteTensor* in = interpreter->input(0);
+    TfLiteTensor* out = interpreter->output(0);
+    if (!in || !out || !in->dims || !out->dims ||
+        in->type != kTfLiteInt8 || out->type != kTfLiteInt8 ||
+        in->dims->size != 3 || out->dims->size != 2 ||
+        in->dims->data[0] != 1 || in->dims->data[1] != 384 || in->dims->data[2] != 40 ||
+        out->dims->data[0] != 1 || out->dims->data[1] != 360 ||
+        in->bytes != 384 * 40 || out->bytes != 360 ||
+        !in->data.int8 || !out->data.int8) return false;
+    // Reject incompatible models rather than silently decoding another quantization.
+    if (!std::isfinite(in->params.scale) || !std::isfinite(out->params.scale) ||
+        std::fabs(in->params.scale - 0.006855103187263012f) > 1e-9f ||
+        in->params.zero_point != -53 ||
+        out->params.scale != 0.00390625f || out->params.zero_point != -128) return false;
+    return true;
+}
+
+bool CTfLiteClass::InvokePolar(const int8_t* features, size_t count)
+{
+    if (!features || count != 384 * 40 || !HasPolarTensorContract()) return false;
+    TfLiteTensor* in = interpreter->input(0);
+    std::memcpy(in->data.int8, features, count);
+    return interpreter->Invoke() == kTfLiteOk;
+}
+
+bool CTfLiteClass::InferPolar(const int8_t* features, size_t count, bool ccw, float& result)
+{
+    if (!InvokePolar(features,count)) return false;
+    return polar::decode(interpreter->output(0)->data.int8, 360, ccw, result);
+}
+
+bool CTfLiteClass::InferPolarScores(const int8_t* features,size_t count,int8_t* scores,size_t scoreCount)
+{
+    if (!scores || scoreCount!=360 || !InvokePolar(features,count)) return false;
+    std::memcpy(scores,interpreter->output(0)->data.int8,360);
+    return true;
+}
+
 
 bool CTfLiteClass::LoadInputImageBasis(CImageBasis *rs)
 {
@@ -198,6 +243,7 @@ bool CTfLiteClass::LoadInputImageBasis(CImageBasis *rs)
 
 bool CTfLiteClass::MakeAllocate()
 {
+    if (!model || !tensor_arena) return false;
     MakeStaticResolver();
 
     #ifdef DEBUG_DETAIL_ON 
@@ -214,7 +260,6 @@ bool CTfLiteClass::MakeAllocate()
         if (allocate_status != kTfLiteOk) {
             LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "AllocateTensors() failed");
 
-            this->GetInputDimension();   
             return false;
         }
     }
@@ -263,6 +308,9 @@ long CTfLiteClass::GetFileSize(std::string filename)
 
 bool CTfLiteClass::ReadFileToModel(std::string _fn)
 {
+    loadedModelBytes = 0;
+    verifiedPolarModel = false;
+    model = nullptr;
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "CTfLiteClass::ReadFileToModel: " + _fn);
     
     long size = GetFileSize(_fn);
@@ -291,8 +339,14 @@ bool CTfLiteClass::ReadFileToModel(std::string _fn)
     
         if (pFile != NULL)
         {
-          fread(modelfile, 1, size, pFile);
+          const size_t received = fread(modelfile, 1, size, pFile);
+          const bool complete = received == static_cast<size_t>(size) && !ferror(pFile);
           fclose(pFile);
+          if (!complete) {
+              LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Incomplete model read");
+              return false;
+          }
+          loadedModelBytes = received;
 
 #ifdef DEBUG_DETAIL_ON
           LogFile.WriteHeapInfo("CTLiteClass::Alloc modelfile successful");
@@ -330,6 +384,33 @@ bool CTfLiteClass::LoadModel(std::string _fn)
       return false;
     
     return true;
+}
+
+bool CTfLiteClass::LoadFrozenPolarModel(std::string filename)
+{
+    // Hash the exact loaded bytes before FlatBuffer interpretation; no separate
+    // precheck/open race and no fallback to another model with similar tensors.
+    if (!ReadFileToModel(filename) || loadedModelBytes != 12720) return false;
+    static const uint8_t expected[32] = {
+        0xb0,0x39,0xdd,0x72,0xfa,0x6c,0xb2,0xc8,0x21,0xf9,0xde,0x21,0x54,0xa4,0x48,0x79,
+        0xd5,0xce,0x96,0x20,0xc8,0x62,0xa2,0x12,0x91,0x76,0xe2,0xe1,0x8d,0xb0,0x5e,0xd0
+    };
+    uint8_t actual[32];
+    if (mbedtls_sha256(modelfile, loadedModelBytes, actual, 0) != 0 ||
+        std::memcmp(actual, expected, sizeof(expected)) != 0) return false;
+    model = tflite::GetModel(modelfile);
+    verifiedPolarModel = model != nullptr;
+    return verifiedPolarModel;
+}
+
+void* CTfLiteClass::GetPolarWorkspace(size_t bytes)
+{
+    if (!verifiedPolarModel || !modelfile) return nullptr;
+    const uintptr_t base = reinterpret_cast<uintptr_t>(modelfile);
+    const uintptr_t start = (base + loadedModelBytes + 7u) & ~uintptr_t(7u);
+    const size_t offset = start - base;
+    if (offset > MAX_MODEL_SIZE || bytes > MAX_MODEL_SIZE - offset) return nullptr;
+    return reinterpret_cast<void*>(start);
 }
 
 

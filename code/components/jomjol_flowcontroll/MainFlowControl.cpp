@@ -1,6 +1,13 @@
+#include "TelemetryBootIdentity.h"
+#include "ImageArchiveStatus.h"
+#include "ImageArchiveStartup.h"
+#include "ProcessingAccess.h"
+#include "FileConfigStorage.h"
 #include "MainFlowControl.h"
 
 #include <string>
+#include <atomic>
+#include <new>
 #include <vector>
 #include "string.h"
 #include "esp_log.h"
@@ -16,6 +23,18 @@
 #include "esp_camera.h"
 #include "time_sntp.h"
 #include "ClassControllCamera.h"
+#include "CameraAccess.h"
+#include "StreamPreview.h"
+#include "CycleTelemetry.h"
+#include "../jomjol_fileserver_ota/OtaHealthPolicy.h"
+#include "../jomjol_fileserver_ota/RuntimeBundle.h"
+#include "esp_ota_ops.h"
+#include "../jomjol_fileserver_ota/UpdateAccess.h"
+#include "CycleSchedule.h"
+#include "PolarAccounting.h"
+#include "MeterStatus.h"
+#include "MeterHistoryFiles.h"
+#include "PolarRuntimeTest.h"
 
 #include "ClassFlowControll.h"
 
@@ -123,6 +142,14 @@ void doInit(void)
 
     /* GPIO handler has to be initialized before MQTT init to ensure proper topic subscription */
     gpio_handler_init();
+
+    {
+        ProcessingAccess processing;
+        CameraAccess camera(pdMS_TO_TICKS(1000));
+        if(processing && camera && ConfigStorage::safe().load())
+            LogFile.WriteToFile(ESP_LOG_INFO,TAG,ImageArchive::startConfiguredArchive(flowctrl.hasFrozenArchiveProfile()));
+    }
+
 
 #ifdef ENABLE_MQTT
     flowctrl.StartMQTTService();
@@ -304,6 +331,308 @@ esp_err_t setCFstatusToCam(void)
     }
 }
 
+esp_err_t handler_cycle_timing(httpd_req_t* req)
+{
+    const std::string bootId=CycleTelemetry::bootIdentity();
+    const auto data = CycleTelemetry::snapshot();
+    const auto& last = data.last;
+    std::string json = "{\"clock\":\"monotonic_us_since_boot\",\"target_us\":30000000,\"active\":";
+    json += data.active ? "true" : "false";
+    json += ",\"boot_id\":\"" + bootId + "\"";
+    json += ",\"attempts\":" + std::to_string(data.attempts) +
+        ",\"pipeline_completed\":" + std::to_string(data.completed) +
+        ",\"accepted_reader_cycles\":" + std::to_string(data.acceptedReaderCycles) +
+        ",\"accepted_reader_streak\":" + std::to_string(data.acceptedReaderStreak) +
+        ",\"failed\":" + std::to_string(data.failed) +
+        ",\"overlaps_rejected\":" + std::to_string(data.overlapsRejected) +
+        ",\"over_target\":" + std::to_string(data.overTarget) +
+        ",\"missed_schedule_slots\":" + std::to_string(data.missedScheduleSlots) +
+        ",\"valid_readings\":null,\"last\":{\"start_us\":" + std::to_string(last.startedUs) +
+        ",\"end_us\":" + std::to_string(last.finishedUs) +
+        ",\"capture_us\":" + std::to_string(last.capturedUs) +
+        ",\"capture_interval_us\":" + std::to_string(last.captureIntervalUs) +
+        ",\"reader_accepted\":" + (last.readerAccepted ? "true" : "false") +
+        ",\"stage_attempts\":" + std::to_string(last.attempts) +
+        ",\"pipeline_completed\":" + (last.pipelineCompleted ? "true" : "false") + ",\"stages\":[";
+    for (int i=0; i<last.storedStages; ++i) {
+        if (i) json += ",";
+        const auto& stage = last.stages[i];
+        json += "{\"index\":" + std::to_string(stage.index) +
+            ",\"duration_us\":" + std::to_string(stage.durationUs) +
+            ",\"ok\":" + (stage.ok ? "true" : "false") + "}";
+    }
+    json += "]}}";
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, json.c_str(), json.size());
+}
+
+esp_err_t handler_image_archive_status(httpd_req_t* req)
+{
+    const auto& binding=ImageArchive::captureBinding();
+    const auto json=ImageArchive::archiveStatusJson(ImageArchive::archiveWorkerStatus(),
+        binding.enabled.load(std::memory_order_acquire),binding.rejected.load());
+    httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    return httpd_resp_send(req,json.c_str(),json.size());
+}
+
+esp_err_t handler_meter_accounting(httpd_req_t* req)
+{
+    const auto json=meter::statusJson(PolarAccounting::snapshot());
+    httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    return httpd_resp_send(req,json.c_str(),json.size());
+}
+
+// One explicitly requested diagnostic at a time. Never retain the HTTP request
+// in the worker; the server can serve status while the model is running.
+static portMUX_TYPE historyMux=portMUX_INITIALIZER_UNLOCKED;
+static bool historyActive=false;
+static meter::HistorySummary historySummary;
+static int64_t historyScannedUs=0;
+static void historyWorker(void*) {
+    meter::HistorySummary result;
+    {
+        ProcessingAccess processing;
+        if(!processing)result.reason="processing_busy";
+        else {
+            UpdateAccess update;
+            if(!update)result.reason="storage_busy";
+            else result=meter::readSegmentHistory("/sdcard/config","polar-meter-reference",
+                polar::modelIdentity,polar::geometryIdentity,PolarAccounting::snapshot().assumptions);
+        }
+    }
+    const auto finished=esp_timer_get_time();
+    portENTER_CRITICAL(&historyMux);
+    historySummary=result;historyScannedUs=finished;historyActive=false;
+    portEXIT_CRITICAL(&historyMux);
+    vTaskDelete(nullptr);
+}
+esp_err_t handler_meter_history_refresh(httpd_req_t* req) {
+    httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    if(req->content_len||httpd_req_get_url_query_len(req)){
+        httpd_resp_set_status(req,"400 Bad Request");return httpd_resp_sendstr(req,"{\"status\":\"empty_request_required\"}");
+    }
+    portENTER_CRITICAL(&historyMux);
+    const bool busy=historyActive;
+    if(!busy){historyActive=true;historySummary=meter::HistorySummary{};historySummary.reason="scan_pending";historyScannedUs=0;}
+    portEXIT_CRITICAL(&historyMux);
+    if(busy){httpd_resp_set_status(req,"409 Conflict");return httpd_resp_sendstr(req,"{\"status\":\"scan_active\"}");}
+    if(xTaskCreate(historyWorker,"meter_history",8192,nullptr,1,nullptr)!=pdPASS){
+        portENTER_CRITICAL(&historyMux);historyActive=false;historySummary.reason="task_creation_failed";portEXIT_CRITICAL(&historyMux);
+        httpd_resp_set_status(req,"503 Service Unavailable");return httpd_resp_sendstr(req,"{\"status\":\"task_creation_failed\"}");
+    }
+    httpd_resp_set_status(req,"202 Accepted");return httpd_resp_sendstr(req,"{\"status\":\"accepted\"}");
+}
+esp_err_t handler_meter_history_status(httpd_req_t* req) {
+    portENTER_CRITICAL(&historyMux);
+    const auto result=historySummary;const bool active=historyActive;const auto scanned=historyScannedUs;
+    portEXIT_CRITICAL(&historyMux);
+    const std::string json=std::string("{\"active\":")+(active?"true":"false")+
+        ",\"valid\":"+(result.valid?"true":"false")+",\"reason\":\""+result.reason+"\",\"scope\":\"completed_segments_only\","+
+        "\"scanned_at_uptime_us\":"+std::to_string(scanned)+",\"segments\":"+std::to_string(result.segments)+
+        ",\"duplicates\":"+std::to_string(result.duplicates)+",\"covered_minimum_ft3\":"+(result.valid?meter::jsonNumber(result.coveredMinimumFt3):"null")+
+        ",\"covered_maximum_ft3\":"+(result.valid?meter::jsonNumber(result.coveredMaximumFt3):"null")+
+        ",\"lifetime_complete\":false,\"verified_accuracy\":false}";
+    httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    return httpd_resp_send(req,json.c_str(),json.size());
+}
+
+static portMUX_TYPE polarTestMux = portMUX_INITIALIZER_UNLOCKED;
+static bool polarTestActive = false;
+static PolarRuntimeTestResult polarTestResult;
+
+static void polarTestWorker(void*)
+{
+    const auto result = runPolarRuntimeTest();
+    portENTER_CRITICAL(&polarTestMux);
+    polarTestResult = result;
+    polarTestActive = false;
+    portEXIT_CRITICAL(&polarTestMux);
+    vTaskDelete(nullptr);
+}
+
+esp_err_t handler_polar_test_start(httpd_req_t* req)
+{
+    httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    if(req->content_len || httpd_req_get_url_query_len(req)) {
+        httpd_resp_set_status(req,"400 Bad Request");
+        return httpd_resp_sendstr(req,"{\"status\":\"empty_request_required\"}");
+    }
+    portENTER_CRITICAL(&polarTestMux);
+    const bool busy = polarTestActive;
+    if(!busy) {
+        polarTestActive = true;
+        polarTestResult = PolarRuntimeTestResult{};
+        polarTestResult.status = "queued_or_running";
+    }
+    portEXIT_CRITICAL(&polarTestMux);
+    if(busy) {
+        httpd_resp_set_status(req,"409 Conflict");
+        return httpd_resp_sendstr(req,"{\"status\":\"diagnostic_active\"}");
+    }
+    if(xTaskCreate(polarTestWorker,"polar_test",8192,nullptr,1,nullptr)!=pdPASS) {
+        portENTER_CRITICAL(&polarTestMux);
+        polarTestResult.status = "task_creation_failed";
+        polarTestActive = false;
+        portEXIT_CRITICAL(&polarTestMux);
+        httpd_resp_set_status(req,"503 Service Unavailable");
+        return httpd_resp_sendstr(req,"{\"status\":\"task_creation_failed\"}");
+    }
+    httpd_resp_set_status(req,"202 Accepted");
+    return httpd_resp_sendstr(req,"{\"status\":\"accepted\",\"result_url\":\"/polar_runtime_test\"}");
+}
+
+esp_err_t handler_polar_test_status(httpd_req_t* req)
+{
+    portENTER_CRITICAL(&polarTestMux);
+    const auto result = polarTestResult;
+    const bool active = polarTestActive;
+    portEXIT_CRITICAL(&polarTestMux);
+    std::string json = "{\"active\":" + std::string(active ? "true" : "false") +
+        ",\"status\":\"" + result.status + "\",\"verified_accuracy\":false,\"completed\":" +
+        std::to_string(result.completed) + ",\"dials\":[";
+    for(int i=0;i<result.completed;++i) {
+        if(i)json += ",";
+        json += "{\"index\":" + std::to_string(i) +
+            ",\"differing_bytes\":" + std::to_string(result.differingBytes[i]) +
+            ",\"maximum_difference\":" + std::to_string(result.maximumDifference[i]) +
+            ",\"inference_us\":" + std::to_string(result.inferenceUs[i]) + "}";
+    }
+    json += "]}";
+    httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    return httpd_resp_send(req,json.c_str(),json.size());
+}
+
+static MeterOtaHealth::Evidence observeOtaHealth()
+{
+    portENTER_CRITICAL(&polarTestMux);
+    const auto test=polarTestResult;
+    const bool testActive=polarTestActive;
+    portEXIT_CRITICAL(&polarTestMux);
+    bool modelPassed=!testActive && test.completed==6 &&
+        std::string(test.status)=="all_output_bytes_match";
+    for(int i=0;i<6;++i)modelPassed=modelPassed && test.differingBytes[i]==0;
+    const auto cycle=CycleTelemetry::snapshot();
+    const int faults=getSystemStatus();
+    MeterOtaHealth::Evidence evidence;
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    evidence.rollbackConfigured=true;
+#endif
+    esp_ota_img_states_t imageState=ESP_OTA_IMG_UNDEFINED;
+    const auto* running=esp_ota_get_running_partition();
+    const bool stateKnown=running && esp_ota_get_state_partition(running,&imageState)==ESP_OK;
+    evidence.pendingImage=stateKnown && imageState==ESP_OTA_IMG_PENDING_VERIFY;
+    evidence.bundleVerified=MeterBundle::bootSelection().state()==MeterBundle::SelectionState::Selected;
+    evidence.configurationReadable=ConfigStorage::safe().load();
+    evidence.modelSelfTestPassed=modelPassed;
+    evidence.processingActive=cycle.active || testActive;
+    evidence.systemFaults=static_cast<uint32_t>(faults);
+    evidence.consecutiveReaderCycles=cycle.acceptedReaderStreak;
+    evidence.lastPipelineCompleted=cycle.last.pipelineCompleted;
+    evidence.lastReaderAccepted=cycle.last.readerAccepted;
+    evidence.nowUs=esp_timer_get_time();
+    evidence.startedUs=cycle.last.startedUs;
+    evidence.capturedUs=cycle.last.capturedUs;
+    evidence.finishedUs=cycle.last.finishedUs;
+    return evidence;
+}
+
+// Worker-only operation. Never called from boot observation or a GET handler.
+// Locks precede fresh evidence; SDK write failure/readback uncertainty is not retried.
+const char* acceptHealthyManagedImage()
+{
+    ProcessingAccess processing;if(!processing)return "processing_busy";
+    UpdateAccess update;if(!update)return "update_busy";
+    const auto evidence=observeOtaHealth();
+    const char* reason=MeterOtaHealth::evaluate(evidence);
+    if(std::string(reason)!="ready")return reason;
+    const auto* running=esp_ota_get_running_partition();
+    esp_ota_img_states_t state=ESP_OTA_IMG_UNDEFINED;
+    if(!running || esp_ota_get_state_partition(running,&state)!=ESP_OK ||
+        state!=ESP_OTA_IMG_PENDING_VERIFY)return "pending_state_changed";
+    if(esp_ota_mark_app_valid_cancel_rollback()!=ESP_OK)return "acceptance_write_failed";
+    if(esp_ota_get_running_partition()!=running ||
+        esp_ota_get_state_partition(running,&state)!=ESP_OK || state!=ESP_OTA_IMG_VALID)
+        return "acceptance_readback_uncertain";
+    return "accepted";
+}
+
+// Only the automatic-flow task calls this, after initialization and between
+// cycles. A failed write/readback is terminal for this boot, never retried.
+static void servicePendingImage()
+{
+    static bool terminal=false;
+    static int64_t firstCheckUs=0;
+    if(terminal)return;
+    const auto evidence=observeOtaHealth();
+    if(!evidence.rollbackConfigured || !evidence.pendingImage){terminal=true;return;}
+    if(!firstCheckUs)firstCheckUs=esp_timer_get_time();
+    if(esp_timer_get_time()-firstCheckUs>600000000){
+        terminal=true;
+        LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"OTA validation window expired; image remains unaccepted");
+        return;
+    }
+    if(!evidence.bundleVerified || evidence.systemFaults || !evidence.configurationReadable)return;
+    if(!evidence.modelSelfTestPassed){
+        portENTER_CRITICAL(&polarTestMux);
+        const bool busy=polarTestActive;
+        if(!busy){polarTestActive=true;polarTestResult=PolarRuntimeTestResult{};}
+        portEXIT_CRITICAL(&polarTestMux);
+        if(busy)return;
+        const auto result=runPolarRuntimeTest();
+        portENTER_CRITICAL(&polarTestMux);
+        polarTestResult=result;polarTestActive=false;
+        portEXIT_CRITICAL(&polarTestMux);
+        if(std::string(result.status)=="processing_busy")return;
+        const auto tested=observeOtaHealth();
+        if(!tested.modelSelfTestPassed){
+            terminal=true;
+            LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"OTA model self-test failed; image remains unaccepted");
+        }
+        return;
+    }
+    if(std::string(MeterOtaHealth::evaluate(evidence))!="ready")return;
+    const char* outcome=acceptHealthyManagedImage();
+    if(std::string(outcome)=="processing_busy" || std::string(outcome)=="update_busy")return;
+    terminal=true;
+    LogFile.WriteToFile(std::string(outcome)=="accepted"?ESP_LOG_INFO:ESP_LOG_ERROR,
+        TAG,std::string("OTA acceptance outcome: ")+outcome);
+}
+
+esp_err_t handler_ota_health(httpd_req_t* req)
+{
+    const auto evidence=observeOtaHealth();
+    const bool modelPassed=evidence.modelSelfTestPassed;
+    const int faults=static_cast<int>(evidence.systemFaults);
+    const bool completedCapture=!evidence.processingActive && evidence.lastPipelineCompleted &&
+        evidence.capturedUs>0 && evidence.finishedUs>=evidence.capturedUs;
+    esp_ota_img_states_t state=ESP_OTA_IMG_UNDEFINED;
+    const auto* running=esp_ota_get_running_partition();
+    const bool stateKnown=running && esp_ota_get_state_partition(running,&state)==ESP_OK;
+    const char* reason=MeterOtaHealth::evaluate(evidence);
+    // Observational snapshots only. This endpoint holds no transaction lock and
+    // does not prove the installed bootloader's rollback/recovery behavior.
+    std::string json="{\"version\":2,\"system_faults\":"+std::to_string(faults)+
+        ",\"configuration_readable\":"+(evidence.configurationReadable?"true":"false")+
+        ",\"frozen_model_self_test_passed\":"+(modelPassed?"true":"false")+
+        ",\"last_capture_pipeline_completed\":"+(completedCapture?"true":"false")+
+        ",\"bundle_compatibility_verified\":"+(evidence.bundleVerified?"true":"false")+
+        ",\"rollback_configured\":"+(evidence.rollbackConfigured?"true":"false")+
+        ",\"image_state_known\":"+(stateKnown?"true":"false")+
+        ",\"pending_image\":"+(evidence.pendingImage?"true":"false")+
+        ",\"consecutive_reader_cycles\":"+std::to_string(evidence.consecutiveReaderCycles)+
+        ",\"software_policy_ready\":"+(std::string(reason)=="ready"?"true":"false")+
+        ",\"software_policy_reason\":\""+reason+"\",\"rollback_verified\":false,"
+        "\"acceptance_ready\":false,\"image_accepted_by_this_request\":false}";
+    httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    return httpd_resp_send(req,json.c_str(),json.size());
+}
+
 esp_err_t handler_get_heap(httpd_req_t *req)
 {
 #ifdef DEBUG_DETAIL_ON
@@ -368,38 +697,64 @@ esp_err_t handler_init(httpd_req_t *req)
     return ESP_OK;
 }
 
+static std::atomic_flag streamActive = ATOMIC_FLAG_INIT;
+struct StreamRequest { httpd_req_t* request; bool light; };
+
+static void streamWorker(void* argument)
+{
+    StreamRequest* work = static_cast<StreamRequest*>(argument);
+    httpd_req_t* request = work->request;
+    const httpd_handle_t server = request->handle;
+    const int socket = httpd_req_to_sockfd(request);
+    Camera.CaptureToStream(request, work->light);
+    delete work;
+    // Multipart streams end by closing the connection, never by reusing it.
+    httpd_req_async_handler_complete(request);
+    httpd_sess_trigger_close(server, socket);
+    streamActive.clear();
+    vTaskDelete(nullptr);
+}
+
 esp_err_t handler_stream(httpd_req_t *req)
 {
-#ifdef DEBUG_DETAIL_ON
-    LogFile.WriteHeapInfo("handler_stream - Start");
-    ESP_LOGD(TAG, "handler_stream uri: %s", req->uri);
-#endif
-
-    char _query[50];
-    char _value[10];
-    bool flashlightOn = false;
-
-    if (httpd_req_get_url_query_str(req, _query, 50) == ESP_OK)
+    char query[64];
+    char value[10];
+    bool light = false;
+    if (httpd_req_get_url_query_len(req))
     {
-        //        ESP_LOGD(TAG, "Query: %s", _query);
-        if (httpd_query_key_value(_query, "flashlight", _value, 10) == ESP_OK)
+        if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK)
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid stream query");
+        const esp_err_t parsed = httpd_query_key_value(query, "flashlight", value, sizeof(value));
+        if (parsed != ESP_OK && parsed != ESP_ERR_NOT_FOUND)
+            return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid flashlight value");
+        if (parsed == ESP_OK)
         {
-#ifdef DEBUG_DETAIL_ON
-            ESP_LOGD(TAG, "flashlight is found%s", _value);
-#endif
-            if (strlen(_value) > 0)
-            {
-                flashlightOn = true;
-            }
+            if (!strcmp(value, "true") || !strcmp(value, "1")) light = true;
+            else if (strcmp(value, "false") && strcmp(value, "0"))
+                return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "flashlight must be true or false");
         }
     }
-
-    Camera.CaptureToStream(req, flashlightOn);
-
-#ifdef DEBUG_DETAIL_ON
-    LogFile.WriteHeapInfo("handler_stream - Done");
-#endif
-
+    if (!Camera.getCameraInitSuccessful())
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Camera not initialized");
+    if (streamActive.test_and_set()) return cameraBusyResponse(req);
+    StreamPreview::reset();
+    StreamRequest* work = new (std::nothrow) StreamRequest{nullptr, light};
+    if (!work) { streamActive.clear(); return cameraBusyResponse(req); }
+    esp_err_t result = httpd_req_async_handler_begin(req, &work->request);
+    if (result != ESP_OK)
+    {
+        delete work;
+        streamActive.clear();
+        return result;
+    }
+    if (xTaskCreate(streamWorker, "camera_stream", 6144, work, 3, nullptr) != pdPASS)
+    {
+        // The copied request must be completed even when no worker can start.
+        cameraBusyResponse(work->request);
+        httpd_req_async_handler_complete(work->request);
+        delete work;
+        streamActive.clear();
+    }
     return ESP_OK;
 }
 
@@ -800,6 +1155,8 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
 
 esp_err_t handler_editflow(httpd_req_t *req)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("handler_editflow - Start");
 #endif
@@ -1642,7 +1999,8 @@ esp_err_t handler_prevalue(httpd_req_t *req)
 
 void task_autodoFlow(void *pvParameter)
 {
-    int64_t fr_start, fr_delta_ms;
+    int64_t fr_start;
+    int64_t scheduledStartUs = 0;
 
     bTaskAutoFlowCreated = true;
 
@@ -1657,6 +2015,7 @@ void task_autodoFlow(void *pvParameter)
 
     ESP_LOGD(TAG, "task_autodoFlow: start");
     doInit();
+    servicePendingImage();
 
     flowctrl.setAutoStartInterval(auto_interval);
     autostartIsEnabled = flowctrl.getIsAutoStart();
@@ -1688,6 +2047,8 @@ void task_autodoFlow(void *pvParameter)
         LogFile.WriteToFile(ESP_LOG_INFO, TAG, _zw);
 
         fr_start = esp_timer_get_time();
+        // An explicit early manual wake starts a new cadence from that run.
+        if (!scheduledStartUs || fr_start < scheduledStartUs) scheduledStartUs = fr_start;
 
         if (flowisrunning)
         {
@@ -1702,6 +2063,7 @@ void task_autodoFlow(void *pvParameter)
 #endif
             flowisrunning = true;
             doflow();
+            servicePendingImage();
 #ifdef DEBUG_DETAIL_ON
             ESP_LOGD(TAG, "Remove older log files");
 #endif
@@ -1735,14 +2097,21 @@ void task_autodoFlow(void *pvParameter)
         wifiRoamByScanning();
 #endif
 
-        fr_delta_ms = (esp_timer_get_time() - fr_start) / 1000;
-
-        if (auto_interval > fr_delta_ms)
-        {
-            const TickType_t xDelay = (auto_interval - fr_delta_ms) / portTICK_PERIOD_MS;
-            ESP_LOGD(TAG, "Autoflow: sleep for: %ldms", (long)xDelay);
-            vTaskDelay(xDelay);
+        const int64_t nowUs = esp_timer_get_time();
+        const auto next = CycleSchedule::after(scheduledStartUs, nowUs,
+                                               static_cast<int64_t>(auto_interval)*1000);
+        if (!next.valid) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Invalid capture schedule; automatic runs stopped");
+            autostartIsEnabled = false;
+            break;
         }
+        scheduledStartUs = next.atUs;
+        CycleTelemetry::schedule(next.missed);
+        if (next.missed)
+            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Capture schedule missed slots: " + std::to_string(next.missed));
+        const int64_t tickUs = static_cast<int64_t>(portTICK_PERIOD_MS)*1000;
+        const int64_t waitUs = next.atUs-nowUs;
+        if (waitUs > 0) vTaskDelay(static_cast<TickType_t>(waitUs/tickUs+(waitUs%tickUs != 0)));
     }
 
     while (1)
@@ -1870,6 +2239,41 @@ void register_server_main_flow_task_uri(httpd_handle_t server)
     camuri.uri = "/json";
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_json);
     camuri.user_ctx = (void *)"JSON";
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/cycle_timing";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_cycle_timing);
+    camuri.user_ctx = NULL;
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/ota_health";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_ota_health);
+    camuri.user_ctx = NULL;
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/image_archive_status";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_image_archive_status);
+    camuri.user_ctx = NULL;
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/meter_accounting";
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_meter_accounting);
+    camuri.user_ctx = NULL;
+    httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/meter_history";camuri.method=HTTP_POST;
+    camuri.handler=APPLY_BASIC_AUTH_FILTER(handler_meter_history_refresh);
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register history refresh");
+    camuri.method=HTTP_GET;camuri.handler=APPLY_BASIC_AUTH_FILTER(handler_meter_history_status);
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register history status");
+
+    camuri.uri = "/polar_runtime_test";
+    camuri.method = HTTP_POST;
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_polar_test_start);
+    camuri.user_ctx = NULL;
+    httpd_register_uri_handler(server, &camuri);
+    camuri.method = HTTP_GET;
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_polar_test_status);
     httpd_register_uri_handler(server, &camuri);
 
     camuri.uri = "/heap";

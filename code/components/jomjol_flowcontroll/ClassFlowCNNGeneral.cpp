@@ -1,3 +1,4 @@
+#include "../jomjol_fileserver_ota/RuntimeBundle.h"
 #include "ClassFlowCNNGeneral.h"
 
 #include <math.h>
@@ -45,6 +46,14 @@ string ClassFlowCNNGeneral::getReadout(int _analog = 0, bool _extendedResolution
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "getReadout _analog=" + std::to_string(_analog) + ", _extendedResolution=" + std::to_string(_extendedResolution) + ", prev=" + std::to_string(prev));
  
     if (CNNType == Analogue || CNNType == Analogue100) {
+        if (usePolarReader) {
+            if (disabled) return string(GENERAL[_analog]->ROI.size() + (_extendedResolution ? 1 : 0), 'N');
+            for (auto* item : GENERAL[_analog]->ROI) {
+                if (item->isReject || !std::isfinite(item->result_float) ||
+                    item->result_float < 0 || item->result_float >= 10)
+                    return string(GENERAL[_analog]->ROI.size() + (_extendedResolution ? 1 : 0), 'N');
+            }
+        }
         float number = GENERAL[_analog]->ROI[GENERAL[_analog]->ROI.size() - 1]->result_float;
         int result_after_decimal_point = ((int) floor(number * 10) + 10) % 10;
         
@@ -325,8 +334,22 @@ bool ClassFlowCNNGeneral::ReadParameter(FILE* pfile, string& aktparamgraph) {
         return true;
     }
 
+    const bool analogSection = toUpper(aktparamgraph) == "[ANALOG]";
+    usePolarReader = false;
     while (this->getNextLine(pfile, &aktparamgraph) && !this->isNewParagraph(aktparamgraph)) {
         splitted = ZerlegeZeile(aktparamgraph);
+        if (splitted.empty()) continue;
+        if (toUpper(splitted[0]) == "READER") {
+            // Even an invalid explicit selection must remain fail-closed when
+            // the upstream configuration loader ignores ReadParameter's result.
+            usePolarReader = true;
+            if (splitted.size() != 2 || !analogSection || toUpper(splitted[1]) != "POLARV1") {
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unsupported Reader selection; PolarV1 requires [Analog]");
+                disabled = true;
+                return false;
+            }
+            continue;
+        }
         if ((toUpper(splitted[0]) == "ROIIMAGESLOCATION") && (splitted.size() > 1)) {
             this->imagesLocation = "/sdcard" + splitted[1];
             this->isLogImage = true;
@@ -367,6 +390,7 @@ bool ClassFlowCNNGeneral::ReadParameter(FILE* pfile, string& aktparamgraph) {
             }
             
             neuroi->result_float = -1;
+            neuroi->isReject = true;
             neuroi->image = NULL;
             neuroi->image_org = NULL;
         }
@@ -478,8 +502,10 @@ bool ClassFlowCNNGeneral::doFlow(string time) {
 #endif
 
     if (disabled) {
-      return true;
+      return !usePolarReader;
     }
+
+    if (usePolarReader) return doPolarNetwork(time);
 
     if (!doAlignAndCut(time)){
         return false;
@@ -487,7 +513,9 @@ bool ClassFlowCNNGeneral::doFlow(string time) {
 
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "doFlow after alignment");
 
-    doNeuralNetwork(time);
+    // A model-load/allocation failure must not be reported as a successful flow.
+    // Keep log cleanup and optional heap tracing balanced on either outcome.
+    const bool inferenceSucceeded = doNeuralNetwork(time);
 
     RemoveOldLogs();
 
@@ -496,7 +524,7 @@ bool ClassFlowCNNGeneral::doFlow(string time) {
     heap_trace_dump(); 
 #endif   
 
-    return true;
+    return inferenceSucceeded;
 }
 
 bool ClassFlowCNNGeneral::doAlignAndCut(string time) {
@@ -570,6 +598,22 @@ bool ClassFlowCNNGeneral::getNetworkParameter() {
     string zwcnn = "/sdcard" + cnnmodelfile;
     zwcnn = FormatFileName(zwcnn);
     ESP_LOGD(TAG, "%s", zwcnn.c_str());
+
+    if (usePolarReader) {
+        const bool valid = validatePolarGeometry() && tflite->LoadFrozenPolarModel(MeterBundle::frozenModelPath(zwcnn)) &&
+                           tflite->MakeAllocate() && tflite->HasPolarTensorContract();
+        delete tflite;
+        if (!valid) {
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "PolarV1 model or geometry contract rejected");
+            return false;
+        }
+        CNNType = Analogue;
+        // Preview dimensions only. Polar inference never consumes RGB resizing.
+        modelxsize = modelysize = 32;
+        modelchannel = 3;
+        for (auto* group : GENERAL) for (auto* item : group->ROI) item->isReject = true;
+        return true;
+    }
     
     if (!tflite->LoadModel(zwcnn)) {
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Can't load tflite model " + cnnmodelfile + " -> Init aborted!");
@@ -933,7 +977,8 @@ string ClassFlowCNNGeneral::getReadoutRawString(int _analog)
  
     for (int i = 0; i < GENERAL[_analog]->ROI.size(); ++i) {
         if (CNNType == Analogue || CNNType == Analogue100) {
-            rt = rt + "," + RundeOutput(GENERAL[_analog]->ROI[i]->result_float, 1);
+            if (usePolarReader && GENERAL[_analog]->ROI[i]->isReject) rt += ",N";
+            else rt = rt + "," + RundeOutput(GENERAL[_analog]->ROI[i]->result_float, 1);
         }
 
         if (CNNType == Digit) {

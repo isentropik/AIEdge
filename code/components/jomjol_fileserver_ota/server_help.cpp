@@ -1,4 +1,5 @@
 #include "server_help.h"
+#include "RuntimeBundle.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -35,14 +36,15 @@ bool endsWith(std::string const &str, std::string const &suffix)
 esp_err_t send_file(httpd_req_t *req, std::string filename)
 {
     std::string _filename_old = filename;
+    filename = MeterBundle::runtimePath(filename);
     struct stat file_stat;
     bool _gz_file_exists = false;
 
     ESP_LOGD(TAG, "old filename: %s", filename.c_str());
-    std::string _filename_temp = std::string(filename) + ".gz";
+    std::string _filename_temp = MeterBundle::runtimePath(_filename_old + ".gz");
 
     // Checks whether the file is available as .gz
-    if (stat(_filename_temp.c_str(), &file_stat) == 0) {
+    if (!_filename_temp.empty() && stat(_filename_temp.c_str(), &file_stat) == 0) {
         filename = _filename_temp;
 
         ESP_LOGD(TAG, "new filename: %s", filename.c_str());
@@ -74,7 +76,7 @@ esp_err_t send_file(httpd_req_t *req, std::string filename)
         endsWith(filename, ".gif") ||
         // endsWith(filename, ".zip") ||
         endsWith(filename, ".gz"))	{
-        if (filename == "/sdcard/html/setup.html") {
+        if (_filename_old == "/sdcard/html/setup.html" && !_gz_file_exists) {
             httpd_resp_set_hdr(req, "Clear-Site-Data", "\"*\"");
             set_content_type_from_file(req, filename.c_str());
         }

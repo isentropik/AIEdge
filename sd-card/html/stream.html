@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live camera preview</title>
+  <style>
+    body { margin: 16px; font: 16px system-ui, sans-serif; background: #171b20; color: #eee; }
+    img { display: block; max-width: 100%; margin: 16px auto; }
+    input { width: min(70%, 400px); vertical-align: middle; }
+    button { padding: 8px 12px; margin-right: 12px; }
+    a { color: #a9d6ff; } p { line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Live camera preview</h1>
+  <label for="intensity">Light intensity: <output id="value">—</output>%</label><br>
+  <input id="intensity" type="range" min="0" max="100" step="1" disabled>
+  <p id="status" role="status">Loading camera settings…</p>
+  <button id="reconnect" type="button">Reconnect preview</button>
+  <button id="save" type="button" disabled>Save intensity for captures</button>
+  <a href="edit_reference.html" target="_blank" rel="noopener">Camera settings</a>
+  <p>Changes here affect preview frames only and are not saved. Zero turns preview
+     lighting off. Recognition keeps its configured intensity until you explicitly
+     choose Save intensity for captures.</p>
+  <img id="preview" alt="Live camera preview">
+  <script src="stream_controls.js"></script>
+</body>
+</html>

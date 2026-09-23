@@ -73,6 +73,13 @@ union Rgb {
         __builtin_unreachable();
     }
 
+    // Wire storage only: byte 4 is dedicated W when the strip explicitly uses
+    // GRBW. Existing RGB/HSV alpha operations remain unchanged and are not RGBW
+    // color transforms. GPIO flash writes all four channel bytes explicitly.
+    inline uint8_t IRAM_ATTR getGrbw(int idx) {
+        return idx == 3 ? a : getGrb(idx);
+    }
+
     void stretchChannels(uint8_t maxR, uint8_t maxG, uint8_t maxB) {
         r = stretch(r, maxR);
         g = stretch(g, maxG);

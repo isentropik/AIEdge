@@ -39,6 +39,13 @@ public:
     ClassFlowAlignment(std::vector<ClassFlow *> *lfc);
 
     CAlignAndCutImage *GetAlignAndCutImage() { return AlignAndCutImage; };
+    bool HasFrozenPolarAlignment() const {
+        return !disabled && !initialflip && !use_antialiasing &&
+               initialrotate == 0.3f && anz_ref == 2 &&
+               References[0].alignment_algo == 3 && References[1].alignment_algo == 3 &&
+               References[0].target_x == 221 && References[0].target_y == 230 &&
+               References[1].target_x == 388 && References[1].target_y == 230;
+    }
 
     void DrawRef(CImageBasis *_zw);
 

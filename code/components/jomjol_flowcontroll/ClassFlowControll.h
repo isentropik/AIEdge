@@ -46,6 +46,7 @@ public:
 	bool SetupModeActive;
 
 	void InitFlow(std::string config);
+	bool hasFrozenArchiveProfile(){return flowanalog && !flowdigit && flowanalog->hasFrozenArchiveProfile();}
 	bool doFlow(string time);
 	void doFlowTakeImageOnly(string time);
 	bool getStatusSetupModus(){return SetupModeActive;};

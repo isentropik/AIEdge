@@ -1,4 +1,9 @@
+#include "CaptureArchiveBinding.h"
 #include "ClassFlowControll.h"
+#include "CameraAccess.h"
+#include "FileConfigStorage.h"
+#include "CycleTelemetry.h"
+#include "PolarAccounting.h"
 
 #include "connect_wlan.h"
 #include "read_wlanini.h"
@@ -35,6 +40,9 @@ static const char* TAG = "FLOWCTRL";
 
 std::string ClassFlowControll::doSingleStep(std::string _stepname, std::string _host)
 {
+    ProcessingAccess processing;
+    if (!processing) return "Processing busy";
+    if (!ConfigStorage::safe().load()) return "Configuration recovery required";
     std::string _classname = "";
     std::string result = "";
 
@@ -308,6 +316,32 @@ ClassFlow* ClassFlowControll::CreateClassFlow(std::string _type)
 
 void ClassFlowControll::InitFlow(std::string config)
 {
+    ProcessingAccess processing;
+    // Do not invalidate or rewrite the running flow's status when busy.
+    if (!processing) return;
+    ImageArchive::disableCaptureArchive(); // Invalidate before any model/configuration mutation.
+    ConfigStorage::safe().store(false);
+    CameraAccess access(pdMS_TO_TICKS(1000));
+    if (!access) { aktstatus = "Configuration busy"; aktstatusWithTime = aktstatus; return; }
+    ConfigStorage::Files storage;
+    const auto recovered = ConfigJournal::recover(storage, FormatFileName(config));
+    if (recovered != ConfigJournal::Result::Ok && recovered != ConfigJournal::Result::CleanupPending)
+    {
+        aktstatus = "Configuration recovery required";
+        aktstatusWithTime = aktstatus;
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, aktstatus);
+        return;
+    }
+    std::string validatedConfig;
+    if (storage.read(FormatFileName(config), validatedConfig) != ConfigJournal::Read::Ok ||
+        validatedConfig.empty() || validatedConfig.size() > ConfigJournal::limit)
+    {
+        aktstatus = "Configuration unavailable, empty or oversized";
+        aktstatusWithTime = aktstatus;
+        return;
+    }
+    validatedConfig.clear();
+    validatedConfig.shrink_to_fit();
     aktstatus = "Initialization";
     aktstatusWithTime = aktstatus;
 
@@ -322,13 +356,23 @@ void ClassFlowControll::InitFlow(std::string config)
     FILE* pFile;
     config = FormatFileName(config);
     pFile = fopen(config.c_str(), "r");
+    if (!pFile) {
+        aktstatus = "Configuration unavailable";
+        aktstatusWithTime = aktstatus;
+        return;
+    }
 
     line = "";
 
     char zw[1024];
 	
     if (pFile != NULL) {
-        fgets(zw, 1024, pFile);
+        if (!fgets(zw, 1024, pFile)) {
+            fclose(pFile);
+            aktstatus = "Configuration empty or unreadable";
+            aktstatusWithTime = aktstatus;
+            return;
+        }
         ESP_LOGD(TAG, "%s", zw);
         line = std::string(zw);
     }
@@ -351,7 +395,9 @@ void ClassFlowControll::InitFlow(std::string config)
         }
     }
 
-    fclose(pFile);
+    const bool readFailed = ferror(pFile);
+    const bool closeFailed = fclose(pFile) != 0;
+    ConfigStorage::safe().store(!readFailed && !closeFailed);
 }
 
 std::string* ClassFlowControll::getActStatusWithTime()
@@ -372,6 +418,9 @@ void ClassFlowControll::setActStatus(std::string _aktstatus)
 
 void ClassFlowControll::doFlowTakeImageOnly(string time)
 {
+    ProcessingAccess processing;
+    if (!processing) return;
+    if (!ConfigStorage::safe().load()) return;
     std::string zw_time;
 
     for (int i = 0; i < FlowControll.size(); ++i) {
@@ -390,6 +439,10 @@ void ClassFlowControll::doFlowTakeImageOnly(string time)
 
 bool ClassFlowControll::doFlow(string time)
 {
+    CycleTelemetry::Span cycle;
+    if (!cycle) return false;
+    PolarAccounting::beginIfUsed();
+    if (!ConfigStorage::safe().load()) return false;
     bool result = true;
     std::string zw_time;
     int repeat = 0;
@@ -421,7 +474,34 @@ bool ClassFlowControll::doFlow(string time)
             LogFile.WriteHeapInfo(zw);
         #endif
 
-        if (!FlowControll[i]->doFlow(time)) {
+        const int64_t stageStarted = esp_timer_get_time();
+        const bool stageOk = FlowControll[i]->doFlow(time);
+        cycle.stage(i, stageStarted, stageOk);
+        if(stageOk && FlowControll[i]==flowanalog && hasFrozenArchiveProfile())cycle.readerAccepted();
+        if (stageOk && FlowControll[i]->name() == "ClassFlowTakeImage" && flowtakeimage &&
+            flowtakeimage->rawImage && flowtakeimage->rawImage->captureTimestampValid)
+            cycle.capture(flowtakeimage->rawImage->captureMonotonicUs);
+        if (!stageOk) {
+            if (FlowControll[i]->name() == "ClassFlowMQTT") {
+                // A broker failure does not invalidate the image or justify
+                // rerunning postprocessing, capturing again, or rebooting.
+                aktstatus = "MQTT publication failed";
+                aktstatusWithTime = aktstatus + " (" + getCurrentTimeString("%H:%M:%S") + ")";
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, aktstatusWithTime);
+                return false;
+            }
+            // A rejected recognition is not a reason to retry the same image or
+            // reboot. Stop before post-processing/publication can reuse old ROIs.
+            if (FlowControll[i]->name() == "ClassFlowCNNGeneral" ||
+                FlowControll[i]->name() == "ClassFlowTakeImage") {
+                aktstatus = FlowControll[i]->name() == "ClassFlowTakeImage" ? "Capture failed" : "Recognition failed";
+                aktstatusWithTime = aktstatus + " (" + getCurrentTimeString("%H:%M:%S") + ")";
+                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, aktstatusWithTime);
+                #ifdef ENABLE_MQTT
+                    MQTTPublish(mqttServer_getMainTopic() + "/status", aktstatus, qos, false);
+                #endif
+                return false;
+            }
             repeat++;
             LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Fehler im vorheriger Schritt - wird zum " + to_string(repeat) + ". Mal wiederholt");
             if (i) { i -= 1; }   // vPrevious step must be repeated (probably take pictures)
@@ -449,6 +529,7 @@ bool ClassFlowControll::doFlow(string time)
         MQTTPublish(mqttServer_getMainTopic() + "/" + "status", aktstatus, qos, false);
     #endif //ENABLE_MQTT
 
+    cycle.finish(result);
     return result;
 }
 

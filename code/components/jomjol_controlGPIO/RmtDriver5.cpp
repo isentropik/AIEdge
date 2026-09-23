@@ -55,8 +55,8 @@ static size_t IRAM_ATTR encEncode(rmt_encoder_t* encoder, rmt_channel_handle_t t
         Rgb* pixel = ((Rgb*)primary_data) + self->frame_idx;
         self->buffer_len = sizeof(self->buffer);
         for (size_t i = 0; i < sizeof(self->buffer); ++i) {
-            self->buffer[i] = pixel->getGrb(self->component_idx);
-            if (++self->component_idx == 3) {
+            self->buffer[i] = pixel->getGrbw(self->component_idx);
+            if (++self->component_idx == self->bytes_per_pixel) {
                 self->component_idx = 0;
                 if (++self->frame_idx == data_size) {
                     self->buffer_len = i + 1;
@@ -105,6 +105,8 @@ RmtDriver::RmtDriver(const LedType& timing, int count, int pin, int channel_num,
     , _encoder {} {}
 
 esp_err_t RmtDriver::init() {
+    if (_timing.bytesPerPixel != 3 && _timing.bytesPerPixel != 4) return ESP_ERR_INVALID_ARG;
+    _encoder.bytes_per_pixel = _timing.bytesPerPixel;
     _encoder.base.encode = encEncode;
     _encoder.base.reset = encReset;
     _encoder.base.del = encDelete;

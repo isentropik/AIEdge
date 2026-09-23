@@ -9,6 +9,7 @@
 
 #include "CImageBasis.h"
 #include "ClassControllCamera.h"
+#include "CameraAccess.h"
 #include "MainFlowControl.h"
 
 #include "esp_wifi.h"
@@ -26,22 +27,31 @@ static const char *TAG = "TAKEIMAGE";
 esp_err_t ClassFlowTakeImage::camera_capture(void)
 {
     string nm = namerawimage;
-    Camera.CaptureToFile(nm);
+    TimeImageTaken = 0;
+    const esp_err_t result = Camera.CaptureToFile(nm);
+    if (result != ESP_OK) return result;
     time(&TimeImageTaken);
     localtime(&TimeImageTaken);
 
     return ESP_OK;
 }
 
-void ClassFlowTakeImage::takePictureWithFlash(int flash_duration)
+bool ClassFlowTakeImage::takePictureWithFlash(int flash_duration)
 {
+    TimeImageTaken = 0;
+    if (!rawImage) return false;
+    rawImage->captureTimestampValid = false;
+    rawImage->captureMonotonicUs = 0;
+    const int64_t requiredBytes = int64_t(CCstatus.ImageWidth) * CCstatus.ImageHeight * 3;
+    if (CCstatus.ImageWidth <= 0 || CCstatus.ImageHeight <= 0 ||
+        requiredBytes > rawImage->getBufferSize()) return false;
     // in case the image is flipped, it must be reset here //
     rawImage->width = CCstatus.ImageWidth;
     rawImage->height = CCstatus.ImageHeight;
 
     ESP_LOGD(TAG, "flash_duration: %d", flash_duration);
 
-    Camera.CaptureToBasisImage(rawImage, flash_duration);
+    if (Camera.CaptureToBasisImage(rawImage, flash_duration) != ESP_OK) return false;
 
     time(&TimeImageTaken);
     localtime(&TimeImageTaken);
@@ -50,6 +60,7 @@ void ClassFlowTakeImage::takePictureWithFlash(int flash_duration)
     {
         rawImage->SaveToFile(namerawimage);
     }
+    return true;
 }
 
 void ClassFlowTakeImage::SetInitialParameter(void)
@@ -64,6 +75,8 @@ void ClassFlowTakeImage::SetInitialParameter(void)
 // wird beim Start aufgerufen
 bool ClassFlowTakeImage::ReadParameter(FILE *pfile, string &aktparamgraph)
 {
+    CameraAccess access(pdMS_TO_TICKS(1000));
+    if (!access) return false;
     Camera.getSensorDatenToCCstatus(); // Kamera >>> CCstatus
 
     std::vector<string> splitted;
@@ -540,7 +553,9 @@ string ClassFlowTakeImage::getHTMLSingleStep(string host)
 // wird bei jeder Auswertrunde aufgerufen
 bool ClassFlowTakeImage::doFlow(string zwtime)
 {
-    psram_init_shared_memory_for_take_image_step();
+    CameraAccess access(pdMS_TO_TICKS(1000));
+    if (!access) return false;
+    if (!psram_init_shared_memory_for_take_image_step()) return false;
 
     string logPath = CreateLogFolder(zwtime);
 
@@ -563,7 +578,7 @@ bool ClassFlowTakeImage::doFlow(string zwtime)
         CFstatus.changedCameraSettings = false;
     }
 
-    takePictureWithFlash(flash_duration);
+    const bool captured = takePictureWithFlash(flash_duration);
 
 #ifdef WIFITURNOFF
     esp_wifi_start();
@@ -573,7 +588,7 @@ bool ClassFlowTakeImage::doFlow(string zwtime)
     LogFile.WriteHeapInfo("ClassFlowTakeImage::doFlow - After takePictureWithFlash");
 #endif
 
-    LogImage(logPath, "raw", NULL, NULL, zwtime, rawImage);
+    if (captured) LogImage(logPath, "raw", NULL, NULL, zwtime, rawImage);
 
     RemoveOldLogs();
 
@@ -583,11 +598,13 @@ bool ClassFlowTakeImage::doFlow(string zwtime)
 
     psram_deinit_shared_memory_for_take_image_step();
 
-    return true;
+    return captured;
 }
 
 esp_err_t ClassFlowTakeImage::SendRawJPG(httpd_req_t *req)
 {
+    CameraAccess access;
+    if (!access) return cameraBusyResponse(req);
     int flash_duration = (int)(CCstatus.WaitBeforePicture * 1000);
     time(&TimeImageTaken);
     localtime(&TimeImageTaken);
@@ -597,10 +614,16 @@ esp_err_t ClassFlowTakeImage::SendRawJPG(httpd_req_t *req)
 
 ImageData *ClassFlowTakeImage::SendRawImage(void)
 {
+    CameraAccess access(pdMS_TO_TICKS(1000));
+    if (!access) return nullptr;
     CImageBasis *zw = new CImageBasis("SendRawImage", rawImage);
     ImageData *id;
     int flash_duration = (int)(CCstatus.WaitBeforePicture * 1000);
-    Camera.CaptureToBasisImage(zw, flash_duration);
+    if (Camera.CaptureToBasisImage(zw, flash_duration) != ESP_OK)
+    {
+        delete zw;
+        return nullptr;
+    }
     time(&TimeImageTaken);
     localtime(&TimeImageTaken);
 

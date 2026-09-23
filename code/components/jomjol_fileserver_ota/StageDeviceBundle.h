@@ -1,0 +1,94 @@
+#pragma once
+#include "VerifyDeviceBundle.h"
+#include "miniz/miniz.h"
+#include <fcntl.h>
+#include <unistd.h>
+#include <cerrno>
+namespace MeterBundle {
+enum class StageResult { Rejected, IoError, Conflict, Existing, Staged };
+inline bool bundleDirectory(const std::string& path){
+ if(mkdir(path.c_str(),0700)!=0&&errno!=EEXIST)return false;
+ struct stat st{};return stat(path.c_str(),&st)==0&&S_ISDIR(st.st_mode);
+}
+inline bool bundleParents(const std::string& root,const std::string& name){
+ size_t at=0;
+ while((at=name.find('/',at))!=std::string::npos){
+  if(!bundleDirectory(root+"/"+name.substr(0,at)))return false;
+  ++at;
+ }
+ return true;
+}
+template<class Hash> struct BundleSink {
+ int fd;uint64_t written=0,limit;Hash hash;bool ok=true;
+ BundleSink(int f,uint64_t size):fd(f),limit(size){}
+ static size_t append(void* opaque,mz_uint64 offset,const void* data,size_t size){
+  auto& self=*static_cast<BundleSink*>(opaque);
+  if(!self.ok||offset!=self.written||self.written>self.limit||size>self.limit-self.written){self.ok=false;return 0;}
+  if(size && (write(self.fd,data,size)!=static_cast<ssize_t>(size)||
+     !self.hash.update(static_cast<const unsigned char*>(data),size))){self.ok=false;return 0;}
+  self.written+=size;return size;
+ }
+};
+// Only from the exclusive managed installer. Never writes current HTML, apps
+// indexes, flash, or existing objects. Failed pending directories are retained.
+template<class Hash> StageResult stageZip(const std::string& zipPath,const std::string& base,
+ const std::string& id,const std::string& model){
+ if(!hashValid(id)||!hashValid(model))return StageResult::Rejected;
+ mz_zip_archive zip{};
+ if(!mz_zip_reader_init_file(&zip,zipPath.c_str(),0))return StageResult::Rejected;
+ struct CloseZip {mz_zip_archive* p;~CloseZip(){mz_zip_reader_end(p);}} closeZip{&zip};
+ const auto count=mz_zip_reader_get_num_files(&zip);
+ if(!count||count>ArchiveInventory::maximumEntries)return StageResult::Rejected;
+ ArchiveInventory inventory;std::map<std::string,mz_uint> entries;
+ for(mz_uint i=0;i<count;++i){mz_zip_archive_file_stat st{};
+  if(!mz_zip_reader_file_stat(&zip,i,&st)||st.m_is_directory||st.m_is_encrypted||!st.m_is_supported||
+     !inventory.add(st.m_filename,false,st.m_uncomp_size))return StageResult::Rejected;
+  entries.emplace(st.m_filename,i);
+ }
+ const auto found=entries.find("device-manifest.json");
+ if(found==entries.end())return StageResult::Rejected;
+ mz_zip_archive_file_stat ms{};
+ if(!mz_zip_reader_file_stat(&zip,found->second,&ms)||!ms.m_uncomp_size||ms.m_uncomp_size>128*1024)return StageResult::Rejected;
+ std::unique_ptr<char[]> bytes(new(std::nothrow) char[ms.m_uncomp_size]);
+ if(!bytes)return StageResult::IoError;
+ if(!mz_zip_reader_extract_to_mem(&zip,found->second,bytes.get(),ms.m_uncomp_size,0))return StageResult::Rejected;
+ const std::string body(bytes.get(),ms.m_uncomp_size);bytes.reset();
+ auto sha=[](const std::string& text){Hash h;return h.update(reinterpret_cast<const unsigned char*>(text.data()),text.size())?h.finish():std::string();};
+ Manifest m;
+ if(!parse(body,m,sha)||m.id!=id||m.bootPolicy!="required_bundle"||m.modelHash!=model)return StageResult::Rejected;
+ auto wanted=m.assets;wanted.emplace("firmware/firmware.bin",m.firmware);
+ File manifestFile;manifestFile.bytes=body.size();manifestFile.hash=sha(body);
+ wanted.emplace("device-manifest.json",manifestFile);
+ for(const auto& item:wanted){auto e=entries.find(item.first);mz_zip_archive_file_stat st{};
+  if(e==entries.end()||!mz_zip_reader_file_stat(&zip,e->second,&st)||st.m_uncomp_size!=item.second.bytes)return StageResult::Rejected;
+ }
+ const std::string object=base+"/objects/"+id,pending=base+"/pending/"+id;
+ struct stat st{};
+ if(stat(object.c_str(),&st)==0){Manifest existing;
+  return S_ISDIR(st.st_mode)&&verify<Hash>(object,id,existing).verified?StageResult::Existing:StageResult::Conflict;
+ }
+ if(errno!=ENOENT)return StageResult::IoError;
+ if(!bundleDirectory(base)||!bundleDirectory(base+"/objects")||!bundleDirectory(base+"/pending")||
+    !bundleDirectory(base+"/apps"))return StageResult::IoError;
+ if(mkdir(pending.c_str(),0700)!=0)return errno==EEXIST?StageResult::Conflict:StageResult::IoError;
+ for(const auto& item:wanted){
+  if(!bundleParents(pending,item.first))return StageResult::IoError;
+  int flags=O_WRONLY|O_CREAT|O_EXCL;
+#ifdef O_BINARY
+  flags|=O_BINARY;
+#endif
+  const std::string path=pending+"/"+item.first;int fd=open(path.c_str(),flags,0600);
+  if(fd<0)return StageResult::IoError;
+  BundleSink<Hash> sink(fd,item.second.bytes);
+  bool ok=mz_zip_reader_extract_to_callback(&zip,entries.at(item.first),BundleSink<Hash>::append,&sink,0)&&
+          sink.ok&&sink.written==item.second.bytes&&sink.hash.finish()==item.second.hash;
+  if(ok&&fsync(fd)!=0)ok=false;
+  if(close(fd)!=0)ok=false;
+  if(!ok||!verifyFile<Hash>(path,item.second))return StageResult::IoError;
+ }
+ Manifest verified;if(!verify<Hash>(pending,id,verified).verified)return StageResult::Rejected;
+ if(stat(object.c_str(),&st)==0)return StageResult::Conflict;
+ if(errno!=ENOENT||std::rename(pending.c_str(),object.c_str())!=0)return StageResult::IoError;
+ return StageResult::Staged;
+}
+}

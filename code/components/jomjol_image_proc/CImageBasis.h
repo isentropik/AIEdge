@@ -41,7 +41,12 @@ class CImageBasis
     public:
         uint8_t* rgb_image = NULL;
         int channels;
-        int width, height, bpp; 
+        int width, height, bpp;
+        // Driver timestamp of first frame DMA buffer, relative to this boot.
+        // Never substitute HTTP retrieval time or the end of JPEG decoding.
+        int64_t captureMonotonicUs = 0;
+        bool captureTimestampValid = false;
+        int getBufferSize() const { return memsize; }
 
         uint8_t * RGBImageLock(int _waitmaxsec = 60);
         void RGBImageRelease();

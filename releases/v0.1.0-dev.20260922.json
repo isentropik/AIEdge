@@ -1,0 +1,14 @@
+{
+  "status": "development-preview",
+  "app_source_base": "a1ccda2e88f8924d6633b285f7b3334f3263cc2f",
+  "app_package_bundle_id": "d24d210cbe3d437bc29acbee761bff29af83aee716c3500cbfe1355a0d5936c5",
+  "app_model_sha256": "b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0",
+  "artifact_sha256": {
+    "bootloader.bin": "d1abc1eab6492de0a1d81568691124d9a97596f692704371da9be53451aae326",
+    "partitions.bin": "9d4a2809ae90fb20709a8ca3dd3ac3462e1e73286bcd31b689060c91de06fa3a",
+    "ota_data_initial.bin": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f",
+    "aiedge-bootstrap.bin": "739f02856c6c04418a584289c5c1095702c53cdb2591ce89ac7da810771e003b",
+    "aiedge-package.zip": "78d734258251395bc4c60dddd3cbae49f0c2f596ae7567aef10b09f2652cc405"
+  },
+  "github_loader_hardware_verified": false
+}
