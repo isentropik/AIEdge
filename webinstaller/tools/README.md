@@ -11,3 +11,7 @@ The unmodified flow resets before closing and reopening USB. The user reported d
 Post-flash Next opens Wi-Fi setup whenever discovery succeeds, including installations without erase. The normal firmware flash and binary verification are unchanged.
 
 Automated recovery and integrity checks pass. The user is testing the physical reset/discovery behavior; do not claim that hardware validation is complete until the result is recorded.
+
+## Wi-Fi password visibility
+
+The USB Wi-Fi dialog includes an Show password eye button inside the password field. Toggling it only changes the password field type, preserving the entered value. It does not submit credentials. The setup hotspot page uses the same eye button. `password-fixture.html` exercises the actual bundle against a simulated serial device, without connecting to hardware.

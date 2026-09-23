@@ -44,11 +44,36 @@ await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,
   // Wording only: retain upstream erase-and-reinstall behavior and confirmation.
   if(s.split('Erase User Data').length!==4) throw new Error('Upstream erase label count changed');
   s=s.replaceAll('Erase User Data','Erase user data / reinstall');
+  // An accessible eye button in the field toggles visibility without submitting.
+  s=replaceOnce(s,`                ></ew-filled-text-field>
+              \x60
+                : ""}
+        </div>`, `                >
+                  <ew-icon-button slot="trailing-icon" type="button" aria-label="Show password" title="Show password"
+                    @click=\x24{(event) => {
+                      const field = this.shadowRoot.querySelector('ew-filled-text-field[name="password"]');
+                      if (!field) return;
+                      const show = field.type === "password";
+                      field.type = show ? "text" : "password";
+                      const button = event.currentTarget;
+                      const label = show ? "Hide password" : "Show password";
+                      button.setAttribute("aria-label", label); button.title = label;
+                      button.querySelector(".eye-slash").style.display = show ? "" : "none";
+                    }}>
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M2 12Q6 5 12 5Q18 5 22 12Q18 19 12 19Q6 19 2 12Z"></path><circle cx="12" cy="12" r="3"></circle>
+                      <path class="eye-slash" style="display:none" d="M3 3L21 21"></path>
+                    </svg>
+                  </ew-icon-button>
+                </ew-filled-text-field>
+              \x60
+                : ""}
+        </div>`);
   return {contents:s,loader:'js',resolveDir:path.dirname(args.path)};
  });
 }}]});
 // Retain upstream and bundled dependency licenses, not just minifier comments.
-let notices='AIEdge bundles ESP Web Tools 10.4.0 with the discovery modification in tools/build.mjs.\nUpstream: https://github.com/esphome/esp-web-tools\nBrowser flashing remains upstream work. AIEdge does not claim authorship of bundled dependencies.\n\n';
+let notices='AIEdge bundles ESP Web Tools 10.4.0 with USB discovery recovery, erase-label wording and a password visibility eye button in tools/build.mjs.\nUpstream: https://github.com/esphome/esp-web-tools\nBrowser flashing remains upstream work. AIEdge does not claim authorship of bundled dependencies.\n\n';
 async function visit(dir){for(const ent of await fs.readdir(dir,{withFileTypes:true})){
  if(!ent.isDirectory()||ent.name==='.bin'||ent.name==='@esbuild'||ent.name==='esbuild')continue;
  const sub=path.join(dir,ent.name);

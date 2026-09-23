@@ -28,6 +28,7 @@
 #include "esp_system.h"
 #include "esp_mac.h"
 #include "DeviceIdentity.h"
+#include "DownloadProgress.h"
 #include "mdns.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -43,6 +44,7 @@
 // No camera, inference, MQTT or formatting in this application.
 static std::atomic<int> phase{0}; // 0 ready, 1 connecting, 2 download, 3 verify, 4 flash, 5 complete, negatives errors
 static std::atomic<unsigned> downloaded{0};
+static AIEdgeDownload::Progress download_progress; // Protected by setup_lock.
 static EventGroupHandle_t wifi_events;
 static bool sd_ready=false;
 static std::string ssid,password;
@@ -124,7 +126,7 @@ static esp_err_t download_event(esp_http_client_event_t* event){
 }
 static void download_failure(const std::string& message){SetupGuard guard;download_error=message;printf("AIEdge download: %s\n",message.c_str());}
 static bool fetch_package() {
- {SetupGuard guard;download_error.clear();}
+ {SetupGuard guard;download_error.clear();downloaded=0;download_progress.begin(uint32_t(esp_timer_get_time()/1000));}
  std::string url=PACKAGE_URL,location;esp_http_client_handle_t client=nullptr;bool ok=false;
  for(int attempt=0;attempt<4;++attempt){
   if(!release_url(url))break;
@@ -141,12 +143,19 @@ static bool fetch_package() {
   }else{download_failure(std::string("Connection failed: ")+esp_err_to_name(opened)+", errno "+std::to_string(esp_http_client_get_errno(client)));esp_http_client_cleanup(client);client=nullptr;break;}
  }
  FILE* f=ok?fopen("/sdcard/aiedge-download.zip","wb"):nullptr;if(ok&&!f){download_failure("Could not open SD download file");ok=false;}
- ImageArchive::Sha256 hash;unsigned char buffer[4096];unsigned count=0;int64_t start=esp_timer_get_time();
+ ImageArchive::Sha256 hash;unsigned char buffer[4096];unsigned count=0;int64_t start=esp_timer_get_time(),last_data=start;
  while(ok&&count<PACKAGE_BYTES){
-  if(esp_timer_get_time()-start>120000000){download_failure("Download exceeded 120 seconds");ok=false;break;}
+  const int64_t now=esp_timer_get_time();
+  const auto limit=AIEdgeDownload::timeout(uint32_t((now-start)/1000),uint32_t((now-last_data)/1000));
+  if(limit!=AIEdgeDownload::Timeout::None){download_failure(limit==AIEdgeDownload::Timeout::Stalled?"No download data received for 30 seconds":"Download exceeded 10 minutes");ok=false;break;}
   int n=esp_http_client_read(client,reinterpret_cast<char*>(buffer),sizeof buffer);
+  if(n==-ESP_ERR_HTTP_EAGAIN){vTaskDelay(1);continue;}
   if(n<=0||count+(unsigned)n>PACKAGE_BYTES){download_failure("Download interrupted at "+std::to_string(count)+" bytes; read result "+std::to_string(n));ok=false;break;}
-  ok=hash.update(buffer,n)&&fwrite(buffer,1,n,f)==(size_t)n;count+=n;downloaded=count;vTaskDelay(1);
+  ok=hash.update(buffer,n)&&fwrite(buffer,1,n,f)==(size_t)n;
+  if(!ok){download_failure("Could not hash or save the downloaded data to SD");break;}
+  count+=n;downloaded=count;last_data=esp_timer_get_time();
+  {SetupGuard guard;download_progress.received(count,uint32_t(esp_timer_get_time()/1000));}
+  vTaskDelay(1);
  }
  if(f){if(fflush(f)!=0||fsync(fileno(f))!=0)ok=false;if(fclose(f)!=0)ok=false;}
  if(client){esp_http_client_close(client);esp_http_client_cleanup(client);}
@@ -209,14 +218,29 @@ static void wifi_event(void*,esp_event_base_t base,int32_t id,void* data) {
  }
 }
 
-static esp_err_t home(httpd_req_t* req){httpd_resp_set_type(req,"text/html");return httpd_resp_send(req,page,HTTPD_RESP_USE_STRLEN);}
-static esp_err_t status(httpd_req_t* req){int n=phase; cJSON* j=cJSON_CreateObject();cJSON_AddNumberToObject(j,"phase",n);cJSON_AddStringToObject(j,"hostname",device_hostname.c_str());cJSON_AddStringToObject(j,"device_url",device_url().c_str());cJSON_AddStringToObject(j,"message",description(n));cJSON_AddBoolToObject(j,"wifi_connected",(xEventGroupGetBits(wifi_events)&1)!=0);cJSON_AddBoolToObject(j,"wifi_saved",wifi_saved);{SetupGuard guard;cJSON_AddStringToObject(j,"detail",download_error.c_str());}cJSON_AddNumberToObject(j,"progress",100.0*downloaded/PACKAGE_BYTES);char* s=cJSON_PrintUnformatted(j);httpd_resp_set_type(req,"application/json");auto r=httpd_resp_send(req,s,HTTPD_RESP_USE_STRLEN);cJSON_free(s);cJSON_Delete(j);return r;}
+static esp_err_t home(httpd_req_t* req){httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Cache-Control","no-store");return httpd_resp_send(req,page,HTTPD_RESP_USE_STRLEN);}
+static esp_err_t status(httpd_req_t* req){
+ const int n=phase;
+ cJSON* j=cJSON_CreateObject();if(!j)return ESP_ERR_NO_MEM;
+ cJSON_AddNumberToObject(j,"phase",n);cJSON_AddStringToObject(j,"hostname",device_hostname.c_str());cJSON_AddStringToObject(j,"device_url",device_url().c_str());
+ cJSON_AddStringToObject(j,"message",description(n));cJSON_AddBoolToObject(j,"wifi_connected",(xEventGroupGetBits(wifi_events)&1)!=0);cJSON_AddBoolToObject(j,"wifi_saved",wifi_saved);
+ AIEdgeDownload::Progress snapshot;
+ {SetupGuard guard;cJSON_AddStringToObject(j,"detail",download_error.c_str());snapshot=download_progress;}
+ const auto stats=AIEdgeDownload::view(snapshot,PACKAGE_BYTES,uint32_t(esp_timer_get_time()/1000),n==2);
+ cJSON_AddNumberToObject(j,"downloaded_bytes",snapshot.bytes);cJSON_AddNumberToObject(j,"total_bytes",PACKAGE_BYTES);
+ cJSON_AddNumberToObject(j,"progress",stats.percent);cJSON_AddNumberToObject(j,"elapsed_seconds",stats.elapsedSeconds);
+ cJSON_AddNumberToObject(j,"average_bytes_per_second",stats.averageBytesPerSecond);cJSON_AddBoolToObject(j,"waiting_for_data",stats.waitingForData);
+ if(stats.remainingSeconds>=0)cJSON_AddNumberToObject(j,"remaining_seconds",stats.remainingSeconds);else cJSON_AddNullToObject(j,"remaining_seconds");
+ char* s=cJSON_PrintUnformatted(j);cJSON_Delete(j);if(!s)return ESP_ERR_NO_MEM;
+ httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+ const auto r=httpd_resp_send(req,s,HTTPD_RESP_USE_STRLEN);cJSON_free(s);return r;
+}
 // Both HTTP and USB provision through this one serialized operation.
 static bool begin_wifi(const std::string& name,const std::string& pass,bool from_serial){
  SetupGuard guard;
  if(!sd_ready||phase>0||!AIEdgeImprov::validCredentials(name,pass))return false;
  if(scan_state==1){esp_wifi_scan_stop();scan_state=0;}
- ssid=name;password=pass;wifi_saved=false;phase=1;downloaded=0;download_error.clear();serial_provisioning=from_serial;xEventGroupClearBits(wifi_events,1);
+ ssid=name;password=pass;wifi_saved=false;phase=1;downloaded=0;download_progress={};download_error.clear();serial_provisioning=from_serial;xEventGroupClearBits(wifi_events,1);
  esp_wifi_disconnect();wifi_config_t cfg={};memcpy(cfg.sta.ssid,name.data(),name.size());memcpy(cfg.sta.password,pass.data(),pass.size());
  if(esp_wifi_set_config(WIFI_IF_STA,&cfg)!=ESP_OK||esp_wifi_connect()!=ESP_OK){phase=-2;serial_provisioning=false;return false;}
  if(from_serial)improv_state(3);
@@ -246,7 +270,7 @@ static esp_err_t credentials(httpd_req_t* req){
 static esp_err_t retry_install(httpd_req_t* req){
  SetupGuard guard;
  if(!sd_ready||phase>=0||phase==-8||!(xEventGroupGetBits(wifi_events)&1))return httpd_resp_send_err(req,HTTPD_400_BAD_REQUEST,"Reconnect Wi-Fi or wait for the current installation");
- phase=6;downloaded=0;download_error.clear();
+ phase=6;downloaded=0;download_progress={};download_error.clear();
  if(xTaskCreate(worker,"download",16384,nullptr,4,nullptr)!=pdPASS){phase=-6;return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Could not start installation");}
  return httpd_resp_send(req,"Retrying installation",HTTPD_RESP_USE_STRLEN);
 }
@@ -266,7 +290,7 @@ static void improv_command(const AIEdgeImprov::Bytes& data){
   improv_state(current_improv_state());
   if(current_improv_state()==4)improv_send(AIEdgeImprov::result(2,{device_url()}));
   break;
- case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.4-dev.20260922","ESP32",device_hostname}));break;
+ case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.5-dev.20260922","ESP32",device_hostname}));break;
  case 4:
   if(begin_scan())serial_scan_pending=true;
   else improv_send(AIEdgeImprov::result(4,{}));
@@ -327,7 +351,7 @@ extern "C" void app_main(){
  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,nullptr));ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,nullptr));
  wifi_config_t ap={};strcpy(reinterpret_cast<char*>(ap.ap.ssid),"AIEdge-Setup");strcpy(reinterpret_cast<char*>(ap.ap.password),"AIEdgeSetup");ap.ap.authmode=WIFI_AUTH_WPA2_PSK;ap.ap.max_connection=2;
  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP,&ap));ESP_ERROR_CHECK(esp_wifi_start());
- httpd_config_t http=HTTPD_DEFAULT_CONFIG();http.stack_size=8192;http.recv_wait_timeout=5;http.send_wait_timeout=5;httpd_handle_t server=nullptr;ESP_ERROR_CHECK(httpd_start(&server,&http));
+ httpd_config_t http=HTTPD_DEFAULT_CONFIG();http.stack_size=8192;http.max_open_sockets=4;http.lru_purge_enable=true;http.recv_wait_timeout=5;http.send_wait_timeout=5;httpd_handle_t server=nullptr;ESP_ERROR_CHECK(httpd_start(&server,&http));
  httpd_uri_t h={};h.uri="/";h.method=HTTP_GET;h.handler=home;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/status";h.handler=status;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.uri="/wifi";h.method=HTTP_POST;h.handler=credentials;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/retry";h.handler=retry_install;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
@@ -347,6 +371,7 @@ extern "C" void app_main(){
   if(xTaskCreate(improv_task,"improv",6144,nullptr,3,nullptr)!=pdPASS)printf("USB Wi-Fi setup unavailable; use the setup hotspot\n");
  }else printf("USB Wi-Fi setup unavailable; use the setup hotspot\n");
  printf("AIEdge Wi-Fi loader ready: AIEdge-Setup, http://192.168.4.1; SD=%s\n",sd_ready?"mounted":"failed");
+ printf("AIEdge loader 0.1.5: hostname=%s.local; mDNS initialization=%s\n",device_hostname.c_str(),esp_err_to_name(discovery));
  std::string saved_name,saved_pass;
  if(read_saved_wifi(saved_name,saved_pass)){wifi_saved=true;if(sd_ready)begin_wifi(saved_name,saved_pass,false);}
 }

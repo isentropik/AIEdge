@@ -1017,7 +1017,15 @@ any other hardware connected to IOs.`)}catch(r){throw new Q("Unable to verify fl
                   name="password"
                   type="password"
                   @keydown=${a=>{a.key==="Enter"&&this._doProvision()}}
-                ></ew-filled-text-field>
+                >
+                  <ew-icon-button slot="trailing-icon" type="button" aria-label="Show password" title="Show password"
+                    @click=${a=>{let n=this.shadowRoot.querySelector('ew-filled-text-field[name="password"]');if(!n)return;let c=n.type==="password";n.type=c?"text":"password";let l=a.currentTarget,d=c?"Hide password":"Show password";l.setAttribute("aria-label",d),l.title=d,l.querySelector(".eye-slash").style.display=c?"":"none"}}>
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M2 12Q6 5 12 5Q18 5 22 12Q18 19 12 19Q6 19 2 12Z"></path><circle cx="12" cy="12" r="3"></circle>
+                      <path class="eye-slash" style="display:none" d="M3 3L21 21"></path>
+                    </svg>
+                  </ew-icon-button>
+                </ew-filled-text-field>
               `:""}
         </div>
         <div slot="actions">

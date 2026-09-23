@@ -39,3 +39,13 @@ The downloader now sizes its HTTP transmit buffer for the full bounded redirect 
 This loader continues to use the immutable 0.1.2 application package. The new interface redesign remains a separate local preview. Existing SD Wi-Fi files are not silently overwritten; a mismatch stops installation for review.
 
 Version 0.1.4 carries the generated hostname into both wlan.ini and the System section of the initial config.ini, preventing a reset to the old generic name on application startup. Existing configurations remain protected.
+
+## Download progress and slow-connection handling (0.1.5 loader)
+
+The setup page shows downloaded and total bytes, percentage, average download speed and estimated time remaining. The estimate starts after three seconds of transfer and disappears if no data arrives for ten seconds, the connection is lost, or the download fails. Transfer completion is followed by separate verification and installation stages; 100% downloaded does not mean installation is complete.
+
+The former two-minute transfer limit stopped a real download before it finished. The loader now permits up to ten minutes for the body transfer, with a separate thirty-second no-data limit. A temporary read timeout continues the same verified transfer; it does not skip bytes or restart the hash. Terminal connection errors and all size/SHA-256 checks still stop installation. Individual socket reads have a ten-second timeout, so deadline handling occurs at the next bounded read boundary.
+
+The HTTP server now evicts idle browser connections and reserves sockets for the downloader and name lookup. Setup requests time out visibly and retry instead of leaving a stale speed estimate; setup/status responses are not cached. This addresses a source-level connection-capacity problem, but the user's initial blank page and mDNS failure are not yet proven fixed on hardware. USB diagnostics confirmed loader 0.1.4 and the intended hostname while IP HTTP and mDNS lookups failed; the board still answered ping. Version 0.1.5 prints the mDNS initialization result after UART setup to support further diagnosis.
+
+The USB browser installer also gains a Show password eye button. It requires a website refresh, not a firmware reflash. Download display and timeout changes are firmware changes and require updating the loader. The underlying application package remains the immutable 0.1.2 package.
