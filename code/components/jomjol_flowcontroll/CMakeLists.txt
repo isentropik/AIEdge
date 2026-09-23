@@ -6,5 +6,6 @@ idf_component_register(SRCS ${app_sources}
 
 # Keep calibrated bicubic/quantized preprocessing consistent with host fixtures.
 set_source_files_properties(ClassFlowCNNPolar.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
+set_source_files_properties(PolarJpegFrameTest.cpp PROPERTIES COMPILE_OPTIONS "-ffp-contract=off")
 
 

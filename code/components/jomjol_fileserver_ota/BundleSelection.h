@@ -33,6 +33,10 @@ public:
    return resolve("model/polar-int8.tflite",path);
   if(path=="/sdcard/config/polar-runtime-frame.rgb")
    return resolve("diagnostics/polar-runtime-frame.rgb",path);
+  if(path=="/sdcard/config/polar-runtime-frame.jpg")
+   return resolve("diagnostics/polar-runtime-frame.jpg",path);
+  if(path=="/sdcard/config/polar-jpeg-vectors.bin")
+   return resolve("diagnostics/polar-jpeg-vectors.bin",path);
   if(path=="/sdcard/config/polar-runtime-vectors.bin")
    return resolve("diagnostics/polar-runtime-vectors.bin",path);
   return path;

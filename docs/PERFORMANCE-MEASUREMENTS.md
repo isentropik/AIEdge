@@ -30,3 +30,29 @@ A separate trial loaded the exact frozen six-dial geometry and ran one normal ca
 Startup removed the obsolete `FlipImageSize = false` line. The test detected that baseline change, verified it was the only change, and restored the original configuration byte-for-byte followed by a verified reboot. Private evidence is in `normal-pipeline-trial-20260923` beside the CPU comparison.
 
 The trial exposed an incorrect success summary: the outer `doflow` wrapper discarded the controller's false return and always returned true, while the scheduler always logged a completed round. The source fix preserves the controller result and separately reports completed, failed, and skipped/busy rounds. Actual-wrapper/reporting tests, 12 controller regressions, and the final ESP32 build pass. The board returned on COM8; its MAC matched before any write. Loader 0.1.11-test7 installed the verified private candidate, and the application booted with its camera available. The normal-camera retest recorded one rejected cycle (12.015284 seconds), zero accepted/completed cycles, and the corrected warning `Round #1 failed (12 seconds)`. Earlier incorrect completed entries remain historical log records. This still does not establish successful reading accuracy or cadence. The original configuration was restored byte-for-byte after the trial. Recorded installation: `recorded-20260923T171859Z`; cycle evidence: `normal-pipeline-outcome-retest-20260923`. The temporary package server and board-only firewall rule were removed. This test-board deployment is not a public installer release.
+# Saved-JPEG diagnostic, September 23, 2026
+
+The test ESP32 processed an existing private 640x480 meter JPEG using its actual
+stb decoder and shared PSRAM allocator, followed by marker registration, fixed
+dial calibration, visibility checks, feature extraction and frozen inference.
+All six feature tensors and inference outputs matched the decoder-specific
+desktop reference bytes exactly. The existing RGB control also passed.
+
+| Diagnostic | Total processing | JPEG decode | Alignment |
+| --- | ---: | ---: | ---: |
+| Saved JPEG | 28.024 s | 1.068 s | 3.557 s |
+| Saved RGB control | 26.993 s | Not performed | 3.551 s |
+
+These are one run each at the unchanged test-board CPU setting, not a sustained
+benchmark. The JPEG total includes model setup and diagnostic comparison
+overhead, but excludes camera capture, initial fixture verification and result
+publication. It does not prove a 30-second capture cadence or reading accuracy.
+The JPEG and RGB paths intentionally have different reference tensors because
+desktop Pillow and firmware stb decoding differ slightly.
+
+The JPEG diagnostic retains six feature tensors while releasing decoded image
+and alignment scratch memory before loading the model. This prevents decoder
+and model allocations from using shared PSRAM concurrently. No new camera image
+was taken; automatic processing and image archiving remained disabled and the
+test-board configuration was unchanged. This diagnostic firmware was installed
+only on the test board; the public installer release was not updated.
