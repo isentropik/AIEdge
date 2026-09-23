@@ -19,6 +19,7 @@
 #include "esp_log.h"
 #include "basic_auth.h"
 #include "esp_chip_info.h"
+#include "cJSON.h"
 
 #include <stdio.h>
 
@@ -232,7 +233,7 @@ esp_err_t hello_main_handler(httpd_req_t *req)
                                              req->uri - 1, sizeof(filepath));    
     ESP_LOGD(TAG, "1 uri: %s, filename: %s, filepath: %s", req->uri, filename, filepath);
 
-    if ((strcmp(req->uri, "/") == 0))
+    if (req->uri[0] == '/' && (req->uri[1] == '\0' || req->uri[1] == '?'))
     {
         {
             filetosend = filetosend + "/html/index.html";
@@ -384,23 +385,23 @@ esp_err_t sysinfo_handler(httpd_req_t *req)
     char freeheapmem[11];
     sprintf(freeheapmem, "%lu", (long) getESPHeapSize());
     
-    zw = string("[{") + 
-        "\"firmware\": \"" + gitversion + "\"," +
-        "\"buildtime\": \"" + buildtime + "\"," +
-        "\"gitbranch\": \"" + gitbranch + "\"," +
-        "\"gittag\": \"" + gittag + "\"," +
-        "\"gitrevision\": \"" + gitrevision + "\"," +
-        "\"html\": \"" + htmlversion + "\"," +
-        "\"cputemp\": \"" + cputemp + "\"," +
-        "\"hostname\": \"" + *getHostname() + "\"," +
-        "\"IPv4\": \"" + *getIPAddress() + "\"," +
-        "\"freeHeapMem\": \"" + freeheapmem + "\"" +
-        "}]";
+    cJSON* array=cJSON_CreateArray();
+    cJSON* object=cJSON_CreateObject();
+    if(!array || !object){cJSON_Delete(array);cJSON_Delete(object);return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");}
+    if(!cJSON_AddItemToArray(array,object)){cJSON_Delete(array);cJSON_Delete(object);return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");}
+    bool ok=true;
+    auto add=[&](const char* name,const std::string& value){if(!cJSON_AddStringToObject(object,name,value.c_str()))ok=false;};
+    add("firmware",gitversion);add("buildtime",buildtime);add("gitbranch",gitbranch);
+    add("gittag",gittag);add("gitrevision",gitrevision);add("html",htmlversion);
+    add("cputemp",cputemp);add("hostname",*getHostname());add("IPv4",*getIPAddress());
+    add("freeHeapMem",freeheapmem);
+    char* json=ok?cJSON_PrintUnformatted(array):nullptr;
+    cJSON_Delete(array);
+    if(!json)return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");
+    httpd_resp_set_type(req,"application/json");
+    const auto result=httpd_resp_sendstr(req,json);cJSON_free(json);
+    return result;
 
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_send(req, zw.c_str(), zw.length());
-
-    return ESP_OK;
 }
 
 
@@ -460,7 +461,7 @@ httpd_handle_t start_webserver(void)
     config.server_port = 80;
     config.ctrl_port = 32768;
     config.max_open_sockets = 5; //20210921 --> previously 7   
-    config.max_uri_handlers = 53; // Make sure this fits all URI handlers. Memory usage in bytes: 6*max_uri_handlers
+    config.max_uri_handlers = 64; // 55 current routes, including the final image and web-page handlers.
     config.max_resp_headers = 8;                        
     config.backlog_conn = 5;                        
     config.lru_purge_enable = true; // this cuts old connections if new ones are needed.               

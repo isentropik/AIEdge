@@ -356,7 +356,7 @@ static void improv_command(const AIEdgeImprov::Bytes& data){
   improv_state(current_improv_state());
   if(current_improv_state()==4)improv_send(AIEdgeImprov::result(2,{device_url()}));
   break;
- case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.9-dev.20260922","ESP32",device_hostname}));break;
+ case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.10-dev.20260922","ESP32",device_hostname}));break;
  case 4:
   if(begin_scan())serial_scan_pending=true;
   else improv_error(0xff);
@@ -417,7 +417,7 @@ extern "C" void app_main(){
  uint8_t station_mac[6];ESP_ERROR_CHECK(esp_read_mac(station_mac,ESP_MAC_WIFI_STA));device_hostname=AIEdgeIdentity::hostname(station_mac);
  setup_lock=xSemaphoreCreateMutex();configASSERT(setup_lock);
  diagnostic_lock=xSemaphoreCreateMutex();configASSERT(diagnostic_lock);
- char boot[96];snprintf(boot,sizeof boot,"loader=0.1.9 reset_reason=%d",int(esp_reset_reason()));diagnostic_record(boot);
+ char boot[96];snprintf(boot,sizeof boot,"loader=0.1.10 reset_reason=%d",int(esp_reset_reason()));diagnostic_record(boot);
  gpio_set_direction(GPIO_NUM_4,GPIO_MODE_OUTPUT);gpio_set_level(GPIO_NUM_4,0);
  sdmmc_host_t host=SDMMC_HOST_DEFAULT();sdmmc_slot_config_t slot=SDMMC_SLOT_CONFIG_DEFAULT();slot.width=1;slot.flags|=SDMMC_SLOT_FLAG_INTERNAL_PULLUP;gpio_set_pull_mode(GPIO_NUM_13,GPIO_PULLUP_ONLY);
  esp_vfs_fat_sdmmc_mount_config_t cfg={};cfg.format_if_mount_failed=false;cfg.max_files=8;sdmmc_card_t* card=nullptr;
@@ -452,7 +452,7 @@ extern "C" void app_main(){
  printf("AIEdge Wi-Fi loader ready: AIEdge-Setup, http://192.168.4.1; SD=%s\n",sd_ready?"mounted":"failed");
  diagnostic_record(sd_ready?"SD mounted; setup ready":"SD mount failed");
  if(xTaskCreate(diagnostic_task,"install_log",4096,nullptr,2,nullptr)!=pdPASS)diagnostic_record("Could not start diagnostic heartbeat");
- printf("AIEdge loader 0.1.9: hostname=%s.local; mDNS initialization=%s\n",device_hostname.c_str(),esp_err_to_name(discovery));
+ printf("AIEdge loader 0.1.10: hostname=%s.local; mDNS initialization=%s\n",device_hostname.c_str(),esp_err_to_name(discovery));
  std::string saved_name,saved_pass;
  if(read_saved_wifi(saved_name,saved_pass)){wifi_saved=true;if(sd_ready)begin_wifi(saved_name,saved_pass,false);}
 }

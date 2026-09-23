@@ -80,4 +80,10 @@ A recorded test passed package download and SD read-back verification, then repo
 
 The corrected loader completed a recorded hardware installation: package download, all SD file checks, firmware write and reboot. The minimum reported installation-task stack space at completion was 2,368 bytes. The application then exposed a separate startup crash in the ESP32 hardware SHA digest routine. The 0.1.9 application package uses mbedTLS software SHA-256; integrity checks remain mandatory. Its model and web assets are unchanged. Full application-startup validation is still pending.
 
-The build passes 72 verification/staging/recovery cases, and all 80 installable files from the new package match after host extraction. The setup page now probes the application's system-information endpoint when loader status disappears, and automatically opens the application when it responds. Offline and invalid responses keep retrying. The device action is labeled **Download to device and install**. An unformatted or unsupported SD card prevents setup; it is never formatted automatically.
+The build passes 72 verification/staging/recovery cases, and all 80 installable files from the new package match after host extraction. The device action is labeled **Download to device and install**. An unformatted or unsupported SD card prevents setup; it is never formatted automatically.
+
+## Application web handoff (0.1.10)
+
+The 0.1.9 application passed boot verification and reconnected to saved Wi-Fi, confirming the software-SHA repair on the test board. The subsequent page check found two web issues: the HTTP server's 53 route slots were exhausted before registering its final image and webpage routes, and system information contained an unescaped carriage return. Version 0.1.10 provides 64 route slots, serializes system information through cJSON, and handles a query string on the homepage correctly.
+
+The setup page detects the application using its plain-text hostname endpoint, checks that the homepage responds, and opens it automatically. It retries while the device is offline or the page is unavailable. Host checks cover both outcomes and ensure polling never starts installation. Hardware handoff validation is pending.

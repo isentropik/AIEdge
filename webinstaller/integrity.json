@@ -1,9 +1,9 @@
 {
-  "version": "0.1.9-dev.20260922",
+  "version": "0.1.10-dev.20260922",
   "files": {
-    "releases/v0.1.9-dev.20260922/aiedge-web-installer.bin": {
-      "bytes": 1381872,
-      "sha256": "056d6a1c2061894e3372c7c82a2ab525181bfbc4950295f38e99a22e462e48af"
+    "releases/v0.1.10-dev.20260922/aiedge-web-installer.bin": {
+      "bytes": 1382000,
+      "sha256": "73014430b3522df2efa2ae9b0f02e240a3e488f707595520d0db0401b05464c8"
     }
   },
   "source_parts": {
@@ -24,9 +24,9 @@
     },
     "aiedge-bootstrap.bin": {
       "offset": 65536,
-      "bytes": 1316336,
-      "sha256": "dbb303b6477542a727193844312a524f39bbbd7ab4ffa6a70db5f9e3c35c60f5"
+      "bytes": 1316464,
+      "sha256": "aa5d201f14cb878bf641a2dc52bb743818bffbb38b6b080837e575fbd7736146"
     }
   },
-  "package_sha256": "440ad01f0a127664e2c176e54d80ac18eb8e803117450d72305495cb9c1cf758"
+  "package_sha256": "b6e42f49d4939b2c33ed69cdce503484fcbab8d220801b771d0745cae32f577d"
 }

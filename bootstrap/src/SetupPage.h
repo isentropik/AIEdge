@@ -88,12 +88,14 @@ async function deviceFetch(url,options={}){const controller=new AbortController(
 $('refresh').onclick=()=>location.reload();
 async function openApplicationIfReady(){
  try{
-  const response=await deviceFetch('/sysinfo',{cache:'no-store'});
+  // The legacy /sysinfo response can contain unescaped control characters.
+  // This application-only endpoint returns the hostname as plain text.
+  const response=await deviceFetch('/info?type=Hostname',{cache:'no-store'});
   if(!response.ok)return false;
-  const data=await response.json(),info=Array.isArray(data)&&data[0];
-  if(!info||!/^aiedge-[0-9a-f]{6}$/.test(info.hostname||'')||
-     (expectedHostname&&info.hostname!==expectedHostname)||
-     typeof info.gitrevision!=='string'||!info.gitrevision||typeof info.html!=='string')return false;
+  const hostname=(await response.text()).trim();
+  if(!/^aiedge-[0-9a-f]{6}$/.test(hostname)||(expectedHostname&&hostname!==expectedHostname))return false;
+  const page=await deviceFetch('/?installed=check',{cache:'no-store'});
+  if(!page.ok)return false;
   openingApplication=true;state.textContent='Installation complete. Opening AIEdge…';
   location.replace('/?installed='+Date.now());return true;
  }catch(e){return false;}
