@@ -879,7 +879,7 @@ any other hardware connected to IOs.`)}catch(r){throw new Q("Unable to verify fl
                   @click=${()=>this._startInstall(!0)}
                 >
                   ${$A}
-                  <div slot="headline">Erase User Data</div>
+                  <div slot="headline">Erase user data / reinstall</div>
                 </ew-list-item>
               `:""}
         </ew-list>
@@ -1051,14 +1051,14 @@ any other hardware connected to IOs.`)}catch(r){throw new Q("Unable to verify fl
           Next
         </ew-text-button>
       </div>
-    `;return[t,e]}_renderInstall(){let t,e,o=!this._installErase&&this._isSameFirmware;if(!this._installConfirmed&&this._isSameVersion)t="Erase User Data",e=m`
+    `;return[t,e]}_renderInstall(){let t,e,o=!this._installErase&&this._isSameFirmware;if(!this._installConfirmed&&this._isSameVersion)t="Erase user data / reinstall",e=m`
         <div slot="content">
           Do you want to reset your device and erase all user data from your
           device?
         </div>
         <div slot="actions">
           <ew-text-button class="danger" @click=${this._confirmInstall}>
-            Erase User Data
+            Erase user data / reinstall
           </ew-text-button>
         </div>
       `;else if(this._installConfirmed)if(!this._installState||this._installState.state==="initializing"||this._installState.state==="preparing")t="Installing",e=this._renderProgress("Preparing installation");else if(this._installState.state==="erasing")t="Installing",e=this._renderProgress("Erasing");else if(this._installState.state==="writing"||this._installState.state==="finished"&&this._client===void 0){t="Installing";let s,a;this._installState.state==="finished"?a=this._aiedgeStatus||"Detecting Wi-Fi setup":this._installState.details.percentage<4?a="Installing":s=this._installState.details.percentage,e=this._renderProgress(m`

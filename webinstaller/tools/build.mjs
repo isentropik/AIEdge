@@ -41,6 +41,9 @@ await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,
   s=replaceOnce(s,'undeterminateLabel = "Wrapping up";','undeterminateLabel = this._aiedgeStatus || "Detecting Wi-Fi setup";');
   s=replaceOnce(s,'label="Installation complete!"','.label=${supportsImprov ? "Loader installed. Wi-Fi setup is ready." : "Loader installed, but Wi-Fi setup did not respond after one automatic restart. Open Logs & Console to diagnose."}');
   s=replaceOnce(s,'supportsImprov && this._installErase','supportsImprov');
+  // Wording only: retain upstream erase-and-reinstall behavior and confirmation.
+  if(s.split('Erase User Data').length!==4) throw new Error('Upstream erase label count changed');
+  s=s.replaceAll('Erase User Data','Erase user data / reinstall');
   return {contents:s,loader:'js',resolveDir:path.dirname(args.path)};
  });
 }}]});
