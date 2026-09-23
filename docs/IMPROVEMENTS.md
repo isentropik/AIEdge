@@ -36,7 +36,7 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 - [ ] Cross-check the main sequence using subsequent dials; preserve leading zeros and separate raw dial positions from converted quantities.
 - [ ] Reconcile the 5 ft³ secondary revolution with the final main dial: 20 revolutions per numbered step, 200 per full main-dial revolution.
 - [ ] Handle rollover, jitter, missing frames and restart gaps without inventing complete turns; flag ambiguous/backward cumulative totals.
-- [ ] Measure sustained valid capture-to-publication cadence toward 30 seconds, including UI and archive traffic. Record timing distributions, missed captures and memory margins.
+- [ ] Measure sustained valid capture-to-publication cadence toward 30 seconds, including UI and archive traffic. [Short hardware comparison](PERFORMANCE-MEASUREMENTS.md): fixed-frame processing median 26.943 seconds at 160 MHz and 18.245 seconds at 240 MHz, all bytes matching; this excludes the full live cycle. Record timing distributions, missed captures and memory margins.
 
 ## Lighting, storage and configuration
 
