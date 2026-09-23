@@ -21,3 +21,7 @@ The USB Wi-Fi dialog includes an Show password eye button inside the password fi
 `flash-speed.mjs` wraps the pinned upstream flash operation: attempt 460,800 baud, then at most one 115,200-baud retry for initialization or write errors after transport cleanup succeeds. Each attempt uses the same verified image and restarts the full write. A completed full erase is not repeated. Unsupported boards, firmware download failures, unavailable ports, permission errors and failed cleanup do not trigger this retry. Logs and Improv Wi-Fi setup remain at 115,200 baud.
 
 Run `node flash-speed.test.mjs` and `node discovery.test.mjs` before `node build.mjs`. The tests cover both speeds, bounded failure, erase preservation and failures that must not retry. Physical speed, adapter compatibility and elapsed installation time still require hardware testing.
+
+## Wi-Fi scan errors
+
+A failed or refused Wi-Fi request (Improv error 255) displays a readable error with retry instructions. An empty successful scan remains a manual-network fallback. The loader must be updated to 0.1.8 or later to scan while waiting for Download and install and to report scan failures rather than an empty success.

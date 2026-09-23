@@ -52,6 +52,8 @@ await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,
   s=replaceOnce(s,'label="Installation complete!"','.label=${supportsImprov ? "Loader installed. Wi-Fi setup is ready." : "Loader installed, but Wi-Fi setup did not respond after one automatic restart. Open Logs & Console to diagnose."}');
   s=replaceOnce(s,'supportsImprov && this._installErase','supportsImprov');
   // Wording only: retain upstream erase-and-reinstall behavior and confirmation.
+  s=replaceOnce(s,'case 254 /* ImprovSerialErrorState.TIMEOUT */:',
+    'case 255: error = "Device is busy or the Wi-Fi request failed. Go back and reopen Wi-Fi setup to retry."; break;\n                case 254 /* ImprovSerialErrorState.TIMEOUT */:');
   if(s.split('Erase User Data').length!==4) throw new Error('Upstream erase label count changed');
   s=s.replaceAll('Erase User Data','Erase user data / reinstall');
   // An accessible eye button in the field toggles visibility without submitting.
@@ -83,7 +85,7 @@ await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,
  });
 }}]});
 // Retain upstream and bundled dependency licenses, not just minifier comments.
-let notices='AIEdge bundles ESP Web Tools 10.4.0 with faster USB flashing and one slow fallback, USB discovery recovery, erase-label wording and a password visibility eye button in tools/build.mjs.\nUpstream: https://github.com/esphome/esp-web-tools\nBrowser flashing remains upstream work. AIEdge does not claim authorship of bundled dependencies.\n\n';
+let notices='AIEdge bundles ESP Web Tools 10.4.0 with faster USB flashing and one slow fallback, USB discovery recovery, erase-label wording, readable Wi-Fi request errors and a password visibility eye button in tools/build.mjs.\nUpstream: https://github.com/esphome/esp-web-tools\nBrowser flashing remains upstream work. AIEdge does not claim authorship of bundled dependencies.\n\n';
 async function visit(dir){for(const ent of await fs.readdir(dir,{withFileTypes:true})){
  if(!ent.isDirectory()||ent.name==='.bin'||ent.name==='@esbuild'||ent.name==='esbuild')continue;
  const sub=path.join(dir,ent.name);

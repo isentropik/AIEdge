@@ -67,3 +67,9 @@ Read-back verification records file open/read, hashing and completion checkpoint
 The log is held in bounded RAM and also sent over USB at 115,200 baud. It does not write to the SD card, because an SD fault could also block a log stored there. RAM history clears after restart, and a stopped web server cannot serve the download. For a lockup test, open USB **Logs & Console** before starting the package download and save that log afterward. Only one program can own the USB port at a time.
 
 The diagnostic loader preserves explicit download consent, package verification and the pinned application package. A debug log is evidence, not a lockup fix. Host tests cover bounded log retention, timestamps, actual verifier checkpoints, corrupt and missing files, and the existing staging/recovery checks. Hardware diagnosis remains pending.
+
+## Wi-Fi scanning while ready (0.1.8 loader)
+
+The ready-to-install state allows scanning and changing Wi-Fi. Active connection and installation stages remain protected. Disconnected ready devices report ready for setup over USB, rather than connecting. Failed, cancelled, refused or timed-out scans return an Improv error; only a completed scan sends a successful network list, which may genuinely be empty. A timed-out scan is stopped so another scan can be attempted. Scan failures are recorded in the current-boot debug log without network names or credentials.
+
+Host tests exercise the actual scan and reply code for ready/busy states, driver failure, timeout, cancellation, empty success, deduplication and network results. Physical network discovery remains to be verified after updating the loader. This release does not establish a fix for the separate package-installation lockup.
