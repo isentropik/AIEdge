@@ -1,0 +1,10 @@
+<!doctype html><html><head><meta charset="utf-8"><title>AIEdge USB recovery simulation</title><link rel="stylesheet" href="../style.css"></head><body><p id="result">Testing missing discovery followed by normal boot. Simulated serial port only.</p><script type="module">
+import '../vendor/esp-web-tools-aiedge.js';
+let controller,stream,ready=false,resets=0,asserted=false;
+function fresh(){stream=new ReadableStream({start(c){controller=c;},cancel(){stream=null;}});return stream;}
+function frame(type,data){const a=[73,77,80,82,79,86,1,type,data.length,...data];a.push(a.reduce((a,b)=>a+b,0)&255);return new Uint8Array(a);}
+function result(command,strings){let data=[];for(const s of strings){const b=[...new TextEncoder().encode(s)];data.push(b.length,...b);}return frame(4,[command,data.length,...data]);}
+const port={get readable(){return stream||fresh();},writable:new WritableStream({write(bytes){if(!ready)return;const cmd=bytes[9];controller.enqueue(frame(2,[0]));if(cmd===2)controller.enqueue(frame(1,[2]));if(cmd===3)controller.enqueue(result(3,['AIEdge Wi-Fi loader','0.1.1-dev.20260922','ESP32','AIEdge']));}}),getInfo(){return {usbVendorId:0x1a86,usbProductId:0x7523};},async setSignals(s){if(s.requestToSend)asserted=true;if(s.requestToSend===false&&asserted){ready=true;resets++;asserted=false;}},async close(){},async open(){}};
+const dialog=document.createElement('ewt-install-dialog');dialog.port=port;dialog.manifestPath='../manifest.json';document.body.append(dialog);
+const started=Date.now();const check=setInterval(()=>{const text=dialog.shadowRoot?.textContent||'';if(text.includes('Connect to Wi-Fi')){clearInterval(check);document.querySelector('#result').textContent=resets===1?'PASS: actual bundled installer discovered Wi-Fi after exactly one reset.':'FAIL: reset count '+resets;}else if(Date.now()-started>12000){clearInterval(check);document.querySelector('#result').textContent='FAIL: Wi-Fi option not shown within 12 seconds; resets='+resets;}},100);
+</script></body></html>

@@ -13,7 +13,7 @@ Try this sequence in the web installer:
 3. Wait for **AIEdge Wi-Fi loader ready**, then choose **Back**.
 4. Choose **Connect to Wi-Fi** when it appears.
 
-This sequence restored USB Wi-Fi setup on the test board. The automatic restart/discovery handoff remains under investigation; successful flashing alone does not verify provisioning. There is no need to reinstall merely because the Wi-Fi option is missing. Only reset after flashing has finished.
+This sequence restored USB Wi-Fi setup on the test board. USB setup fix 1 now retries discovery once after an automatic reset on the open port. Browser-side recovery checks pass; the changed automatic path still needs hardware verification. Successful flashing alone does not verify provisioning. There is no need to reinstall merely because the Wi-Fi option is missing. Only reset after flashing has finished.
 
 If this still fails, keep the boot log and use the **AIEdge-Setup** hotspot fallback described on the [installer page](https://isentropik.github.io/AIEdge/).
 

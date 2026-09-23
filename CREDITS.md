@@ -28,6 +28,6 @@ AIEdge's presentation documentation is written for this fork. Its README does no
 
 ## Browser installer and USB Wi-Fi
 
-The browser installer uses [ESP Web Tools](https://github.com/esphome/esp-web-tools), by ESPHome / Open Home Foundation, under its [Apache-2.0 license](https://github.com/esphome/esp-web-tools/blob/10.4.0/LICENSE). It is loaded as a version-pinned component; browser flashing itself is their work.
+The browser installer uses [ESP Web Tools](https://github.com/esphome/esp-web-tools), by ESPHome / Open Home Foundation, under its [Apache-2.0 license](https://github.com/esphome/esp-web-tools/blob/10.4.0/LICENSE). It is bundled locally from pinned dependencies, with an AIEdge modification that retries Wi-Fi discovery once after resetting the board on the open serial port. Browser flashing itself is their work. The reproducible build and modification are in `webinstaller/tools`; bundled dependency licenses are in `webinstaller/vendor/NOTICES.txt`.
 
 AIEdge's loader implements the public [Improv Wi-Fi serial protocol](https://www.improv-wifi.com/serial/), an ESPHome and Home Assistant initiative funded by Nabu Casa. The AIEdge-specific installer page, checks and protocol adapter are separate additions. This credit does not imply endorsement by those projects.
