@@ -1,5 +1,7 @@
 #pragma once
 #include "ImageArchiveConfigFile.h"
+#include "ImageArchiveDestination.h"
+#include "ImageArchiveSha.h"
 #include "CaptureArchiveBinding.h"
 #include "PolarIdentity.h"
 #include "esp_ota_ops.h"
@@ -41,9 +43,16 @@ inline const char* startConfiguredArchive(bool frozenProfile) {
     unsigned char nonce[16];esp_fill_random(nonce,sizeof(nonce));profile.boot=archiveHex(nonce,sizeof(nonce));
     profile.modelHash=polar::modelIdentity;profile.calibrationHash=polar::geometryIdentity;
     profile.width=640;profile.height=480;
-    const char* root="/sdcard/image-archive";
-    if(mkdir(root,0700)!=0&&errno!=EEXIST)return "Image archive spool directory unavailable";
-    struct stat info{};if(stat(root,&info)!=0||!S_ISDIR(info.st_mode))return "Image archive spool path is not a directory";
+    const auto key=archiveQueueKey<Sha256>(destination,config.device);
+    if(key.size()!=64)return "Image archive destination identity unavailable";
+    const std::string base="/sdcard/image-archive",root=base+"/"+key;
+    // Never scan the legacy unbound root or a different destination's queue.
+    // Preserve those files for explicit recovery; they have no proven owner.
+    for(const auto& directory:{base,root}) {
+        if(mkdir(directory.c_str(),0700)!=0&&errno!=EEXIST)return "Image archive spool directory unavailable";
+        struct stat info{};
+        if(stat(directory.c_str(),&info)!=0||!S_ISDIR(info.st_mode))return "Image archive spool path is not a directory";
+    }
     if(!startArchiveWorker(root,destination))return "Image archive worker could not start";
     activeDestination=destination;activeProfile=profile;workerStarted=true;
     if(!bindCaptureArchive(profile))return "Image archive capture binding failed";

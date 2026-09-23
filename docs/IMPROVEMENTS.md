@@ -40,6 +40,8 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 ## Lighting, storage and configuration
 
+- [ ] Deploy and hardware-check destination-bound archive queues. Host tests now prove restart recovery cannot adopt another server/credential/device queue; legacy unbound records are preserved. This is a prerequisite for editing the server safely in the UI.
+
 - [ ] Verify all 19 SK6812 RGBW pixels, byte order, dedicated white-only output and master brightness at 0, 1, intermediate and full levels on hardware.
 - [ ] Make capture, preview and live-stream illumination consistent; allow responsive intensity changes without exposing an in-flight recognition capture to mixed settings.
 - [ ] Verify optional image archival to a configurable server IP/hostname and folder. One queued-image HTTPS delivery and recovery across updates/restarts now pass on the test board. Finish the setup UI and broaden actual-device coverage for server compatibility, rejected credentials, storage limits and sustained retry behavior. A real server is not required to configure the optional feature.

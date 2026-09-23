@@ -25,3 +25,14 @@ the ESP32 FAT driver.
 
 This is host fault injection. It does not prove physical SD power-loss recovery,
 ESP32-to-server TLS interoperability, or capture timing on hardware.
+
+
+## Destination changes and restart recovery
+
+Run `run_destination_queue.py` with the same `--mbedtls` and optional
+`--zig-python` arguments. It uses the real queue engine, SD-file formats and SHA
+implementation on a temporary filesystem. It checks that changing the server,
+port, token, CA certificate or device identity selects a separate queue, while
+changing only a timeout preserves it. A fresh engine recovers the original queue
+when its original configuration is restored. Legacy unbound files are preserved
+and never adopted by the new destination. No network or camera is used.

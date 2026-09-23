@@ -49,3 +49,12 @@ The original queued JPEG survived application updates and restarts. With capture
 - Original configuration restored byte-for-byte; temporary credentials removed; archive worker stopped after the restored boot. Temporary receiver and board-only firewall rule removed.
 
 The image remains unreviewed and excluded from training. This test does not verify meter-reading accuracy, concurrent recognition performance, arbitrary server compatibility or physical SD/power-loss recovery. Private evidence is in `archive-https-header-retry-20260923/verification.json`; no private image, certificate or token is published. The public web-installer binary is unchanged.
+
+
+## Follow-up: destination changes across restarts
+
+Source review found that the tested legacy queue root had no persistent destination binding: a changed configuration after reboot could send an old pending image to the new destination. The successful same-destination trial above does not cover or disprove that defect.
+
+The next source change uses a SHA-256 namespace derived from length-delimited server, port, token, CA certificate and device identity. Timeout and firmware changes preserve the namespace. Different identities cannot automatically recover each other's files. Original files remain available when the exact original configuration is restored. Legacy unbound records are left untouched and require explicit recovery; the firmware does not guess their destination. This also means rotating credentials or trust files holds existing pending records in their old namespace. The UI must explain that behavior before saving changes.
+
+Actual-source host tests cover changed destinations, credentials, trust, device identity, stable timeout changes, fresh-engine recovery, and preservation of legacy files. Deployment and hardware verification of this follow-up are separate from the successful prior upload.
