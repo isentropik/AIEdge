@@ -30,3 +30,18 @@ these tests. Existing scheduling and telemetry checks also pass.
 At the time of this change, this policy has not yet been exercised through a
 deliberate hardware fault or included in a public installer release. Full live
 capture cadence and real reading accuracy remain separate validation work.
+
+## Camera image decoding
+
+A failed in-memory image decode now clears the image and capture timestamp,
+logs the failure, and returns to the camera cleanup path instead of rebooting.
+The camera rejects the empty image and releases its frame. Successful decoding
+records the requested three-channel RGB output, including for grayscale sources.
+
+Host checks use the actual decoding function and scalar stb JPEG library against
+null/empty input, an invalid length, a truncated header, invalid bytes, and
+allocation failure. Eighteen failure/recovery cases passed, including successful
+decoding after each failure and no retained host allocations. Allocator, logging
+and lock operations are host substitutes. Fourteen camera cleanup checks also
+passed with a substituted decoder. These checks do not establish hardware fault
+recovery or prove that every damaged JPEG will be rejected by stb.

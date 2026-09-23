@@ -440,21 +440,29 @@ void CImageBasis::LoadFromMemory(stbi_uc *_buffer, int len)
 
     if (rgb_image != NULL) {
         stbi_image_free(rgb_image);
-        //free_psram_heap(std::string(TAG) + "->rgb_image (LoadFromMemory)", rgb_image);
     }
+    rgb_image = NULL;
+    width = height = channels = bpp = 0;
+    captureMonotonicUs = 0;
+    captureTimestampValid = false;
 
-    rgb_image = stbi_load_from_memory(_buffer, len, &width, &height, &channels, STBI_rgb);
-    bpp = channels;
+    int sourceChannels = 0;
+    if (_buffer != NULL && len > 0) {
+        rgb_image = stbi_load_from_memory(_buffer, len, &width, &height,
+                                          &sourceChannels, STBI_rgb);
+    }
+    if (rgb_image == NULL || width <= 0 || height <= 0) {
+        stbi_image_free(rgb_image);
+        rgb_image = NULL;
+        width = height = channels = bpp = 0;
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG,
+                           "Image decode failed; rejecting this capture.");
+        RGBImageRelease();
+        return;
+    }
+    // The requested output is RGB even when the encoded source is grayscale.
+    channels = bpp = STBI_rgb;
     ESP_LOGD(TAG, "Image loaded from memory: %d, %d, %d", width, height, channels);
-    
-    if ((width * height * channels) == 0)
-    {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Image with size 0 loaded --> reboot to be done! "
-                "Check that your camera module is working and connected properly.");
-        LogFile.WriteHeapInfo("LoadFromMemory");
-
-        doReboot();
-    }
     RGBImageRelease();
 }
 
