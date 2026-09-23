@@ -32,6 +32,25 @@ Startup removed the obsolete `FlipImageSize = false` line. The test detected tha
 The trial exposed an incorrect success summary: the outer `doflow` wrapper discarded the controller's false return and always returned true, while the scheduler always logged a completed round. The source fix preserves the controller result and separately reports completed, failed, and skipped/busy rounds. Actual-wrapper/reporting tests, 12 controller regressions, and the final ESP32 build pass. The board returned on COM8; its MAC matched before any write. Loader 0.1.11-test7 installed the verified private candidate, and the application booted with its camera available. The normal-camera retest recorded one rejected cycle (12.015284 seconds), zero accepted/completed cycles, and the corrected warning `Round #1 failed (12 seconds)`. Earlier incorrect completed entries remain historical log records. This still does not establish successful reading accuracy or cadence. The original configuration was restored byte-for-byte after the trial. Recorded installation: `recorded-20260923T171859Z`; cycle evidence: `normal-pipeline-outcome-retest-20260923`. The temporary package server and board-only firewall rule were removed. This test-board deployment is not a public installer release.
 # Saved-JPEG diagnostic, September 23, 2026
 
+## 240 MHz comparison
+
+The phased-memory diagnostic on build 2026-09-23 20:22:29 UTC passed three
+consecutive saved-JPEG runs at 240 MHz: **19.254641, 19.281882, 19.286914 seconds**.
+Every dial's feature tensor and output bytes matched its reference exactly.
+The median **19.281882 seconds** is about **31.4% lower** than the three-run
+160 MHz median of 28.098249 seconds on the same build.
+
+The original configuration was restored byte-for-byte and a 160 MHz startup
+was verified afterward. Temporary INFO logging was also restored. Image
+archiving and automatic capture stayed disabled; no new image was captured.
+The reported CPU temperature at the end of the 240 MHz run was 72 C; this is a
+single sensor snapshot, not a sustained thermal qualification.
+
+This is promising headroom for a 30-second cycle, not proof of that cadence.
+The diagnostic excludes capture and publication, uses one saved image, and
+does not establish real-image accuracy, long-term stability or network/archive
+performance under load. Public firmware defaults were not changed by this test.
+
 ## Repeated-run follow-up
 
 Repeated testing exposed an allocation failure in the diagnostic's original
