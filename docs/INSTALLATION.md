@@ -2,9 +2,15 @@
 
 [Back to AIEdge](../README.md) · [Troubleshooting](RECOVERY.md) · [Glossary](GLOSSARY.md)
 
-**[Open the AIEdge web installer](https://isentropik.github.io/AIEdge/)**
+## Recommended: use the web installer
 
-You can install the Wi-Fi loader and enter your home Wi-Fi details in the same desktop browser, over USB. There are no files to select or commands to type. Your computer stays connected to its usual network; a phone is not required.
+**The web installer is the preferred method for first-time installation.** Follow steps 1–4 below in desktop Chrome or Edge. You do not need to download firmware files manually, install Python or type terminal commands.
+
+**[Start the recommended web installation →](https://isentropik.github.io/AIEdge/)**
+
+Install the Wi-Fi loader and enter your home Wi-Fi details in the same desktop browser, over USB. Your computer stays connected to its usual network; a phone is not required.
+
+The [manual USB instructions](#manual-usb-installation-alternative) farther down are an optional fallback. **Skip them when using the web installer.**
 
 > Development preview: the USB Wi-Fi protocol passes local tests and the firmware builds, but the complete browser-to-board installation and provisioning still need hardware testing. This targets a classic AI-Thinker-style ESP32-CAM with 4 MB flash and working PSRAM, not arbitrary ESP32 boards.
 
@@ -65,7 +71,7 @@ Network names are limited to 31 UTF-8 bytes and passwords to 63 bytes; quotes an
 
 ## Manual USB installation alternative
 
-Use this if your browser does not support USB serial access or you prefer command-line tools. After flashing, continue with either USB Wi-Fi setup above or the hotspot fallback.
+**Optional fallback — not required for web installation.** The web installer above is recommended. Use these manual steps only if you cannot use a supported browser or specifically prefer command-line tools. After flashing, continue with either USB Wi-Fi setup above or the hotspot fallback.
 
 ### Download the files
 
