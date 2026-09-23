@@ -15,3 +15,5 @@ The correction uses direct descriptor writes, as the tested bundle installer doe
 Actual-source host tests pass publication/readback, partial and interrupted writes, zero/error writes, corruption detection, pending recovery and capacity checks. Worker/capture-binding regressions and all 28 transport cases pass. A corrected-device retest is still required; host success does not prove ESP32-to-receiver TLS or SD recovery.
 
 Private evidence is under `needle-training/firmware-port-tests/archive-hardware-20260923` in the development workspace. It includes runtime snapshots, original configuration, empty pending-file evidence and library disassembly. Credentials and any future images are excluded from public artifacts.
+
+The reproducible [file-failure regression](../tools/image-archive/tests/README.md) now injects write, sync and close failures into both file types and checks engine accounting. It is included in the local firmware packaging gate. This remains host evidence, not the pending corrected-device retest.
