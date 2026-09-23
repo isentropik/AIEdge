@@ -14,25 +14,31 @@ The [manual USB instructions](#manual-usb-installation-alternative) farther down
 
 > Development preview: the USB Wi-Fi protocol passes local tests and the firmware builds, but the complete browser-to-board installation and provisioning still need hardware testing. This targets a classic AI-Thinker-style ESP32-CAM with 4 MB flash and working PSRAM, not arbitrary ESP32 boards.
 
-## 1. Get ready
+## What you need before starting
 
 - Use **desktop Chrome or Edge**, a compatible USB programming base/adapter and a data-capable USB cable. A bare ESP32-CAM cannot plug directly into USB.
 - Insert a **FAT32 microSD card** with the power off. Leave it inserted; it stores the website, model and settings. AIEdge does not format it for you.
 - Have your **2.4 GHz home Wi-Fi** name and password ready. Internet access is needed for the GitHub download.
 - Installation replaces firmware and internal settings. Save anything you need first. A flash backup does not include the SD card, and formatting a card erases its contents.
 
-## 2. Install over USB
+## 1. Open the web installer
+
+Open **[install AIEdge in your browser](https://isentropik.github.io/AIEdge/)** in desktop Chrome or Edge. Keep that page open for both installation and Wi-Fi setup.
+
+**The web installer uses your USB cable to communicate with the board.** USB is the connection, not a separate manual installation method. The browser handles the firmware download and writing for you.
+
+## 2. Connect the board and install from the webpage
 
 1. Connect the board through its USB programmer. Close any serial-monitor program using that port.
-2. Open the [web installer](https://isentropik.github.io/AIEdge/). It checks the download before showing **Connect to ESP32**.
-3. Click **Connect to ESP32**, choose the board's USB port and follow the installation dialog. Read its erase/install confirmation before proceeding.
-4. Keep power connected until the USB write finishes.
+2. Wait for the webpage to show **Installer files checked. Ready to connect.**
+3. Click **Connect to ESP32**, choose the board's USB port and follow the browser's installation dialog. Read its erase/install confirmation before proceeding.
+4. Keep power connected until the browser reports that the USB installation has finished.
 
 Some programming bases enter download mode and reset automatically. Others need GPIO0 connected to GND during reset. Follow your exact board/adapter instructions. If you used that connection, remove it after flashing and reset to start the loader normally; then reconnect from the installer if necessary.
 
 If no port appears, check the data cable and the adapter manufacturer's USB driver. On Windows, Device Manager's **Ports (COM & LPT)** list can identify the port by unplugging and reconnecting before starting a write.
 
-## 3. Choose Wi-Fi in the same dialog
+## 3. Set up Wi-Fi in the web installer
 
 Once the loader starts, ESP Web Tools detects its USB Wi-Fi setup service. Choose **Connect to Wi-Fi**, select your home network and enter its password. You can also enter a network manually when needed.
 
@@ -40,7 +46,7 @@ The password goes directly to the board over USB. You do not need to join AIEdge
 
 If the Wi-Fi option is missing, check that the loader started normally and GPIO0 is no longer grounded. The older 0.1.0 loader does not support USB Wi-Fi provisioning; install the 0.1.1 loader or use the hotspot fallback below.
 
-## 4. Let the board install the rest
+## 4. Wait for installation to finish, then open AIEdge
 
 After Wi-Fi connects, the board downloads the main AIEdge package itself. **Wi-Fi connected does not mean the full installation is finished.** Keep USB power connected.
 
@@ -72,6 +78,9 @@ Network names are limited to 31 UTF-8 bytes and passwords to 63 bytes; quotes an
 ## Manual USB installation alternative
 
 **Optional fallback — not required for web installation.** The web installer above is recommended. Use these manual steps only if you cannot use a supported browser or specifically prefer command-line tools. After flashing, continue with either USB Wi-Fi setup above or the hotspot fallback.
+
+<details>
+<summary>Show optional manual downloads and command-line instructions</summary>
 
 ### Download the files
 
@@ -138,6 +147,8 @@ For example, `--port YOUR_PORT` becomes `--port COM8`. Leave the other values un
 
 After success, remove the GPIO0-to-GND connection if you used one, then reset or power-cycle the board. Leaving that connection in place keeps it in download mode instead of starting AIEdge.
 
+
+</details>
 
 ## Updating later
 
