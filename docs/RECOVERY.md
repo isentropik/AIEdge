@@ -4,6 +4,19 @@
 
 Start with your symptom below. Keep the exact error text. Do not disconnect power while firmware is being written or installed.
 
+## Installation succeeds, but USB Wi-Fi setup is missing
+
+Try this sequence in the web installer:
+
+1. Choose **Connect to ESP32** if you closed the dialog.
+2. Open **Logs & Console** and choose **Reset device**.
+3. Wait for **AIEdge Wi-Fi loader ready**, then choose **Back**.
+4. Choose **Connect to Wi-Fi** when it appears.
+
+This sequence restored USB Wi-Fi setup on the test board. The automatic restart/discovery handoff remains under investigation; successful flashing alone does not verify provisioning. There is no need to reinstall merely because the Wi-Fi option is missing. Only reset after flashing has finished.
+
+If this still fails, keep the boot log and use the **AIEdge-Setup** hotspot fallback described on the [installer page](https://isentropik.github.io/AIEdge/).
+
 ## The setup Wi-Fi network is missing
 
 Check power and confirm USB installation succeeded. If you connected **GPIO0 to GND** for programming, remove that connection and reset the board after the write finishes. Otherwise it stays in download mode.
