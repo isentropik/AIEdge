@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include "PolarPercentile.h"
 
 namespace polar {
 // Input is Pillow-compatible grayscale after the frozen radius-0.4 blur.
@@ -28,7 +29,7 @@ inline bool features(const uint8_t* gray, int width, int height,
     }
     for (int r=0; r<20; ++r) {
         for (int a=0; a<360; ++a) sorted[a]=scratch[a*20+r];
-        std::sort(sorted,sorted+360);
+        selectPercentile75(sorted);
         // NumPy percentile(75): (360-1)*0.75 = 269.25.
         const double background=sorted[269]*.75+sorted[270]*.25;
         for (int a=0; a<384; ++a) {

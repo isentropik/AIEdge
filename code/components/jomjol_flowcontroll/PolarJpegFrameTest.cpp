@@ -45,12 +45,10 @@ PolarRuntimeTestResult runPolarJpegFrameTest() {
     ProcessingAccess processing;if(!processing){result.status="processing_busy";return result;}
     CameraAccess camera;if(!camera){result.status="camera_busy";return result;}
     constexpr size_t jpegBytes=57573,inputBytes=15360,outputBytes=360;
-    auto jpeg=buffer(jpegBytes),vectors=buffer(8+6*(inputBytes+outputBytes)),features=buffer(6*inputBytes);
-    if(!jpeg || !vectors || !features){result.status="jpeg_fixture_memory_unavailable";return result;}
+    auto jpeg=buffer(jpegBytes),features=buffer(6*inputBytes);
+    if(!jpeg || !features){result.status="jpeg_fixture_memory_unavailable";return result;}
     if(!readFixture("/sdcard/config/polar-runtime-frame.jpg",jpeg.get(),jpegBytes,
-                    "b6c9a9a0bd291c053535c57fd4f9bf979c12f90ca00a6051a6d9d0de0d6d667b") ||
-       !readFixture("/sdcard/config/polar-jpeg-vectors.bin",vectors.get(),8+6*(inputBytes+outputBytes),
-                    "a5bd8e61d2be7c94a40c9d9eaec9bab26f782cb931849aa9a50186db9122f919")) {
+                    "b6c9a9a0bd291c053535c57fd4f9bf979c12f90ca00a6051a6d9d0de0d6d667b")) {
         result.status="jpeg_fixture_rejected";return result;
     }
     const auto started=esp_timer_get_time();
@@ -62,6 +60,8 @@ PolarRuntimeTestResult runPolarJpegFrameTest() {
         result.decodeUs=esp_timer_get_time()-decodeStart;
         if(!rgb || width!=640 || height!=480){result.status="jpeg_decode_rejected";return result;}
         jpeg.reset();
+        // JPEG temporaries are now freed. Reference vectors are loaded only
+        // after this large scratch block is released, reducing peak heap use.
         auto storage=buffer(sizeof(polar::PipelineScratch));
         if(!storage){result.status="full_frame_memory_unavailable";return result;}
         auto*scratch=new(storage.get()) polar::PipelineScratch;
@@ -77,11 +77,14 @@ PolarRuntimeTestResult runPolarJpegFrameTest() {
             }
             result.preprocessingUs[i]=esp_timer_get_time()-begin;
             std::memcpy(features.get()+i*inputBytes,scratch->features,inputBytes);
-            const auto*expected=vectors.get()+8+i*(inputBytes+outputBytes);
-            for(size_t j=0;j<inputBytes;++j)
-                if(static_cast<unsigned char>(scratch->features[j])!=expected[j])++result.featureDifferences[i];
         }
-    } // Release RGB, scratch and shared decoder ownership before model allocation.
+    } // Release RGB and shared decoder ownership before model allocation.
+    auto vectors=buffer(8+6*(inputBytes+outputBytes));
+    if(!vectors){result.status="jpeg_fixture_memory_unavailable";return result;}
+    if(!readFixture("/sdcard/config/polar-jpeg-vectors.bin",vectors.get(),8+6*(inputBytes+outputBytes),
+                    "a5bd8e61d2be7c94a40c9d9eaec9bab26f782cb931849aa9a50186db9122f919")){
+        result.status="jpeg_fixture_rejected";return result;
+    }
     CTfLiteClass network;
     if(!network.LoadFrozenPolarModel(MeterBundle::frozenModelPath("/sdcard/config/polar-int8.tflite")) ||
        !network.MakeAllocate() || !network.HasPolarTensorContract()){
@@ -89,7 +92,11 @@ PolarRuntimeTestResult runPolarJpegFrameTest() {
     }
     bool same=true;int8_t output[outputBytes];
     for(int i=0;i<6;++i){
-        vTaskDelay(1);const auto begin=esp_timer_get_time();
+        vTaskDelay(1);
+        const auto*expectedFeatures=vectors.get()+8+i*(inputBytes+outputBytes);
+        for(size_t j=0;j<inputBytes;++j)
+            if(features.get()[i*inputBytes+j]!=expectedFeatures[j])++result.featureDifferences[i];
+        const auto begin=esp_timer_get_time();
         if(!network.InferPolarScores(reinterpret_cast<int8_t*>(features.get()+i*inputBytes),inputBytes,output,outputBytes)){
             result.status="inference_failed";return result;
         }

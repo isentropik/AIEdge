@@ -1,5 +1,6 @@
 #pragma once
 #include "PolarCalibration.h"
+#include "PolarPercentile.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -46,7 +47,7 @@ inline bool visibility(const uint8_t* gray,const DialGeometry& d,double* samples
     double background[12];
     for(int r=0;r<12;++r) {
         for(int a=0;a<360;++a)sorted[a]=samples[a*12+r];
-        std::sort(sorted,sorted+360);background[r]=sorted[269]*.75+sorted[270]*.25;
+        selectPercentile75(sorted);background[r]=sorted[269]*.75+sorted[270]*.25;
     }
     double best=-1e9;
     for(int a=0;a<360;++a) {

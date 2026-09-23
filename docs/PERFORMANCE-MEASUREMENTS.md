@@ -32,6 +32,26 @@ Startup removed the obsolete `FlipImageSize = false` line. The test detected tha
 The trial exposed an incorrect success summary: the outer `doflow` wrapper discarded the controller's false return and always returned true, while the scheduler always logged a completed round. The source fix preserves the controller result and separately reports completed, failed, and skipped/busy rounds. Actual-wrapper/reporting tests, 12 controller regressions, and the final ESP32 build pass. The board returned on COM8; its MAC matched before any write. Loader 0.1.11-test7 installed the verified private candidate, and the application booted with its camera available. The normal-camera retest recorded one rejected cycle (12.015284 seconds), zero accepted/completed cycles, and the corrected warning `Round #1 failed (12 seconds)`. Earlier incorrect completed entries remain historical log records. This still does not establish successful reading accuracy or cadence. The original configuration was restored byte-for-byte after the trial. Recorded installation: `recorded-20260923T171859Z`; cycle evidence: `normal-pipeline-outcome-retest-20260923`. The temporary package server and board-only firewall rule were removed. This test-board deployment is not a public installer release.
 # Saved-JPEG diagnostic, September 23, 2026
 
+## Repeated-run follow-up
+
+Repeated testing exposed an allocation failure in the diagnostic's original
+buffer ordering. A first attempt to allocate its largest scratch buffer before
+decoding instead left insufficient space for JPEG temporaries. Neither failure
+is counted as a valid fast run. The corrected diagnostic loads reference vectors
+only after preprocessing scratch is released, keeping these allocations apart.
+
+On test build 2026-09-23 20:22:29 UTC at 160 MHz, three consecutive JPEG runs
+passed exact feature/output checks: **28.104853, 28.098249 and 28.084552 seconds**
+(median **28.098249 seconds**). This is a limited repeat check, not long-term
+stability evidence. Settings remained unchanged; no camera cycle or upload ran.
+
+The same candidate replaces unnecessary 360-element percentile sorts with
+selection of the two required order statistics. Its 180 host per-dial results
+match prior acceptance values, visibility scores and feature bytes exactly.
+These timings show no meaningful total-pipeline speedup over the original
+28.024-second observation; do not describe the candidate as meeting 30-second
+capture cadence. It still excludes capture and result publication.
+
 The test ESP32 processed an existing private 640x480 meter JPEG using its actual
 stb decoder and shared PSRAM allocator, followed by marker registration, fixed
 dial calibration, visibility checks, feature extraction and frozen inference.
