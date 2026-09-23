@@ -54,7 +54,17 @@ Keep the error and existing files. Do not bypass verification or delete partial 
 
 ## The USB tool cannot connect
 
-Check the COM port, close other programs using it, and follow download-mode instructions for the exact board and adapter. Try a known data cable. An example port such as `COM8` may not be yours.
+**You normally do not need to press BOOT if your USB programmer supports automatic reset.** The installer uses the adapter's control lines to reset the ESP32 into download mode. Flashing without touching a button is expected on these adapters.
+
+If the installer stays at **Connecting** or cannot enter download mode:
+
+1. Check the selected USB/COM port and close other programs using it.
+2. If your board has **BOOT** and **RESET/EN** buttons, hold BOOT, briefly press and release RESET/EN, then release BOOT and retry the connection.
+3. For an ESP32-CAM without a BOOT button, follow the exact adapter instructions: some require **GPIO0 connected to GND during reset**. After flashing finishes, remove that jumper and reset for normal startup.
+
+Do not reset or change wiring while a write is in progress. If no USB port appears at all, check the data cable and adapter driver; pressing BOOT will not fix that. An example port such as `COM8` may not be yours.
+
+Technical background: [Espressif's automatic and manual boot-mode instructions](https://docs.espressif.com/projects/esptool/en/latest/esp32/advanced-topics/boot-mode-selection.html).
 
 If writing begins and then fails, keep the full output and resolve the error before trying normal startup.
 
