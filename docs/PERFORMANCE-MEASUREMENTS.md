@@ -1,5 +1,9 @@
 # Test-board processing measurements
 
+## Pending alignment preview optimization
+
+The alignment stage encoded the raw frame into its preview buffer, then overwrote that JPEG with the annotated preview during the same successful stage. The local change removes the first encode and initializes/clears the cached preview length so a failed stage cannot expose an uninitialized or stale length. Rotation, alignment and the final annotated encoding remain in place. A test executes the actual method with image-operation substitutes and checks both alignment modes and temporary-image allocation failure. This establishes call/control behavior, not image parity or a measured speedup. On-device timing and preview checks remain pending.
+
 September 23, 2026. Firmware application SHA-256 `191b738f6a1e2a60f7bce6fbe99cc42855eedbb89a24975c82ae68d25114a1ce`.
 
 Three repeated full-RGB diagnostic runs were performed at each supported CPU setting. Startup logs confirmed the active frequency. Every run registered the fixed held-out image, prepared all six dial inputs and matched all feature and model-output bytes against the frozen reference.

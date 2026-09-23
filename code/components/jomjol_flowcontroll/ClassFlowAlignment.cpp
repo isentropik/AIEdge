@@ -29,6 +29,7 @@ void ClassFlowAlignment::SetInitialParameter(void)
     ImageTMP = NULL;
 #ifdef ALGROI_LOAD_FROM_MEM_AS_JPG
     AlgROI = (ImageData *)malloc_psram_heap(std::string(TAG) + "->AlgROI", sizeof(ImageData), MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+    if (AlgROI) AlgROI->size = 0;
 #endif
     previousElement = NULL;
     disabled = false;
@@ -181,7 +182,10 @@ bool ClassFlowAlignment::doFlow(string time)
     }
 
     if (AlgROI) {
-        ImageBasis->writeToMemoryAsJPG((ImageData *)AlgROI, 90);
+        // The annotated preview is encoded below. Encoding the raw frame here
+        // only produces a JPEG that is overwritten within the same stage.
+        // Clear stale bytes from the published length if this stage fails.
+        AlgROI->size = 0;
     }
 #endif
 
