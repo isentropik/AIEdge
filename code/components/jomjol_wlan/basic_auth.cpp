@@ -1,6 +1,12 @@
 #include "basic_auth.h"
 #include "WebsiteCredentialStore.h"
+#include "../../../shared/WebsiteSerial.h"
 
+bool start_website_usb(httpd_handle_t server) {
+    const bool ok=AIEdgeAuth::startWebsiteSerial(server,AIEdgeAuth::deviceWebsiteHttp());
+    if(!ok)std::printf("AIEdge USB website recovery reader unavailable; settings preserved.\n");
+    return ok;
+}
 void init_basic_auth() { AIEdgeAuth::deviceWebsiteHttp().initialize(); }
 bool basic_auth_configured() { return AIEdgeAuth::deviceWebsiteHttp().configured(); }
 esp_err_t basic_auth_request_filter(httpd_req_t* req, esp_err_t handler(httpd_req_t*)) {

@@ -63,6 +63,27 @@ int main(){Fake f;WebsiteAccess state(f);WebsiteHttp http(state);httpd_req_t r;
  Fake noRandom;noRandom.randomError=true;WebsiteAccess a(noRandom);WebsiteHttp h(a);h.initialize();r={};h.handle(&r,target);assert(r.status=="503 Service Unavailable");
 }
 ''')
+serial=(ROOT/'shared/WebsiteSerial.h').read_text(encoding='utf-8-sig')
+queue=serial[serial.index('inline bool queueLocalCommand'):serial.index('inline bool startWebsiteSerial')]
+compiled=cpp.read_text()
+mocks=r'''
+#include <new>
+using httpd_handle_t=void*;void(*pendingWork)(void*)=nullptr;void* pendingArgument=nullptr;bool queueFails=false;
+int httpd_queue_work(httpd_handle_t,void(*work)(void*),void* argument){if(queueFails)return -1;assert(!pendingWork);pendingWork=work;pendingArgument=argument;return 0;}
+void runQueued(){assert(pendingWork);auto work=pendingWork;auto argument=pendingArgument;pendingWork=nullptr;pendingArgument=nullptr;work(argument);}
+'''
+compiled=compiled.replace('int main(){',mocks+queue+'\nint main(){')
+i=compiled.rfind('}')
+compiled=compiled[:i]+r'''
+ Fake queued;WebsiteAccess qs(queued);WebsiteHttp qh(qs);uint8_t qt[32]={};qs.initialize(qt);assert(qs.setup(qt,32,password,sizeof(password)-1));
+ auto server=reinterpret_cast<void*>(1);
+ assert(queueLocalCommand(server,qh,"AIEdge AUTH RESET"));assert(queued.erases==0);runQueued();assert(queued.erases==0);
+ std::string confirmation="AIEdge AUTH CONFIRM ";char pair[3];for(unsigned n=49;n<=64;++n){snprintf(pair,sizeof pair,"%02x",n);confirmation+=pair;}
+ assert(queueLocalCommand(server,qh,confirmation.c_str()));assert(queued.erases==0&&qs.state()==State::Ready);runQueued();assert(queued.erases==1&&qs.state()==State::NeedsSetup);
+ queueFails=true;assert(!queueLocalCommand(server,qh,"AIEdge AUTH RESET"));assert(!pendingWork&&queued.erases==1);queueFails=false;
+ assert(!queueLocalCommand(nullptr,qh,"AIEdge AUTH RESET"));assert(!queueLocalCommand(server,qh,std::string(100,'x').c_str()));
+'''+compiled[i:]
+cpp.write_text(compiled)
 env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(OUT/'global'),ZIG_LOCAL_CACHE_DIR=str(OUT/'local'));exe=OUT/'http.exe'
 subprocess.run([sys.executable,'-m','ziglang','c++','-std=c++11','-O2','-UNDEBUG','-I'+str(STUB),'-I'+str(ROOT/'shared'),'-I'+str(ROOT/'tools/auth-tests'),str(cpp),'-o',str(exe)],check=True,env=env)
 subprocess.run([str(exe)],check=True)

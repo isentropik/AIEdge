@@ -8,9 +8,10 @@ class WebsiteAccess {
     uint8_t setupToken[32] = {}, cached[32] = {};
     bool tokenReady = false, cachedReady = false;
     uint64_t nextAttempt = 0;
+    uint8_t recoveryToken[16]={};bool recoveryPending=false;uint64_t recoveryExpires=0;
 public:
     explicit WebsiteAccess(Backend& b) : backend(b), credential(b) {}
-    ~WebsiteAccess() { wipe(setupToken,sizeof setupToken); wipe(cached,sizeof cached); }
+    ~WebsiteAccess() { wipe(setupToken,sizeof setupToken); wipe(cached,sizeof cached); wipe(recoveryToken,sizeof recoveryToken); }
     WebsiteAccess(const WebsiteAccess&) = delete;
     WebsiteAccess& operator=(const WebsiteAccess&) = delete;
     State state() const { return credential.state(); }
@@ -18,6 +19,7 @@ public:
     // Called after radio initialization; setup token is delivered over USB only.
     State initialize(uint8_t* localToken) {
         tokenReady=cachedReady=false;nextAttempt=0;
+        recoveryPending=false;wipe(recoveryToken,sizeof recoveryToken);
         if(localToken)wipe(localToken,sizeof setupToken);
         wipe(setupToken,sizeof setupToken);wipe(cached,sizeof cached);
         const auto s=credential.load();
@@ -26,6 +28,19 @@ public:
             if(tokenReady&&localToken)std::memcpy(localToken,setupToken,sizeof setupToken);
         }
         return s;
+    }
+    bool beginLocalRecovery(uint64_t now,uint8_t* token) {
+        recoveryPending=false;wipe(recoveryToken,sizeof recoveryToken);
+        if(!token||!backend.random(recoveryToken,sizeof recoveryToken))return false;
+        std::memcpy(token,recoveryToken,sizeof recoveryToken);recoveryExpires=now+60000000;
+        recoveryPending=true;return true;
+    }
+    bool confirmLocalRecovery(const uint8_t* token,size_t size,uint64_t now) {
+        const bool valid=recoveryPending&&now<recoveryExpires&&token&&size==sizeof recoveryToken&&equal(token,recoveryToken,sizeof recoveryToken);
+        recoveryPending=false;wipe(recoveryToken,sizeof recoveryToken);
+        if(!valid)return false;
+        tokenReady=cachedReady=false;wipe(setupToken,sizeof setupToken);wipe(cached,sizeof cached);
+        return credential.resetForLocalRecovery();
     }
     Access check(const uint8_t* password,size_t size,uint64_t now) {
         if(state()==State::NeedsSetup)return Access::SetupRequired;

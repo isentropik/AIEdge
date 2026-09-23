@@ -557,6 +557,7 @@ extern "C" void app_main(void)
 
     ESP_LOGD(TAG, "Before reg server main");
     register_server_main_uri(server, "/sdcard");
+    start_website_usb(server);
 
     // Only for testing purpose
     //setSystemStatusFlag(SYSTEM_STATUS_CAM_FB_BAD);

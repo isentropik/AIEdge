@@ -67,6 +67,34 @@ public:
         }
         wipe(token,sizeof token);
     }
+    // Called only by the physical USB parser, queued onto the HTTP server task.
+    // Never invoke from an HTTP endpoint or publish replies through diagnostics.
+    void localCommand(const char* command){
+        if(!std::strcmp(command,"AIEdge AUTH SETUP")){
+            if(access.state()==State::NeedsSetup)initialize();
+            else std::printf("AIEdge website password is configured or storage needs recovery.\n");
+            return;
+        }
+        if(!std::strcmp(command,"AIEdge AUTH RESET")){
+            uint8_t token[16]={};char encoded[33]={};constexpr char hex[]="0123456789abcdef";
+            if(access.beginLocalRecovery(esp_timer_get_time(),token)){
+                for(size_t i=0;i<sizeof token;++i){encoded[2*i]=hex[token[i]>>4];encoded[2*i+1]=hex[token[i]&15];}
+                std::printf("Remove only the website password? Within 60 seconds send: AIEdge AUTH CONFIRM %s\n",encoded);
+            }else std::printf("AIEdge could not prepare password recovery; nothing changed.\n");
+            wipe(token,sizeof token);wipe(encoded,sizeof encoded);return;
+        }
+        constexpr char prefix[]="AIEdge AUTH CONFIRM ";
+        if(std::strncmp(command,prefix,sizeof prefix-1)==0){
+            const char* encoded=command+sizeof prefix-1;uint8_t token[16]={};bool valid=std::strlen(encoded)==32;
+            for(size_t i=0;valid&&i<32;++i){char c=encoded[i];int digit=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:-1;if(digit<0)valid=false;else token[i/2]|=digit<<((i%2)?0:4);}
+            const bool done=access.confirmLocalRecovery(valid?token:nullptr,valid?sizeof token:0,esp_timer_get_time());
+            wipe(token,sizeof token);
+            if(done){std::printf("AIEdge website password removed. Wi-Fi and SD files preserved.\n");initialize();}
+            else std::printf("AIEdge password reset not confirmed or storage verification failed. Request a new reset code or check USB diagnostics.\n");
+            return;
+        }
+        std::printf("AIEdge USB commands: AUTH SETUP or AUTH RESET (prefix each with AIEdge).\n");
+    }
     bool configured()const{return access.state()==State::Ready;}
     esp_err_t handle(httpd_req_t* req,esp_err_t(*handler)(httpd_req_t*)){
         const bool setupPath=!std::strcmp(req->uri,"/auth/setup");

@@ -500,6 +500,7 @@ httpd_handle_t start_webserverAP(void)
         .user_ctx = NULL
     };
     httpd_register_uri_handler(server, &test_uri);
+    start_website_usb(server);
 
     return NULL;
 }

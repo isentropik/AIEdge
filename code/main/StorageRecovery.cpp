@@ -132,6 +132,7 @@ bool startStorageRecovery(bool nvsAvailable) {
         !check(httpd_register_uri_handler(server, &info), "Identity route") ||
         !check(httpd_register_uri_handler(server, &sysinfo), "System status route") ||
         !check(httpd_register_uri_handler(server, &root), "Recovery route")) return false;
+    start_website_usb(server);
     if (mdns_init() == ESP_OK) {
         mdns_hostname_set(hostname); mdns_instance_name_set("AIEdge recovery");
         mdns_service_add(nullptr, "_http", "_tcp", 80, nullptr, 0);

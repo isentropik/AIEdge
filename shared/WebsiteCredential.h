@@ -14,6 +14,7 @@ struct Backend {
     virtual ~Backend() = default;
     virtual ReadResult read(uint8_t* record, size_t size) = 0;
     virtual bool write(const uint8_t* record, size_t size) = 0;
+    virtual bool eraseCredential() = 0;
     virtual bool random(uint8_t* bytes, size_t size) = 0;
     virtual bool derive(const uint8_t* password, size_t size, const uint8_t* salt, uint8_t* result) = 0;
     virtual bool digest(const uint8_t* bytes, size_t size, uint8_t* result) = 0;
@@ -52,6 +53,15 @@ public:
             result == ReadResult::Present && valid(active) ? State::Ready : State::StorageError;
         if (current != State::Ready) wipe(active, sizeof active);
         return current;
+    }
+    // Only an explicitly confirmed local recovery command may invoke this.
+    bool resetForLocalRecovery() {
+        current=State::StorageError;wipe(active,sizeof active);
+        uint8_t record[credentialBytes]={};
+        const bool ok=backend.eraseCredential()&&backend.read(record,sizeof record)==ReadResult::Missing;
+        wipe(record,sizeof record);
+        if(ok)current=State::NeedsSetup;
+        return ok;
     }
     bool verify(const uint8_t* password, size_t size) {
         if (current != State::Ready || !password || !size || size > 128) return false;

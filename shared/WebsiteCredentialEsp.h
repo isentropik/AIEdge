@@ -26,6 +26,13 @@ public:
         nvs_close(handle);
         return ok;
     }
+    bool eraseCredential() override {
+        nvs_handle_t handle;
+        if(nvs_open("aiedge_auth",NVS_READWRITE,&handle)!=ESP_OK)return false;
+        const auto result=nvs_erase_key(handle,"credential");
+        const bool ok=(result==ESP_OK||result==ESP_ERR_NVS_NOT_FOUND)&&nvs_commit(handle)==ESP_OK;
+        nvs_close(handle);return ok;
+    }
     bool random(uint8_t* bytes, size_t size) override {
         // Provision only after Wi-Fi has started, when the hardware RNG has RF entropy.
         esp_fill_random(bytes, size);

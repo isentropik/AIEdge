@@ -26,4 +26,17 @@ int main(){
  f.disk[30]^=1;assert(access.initialize(token)==State::StorageError);assert(access.check(other,sizeof(other)-1,0)==Access::StorageError);assert(!access.setup(token,32,password,sizeof(password)-1));
  Fake unavailable;unavailable.randomError=true;WebsiteAccess noToken(unavailable);assert(noToken.initialize(token)==State::NeedsSetup);assert(!noToken.setup(token,32,password,sizeof(password)-1)&&unavailable.writes==0);
  Fake failing;WebsiteAccess uncertain(failing);assert(uncertain.initialize(token)==State::NeedsSetup);failing.uncertain=true;assert(!uncertain.setup(token,32,password,sizeof(password)-1));assert(uncertain.check(password,sizeof(password)-1,0)==Access::StorageError);failing.uncertain=false;assert(uncertain.initialize(token)==State::Ready);assert(uncertain.check(password,sizeof(password)-1,0)==Access::Allowed);
+
+ for(int mode=0;mode<6;++mode){
+  Fake storage;WebsiteAccess owner(storage);uint8_t setupCode[32]={},code[16]={},bad[16]={};owner.initialize(setupCode);assert(owner.setup(setupCode,32,password,sizeof(password)-1));assert(owner.check(password,sizeof(password)-1,0)==Access::Allowed);
+  assert(owner.beginLocalRecovery(100,code));
+  if(mode==0){assert(!owner.confirmLocalRecovery(bad,16,101)&&storage.erases==0);assert(!owner.confirmLocalRecovery(code,16,102)&&storage.erases==0);continue;}
+  if(mode==1){assert(!owner.confirmLocalRecovery(code,16,60000100)&&storage.erases==0);continue;}
+  storage.eraseError=mode==2;storage.eraseUncertain=mode==3;storage.eraseNoop=mode==4;
+  const bool reset=owner.confirmLocalRecovery(code,16,101);assert(storage.erases==1);assert(reset==(mode==5));assert(!owner.confirmLocalRecovery(code,16,102)&&storage.erases==1);
+  assert(owner.check(password,sizeof(password)-1,102)==(reset?Access::SetupRequired:Access::StorageError));
+  storage.eraseError=storage.eraseUncertain=storage.eraseNoop=false;
+  if(mode==2||mode==4){assert(owner.initialize(setupCode)==State::Ready);assert(owner.check(password,sizeof(password)-1,0)==Access::Allowed);}else assert(owner.initialize(setupCode)==State::NeedsSetup);
+ }
+ Fake replace;WebsiteAccess replaced(replace);uint8_t first[16]={},second[16]={};assert(replaced.beginLocalRecovery(0,first));assert(replaced.beginLocalRecovery(1,second));assert(!replaced.confirmLocalRecovery(first,16,2)&&replace.erases==0);
 }

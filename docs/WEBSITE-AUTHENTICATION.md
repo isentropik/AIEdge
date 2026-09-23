@@ -1,6 +1,6 @@
 # Website authentication
 
-Status: the password gate and first-time setup routes are integrated into local application, loader and recovery candidates. Host tests and both ESP32 builds pass. This is not deployed; recovery UX and on-device verification remain incomplete.
+Status: the password gate and first-time setup routes are integrated into local application, loader and recovery candidates. Host tests and both ESP32 builds pass. USB recovery is implemented in the candidate; this is not deployed or verified on hardware.
 
 The selected behavior is password protection for the whole device website: pages, images, readings, logs, settings and updates. Wi-Fi credentials are separate. New credentials use username `admin`.
 
@@ -26,9 +26,22 @@ The old `HTTP_USERNAME` / `HTTP_PASSWORD` fields in `wlan.ini` are not used by t
 - Application and private loader candidates compiled successfully against the ESP32 SDK on September 23, 2026. No candidate from this authentication work has been flashed. No cryptographic implementation, hardware timing, flash power-loss, browser sign-in or retention claim follows from the host tests.
 - Visual preview was blocked by the browser's local-file policy. The setup page has not had rendered visual verification.
 
+## USB-only password recovery
+
+Connect the device to a computer and open a serial console at 115200 baud (8 data bits, no parity, 1 stop bit). Commands are case-sensitive; send a newline after each command. If the web installer's console cannot send text, use a serial terminal. These commands are not web endpoints.
+
+1. To request a fresh first-time setup code, send `AIEdge AUTH SETUP`. This works only when the website password is not configured. It does not remove an existing password.
+2. If the password is forgotten, send `AIEdge AUTH RESET`. Nothing is erased yet. The device prints a confirmation command with a random code.
+3. Send that exact `AIEdge AUTH CONFIRM ...` command within 60 seconds. The code is single-use; an invalid or expired confirmation requires starting again.
+4. A verified reset removes only `credential` in the `aiedge_auth` NVS namespace, invalidates cached access and prints a new setup code. Wi-Fi and SD files are preserved. If erase/commit/readback cannot be verified, access fails closed and the device does not report success.
+
+The normal and SD-recovery application servers use a dedicated USB reader. The loader shares its existing Improv reader. Input is bounded, accepts only the explicit command prefix and rejects binary/oversized lines. The reader queues work onto the HTTP task instead of modifying credentials concurrently. UART initialization failure preserves settings and reports that recovery is unavailable; failed task allocation restores nonblocking console output before removing the driver. These readers assume their HTTP server remains alive until reboot; a future server teardown must stop the reader first.
+
+Host tests cover parser fragmentation/noise/overflow, confirmation expiry/replay, failed or uncertain erases, exact NVS key/namespace contracts and actual queued callback execution. They do not verify physical USB behavior or power-loss recovery. Confirm those on the test board before release.
+
 ## Remaining before deployment
 
-- Finish local USB delivery and password-only recovery so users cannot be stranded, preserving Wi-Fi and SD contents. The change-password screen/route is implemented; its browser and hardware behavior still needs verification.
+- Verify USB setup-code delivery and password-only recovery physically, including coexistence with Improv Wi-Fi setup. Confirm password-change browser behavior and preservation of Wi-Fi and SD data.
 - Decide and test legacy credential migration and the installer-to-application transition. Check that no diagnostic mechanism republishes setup codes.
 - Test real browser setup/sign-in, direct endpoint access, camera/SD failure, restarting, failed saves, OTA transitions and recovery on the test board. Measure password verification cost and UI/recognition contention.
 - Serialize access if more than one server/task can call the shared state. Current ownership assumes startup followed by one active HTTP server task.

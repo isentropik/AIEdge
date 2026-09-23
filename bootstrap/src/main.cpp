@@ -16,6 +16,8 @@
 #include "ImprovSerial.h"
 #include "WebsiteCredentialEsp.h"
 #include "WebsiteHttp.h"
+#include "WebsiteSerial.h"
+static httpd_handle_t websiteServer=nullptr;
 static AIEdgeAuth::NvsBackend websiteBackend;
 static AIEdgeAuth::WebsiteAccess websiteAccess(websiteBackend);
 static AIEdgeAuth::WebsiteHttp websiteHttp(websiteAccess);
@@ -372,12 +374,15 @@ static void improv_command(const AIEdgeImprov::Bytes& data){
  }
 }
 static void improv_task(void*){
- AIEdgeImprov::Parser parser;uint8_t bytes[128];int64_t last_input=0,scan_started=0;
+ AIEdgeAuth::SerialParser websiteParser;AIEdgeImprov::Parser parser;uint8_t bytes[128];int64_t last_input=0,scan_started=0;
  for(;;){
   int n=uart_read_bytes(UART_NUM_0,bytes,sizeof bytes,pdMS_TO_TICKS(50));
   if(n>0){
    if(esp_timer_get_time()-last_input>500000)parser.reset();
-   for(int i=0;i<n;++i)parser.feed(bytes[i],improv_command,[]{improv_error(1);});
+   for(int i=0;i<n;++i){
+    websiteParser.feed(bytes[i],[](const char* line){if(!AIEdgeAuth::queueLocalCommand(websiteServer,websiteHttp,line))printf("AIEdge USB password command busy; try again.\n");});
+    parser.feed(bytes[i],improv_command,[]{improv_error(1);});
+   }
    last_input=esp_timer_get_time();
   }
   if(serial_scan_pending){
@@ -445,6 +450,7 @@ extern "C" void app_main(){
  h.method=HTTP_GET;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/auth/password";h.method=HTTP_POST;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.method=HTTP_GET;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ websiteServer=server;
  h.uri="/";h.method=HTTP_GET;h.handler=WEBSITE_AUTH(home);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/status";h.handler=WEBSITE_AUTH(status);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.uri="/wifi";h.method=HTTP_POST;h.handler=WEBSITE_AUTH(credentials);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  h.uri="/debug-log";h.method=HTTP_GET;h.handler=WEBSITE_AUTH(debug_log);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.method=HTTP_POST;
