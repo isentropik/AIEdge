@@ -9,6 +9,14 @@ namespace polar {
 inline double cubic(double a,double b,double c,double d,double fraction) {
     return b+fraction*((-a+c)+fraction*(2*(a-b)+c-d+fraction*(-a+b-c+d)));
 }
+// Byte inputs make these coefficients exact integers (absolute value <= 1020).
+// Preserve the double Horner operations; avoid software-double coefficient math.
+inline double cubicBytes(uint8_t a,uint8_t b,uint8_t c,uint8_t d,double fraction) {
+    const int linear=-int(a)+int(c);
+    const int quadratic=2*(int(a)-int(b))+int(c)-int(d);
+    const int cubicCoefficient=-int(a)+int(b)-int(c)+int(d);
+    return b+fraction*(linear+fraction*(quadratic+fraction*cubicCoefficient));
+}
 // Sample a reference-frame ROI directly; avoid allocating a second full RGB frame.
 // inverse is reference-to-source affine (2x3), not the marker result's forward matrix.
 inline bool warpCrop(const uint8_t* source,int width,int height,const double* inverse,
@@ -31,12 +39,12 @@ inline bool warpCrop(const uint8_t* source,int width,int height,const double* in
             double rows[4];
             for(int r=0;r<4;++r) {
                 const int yy=std::max(0,std::min(height-1,iy-1+r));
-                double taps[4];
+                uint8_t taps[4];
                 for(int c=0;c<4;++c) {
                     const int xx=std::max(0,std::min(width-1,ix-1+c));
                     taps[c]=source[3*(yy*width+xx)+channel];
                 }
-                rows[r]=cubic(taps[0],taps[1],taps[2],taps[3],dx);
+                rows[r]=cubicBytes(taps[0],taps[1],taps[2],taps[3],dx);
             }
             const double v=cubic(rows[0],rows[1],rows[2],rows[3],dy);
             pixel[channel]=static_cast<uint8_t>(std::max(0.0,std::min(255.0,v)));
