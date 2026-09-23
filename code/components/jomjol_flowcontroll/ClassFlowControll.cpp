@@ -447,7 +447,6 @@ bool ClassFlowControll::doFlow(string time)
     if (!ConfigStorage::safe().load()) return false;
     bool result = true;
     std::string zw_time;
-    int repeat = 0;
     int qos = 1;
 
     #ifdef DEBUG_DETAIL_ON 
@@ -504,15 +503,18 @@ bool ClassFlowControll::doFlow(string time)
                 #endif
                 return false;
             }
-            repeat++;
-            LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Fehler im vorheriger Schritt - wird zum " + to_string(repeat) + ". Mal wiederholt");
-            if (i) { i -= 1; }   // vPrevious step must be repeated (probably take pictures)
-            result = false;
-            if (repeat > 5) {
-                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Wiederholung 5x nicht erfolgreich --> reboot");
-                doReboot();
-                //Step was repeated 5x --> reboot
-            }
+            // Alignment may already have transformed the frame, and later
+            // stages may already have persisted or sent data. Retrying them
+            // in this cycle can repeat those side effects. Leave recovery to
+            // the next scheduled/manual cycle instead of retrying or rebooting.
+            aktstatus = FlowControll[i]->name() == "ClassFlowAlignment" ?
+                "Alignment failed" : "Processing failed";
+            aktstatusWithTime = aktstatus + " (" + getCurrentTimeString("%H:%M:%S") + ")";
+            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, aktstatusWithTime + ": " + FlowControll[i]->name());
+            #ifdef ENABLE_MQTT
+                MQTTPublish(mqttServer_getMainTopic() + "/status", aktstatus, qos, false);
+            #endif
+            return false;
         }
         else {
             result = true;
