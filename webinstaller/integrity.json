@@ -1,0 +1,32 @@
+{
+  "version": "0.1.1-dev.20260922",
+  "files": {
+    "releases/v0.1.1-dev.20260922/aiedge-web-installer.bin": {
+      "bytes": 1338144,
+      "sha256": "c8d43cf08d14b3c4d09cd5bc15c5e6bc4df1b44a0fa27a2c768b4e5e2686b8b5"
+    }
+  },
+  "source_parts": {
+    "bootloader.bin": {
+      "offset": 4096,
+      "bytes": 27472,
+      "sha256": "5871839384665da7c38a42aba7ac390ccf375467c5d27309348be31eae4b32a3"
+    },
+    "partitions.bin": {
+      "offset": 32768,
+      "bytes": 3072,
+      "sha256": "9d4a2809ae90fb20709a8ca3dd3ac3462e1e73286bcd31b689060c91de06fa3a"
+    },
+    "ota_data_initial.bin": {
+      "offset": 53248,
+      "bytes": 8192,
+      "sha256": "7d2c7ac4888bfd75cd5f56e8d61f69595121183afc81556c876732fd3782c62f"
+    },
+    "aiedge-bootstrap.bin": {
+      "offset": 65536,
+      "bytes": 1272608,
+      "sha256": "4d5c014d3cb41b8ffc02507c46e6b886fdb30fc8fe9cf59c1b2fe6117cf937ac"
+    }
+  },
+  "package_sha256": "78d734258251395bc4c60dddd3cbae49f0c2f596ae7567aef10b09f2652cc405"
+}

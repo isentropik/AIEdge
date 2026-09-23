@@ -1,23 +1,15 @@
 {
-  "name": "AI-on-the-edge",
-  "version": "$VERSION",
-  "funding_url": "https://www.paypal.com/donate?hosted_button_id=8TRSVYNYKDSWL",
-  "new_install_prompt_erase": false,
+  "name": "AIEdge Wi-Fi loader",
+  "version": "0.1.1-dev.20260922",
+  "new_install_prompt_erase": true,
+  "new_install_improv_wait_time": 30,
   "builds": [
     {
       "chipFamily": "ESP32",
       "parts": [
         {
-          "path": "binary/bootloader.bin",
-          "offset": 4096
-        },
-        {
-          "path": "binary/partitions.bin",
-          "offset": 32768
-        },
-        {
-          "path": "binary/firmware.bin",
-          "offset": 65536
+          "path": "releases/v0.1.1-dev.20260922/aiedge-web-installer.bin",
+          "offset": 0
         }
       ]
     }

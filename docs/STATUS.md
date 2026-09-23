@@ -19,3 +19,7 @@ In the table, the *loader* is the small Wi-Fi installer, *package integrity* mea
 | UI | Initial branding/style implemented; full mobile/device rendering verification incomplete. |
 
 See the implementation notes for detailed limitations. Do not replace invalid or unknown readings with plausible-looking values.
+
+## Browser installer and USB Wi-Fi (0.1.1)
+
+The combined USB image has been checked against its four source files and flash addresses. Host tests cover Improv packet framing, checksum rejection, partial-input recovery, malformed credentials and scan-response formatting. The ESP32 loader compiles successfully. These are local checks; they do not establish successful browser flashing, live network scanning or credential handling on the physical board.

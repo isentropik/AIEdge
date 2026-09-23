@@ -25,3 +25,9 @@ Thanks also to Espressif for the ESP32 platform and software, and to the authors
 The original [Dual Use License](Licence.md) is retained unchanged, along with third-party notices. Read those terms before using or redistributing this software; commercial use requires a separate license from the rights holder.
 
 AIEdge's presentation documentation is written for this fork. Its README does not reuse upstream promotional images, screenshots or logos. Future presentation visuals should be original AIEdge screenshots or purpose-made diagrams, with illustrations clearly distinguished from actual device results. Inherited source assets retain their original provenance; changing the product name does not make them original AIEdge work.
+
+## Browser installer and USB Wi-Fi
+
+The browser installer uses [ESP Web Tools](https://github.com/esphome/esp-web-tools), by ESPHome / Open Home Foundation, under its [Apache-2.0 license](https://github.com/esphome/esp-web-tools/blob/10.4.0/LICENSE). It is loaded as a version-pinned component; browser flashing itself is their work.
+
+AIEdge's loader implements the public [Improv Wi-Fi serial protocol](https://www.improv-wifi.com/serial/), an ESPHome and Home Assistant initiative funded by Nabu Casa. The AIEdge-specific installer page, checks and protocol adapter are separate additions. This credit does not imply endorsement by those projects.

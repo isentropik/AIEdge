@@ -7,7 +7,7 @@ A recursive checkout downloads this repository and its pinned dependency reposit
 Use a recursive checkout of the AIEdge release commit. The initial app uses upstream `a1ccda2` with modifications; retain pinned submodule revisions.
 
 ```sh
-git clone --recursive --branch v0.1.0-dev.20260922 https://github.com/isentropik/AIEdge.git
+git clone --recursive --branch v0.1.1-dev.20260922 https://github.com/isentropik/AIEdge.git
 cd AIEdge
 python -m pip install platformio==6.1.18
 python -m platformio run --project-dir code --environment esp32cam-managed
@@ -16,7 +16,7 @@ python -m platformio run --project-dir bootstrap --environment esp32cam
 
 The platform is Espressif 6.9.0 / ESP-IDF 5.3.1. Use a short Windows checkout path if toolchain path length causes problems. These commands build only.
 
-The example checks out the initial release tag. To work on another release, substitute that tag deliberately. To develop new changes from a release, create a branch before editing. Upstream publishing workflows have been removed from the AIEdge development branch; this guide does not promise a ready-to-run GitHub build service.
+The example checks out the USB Wi-Fi release tag. To work on another release, substitute that tag deliberately. To develop new changes from a release, create a branch before editing. Upstream publishing workflows have been removed from the AIEdge development branch; this guide does not promise a ready-to-run GitHub build service.
 
 The managed app requires its matching SD bundle. Bootstrap `package_pin.h` binds the exact release URL, ZIP size/hash, bundle ID and model identity. Regenerate pins and rebuild whenever the package changes. Do not use a mutable latest-release URL with fixed hashes.
 

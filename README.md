@@ -30,12 +30,12 @@ AIEdge takes pictures of a meter, estimates where its needles point, and can sen
 
 ## How installation works
 
-1. **Install a small loader over USB.** This program sets up Wi-Fi and downloads the rest of AIEdge. Follow the [installation guide](docs/INSTALLATION.md) for the files and commands.
-2. **Join its setup Wi-Fi.** Select **AIEdge-Setup**, enter **AIEdgeSetup**, then open **http://aiedge.local**. If that fails, use **http://192.168.4.1**.
-3. **Choose home Wi-Fi.** Select your network, enter its password and press **Connect and install**. Keep the board powered while it installs.
-4. **Return to home Wi-Fi.** Open **http://aiedge.local** again and follow the [configuration guide](docs/CONFIGURATION.md).
+1. **Open the [web installer](https://isentropik.github.io/AIEdge/) in desktop Chrome or Edge.** Connect your supported board over USB and follow the install dialog.
+2. **Choose Wi-Fi in the same dialog.** Select your home 2.4 GHz network and enter its password. Details go to the board over USB; no phone or network switching is required.
+3. **Wait for the full installation.** The board downloads and verifies the main package. Keep power connected; use **Visit Device** to see progress.
+4. **Open AIEdge.** After it restarts, visit **http://aiedge.local** and follow the [configuration guide](docs/CONFIGURATION.md).
 
-You do not need to build the software to use the release files. This preview does require a USB command for the first installation; it does not yet provide an AIEdge one-click browser flasher.
+No manual file downloads or terminal commands are needed for the browser method. The [installation guide](docs/INSTALLATION.md) also explains manual USB installation and the optional setup-hotspot fallback.
 
 ## What AIEdge changes
 

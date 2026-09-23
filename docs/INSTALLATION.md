@@ -1,21 +1,73 @@
-# Install AIEdge for the first time
+# Install AIEdge from your browser
 
 [Back to AIEdge](../README.md) · [Troubleshooting](RECOVERY.md) · [Glossary](GLOSSARY.md)
 
-First, use a computer and USB cable to put a small installer on the board. Then use your phone to connect it to home Wi-Fi. It downloads the rest of AIEdge from GitHub.
+**[Open the AIEdge web installer](https://isentropik.github.io/AIEdge/)**
 
-> This development preview targets a classic AI-Thinker-style ESP32-CAM with 4 MB flash and working PSRAM. The GitHub loader has been compiled but has not yet passed a complete hardware installation test. Do not assume it works on another ESP32 variant.
+You can install the Wi-Fi loader and enter your home Wi-Fi details in the same desktop browser, over USB. There are no files to select or commands to type. Your computer stays connected to its usual network; a phone is not required.
 
-## 1. Prepare the board and SD card
+> Development preview: the USB Wi-Fi protocol passes local tests and the firmware builds, but the complete browser-to-board installation and provisioning still need hardware testing. This targets a classic AI-Thinker-style ESP32-CAM with 4 MB flash and working PSRAM, not arbitrary ESP32 boards.
 
-- Use a microSD card formatted as **FAT32**, not exFAT. Formatting erases it, so copy anything you need first. AIEdge does not format the card for you.
-- Insert the card with the power off. Leave it inserted during setup and normal use.
-- Use a compatible USB programming base or adapter and a **data-capable** cable. Some cables only supply power.
-- If the board already runs something you want to keep, save its firmware and SD files before installing. Installation replaces firmware and the internal storage layout. A firmware backup does not include the SD card.
+## 1. Get ready
 
-Follow your exact board and adapter's wiring instructions. Pin connections are not interchangeable between all ESP32-CAM programmers.
+- Use **desktop Chrome or Edge**, a compatible USB programming base/adapter and a data-capable USB cable. A bare ESP32-CAM cannot plug directly into USB.
+- Insert a **FAT32 microSD card** with the power off. Leave it inserted; it stores the website, model and settings. AIEdge does not format it for you.
+- Have your **2.4 GHz home Wi-Fi** name and password ready. Internet access is needed for the GitHub download.
+- Installation replaces firmware and internal settings. Save anything you need first. A flash backup does not include the SD card, and formatting a card erases its contents.
 
-## 2. Download the files
+## 2. Install over USB
+
+1. Connect the board through its USB programmer. Close any serial-monitor program using that port.
+2. Open the [web installer](https://isentropik.github.io/AIEdge/). It checks the download before showing **Connect to ESP32**.
+3. Click **Connect to ESP32**, choose the board's USB port and follow the installation dialog. Read its erase/install confirmation before proceeding.
+4. Keep power connected until the USB write finishes.
+
+Some programming bases enter download mode and reset automatically. Others need GPIO0 connected to GND during reset. Follow your exact board/adapter instructions. If you used that connection, remove it after flashing and reset to start the loader normally; then reconnect from the installer if necessary.
+
+If no port appears, check the data cable and the adapter manufacturer's USB driver. On Windows, Device Manager's **Ports (COM & LPT)** list can identify the port by unplugging and reconnecting before starting a write.
+
+## 3. Choose Wi-Fi in the same dialog
+
+Once the loader starts, ESP Web Tools detects its USB Wi-Fi setup service. Choose **Connect to Wi-Fi**, select your home network and enter its password. You can also enter a network manually when needed.
+
+The password goes directly to the board over USB. You do not need to join AIEdge-Setup or switch your computer's network. The service uses the standard [Improv Wi-Fi serial protocol](https://www.improv-wifi.com/serial/).
+
+If the Wi-Fi option is missing, check that the loader started normally and GPIO0 is no longer grounded. The older 0.1.0 loader does not support USB Wi-Fi provisioning; install the 0.1.1 loader or use the hotspot fallback below.
+
+## 4. Let the board install the rest
+
+After Wi-Fi connects, the board downloads the main AIEdge package itself. **Wi-Fi connected does not mean the full installation is finished.** Keep USB power connected.
+
+Choose **Visit Device** in the dialog to open the board's local address and see progress. Your computer must be able to reach the selected home network; a guest network may block this. The board checks the clock, downloads the package, verifies it and installs it before restarting. The download bar can reach 100% before verification and installation finish.
+
+After the restart, open **http://aiedge.local**. If needed, find **aiedge** in your router's connected-device list and open its actual IP address instead.
+
+Installation is complete when the main AIEdge website opens. Continue to [first-time configuration](CONFIGURATION.md). The reading model still needs appropriate calibration and validation for your meter.
+
+The USB Wi-Fi service added in this release is in the installer. Do not assume it remains available in the main application after installation.
+
+## Hotspot setup: optional fallback
+
+If USB Wi-Fi setup is unavailable, a computer or phone can use the loader's hotspot:
+
+1. Join **AIEdge-Setup**, password **AIEdgeSetup**. Stay connected if warned that it has no Internet.
+2. Open **http://aiedge.local**, or **http://192.168.4.1** if needed.
+3. Choose home Wi-Fi, enter its password and press **Connect and install**.
+4. Keep power connected. Once it says it is restarting, reconnect to home Wi-Fi and open **http://aiedge.local** again.
+
+This is an alternative, not an extra required step after USB provisioning.
+
+## Wi-Fi compatibility
+
+Use compatible **2.4 GHz Wi-Fi**, such as WPA2-Personal. A shared 2.4/5 GHz name can work if the router offers a compatible 2.4 GHz connection. Enterprise logins and WPA3-only networks are unsupported. No PC download server or port forwarding is needed.
+
+Network names are limited to 31 UTF-8 bytes and passwords to 63 bytes; quotes and line breaks are unsupported. Ordinary English characters each use one byte. Password-protected networks need at least eight password characters. The hotspot form cannot provision a manually entered hidden open network.
+
+## Manual USB installation alternative
+
+Use this if your browser does not support USB serial access or you prefer command-line tools. After flashing, continue with either USB Wi-Fi setup above or the hotspot fallback.
+
+### Download the files
 
 Open [AIEdge releases](https://github.com/isentropik/AIEdge/releases), choose the development release and expand **Assets**. Put these five files together in a folder, such as `Downloads\AIEdge`:
 
@@ -29,7 +81,7 @@ Open [AIEdge releases](https://github.com/isentropik/AIEdge/releases), choose th
 
 Use files from the **same release**, without renaming them. Source-code ZIPs are for developers. You do not write `aiedge-package.zip` over USB: the Wi-Fi installer downloads that package itself.
 
-### Check the downloads on Windows
+#### Check the downloads on Windows
 
 Open the download folder in File Explorer, type `powershell` in its address bar and press Enter. This opens a command window in that folder.
 
@@ -41,7 +93,7 @@ Get-FileHash -Algorithm SHA256 bootloader.bin, partitions.bin, ota_data_initial.
 
 Open `SHA256SUMS.txt` and compare the long code for each of those four filenames. Uppercase and lowercase letters are equivalent. Every code must match. If one differs, download that file again before continuing.
 
-## 3. Install the USB writing tool
+### Install the USB writing tool
 
 **esptool** writes firmware to an ESP32. These instructions use Windows PowerShell and esptool version 4.
 
@@ -56,7 +108,7 @@ If `py` is not recognized but `python --version` works, use `python` instead of 
 
 On macOS or Linux, the Python command and serial-port name differ. The file addresses below still apply only to the supported board and flash set.
 
-## 4. Find the USB port
+### Find the USB port
 
 1. Open Windows **Device Manager** and expand **Ports (COM & LPT)**.
 2. Connect the board through its USB programmer. Note the port that appears, such as `COM8`.
@@ -64,7 +116,7 @@ On macOS or Linux, the Python command and serial-port name differ. The file addr
 
 If no port appears, check the data cable and your adapter manufacturer's driver. Port numbers can change; `COM8` is only an example. Close any serial-monitor program using the port.
 
-## 5. Write the installer
+### Write the installer
 
 Put the board in **download mode**, which allows USB firmware writing. Some USB bases do this automatically. Many ESP32-CAM boards require GPIO0 connected to GND during reset; follow your programmer's instructions.
 
@@ -80,46 +132,9 @@ For example, `--port YOUR_PORT` becomes `--port COM8`. Leave the other values un
 
 After success, remove the GPIO0-to-GND connection if you used one, then reset or power-cycle the board. Leaving that connection in place keeps it in download mode instead of starting AIEdge.
 
-## 6. Connect your phone
 
-1. Join **AIEdge-Setup** in your phone's Wi-Fi settings.
-2. Enter **AIEdgeSetup**. This is the setup-network password, not your home Wi-Fi password.
-3. If warned that this network has **no Internet**, choose to stay connected. That is expected.
-4. Enter **http://aiedge.local** in the browser's address bar. If it fails, use **http://192.168.4.1**. Include `http://` rather than searching for the name.
+## Updating later
 
-**What you should see:** an AIEdge page with a Wi-Fi list, password field and **Connect and install** button.
+Use the main website's managed update feature with a compatible complete AIEdge package and that release's instructions. The firmware, website and model must stay matched. The first-install browser flasher is not a substitute for a settings-preserving update.
 
-## 7. Select home Wi-Fi and install
-
-1. Choose your network. Use **Rescan networks** if needed, or **Hidden network / enter manually** to type a hidden network's name.
-2. Enter its password. **Show password** lets you check it.
-3. Press **Connect and install** once. Keep power connected and stay on **AIEdge-Setup** while installation runs.
-
-| Status text | Meaning |
-| --- | --- |
-| Connecting to Wi-Fi | Joining home Wi-Fi. |
-| Setting the clock for secure download | Getting the time to check GitHub's security certificate. |
-| Downloading AIEdge | Fetching the package. |
-| Verifying package and SD files | Checking the download and files saved to the card. |
-| Installing verified firmware | Writing the main program. Keep power connected. |
-| Installed. Restarting; reconnect to your home Wi-Fi | Installation has reached the restart step. Rejoin home Wi-Fi. |
-
-The bar measures the **download**, not the whole installation. It can reach 100% before verification and installation finish. The setup page can disconnect during the final restart.
-
-Use **2.4 GHz Wi-Fi**. A shared 2.4/5 GHz name can work if the router offers compatible 2.4 GHz access. Enterprise logins and WPA3-only networks are unsupported. No PC server or router port forwarding is needed.
-
-Less common limits: network names are limited to 31 UTF-8 bytes and passwords to 63 bytes; quotes and line breaks are unsupported. Ordinary English characters each use one byte; some other characters use more. Password-protected networks need at least eight password characters. Open networks must appear in the scan list; hidden open networks are unsupported.
-
-## 8. Open the main website
-
-Reconnect your phone to home Wi-Fi and open **http://aiedge.local**.
-
-If needed, find **aiedge** in your router's connected-device list and use its IP address. For example, `http://192.168.1.50` is the form of address to enter, but use the actual number from your router.
-
-**Installation is complete when the main AIEdge website opens.** The meter is not calibrated yet. Continue to [first-time configuration](CONFIGURATION.md).
-
-## Older loaders and later updates
-
-If your current loader says **Package download failed; check the PC server**, it cannot change to GitHub downloads through its webpage. Install the newer USB loader using this guide.
-
-For later updates, use the main website's managed update feature with a compatible **complete AIEdge package** and that release's instructions. Firmware, website and model files must stay matched; an unrelated app binary is insufficient. Keep USB recovery available: automatic recovery after a failed startup or interrupted update has not been established for this preview.
+Keep USB recovery available. Automatic recovery from a failed boot or interrupted update is not established for this preview. See [troubleshooting and recovery](RECOVERY.md).
