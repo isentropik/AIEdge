@@ -37,3 +37,19 @@ capture, publication or archive upload was measured. Configuration stayed
 byte-identical, no camera cycles ran, and temporary transfer access was removed.
 Private evidence: `aiedge-profile-candidate/repeated-jpeg/preprocessing-summary.json`
 and recorded installation `recorded-20260923T211738Z` in local firmware-port tests.
+
+## Exact byte-coefficient optimization — installed comparison
+
+The September 23 21:27:15 UTC build computes horizontal byte-input cubic
+coefficients as exact integers, retaining the original double interpolation and
+vertical pass. At unchanged 160 MHz, three saved-JPEG runs took 22.401487,
+22.049798 and 22.364024 seconds, with exact feature and model-output parity.
+The median improved from 27.856870 to 22.364024 seconds (19.72% reduction).
+Median six-dial warp time fell from 17.394403 to 11.857845 seconds.
+
+This is an installed-device saved-image comparison, not a live capture-to-publish
+benchmark or recognition-accuracy result. The frozen fixture and model stayed
+unchanged. Original settings were preserved byte-for-byte, camera cycles remained
+zero, and temporary transfer access was removed. Sustained 30-second live cycles
+and archive contention remain to be tested. Evidence is in the private
+`aiedge-cubic-candidate` directory and `recorded-20260923T213207Z` installation log.
