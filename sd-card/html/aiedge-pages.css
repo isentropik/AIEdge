@@ -1,0 +1,54 @@
+/* Shared AIEdge styling for device tools, setup and maintenance. */
+body.ae-tool{font-family:system-ui,-apple-system,"Segoe UI",sans-serif!important;padding:28px 32px;max-width:1200px;margin:0 auto;min-height:100vh;background:var(--ae-bg);color:var(--ae-ink)}
+.ae-tool h1{font-size:28px;letter-spacing:-1px;margin:0 0 24px}.ae-tool h2{font-size:20px;margin:24px 0 16px}.ae-tool h3{font-size:16px}
+.ae-tool p,.ae-tool td,.ae-tool th,.ae-tool label{font-family:inherit;line-height:1.55}
+.ae-tool a{color:var(--ae-accent)}
+.ae-tool button,.ae-tool .button,.ae-tool input[type=button],.ae-tool input[type=submit]{width:auto;min-height:40px;padding:9px 16px;border:1px solid var(--ae-line);border-radius:9px;background:var(--ae-surface);color:var(--ae-ink);font:inherit;cursor:pointer}
+.ae-tool button:hover,.ae-tool .button:hover{background:var(--ae-hover);border-color:var(--ae-accent)}
+.ae-tool button:disabled,.ae-tool input:disabled{opacity:.5;cursor:not-allowed}
+.ae-tool input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=button]):not([type=submit]),.ae-tool select,.ae-tool textarea{background:var(--ae-surface);color:var(--ae-ink);border:1px solid var(--ae-line);border-radius:7px;padding:8px;max-width:100%;font:inherit}
+.ae-tool input[type=checkbox],.ae-tool input[type=radio],.ae-tool input[type=range],.ae-tool progress{accent-color:var(--ae-accent)}
+.ae-tool table{border-collapse:collapse;max-width:100%;color:var(--ae-ink)}
+.ae-tool th,.ae-tool td{border-color:var(--ae-line);padding:10px 12px}.ae-tool th{font-weight:600;text-align:left;background:var(--ae-hover)}
+.ae-tool hr{border:0;border-top:1px solid var(--ae-line);margin:24px 0}
+.ae-tool pre{background:var(--ae-surface);color:var(--ae-ink);padding:16px;border:1px solid var(--ae-line);border-radius:10px;overflow:auto}
+.ae-tool fieldset{border:1px solid var(--ae-line);border-radius:12px;padding:20px}.ae-tool legend{padding:0 8px}
+.ae-tool-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 0 20px;margin-bottom:24px;border-bottom:1px solid var(--ae-line)}
+.ae-tool-header>a{font-size:22px;font-weight:700;text-decoration:none;color:var(--ae-ink)}
+.ae-tool-header .aiedge-theme-picker{position:static;margin:0!important;display:flex;align-items:center;gap:8px;font-size:12px}
+.ae-tool iframe{max-width:100%;border:0}.ae-tool progress{max-width:100%}
+/* Canvas intrinsic dimensions remain unchanged: ROI coordinates are device pixels. */
+@media(max-width:650px){body.ae-tool{font-family:system-ui,-apple-system,"Segoe UI",sans-serif!important;padding:20px 16px}.ae-tool h1{font-size:24px}.ae-tool th,.ae-tool td{padding:8px}.ae-tool-header{gap:8px}}
+
+/* Responsive tool layouts use the same controls and spacing as Overview. */
+body.ae-tool{box-sizing:border-box;width:100%!important;min-width:0!important;padding:28px!important}
+.ae-tool *{box-sizing:border-box}.ae-tool h2,.ae-tool h3,.ae-tool h4{color:var(--ae-ink)!important}
+.ae-tool table{width:100%!important;max-width:100%}.ae-tool td{overflow-wrap:anywhere}
+.ae-tool input,.ae-tool select,.ae-tool textarea{min-height:44px}.ae-tool input[type=checkbox],.ae-tool input[type=radio]{min-height:20px;width:20px;height:20px;vertical-align:middle}
+.ae-tool input[type=range]{padding:0}.ae-tool input[type=file]{height:auto}
+.ae-tool button,.ae-button{min-height:44px!important}.ae-tool .tooltip .tooltiptext{max-width:min(80vw,500px);left:auto;right:0;margin:0;background:var(--ae-surface)!important;color:var(--ae-ink)!important;border:1px solid var(--ae-line);border-radius:10px;padding:12px}
+.ae-tool td[style],.ae-tool label[style],.ae-tool class[style]{color:inherit!important}
+.ae-digital-disabled{display:none!important}
+.ae-settings-sections{display:grid;gap:16px}.ae-settings-section{border:1px solid var(--ae-line);background:var(--ae-surface);border-radius:14px;overflow:visible}
+.ae-settings-section>summary{padding:20px;cursor:pointer;font-weight:600;list-style:inside}.ae-settings-section summary h4{display:inline;margin:0;font-size:17px}
+.ae-settings-section table{padding:0 20px 16px;display:block}.ae-settings-section tbody{display:block}.ae-settings-section tr{display:grid;grid-template-columns:minmax(170px,1fr) minmax(180px,1.1fr) 44px;align-items:start;gap:16px;border-top:1px solid var(--ae-line)}
+.ae-settings-section td{display:block;padding:16px 0!important;width:auto!important;background:transparent!important}.ae-settings-section td input:not([type=checkbox]),.ae-settings-section td select{width:100%!important}.ae-settings-section colgroup{display:none}
+.ae-setup-steps{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}.ae-setup-steps [aria-current]{border-color:var(--ae-accent);color:var(--ae-accent)}.ae-setup-description{padding:20px;margin-bottom:16px}.ae-setup-description h2{margin:0 0 8px;font-size:20px}.ae-setup-description p{margin:0;color:var(--ae-muted)}.ae-setup-frame{display:block;width:100%;height:70vh;min-height:480px;border:1px solid var(--ae-line);border-radius:12px}.ae-setup-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
+.ae-detail-card{padding:24px}.ae-detail-card h2{margin:0 0 20px}.ae-detail-card dl{display:grid;grid-template-columns:1fr 1fr;gap:16px}.ae-detail-card dt{color:var(--ae-muted)}.ae-detail-card dd{margin:0;overflow-wrap:anywhere}
+.ae-file-toolbar{display:grid;gap:16px;padding:20px;margin:20px 0;border:1px solid var(--ae-line);border-radius:12px}.ae-file-toolbar label{display:grid;gap:8px}.ae-file-path{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.ae-file-list{overflow:auto}
+@media(max-width:650px){body.ae-tool{padding:20px 16px!important}.ae-settings-section tr{grid-template-columns:minmax(0,1fr) 36px;gap:8px}.ae-settings-section td:first-child{grid-column:1/-1;padding-bottom:0!important}.ae-settings-section td:nth-child(2){padding-top:0!important}.ae-settings-section summary{padding:16px}.ae-tool .button{max-width:100%;white-space:normal}.ae-detail-card dl{grid-template-columns:1fr}.ae-setup-steps .ae-button{flex:1 1 120px}.ae-tool table:not(#files_table){table-layout:auto}.ae-tool iframe{width:100%!important}}
+
+.ae-help{position:relative}.ae-help>summary{list-style:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--ae-line);border-radius:50%;cursor:pointer;color:var(--ae-accent)}.ae-help-content{position:absolute;right:0;z-index:20;width:min(440px,78vw);max-height:60vh;overflow:auto;padding:18px;background:var(--ae-surface);color:var(--ae-ink);border:1px solid var(--ae-line);border-radius:12px;box-shadow:0 12px 30px #0004}.ae-help-content p{font-size:14px}
+
+.ae-log-output{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--ae-surface);padding:20px;border:1px solid var(--ae-line);border-radius:12px;max-height:70vh;overflow:auto;font:13px/1.6 ui-monospace,monospace}
+
+#history th,#history td{padding:14px 18px;text-align:left;border-bottom:1px solid var(--ae-line);font-size:14px;white-space:nowrap}#history th{color:var(--ae-muted)}
+
+/* Dial and camera editors retain intrinsic canvas pixels, but controls reflow. */
+.ae-tool[data-page="edit_analog.html"] table,.ae-tool[data-page="edit_alignment.html"] table,.ae-tool[data-page="edit_reference.html"] table{display:block;border:1px solid var(--ae-line);border-radius:12px;padding:16px;background:var(--ae-surface);margin:16px 0}
+.ae-tool[data-page="edit_analog.html"] tbody,.ae-tool[data-page="edit_alignment.html"] tbody,.ae-tool[data-page="edit_reference.html"] tbody{display:block}
+.ae-tool[data-page="edit_analog.html"] tr,.ae-tool[data-page="edit_alignment.html"] tr,.ae-tool[data-page="edit_reference.html"] tr{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;align-items:center}
+.ae-tool[data-page="edit_analog.html"] td,.ae-tool[data-page="edit_alignment.html"] td,.ae-tool[data-page="edit_reference.html"] td{display:block;width:auto!important;min-width:0;padding:8px 0;overflow-wrap:normal}
+.ae-tool[data-page="edit_analog.html"] input[type=button],.ae-tool[data-page="edit_alignment.html"] button,.ae-tool[data-page="edit_reference.html"] input[type=button]{width:100%!important;white-space:normal;word-break:normal;padding:10px!important}
+.ae-tool td:has(canvas){grid-column:1/-1;overflow:auto;max-width:100%}.ae-tool canvas{max-width:none}
+.ae-tool[data-page="edit_analog.html"] colgroup,.ae-tool[data-page="edit_alignment.html"] colgroup,.ae-tool[data-page="edit_reference.html"] colgroup{display:none}

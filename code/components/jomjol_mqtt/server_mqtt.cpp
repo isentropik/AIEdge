@@ -156,7 +156,7 @@ bool sendHomeAssistantDiscoveryTopic(std::string group, std::string field,
         "\"identifiers\": [\"" + maintopic + "\"],"  +
         "\"name\": \"" + maintopic + "\","  +
         "\"model\": \"Meter Digitizer\","  +
-        "\"manufacturer\": \"AI on the Edge Device\","  +
+        "\"manufacturer\": \"AIEdge\","  +
       "\"sw_version\": \"" + version + "\","  +
       "\"configuration_url\": \"http://" + *getIPAddress() + "\""  +
     "}"  +

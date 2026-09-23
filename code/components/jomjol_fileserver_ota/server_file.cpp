@@ -1,3 +1,7 @@
+#include "../jomjol_controlcamera/FileConfigStorage.h"
+#include "../jomjol_controlcamera/CameraAccess.h"
+#include "cJSON.h"
+#include "DataTail.h"
 #include "ArchiveInventory.h"
 #include "BundleWritePolicy.h"
 #include "UpdateAccess.h"
@@ -213,28 +217,8 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath, const
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
-    // Send HTML file header
-    httpd_resp_sendstr_chunk(req, "<!DOCTYPE html><html lang=\"en\" xml:lang=\"en\"><head>");
-    httpd_resp_sendstr_chunk(req, "<link href=\"/file_server.css\" rel=\"stylesheet\">");
-    httpd_resp_sendstr_chunk(req, "<link href=\"/firework.css\" rel=\"stylesheet\">");
-    httpd_resp_sendstr_chunk(req, "<script type=\"text/javascript\" src=\"/jquery-3.6.0.min.js\"></script>");
-    httpd_resp_sendstr_chunk(req, "<script type=\"text/javascript\" src=\"/firework.js\"></script></head>");
-
-    httpd_resp_sendstr_chunk(req, "<body>");
-
-    httpd_resp_sendstr_chunk(req, "<table class=\"fixed\" border=\"0\" width=100% style=\"font-family: arial\">");
-    httpd_resp_sendstr_chunk(req, "<tr><td style=\"vertical-align: top;width: 300px;\"><h2>Fileserver</h2></td>"
-                                  "<td rowspan=\"2\"><table border=\"0\" style=\"width:100%\"><tr><td style=\"width:80px\">"
-                                  "<label for=\"newfile\">Source</label></td><td colspan=\"2\">"
-                                  "<input id=\"newfile\" type=\"file\" onchange=\"setpath()\" style=\"width:100%;\"></td></tr>"
-                                  "<tr><td><label for=\"filepath\">Destination</label></td><td>"
-                                  "<input id=\"filepath\" type=\"text\" style=\"width:94%;\"></td><td>"
-                                  "<button id=\"upload\" type=\"button\" class=\"button\" onclick=\"upload()\">Upload</button></td></tr>"
-                                  "</table></td></tr><tr></tr><tr><td colspan=\"2\">"
-                                  "<button style=\"font-size:16px; padding: 5px 10px\" id=\"dirup\" type=\"button\" onclick=\"dirup()\""
-                                  "disabled>&#129145; Directory up</button><span style=\"padding-left:15px\" id=\"currentpath\">"
-                                  "</span></td></tr>");
-    httpd_resp_sendstr_chunk(req, "</table>");
+    // File actions retain their existing handlers; layout follows the AIEdge UI.
+    httpd_resp_sendstr_chunk(req, R"HTML(<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stored files · AIEdge</title><script src="/aiedge-theme.js"></script><link rel="stylesheet" href="/aiedge-theme.css"><link rel="stylesheet" href="/aiedge-ui.css"><link rel="stylesheet" href="/aiedge-pages.css"><link rel="stylesheet" href="/firework.css"><script src="/jquery-3.6.0.min.js"></script><script src="/firework.js"></script><script defer src="/aiedge-pages.js"></script></head><body class="ae-tool"><header class="ae-page-heading"><div><h1>Stored files</h1><p>Browse and download files on the SD card.</p></div></header><div class="ae-file-path"><button id="dirup" type="button" onclick="dirup()" disabled>Parent folder</button><span id="currentpath"></span></div><details class="ae-file-toolbar"><summary>Upload a file</summary><label>File<input id="newfile" type="file" onchange="setpath()"></label><label>Destination path<input id="filepath" type="text"></label><button id="upload" type="button" onclick="upload()">Upload</button></details>)HTML");
 
     httpd_resp_sendstr_chunk(req, "<script type=\"text/javascript\" src=\"/file_server.js\"></script>");
     httpd_resp_sendstr_chunk(req, "<script type=\"text/javascript\">initFileServer();</script>");
@@ -366,30 +350,10 @@ static esp_err_t send_datafile(httpd_req_t *req, bool send_full_file)
 //    ESP_LOGI(TAG, "Sending file: %s (%ld bytes)...", &filename, file_stat.st_size);
     set_content_type_from_file(req, currentfilename.c_str());
 
-    if (!send_full_file) { // Send only last part of file
-        ESP_LOGD(TAG, "Sending last %d bytes of the actual datafile!", LOGFILE_LAST_PART_BYTES);
-
-        /* Adapted from https://www.geeksforgeeks.org/implement-your-own-tail-read-last-n-lines-of-a-huge-file/ */
-        if (fseek(fd, 0, SEEK_END)) {
-            LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to get to end of file!");
-            return ESP_FAIL;
-        }
-        else {
-            long pos = ftell(fd); // Number of bytes in the file
-            ESP_LOGI(TAG, "File contains %ld bytes", pos);
-
-            if (fseek(fd, pos - std::min((long)LOGFILE_LAST_PART_BYTES, pos), SEEK_SET)) { // Go LOGFILE_LAST_PART_BYTES bytes back from EOF
-                LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Failed to go back " + to_string(std::min((long)LOGFILE_LAST_PART_BYTES, pos)) + " bytes within the file!");
-                return ESP_FAIL;
-            }
-        }
-
-        /* Find end of line */
-        while (1) {
-            if (fgetc(fd) == '\n') {
-                break;
-            }
-        }
+    if (!send_full_file && !seekCompleteDataTail(fd, LOGFILE_LAST_PART_BYTES)) {
+        fclose(fd);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Could not read data file");
+        return ESP_FAIL;
     }
 
     /* Retrieve the pointer to scratch buffer for temporary storage */
@@ -616,6 +580,49 @@ static bool configJournalAllowsMutation()
     struct stat info;
     if (stat("/sdcard/config/config.ini.journal", &info) == 0) return false;
     return errno == ENOENT;
+}
+
+
+// Save a complete config with an exact baseline and the same durable journal
+// used by camera settings. Never delete the working config to replace it.
+static esp_err_t save_config_handler(httpd_req_t* req)
+{
+    UpdateAccess update;
+    CameraAccess camera;
+    if (!update || !camera) return cameraBusyResponse(req);
+    if (!ConfigStorage::safe().load() || !configJournalAllowsMutation())
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Configuration recovery required");
+    if (req->content_len <= 0 || req->content_len > 160 * 1024)
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid configuration size");
+    std::string body(req->content_len, '\0');
+    size_t offset = 0;
+    while (offset < body.size()) {
+        int n = httpd_req_recv(req, &body[offset], body.size() - offset);
+        if (n <= 0) return ESP_FAIL; // Bounded timeout; nothing written yet.
+        offset += n;
+    }
+    cJSON* document = cJSON_Parse(body.c_str());
+    cJSON* before = document ? cJSON_GetObjectItemCaseSensitive(document, "before") : nullptr;
+    cJSON* after = document ? cJSON_GetObjectItemCaseSensitive(document, "after") : nullptr;
+    if (!cJSON_IsString(before) || !cJSON_IsString(after) || !before->valuestring[0] || !after->valuestring[0] ||
+        strlen(before->valuestring) > ConfigJournal::limit || strlen(after->valuestring) > ConfigJournal::limit) {
+        cJSON_Delete(document);
+        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid configuration payload");
+    }
+    ConfigStorage::Files storage;
+    auto result = ConfigJournal::commit(storage, "/sdcard/config/config.ini", before->valuestring, after->valuestring);
+    cJSON_Delete(document);
+    if (result == ConfigJournal::Result::Conflict) {
+        httpd_resp_set_status(req, "409 Conflict");
+        return httpd_resp_sendstr(req, "Configuration changed; reload before saving");
+    }
+    if (result != ConfigJournal::Result::Ok && result != ConfigJournal::Result::CleanupPending) {
+        ConfigStorage::safe().store(false);
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Save failed; recovery required before recognition");
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, "{\"saved\":true,\"active\":false,\"restart_required\":true}");
 }
 
 static esp_err_t upload_post_handler(httpd_req_t *req)
@@ -1312,6 +1319,13 @@ void register_server_file_uri(httpd_handle_t server, const char *base_path)
         .user_ctx  = server_data    // Pass server data as context
     };
     httpd_register_uri_handler(server, &file_upload);
+    httpd_uri_t config_save = {};
+    config_save.uri = "/config-save";
+    config_save.method = HTTP_POST;
+    config_save.handler = APPLY_BASIC_AUTH_FILTER(save_config_handler);
+    config_save.user_ctx = file_upload.user_ctx;
+    httpd_register_uri_handler(server, &config_save);
+
 
     /* URI handler for deleting files from server */
     httpd_uri_t file_delete = {

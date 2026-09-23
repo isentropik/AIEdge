@@ -258,10 +258,12 @@ ClassFlow* ClassFlowControll::CreateClassFlow(std::string _type)
         flowanalog = (ClassFlowCNNGeneral*) cfc;
     }
 	
+#ifndef METER_REQUIRE_BUNDLE
     if (toUpper(_type).compare(0, 7, "[DIGITS") == 0) {
         cfc = new ClassFlowCNNGeneral(flowalignment);
         flowdigit = (ClassFlowCNNGeneral*) cfc;
     }
+#endif // Managed AIEdge builds read analog dials only.
 	
     #ifdef ENABLE_MQTT
         if (toUpper(_type).compare("[MQTT]") == 0) {

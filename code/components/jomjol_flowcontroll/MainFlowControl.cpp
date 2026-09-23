@@ -735,7 +735,7 @@ esp_err_t handler_stream(httpd_req_t *req)
         }
     }
     if (!Camera.getCameraInitSuccessful())
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Camera not initialized");
+        return cameraUnavailableResponse(req);
     if (streamActive.test_and_set()) return cameraBusyResponse(req);
     StreamPreview::reset();
     StreamRequest* work = new (std::nothrow) StreamRequest{nullptr, light};
@@ -760,6 +760,7 @@ esp_err_t handler_stream(httpd_req_t *req)
 
 esp_err_t handler_flow_start(httpd_req_t *req)
 {
+    if (!Camera.getCameraInitSuccessful()) return cameraUnavailableResponse(req);
 #ifdef DEBUG_DETAIL_ON
     LogFile.WriteHeapInfo("handler_flow_start - Start");
 #endif
@@ -768,7 +769,7 @@ esp_err_t handler_flow_start(httpd_req_t *req)
 
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
 
-    if (autostartIsEnabled)
+    if (autostartIsEnabled && xHandletask_autodoFlow)
     {
         xTaskAbortDelay(xHandletask_autodoFlow); // Delay will be aborted if task is in blocked (waiting) state. If task is already running, no action
         LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Flow start triggered by REST API /flow_start");

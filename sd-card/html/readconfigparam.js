@@ -652,6 +652,8 @@ function getConfigParameters() {
 }
 
 function WriteConfigININew() {
+    // AIEdge reads analog dials. Preserve digital definitions, but disable execution.
+    if (category.Digits) category.Digits.enabled = false;
     // Cleanup empty NUMBERS
     for (var j = 0; j < NUMBERS.length; ++j) {
         if ((NUMBERS[j]["digit"].length + NUMBERS[j]["analog"].length) == 0) {
@@ -763,24 +765,27 @@ function isCommented(input) {
     return [isComment, input];
 }    
 
-function SaveConfigToServer(_domainname){
-    // leere Zeilen am Ende löschen
-    var zw = config_split.length - 1;
-	 
-    while (config_split[zw] == "") {
-        config_split.pop();
+function SaveConfigToServer(_domainname) {
+    try {
+        if (typeof config_loaded_bytes !== 'string' || !config_loaded_bytes)
+            throw new Error('Reload settings before saving.');
+        var lines = config_split.slice();
+        while (lines.length && lines[lines.length - 1] === '') lines.pop();
+        var next = lines.join('\n') + '\n';
+        var request = new XMLHttpRequest();
+        request.open('POST', _domainname + '/config-save', false);
+        request.setRequestHeader('Content-Type', 'application/json');
+        request.send(JSON.stringify({before: config_loaded_bytes, after: next}));
+        if (request.status !== 200 || JSON.parse(request.responseText).saved !== true)
+            throw new Error(request.status === 409 ? 'Settings changed on the device. Reload before saving.' : 'Save was not verified. Reload and check the device before retrying.');
+        config_loaded_bytes = next;
+        return true;
+    } catch (error) {
+        firework.launch(error.message, 'danger', 30000);
+        return false;
     }
-
-    var config_gesamt = "";
-	 
-    for (var i = 0; i < config_split.length; ++i)
-    {
-        config_gesamt = config_gesamt + config_split[i] + "\n";
-    } 
-
-    FileDeleteOnServer("/config/config.ini", _domainname);
-    FileSendContent(config_gesamt, "/config/config.ini", _domainname);          
 }
+
 
 function getConfig() {
     return config_gesamt;

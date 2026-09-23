@@ -100,6 +100,7 @@ esp_err_t handler_lightOff(httpd_req_t *req)
 
 esp_err_t handler_capture(httpd_req_t *req)
 {
+    if (!Camera.getCameraInitSuccessful()) return cameraUnavailableResponse(req);
     CameraAccess access;
     if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
@@ -139,6 +140,7 @@ esp_err_t handler_capture(httpd_req_t *req)
 
 esp_err_t handler_capture_with_light(httpd_req_t *req)
 {
+    if (!Camera.getCameraInitSuccessful()) return cameraUnavailableResponse(req);
     CameraAccess access;
     if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON
@@ -206,6 +208,7 @@ esp_err_t handler_capture_with_light(httpd_req_t *req)
 
 esp_err_t handler_capture_save_to_file(httpd_req_t *req)
 {
+    if (!Camera.getCameraInitSuccessful()) return cameraUnavailableResponse(req);
     CameraAccess access;
     if (!access) return cameraBusyResponse(req);
 #ifdef DEBUG_DETAIL_ON

@@ -1,22 +1,24 @@
-function SaveConfigToServer(_domainname){
-     // leere Zeilen am Ende löschen
-     var zw = config_split.length - 1;
-	 
-     while (config_split[zw] == "") {
-          config_split.pop();
-     }
-
-     var config_gesamt = "";
-	 
-     for (var i = 0; i < config_split.length; ++i)
-     {
-          config_gesamt = config_gesamt + config_split[i] + "\n";
-     } 
-
-     FileDeleteOnServer("/config/config.ini", _domainname);
-
-     FileSendContent(config_gesamt, "/config/config.ini", _domainname);          
+function SaveConfigToServer(_domainname) {
+    try {
+        if (typeof config_loaded_bytes !== 'string' || !config_loaded_bytes)
+            throw new Error('Reload settings before saving.');
+        var lines = config_split.slice();
+        while (lines.length && lines[lines.length - 1] === '') lines.pop();
+        var next = lines.join('\n') + '\n';
+        var request = new XMLHttpRequest();
+        request.open('POST', _domainname + '/config-save', false);
+        request.setRequestHeader('Content-Type', 'application/json');
+        request.send(JSON.stringify({before: config_loaded_bytes, after: next}));
+        if (request.status !== 200 || JSON.parse(request.responseText).saved !== true)
+            throw new Error(request.status === 409 ? 'Settings changed on the device. Reload before saving.' : 'Save was not verified. Reload and check the device before retrying.');
+        config_loaded_bytes = next;
+        return true;
+    } catch (error) {
+        firework.launch(error.message, 'danger', 30000);
+        return false;
+    }
 }
+
 
 function UpdateConfig(zw, _index, _enhance, _domainname){
      var namezw = zw["name"];
@@ -132,19 +134,20 @@ function getConfig() {
 }
 
      
+var config_loaded_bytes = null;
 function loadConfig(_domainname) {
-    var xhttp = new XMLHttpRequest();
-    
-	try {
-        url = _domainname + '/fileserver/config/config.ini';     
-        xhttp.open("GET", url, false);
-        xhttp.send();
-        config_gesamt = xhttp.responseText;
-        config_gesamt = config_gesamt.replace("InitalRotate", "InitialRotate");         // Korrigiere Schreibfehler in config.ini !!!!!
-    } catch (error) {}
-    
-	return true;
+    config_loaded_bytes = null;
+    try {
+        var request = new XMLHttpRequest();
+        request.open('GET', _domainname + '/fileserver/config/config.ini', false);
+        request.send();
+        if (request.status !== 200 || !request.responseText) return false;
+        config_loaded_bytes = request.responseText;
+        config_gesamt = config_loaded_bytes.replace('InitalRotate', 'InitialRotate');
+        return true;
+    } catch (error) { return false; }
 }
+
 
      
 function dataURLtoBlob(dataurl) {

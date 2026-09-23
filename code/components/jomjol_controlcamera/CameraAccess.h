@@ -12,6 +12,12 @@ inline esp_err_t cameraBusyResponse(httpd_req_t* request) {
     return httpd_resp_send(request, "Camera busy; retry shortly", HTTPD_RESP_USE_STRLEN);
 }
 
+inline esp_err_t cameraUnavailableResponse(httpd_req_t* request) {
+    esp_err_t result = httpd_resp_set_status(request, "503 Service Unavailable");
+    if (result != ESP_OK) return result;
+    return httpd_resp_send(request, "Camera unavailable; connect it with power off, then restart", HTTPD_RESP_USE_STRLEN);
+}
+
 // One lock covers sensor settings, frame acquisition and capture illumination.
 // Recursive because endpoint transactions call lower-level camera methods.
 SemaphoreHandle_t cameraAccessMutex();

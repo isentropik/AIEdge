@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" xml:lang="en"> 
 <head>
-<title>AI on the edge</title>
+<title>AIEdge</title>
 <meta charset="UTF-8" />
 
 <style>
@@ -22,23 +22,27 @@ p {font-size: 1em;}
 <link href="firework.css?v=$COMMIT_HASH" rel="stylesheet">
 <script type="text/javascript" src="jquery-3.6.0.min.js?v=$COMMIT_HASH"></script>  
 <script type="text/javascript" src="firework.js?v=$COMMIT_HASH"></script>
-<script src="aiedge-theme.js"></script>
+<script src="aiedge-theme.js?v=shared-1"></script>
 <link rel="stylesheet" href="aiedge-theme.css">
-</head>
+
+<link rel="stylesheet" href="aiedge-ui.css">
+<link rel="stylesheet" href="aiedge-pages.css">
+<script defer src="aiedge-pages.js?v=shared-1"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
 
 <body style="font-family: arial">
 
-    <h4>Step 7 / 7: Initial setup completed!</h4>
+    <h4>Finish setup</h4>
 
     <p>
-        Congratulations! You have completed the initial setup and you are now ready to restart to the regular operation mode!
+        Save your settings in each step before completing setup.
     </p>
     <p>
         Once you push the button below, the setup mode will be completed and the device will be automatically restart to regular web interface. 
        If configuration is error free, the device will automatically start with first processing. It will take some time until you get the first reading.
     </p>
     <p>
-        <button class="button" onclick="reboot()">Complete Setup + Reboot</button>
+        <button class="button" onclick="reboot()">Save setup and restart</button>
     </p>
 
     <script type="text/javascript" src="common.js?v=$COMMIT_HASH"></script> 
@@ -63,13 +67,10 @@ p {font-size: 1em;}
             param["System"]["SetupMode"]["value1"] = "false";
 
             WriteConfigININew();
-            SaveConfigToServer(domainname);  
+            if (!SaveConfigToServer(domainname)) return;  
 
             var stringota = getDomainname() + "/reboot";
-            parent.location = stringota;
-            parent.location.href = stringota;
-            parent.location.assign(stringota);
-            parent.location.replace(stringota);
+            window.top.location.assign(stringota);
         }
     }
 

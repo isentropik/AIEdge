@@ -30,6 +30,7 @@
 #include "server_file.h"
 #include "server_ota.h"
 #include "BootBundle.h"
+#include "StorageRecovery.h"
 #include "time_sntp.h"
 #include "configFile.h"
 #include "server_main.h"
@@ -96,15 +97,17 @@ bool setCpuFrequency(void);
 static const char *TAG = "MAIN";
 
 #define MOUNT_POINT "/sdcard"
+static bool nvsAvailable = false;
 
 bool Init_NVS_SDCard()
 {
     esp_err_t ret = nvs_flash_init();
 	
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "NVS unavailable: %s; preserving stored data", esp_err_to_name(ret));
+        return false;
     }
+    nvsAvailable = true;
 
     ESP_LOGD(TAG, "Using SDMMC peripheral");
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
@@ -239,8 +242,9 @@ extern "C" void app_main(void)
     // ********************************************
     if (!Init_NVS_SDCard())
     {
-        ESP_LOGE(TAG, "Device init aborted!");
-        return; // No way to continue without working SD card!
+        ESP_LOGE(TAG, "Storage initialization failed; starting read-only recovery");
+        startStorageRecovery(nvsAvailable);
+        return;
     }
 
     // SD card: Create log directories (if not already existing)
@@ -437,7 +441,7 @@ extern "C" void app_main(void)
  
     if (getHTMLcommit().substr(0, 7) != std::string(GIT_REV).substr(0, 7)) { // Compare the first 7 characters of both hashes
         LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Web UI version (" + getHTMLcommit() + ") does not match firmware version (" + std::string(GIT_REV) + ")");
-        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Recommendation: Repeat installation using AI-on-the-edge-device__update__*.zip");    
+        LogFile.WriteToFile(ESP_LOG_WARN, TAG, "Recommendation: Repeat installation using the matching AIEdge release package");    
     }
 
     // Check reboot reason

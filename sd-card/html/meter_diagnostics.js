@@ -7,19 +7,19 @@
     const r=s.last||{}, start=number(r.start_us), end=number(r.end_us), capture=number(r.capture_us);
     const duration=start!==null && end!==null && end>0 && end>=start ? end-start : null;
     return [s.active===true?"A cycle is running.":s.active===false?"No cycle is currently running.":"Activity unknown.",
-      "Completed: "+count(s.pipeline_completed)+" · Failed: "+count(s.failed),
+      "Completed: "+count(s.pipeline_completed)+" Â· Failed: "+count(s.failed),
       "Reader accepted: "+count(s.accepted_reader_cycles)+" (software result, not verified accuracy)",
       "Last cycle duration: "+seconds(duration),
       "Last capture interval: "+seconds(number(r.capture_interval_us)>0?r.capture_interval_us:null),
       "Capture to pipeline finish: "+seconds(capture>0&&end>=capture?end-capture:null),
-      "Over 30 seconds: "+count(s.over_target)+" · Missed schedule slots: "+count(s.missed_schedule_slots),
+      "Over 30 seconds: "+count(s.over_target)+" Â· Missed schedule slots: "+count(s.missed_schedule_slots),
       "Rejected overlapping attempts: "+count(s.overlaps_rejected)].join("\n");
   }
   function archive(s) {
     return [s.capture_enabled===true?"New captures are eligible for archival.":s.capture_enabled===false?"New capture archival is disabled.":"Capture archival status unknown.",
-      "Pending: "+count(s.pending)+" · Blocked: "+count(s.blocked),
+      "Pending: "+count(s.pending)+" Â· Blocked: "+count(s.blocked),
       "Upload acknowledgments: "+count(s.upload_acknowledgments),
-      "Upload failures: "+count(s.upload_failures)+" · Cleanup failures: "+count(s.cleanup_failures),
+      "Upload failures: "+count(s.upload_failures)+" Â· Cleanup failures: "+count(s.cleanup_failures),
       "Rejected captures: binding "+count(s.binding_rejected)+", handoff "+count(s.handoff_rejected)+", queue "+count(s.enqueue_rejected),
       "Archived images remain unreviewed and excluded from training."].join("\n");
   }
@@ -27,7 +27,7 @@
     if(s.active===true)return "A saved-history scan is running. Refresh to check its result.";
     if(!number(s.scanned_at_uptime_us))return "No saved-history scan result yet.";
     if(s.valid!==true)return "History is not available: "+String(s.reason||"Unknown reason");
-    return "Completed segments: "+count(s.segments)+"\nCovered consumption: "+count(s.covered_minimum_ft3)+"–"+count(s.covered_maximum_ft3)+" ft³\nThis excludes the active segment and unresolved gaps. It is not a lifetime total.";
+    return "Completed segments: "+count(s.segments)+"\nCovered consumption: "+count(s.covered_minimum_ft3)+"â€“"+count(s.covered_maximum_ft3)+" ftÂ³\nThis excludes the active segment and unresolved gaps. It is not a lifetime total.";
   }
   async function request(fetcher,path,method="GET") {
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),5000);
@@ -43,15 +43,15 @@
     const refresh=doc.getElementById("refresh"),scan=doc.getElementById("scan"),status=doc.getElementById("status");let busy=false;
     async function run(scanFirst) {
       if(busy)return;busy=true;refresh.disabled=scan.disabled=true;
-      status.textContent="Reading meter status…";
+      status.textContent="Reading meter statusâ€¦";
       let errors=0;
       try {
         if(scanFirst){
           await request(fetcher,"/meter_history","POST");
-          status.textContent="Scan requested. Reading current status…";
+          status.textContent="Scan requested. Reading current statusâ€¦";
         }
         for(const [id,path,render] of [["timing","/cycle_timing",timing],["archive","/image_archive_status",archive],["history","/meter_history",history]]){
-          const el=doc.getElementById(id);el.textContent="Refreshing…";
+          const el=doc.getElementById(id);el.textContent="Refreshingâ€¦";
           try{el.textContent=render(await request(fetcher,path));}
           catch(error){errors++;el.textContent="Could not read current status: "+error.message;}
         }

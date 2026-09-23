@@ -250,14 +250,17 @@ esp_err_t hello_main_handler(httpd_req_t *req)
 
     if (filetosend == "/sdcard/html/index.html") {
         if (isSetSystemStatusFlag(SYSTEM_STATUS_PSRAM_BAD) || // Initialization failed with crritical errors!
-            isSetSystemStatusFlag(SYSTEM_STATUS_CAM_BAD) ||
             isSetSystemStatusFlag(SYSTEM_STATUS_SDCARD_CHECK_BAD) ||
             isSetSystemStatusFlag(SYSTEM_STATUS_FOLDER_CHECK_BAD)) 
         {
             LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "We have a critical error, not serving main page!");
 
             char buf[20];
-            std::string message = "<h1>AI on the Edge Device</h1><b>We have one or more critical errors:</b><br>";
+            std::string message = R"AE(<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIEdge - Device status</title><style>
+:root{color-scheme:light dark;--bg:#f3f5f2;--surface:#fff;--ink:#1c2c28;--line:#e0e7e1;--accent:#39735d} @media(prefers-color-scheme:dark){:root{--bg:#101718;--surface:#192224;--ink:#edf2ec;--line:#2b3738;--accent:#c6e79a}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,sans-serif;padding:24px}main{max-width:800px;margin:24px auto;padding:28px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}h1{font-size:26px;margin-top:0}h2{font-size:20px}a{color:var(--accent)}button{font:inherit;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:10px 14px;margin:4px 0;cursor:pointer}
+ :root[data-aiedge-theme=dark]{color-scheme:dark;--bg:#101718;--surface:#192224;--ink:#edf2ec;--line:#2b3738;--accent:#c6e79a}:root[data-aiedge-theme=light]{color-scheme:light;--bg:#f3f5f2;--surface:#fff;--ink:#1c2c28;--line:#e0e7e1;--accent:#39735d}header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px}header h1{margin:0}select{font:inherit;padding:8px;border-radius:8px;background:var(--surface);color:var(--ink);border:1px solid var(--line)}label{font-size:12px}
+</style></head><body><main><header><h1>AIEdge</h1><label>Theme <select id="theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header><script>(function(){const s=document.getElementById('theme');const k='aiedge-device-theme';try{s.value=localStorage.getItem(k)||'system'}catch(e){}function apply(){document.documentElement.dataset.aiedgeTheme=s.value}apply();s.addEventListener('change',function(){apply();try{localStorage.setItem(k,s.value)}catch(e){}})})();</script><h2>Device needs attention</h2><p>Meter reading is paused. Check the following errors and the device log.</p>)AE";
 
             for (int i = 0; i < 32; i++) {
                 if (isSetSystemStatusFlag((SystemStatusFlag_t)(1<<i))) {
@@ -268,13 +271,15 @@ esp_err_t hello_main_handler(httpd_req_t *req)
 
             message += "<br>Please check logs with log viewer and/or <a href=\"https://jomjol.github.io/AI-on-the-edge-device-docs/Error-Codes\" target=_blank>jomjol.github.io/AI-on-the-edge-device-docs/Error-Codes</a> for more information!";
             message += "<br><br><button onclick=\"window.location.href='/reboot';\">Reboot</button>";
-            message += "&nbsp;<button onclick=\"window.open('/ota_page.html');\">OTA Update</button>";
-            message += "&nbsp;<button onclick=\"window.open('/log.html');\">Log Viewer</button>";
-            message += "&nbsp;<button onclick=\"window.open('/info.html');\">Show System Info</button>";
+            message += "&nbsp;<button onclick=\"window.location.href='/ota_page.html';\">OTA Update</button>";
+            message += "&nbsp;<button onclick=\"window.location.href='/log.html';\">Log Viewer</button>";
+            message += "&nbsp;<button onclick=\"window.location.href='/info.html';\">Show System Info</button>";
+            message += "</main></body></html>";
+            httpd_resp_set_type(req, "text/html");
             httpd_resp_send(req, message.c_str(), message.length());
             return ESP_OK;
         }
-        else if (isSetupModusActive()) {
+        else if (isSetupModusActive() && !isSetSystemStatusFlag(SYSTEM_STATUS_CAM_BAD)) {
             ESP_LOGD(TAG, "System is in setup mode --> index.html --> setup.html");
             filetosend = "/sdcard/html/setup.html";
         }
@@ -395,6 +400,7 @@ esp_err_t sysinfo_handler(httpd_req_t *req)
     add("gittag",gittag);add("gitrevision",gitrevision);add("html",htmlversion);
     add("cputemp",cputemp);add("hostname",*getHostname());add("IPv4",*getIPAddress());
     add("freeHeapMem",freeheapmem);
+    if(!cJSON_AddBoolToObject(object,"camera_available",!isSetSystemStatusFlag(SYSTEM_STATUS_CAM_BAD)))ok=false;
     char* json=ok?cJSON_PrintUnformatted(array):nullptr;
     cJSON_Delete(array);
     if(!json)return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");

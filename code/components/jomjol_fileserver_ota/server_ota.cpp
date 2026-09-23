@@ -148,6 +148,13 @@ void task_do_Update_ZIP(void *pvParameter)
 
 void CheckUpdate()
 {
+#ifdef METER_REQUIRE_BUNDLE
+    // Old update markers cannot bypass the managed app/assets identity contract.
+    // Preserve any marker for inspection instead of deleting or applying it.
+    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Legacy startup updates disabled; use verified bundles");
+    return;
+#endif
+
  	FILE *pfile;
     if ((pfile = fopen("/sdcard/update.txt", "r")) == NULL)
     {
@@ -328,6 +335,14 @@ void CheckOTAUpdate(void)
 
 esp_err_t handler_ota_update(httpd_req_t *req)
 {
+#ifdef METER_REQUIRE_BUNDLE
+    httpd_resp_set_status(req, "409 Conflict");
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req,
+        "{\"error\":\"managed_bundle_required\",\"page\":\"/managed_update.html\"}");
+#endif
+
 #ifdef DEBUG_DETAIL_ON     
     LogFile.WriteHeapInfo("handler_ota_update - Start");    
 #endif

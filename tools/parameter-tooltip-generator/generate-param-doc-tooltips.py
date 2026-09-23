@@ -7,8 +7,8 @@ import markdown
 ROOT = Path(__file__).resolve().parents[2]
 DOCS = ROOT / 'param-docs/parameter-pages'
 HTML = ROOT / 'sd-card/html'
-PREFIX = '<div class="rst-content"><div class="tooltip"><img src="help.png" width="32px"><span class="tooltiptext">'
-SUFFIX = '</span></div></div>'
+PREFIX = '<details class="ae-help"><summary aria-label="Parameter help">?</summary><div class="ae-help-content">'
+SUFFIX = '</div></details>'
 
 
 def generate():

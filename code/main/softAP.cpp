@@ -273,7 +273,7 @@ esp_err_t config_ini_handler(httpd_req_t *req)
     FILE* configfilehandle = fopen(WLAN_CONFIG_FILE, "w");
 
     text  = ";++++++++++++++++++++++++++++++++++\n";
-    text += "; AI on the edge - WLAN configuration\n";
+    text += "; AIEdge - Wi-Fi configuration\n";
     text += "; ssid: Name of WLAN network (mandatory), e.g. \"WLAN-SSID\"\n";
     text += "; password: Password of WLAN network (mandatory), e.g. \"PASSWORD\"\n\n";
     fputs(text.c_str(), configfilehandle);

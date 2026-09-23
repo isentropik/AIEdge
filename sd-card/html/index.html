@@ -1,274 +1,146 @@
-<!DOCTYPE html>
-<html lang="en" xml:lang="en">
-<head>
-    <link rel="icon" href="favicon.ico?v=$COMMIT_HASH" type="image/x-icon">
-    <link rel="apple-touch-icon" href="watermeter.svg?v=$COMMIT_HASH" />
-    <title>AIEdge</title>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" href="style.css?v=$COMMIT_HASH" type="text/css" >
-    <link href="firework.css?v=$COMMIT_HASH" rel="stylesheet">
-
-    <script type="text/javascript" src="common.js?v=$COMMIT_HASH"></script>
-    <script type="text/javascript" src="readconfigcommon.js?v=$COMMIT_HASH"></script>
-    <script type="text/javascript" src="readconfigparam.js?v=$COMMIT_HASH"></script>
-
-    <script type="text/javascript" src="jquery-3.6.0.min.js?v=$COMMIT_HASH"></script>
-    <script type="text/javascript" src="firework.js?v=$COMMIT_HASH"></script>
-
-    <script>
-        var streamPopup;
-        var streamFlashlight = false;
-        var streamWindowFeatures =
-            'channelmode=no,directories=no,fullscreen=no,' +
-            'location=no,dependent=yes,menubar=no,resizable=yes,scrollbars=yes,' +
-            'status=no,toolbar=no,titlebar=no,' +
-            'left=10,top=100,width=720px,height=760px';
-
-        function loadPage(page) {
-            console.log("loadPage( " + page + " )");
-
-
-            asyncPageLoad(page);
-        }
-
-        async function asyncPageLoad(page ) {
-            console.log("  loading " + page + " ...");
-            document.cookie = "page="+page + "; path=/";
-            document.getElementById('maincontent').src = page;
-
-            [].forEach.call(document.querySelectorAll('.submenu'), function (el) {
-                el.style.visibility = 'hidden';
-            });
-        }
-
-        function resetMenu() {
-            [].forEach.call(document.querySelectorAll('.submenu'), function (el) {
-                el.style.visibility = 'visible';
-            });
-        }
-        
-        function getCookie(cname) {
-			let name = cname + "=";
-			let decodedCookie = decodeURIComponent(document.cookie);
-			let ca = decodedCookie.split(';');
-			for(let i = 0; i <ca.length; i++) {
-				let c = ca[i];
-				
-				while (c.charAt(0) == ' ') {
-					c = c.substring(1);
-				}
-				
-				if (c.indexOf(name) == 0) {
-					return c.substring(name.length, c.length);
-				}
-			}
-        return "";
-        }        
-    </script>
-    <style>
-        /* Add these styles to your existing CSS file or in a <style> tag in the head */
-        .footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 20px;
-            background-color: #d8d8d8;
-            margin-top: 20px;
-        }
-        .footer-section {
-            display: flex;
-            align-items: center;
-        }
-        .footer-section img {
-            width: 24px;
-            height: 24px;
-            margin-left: 10px;
-        }
-        .donation-cards img {
-            height: 20px;
-            margin-right: 5px;
-        }
-    </style>
-<link rel="stylesheet" href="aiedge.css?v=$COMMIT_HASH">
-<script defer src="aiedge.js?v=$COMMIT_HASH"></script>
-<script src="aiedge-theme.js"></script>
-<link rel="stylesheet" href="aiedge-theme.css">
-</head>
-
-<body class="aiedge-shell">
-<div class="main">
-
-<header class="aiedge-header">
-    <span class="aiedge-mark" aria-hidden="true">AE</span>
-    <div><h1 id="id_title">AIEdge</h1><p>Meter readings, camera and device controls</p></div>
-</header>
-
-
-<div role="navigation" aria-label="Main navigation" class="menu" onmouseover="resetMenu()">
-  <ul>
-    <li><a href="#" onclick="loadPage('overview.html?v=$COMMIT_HASH');">Overview</a></li>
-    <li><a>Settings <i class="arrow down"></i></a>
-      <ul class="submenu" style="width: 260px">
-        <li style="width: 260px"><a href="#" onclick="loadPage('prevalue_set.html?v=$COMMIT_HASH');">Set "Previous Value"</a></li>
-        <li style="width: 260px"><a>References <i class="arrow right"></i></a>
-            <ul style="width: 350px">
-                <li style="width: 350px"><a href="#" onclick="loadPage('edit_reference.html?v=$COMMIT_HASH');">Reference Image and Camera Settings</a></li>
-                <li style="width: 350px"><a href="#" onclick="loadPage('edit_alignment.html?v=$COMMIT_HASH');">Alignment Markers</a></li>
-            </ul>
-        </li>
-        <li style="width: 260px"><a>Regions of Interest (ROIs)<i class="arrow right"></i></a>
-            <ul>
-                <li><a href="#" onclick="loadPage('edit_digits.html?v=$COMMIT_HASH');">Digit ROI</a></li>
-                <li><a href="#" onclick="loadPage('edit_analog.html?v=$COMMIT_HASH');">Analog ROI</a></li>
-            </ul>
-        </li>
-        <li style="width: 260px"><a href="#" onclick="loadPage('edit_config.html?v=$COMMIT_HASH');">Configuration</a></li>
-      </ul>
-
-
-    <li><a>Data<i class="arrow down"></i></a>
-        <ul class="submenu">
-            <li><a href="#" onclick="loadPage(getDomainname() + '/value?full');">Recognition</a></li>
-            <li><a>Livestream <i class="arrow right"></i></a>
-                <ul>
-                    <li><a href="#" onclick="start_livestream(false);">Live Stream (Light off)</a></li>
-                    <li><a href="#" onclick="start_livestream(true);">Live Stream (Light on)</a></li>
-                </ul>
-            </li>
-            <li><a href="#" onclick="loadPage('graph.html?v=$COMMIT_HASH');">Data Graph</a></li>
-            <li><a href="#" onclick="loadPage('data.html?v=$COMMIT_HASH');">Data Table</a></li>
-            <li><a href="#" onclick="loadPage(getDomainname() + '/fileserver/log/data/');">Data Files</a></li>
-            <li><a href="#" onclick="loadPage('data_export.html?v=$COMMIT_HASH');">Data Export</a></li>
-        </ul>
-    </li>
-
-
-    <li><a>System <i class="arrow down"></i></a>
-        <ul class="submenu">
-            <li><a href="#" onclick="loadPage('backup.html?v=$COMMIT_HASH');">Backup/Restore</a></li>
-            <li><a href="#" onclick="loadPage('ota_page.html?v=$COMMIT_HASH');">OTA Update</a></li>
-            <li><a href="#" onclick="loadPage('meter_diagnostics.html?v=$COMMIT_HASH');">Meter Diagnostics</a></li>
-            <li><a href="#" onclick="loadPage('log.html?v=$COMMIT_HASH');">Log Viewer</a></li>
-            <li><a href="#" onclick="loadPage(getDomainname() + '/fileserver/');">File Server</a></li>
-            <li><a href="#" onclick="loadPage('reboot_page.html?v=$COMMIT_HASH');">Reboot</a></li>
-            <li><a href="#" onclick="loadPage('info.html?v=$COMMIT_HASH');">Info</a></li>
-            <li><a href="https://jomjol.github.io/AI-on-the-edge-device-docs/" target="_blank">Help</a></li>
-        </ul>
-    </li>
-    <li id="ManualControl" style="display:none;"><a>Manual Control <i class="arrow down"></i></a> <!-- Workaround: Hide menu if no entry is available -->
-        <ul class="submenu" style="width: 300px">
-            <li><a href="#" onclick="flow_start()">Start Round</a></li>
-            <li id="HASendDiscovery" style="width: 300px" style="display:none;"><a href="#" onclick="HA_send_discovery()">Resend Homeassistant Discovery</a></li>
-        </ul>
-    </li>
-  </ul>
-</div>
-
-<iframe title="Device workspace" name="maincontent" class="iframe" id="maincontent"></iframe>
-
-<span id="Version" style="font-size: 10px; margin-top: -5px;padding-left: 10px;">Loading version...</span>
-
-<div class="aiedge-credit">AIEdge · Based on <a href="https://github.com/jomjol/AI-on-the-edge-device" target="_blank" rel="noopener">AI-on-the-edge-device</a></div>
-
-<!-- # Disabled footer, since it wastes a lot of space and the images are broken
-<div class="footer">
-    <div class="footer-section">
-       <span>Support & Contact Us</span>
-       <a href="https://github.com/jomjol/AI-on-the-edge-device" target="_blank" title="GitHub">
-          <img src="https://github.com/jomjol/AI-on-the-edge-device/images/github-logo.png" alt="GitHub">
-       </a>
-          <img src="https://github.com/jomjol/AI-on-the-edge-device/images/gmail-logo.png" alt="Email">
-       </a>
-       <a href="https://github.com/jomjol/AI-on-the-edge-device/discussions" target="_blank" title="GitHub">
-          <img src="https://github.com/jomjol/AI-on-the-edge-device/images/discussion-logo" alt="GitHub">
-       </a>
-	
-    </div>
-    <div class="footer-section">
-       <span>Donations</span>
-       <a href="https://www.paypal.com/donate?hosted_button_id=8TRSVYNYKDSWL" target="_blank" title="Donate via PayPal">
-          <img src="https://github.com/jomjol/AI-on-the-edge-device/images/paypal.png" alt="PayPal" style="width: 60px; height: auto;">
-       </a>
-    </div>
- </div> -->
-
-<script type="text/javascript">
-    LoadHostname();
-    LoadFwVersion();
-    LoadWebUiVersion();
-    HA_send_discovery_visibility();
-
-    if (getCookie("page") == "" || getCookie("page") == "reboot_page.html?v=$COMMIT_HASH") {
-		document.cookie = "page=overview.html?v=$COMMIT_HASH" + "; path=/";
-    }
-    console.log("Loading page: " + getCookie("page"));
-    document.getElementById('maincontent').src = getCookie("page");
-
-    
-    function flow_start() {
-    var url = getDomainname() + '/flow_start'; 
-		var xhttp = new XMLHttpRequest();
-		xhttp.onreadystatechange = function() {
-			if (this.readyState == 4 && this.status == 200) {
-                firework.launch(xhttp.responseText, 'success', 5000);
-			    /*if (xhttp.responseText.substring(0,3) == "001") {
-					firework.launch('Flow start triggered', 'success', 5000);
-                    window.location.reload();
-				}
-				else if (xhttp.responseText.substring(0,3) == "002") {
-					firework.launch('Flow start scheduled. Start after round is completed', 'success', 5000);
-				}
-				else if (xhttp.responseText.substring(0,3) == "099") {
-					firework.launch('Flow start triggered, but start not possible (no flow task available)', 'danger', 5000);
-                }*/
-			}
-		}
-		xhttp.open("GET", url, true);
-		xhttp.send();
-    }
-    
-
-    function HA_send_discovery_visibility()	{
-		loadConfig(domainname); 
-		ParseConfig();
-		category = getConfigCategory();
-        param = getConfigParameters();
-		
-		if (category["MQTT"]["enabled"] && param["MQTT"]["HomeassistantDiscovery"].value1 == "true") {
-            document.getElementById("ManualControl").style.display="";
-            document.getElementById("HASendDiscovery").style.display="";
-        }
-	}
-
-    function HA_send_discovery() {
-    console.log("Homeassistant Discovery topic sending scheduled");
-    var url = getDomainname() + '/mqtt_publish_discovery'; 
-		var xhttp = new XMLHttpRequest();
-		xhttp.onreadystatechange = function() {
-			if (this.readyState == 4 && this.status == 200) {
-				firework.launch('Sending Homeassistant discovery topics scheduled. It will get sent in the step "Publish to MQTT" of the next digitization round', 'success', 5000);
-			}
-		}
-		xhttp.open("GET", url, true);
-		xhttp.send();
-    }
-
-    function start_livestream(streamFlashlight) {
-        if (streamPopup) {
-            streamPopup.close();
-		}
-
-        if (streamFlashlight) {
-            streamPopup = window.open(getDomainname() + '/stream.html?flashlight=true','LivestreamWithlight',streamWindowFeatures);
-		}
-        else {
-            streamPopup = window.open(getDomainname() + '/stream.html','Livestream',streamWindowFeatures);
-		}
-
-        if (streamPopup) streamPopup.focus();
-    }
-</script>
-
-</body>
-</html>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIEdge</title>
+<script src="aiedge-theme.js?v=shared-1"></script><link rel="stylesheet" href="aiedge-theme.css"><link rel="stylesheet" href="aiedge-ui.css">
+<script src="common.js"></script><script src="readconfigcommon.js"></script><script src="readconfigparam.js"></script><script src="jquery-3.6.0.min.js"></script><link rel="stylesheet" href="firework.css"><script src="firework.js"></script></head>
+<body class="ae-app"><aside class="ae-sidebar"><a class="ae-brand" href="#overview"><span class="ae-logo" aria-hidden="true">a<span>i</span></span><span>AIEdge<small>METER READER</small></span></a><nav aria-label="Main navigation">
+<a href="#overview" data-page="overview.html" data-title="Overview"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Overview</a><a href="#camera" data-page="camera-hub.html" data-title="Camera & alignment"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></svg>Camera & alignment</a><a href="#readings" data-page="data-hub.html" data-title="Reading history"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v17h17M7 14l4-5 4 3 6-8"/></svg>Reading history</a><a href="#settings" data-page="settings-hub.html" data-title="Settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v18M12 3v18M19 3v18"/><path d="M2 8h6M9 16h6M16 7h6"/></svg>Settings</a><a href="#system" data-page="system-hub.html" data-title="Device & maintenance"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4M18 9h4m-4 6h4"/></svg>Device & maintenance</a></nav><div class="ae-sidebar-bottom"><a href="https://github.com/isentropik/AIEdge" target="_blank" rel="noopener">Documentation <span>↗</span></a><p>Built on <a href="https://github.com/jomjol/AI-on-the-edge-device" target="_blank" rel="noopener">AI-on-the-edge-device</a></p></div></aside>
+<div class="ae-main"><header class="ae-topbar aiedge-header"><button class="ae-mobile-menu" aria-label="Toggle navigation" aria-expanded="false">☰</button><div class="ae-breadcrumb"><strong id="ae-page-title">Overview</strong></div><span id="id_title" class="ae-device-label">AIEdge device</span></header><div id="ae-preview" hidden>DESIGN PREVIEW <span>Example data · no connection to your device</span></div><iframe id="maincontent" name="maincontent" title="AIEdge page"></iframe><footer class="ae-footer"><span id="Version">Device information unavailable</span><span>Local device interface</span></footer></div>
+<script>
+var streamPopup;var streamWindowFeatures='width=900,height=760,resizable=yes,scrollbars=yes';
+function loadPage(page){document.getElementById('maincontent').src=page;document.querySelector('.ae-app').classList.remove('ae-nav-open');document.querySelector('.ae-mobile-menu').setAttribute('aria-expanded','false');}
+    function flow_start() {
+        if(cameraAvailable===false){alert('Camera unavailable. Connect the camera with power off, then restart.');return;}
+
+
+    var url = getDomainname() + '/flow_start'; 
+
+		var xhttp = new XMLHttpRequest();
+
+		xhttp.onreadystatechange = function() {
+
+			if (this.readyState == 4 && this.status == 200) {
+
+                firework.launch(xhttp.responseText, 'success', 5000);
+
+			    /*if (xhttp.responseText.substring(0,3) == "001") {
+
+					firework.launch('Flow start triggered', 'success', 5000);
+
+                    window.location.reload();
+
+				}
+
+				else if (xhttp.responseText.substring(0,3) == "002") {
+
+					firework.launch('Flow start scheduled. Start after round is completed', 'success', 5000);
+
+				}
+
+				else if (xhttp.responseText.substring(0,3) == "099") {
+
+					firework.launch('Flow start triggered, but start not possible (no flow task available)', 'danger', 5000);
+
+                }*/
+
+			}
+
+		}
+
+		xhttp.open("GET", url, true);
+
+		xhttp.send();
+
+    }
+
+    
+
+
+
+    function HA_send_discovery_visibility()	{
+
+		loadConfig(domainname); 
+
+		ParseConfig();
+
+		category = getConfigCategory();
+
+        param = getConfigParameters();
+
+		
+
+		if (category["MQTT"]["enabled"] && param["MQTT"]["HomeassistantDiscovery"].value1 == "true") {
+
+            document.getElementById("ManualControl").style.display="";
+
+            document.getElementById("HASendDiscovery").style.display="";
+
+        }
+
+	}
+
+
+
+    function HA_send_discovery() {
+
+    console.log("Homeassistant Discovery topic sending scheduled");
+
+    var url = getDomainname() + '/mqtt_publish_discovery'; 
+
+		var xhttp = new XMLHttpRequest();
+
+		xhttp.onreadystatechange = function() {
+
+			if (this.readyState == 4 && this.status == 200) {
+
+				firework.launch('Sending Homeassistant discovery topics scheduled. It will get sent in the step "Publish to MQTT" of the next digitization round', 'success', 5000);
+
+			}
+
+		}
+
+		xhttp.open("GET", url, true);
+
+		xhttp.send();
+
+    }
+
+
+
+    function start_livestream(streamFlashlight) {
+        if(cameraAvailable===false){alert('Camera unavailable. Connect the camera with power off, then restart.');return;}
+
+
+        if (streamPopup) {
+
+            streamPopup.close();
+
+		}
+
+
+
+        if (streamFlashlight) {
+
+            streamPopup = window.open(getDomainname() + '/stream.html?flashlight=true','LivestreamWithlight',streamWindowFeatures);
+
+		}
+
+        else {
+
+            streamPopup = window.open(getDomainname() + '/stream.html','Livestream',streamWindowFeatures);
+
+		}
+
+
+
+        if (streamPopup) streamPopup.focus();
+
+    }
+
+
+document.querySelectorAll('[data-page]').forEach(link=>link.addEventListener('click',e=>{e.preventDefault();document.querySelectorAll('[data-page]').forEach(x=>x.removeAttribute('aria-current'));link.setAttribute('aria-current','page');document.getElementById('ae-page-title').textContent=link.dataset.title;history.replaceState(null,'',link.getAttribute('href'));loadPage(link.dataset.page);}));
+document.querySelector('.ae-mobile-menu').addEventListener('click',function(){this.setAttribute('aria-expanded',String(document.body.classList.toggle('ae-nav-open')));});
+let cameraAvailable=null;
+fetch('/sysinfo',{cache:'no-store'}).then(r=>r.json()).then(data=>{const info=Array.isArray(data)?data[0]:data;cameraAvailable=info.camera_available;}).catch(()=>{});
+const initial=document.querySelector('[data-page][href="'+(['#overview','#camera','#readings','#settings','#system'].includes(location.hash)?location.hash:'#overview')+'"]');initial.click();
+LoadHostname();LoadFwVersion();LoadWebUiVersion();
+if(location.hostname==='127.0.0.1'&&location.port==='8878')document.getElementById('ae-preview').hidden=false;
+</script></body></html>

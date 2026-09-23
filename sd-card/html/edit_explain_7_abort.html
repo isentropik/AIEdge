@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" xml:lang="en"> 
 <head>
-<title>AI on the edge</title>
+<title>AIEdge</title>
 <meta charset="UTF-8" />
 
 <style>
@@ -22,9 +22,13 @@ p {font-size: 1em;}
 <link href="firework.css?v=$COMMIT_HASH" rel="stylesheet">
 <script type="text/javascript" src="jquery-3.6.0.min.js?v=$COMMIT_HASH"></script>  
 <script type="text/javascript" src="firework.js?v=$COMMIT_HASH"></script>
-<script src="aiedge-theme.js"></script>
+<script src="aiedge-theme.js?v=shared-1"></script>
 <link rel="stylesheet" href="aiedge-theme.css">
-</head>
+
+<link rel="stylesheet" href="aiedge-ui.css">
+<link rel="stylesheet" href="aiedge-pages.css">
+<script defer src="aiedge-pages.js?v=shared-1"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1"></head>
 
 <body style="font-family: arial">
 
@@ -59,7 +63,7 @@ p {font-size: 1em;}
             param["System"]["SetupMode"]["value1"] = "false";
 
             WriteConfigININew();
-            SaveConfigToServer(domainname);    
+            if (!SaveConfigToServer(domainname)) return;    
 
             var stringota = getDomainname() + "/reboot";
             parent.location = stringota;

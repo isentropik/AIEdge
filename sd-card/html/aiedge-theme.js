@@ -13,7 +13,7 @@
   const select=document.createElement('select');select.dataset.aiedgeThemeSelect='';select.setAttribute('aria-label','Theme');
   for(const value of ['system','light','dark'])select.add(new Option(value[0].toUpperCase()+value.slice(1),value));
   select.value=mode;label.append(select);
-  const header=document.querySelector('.aiedge-header')||document.querySelector('main');
+  const header=document.querySelector('.aiedge-header, .ae-tool-header')||document.querySelector('main');
   if(header)header.append(label);else document.body.prepend(label);
   select.addEventListener('change',()=>{mode=select.value;try{if(mode==='system')localStorage.removeItem(key);else localStorage.setItem(key,mode);}catch(e){}apply();document.querySelectorAll('iframe').forEach(frame=>{try{frame.contentWindow.dispatchEvent(new CustomEvent('aiedge-theme-change',{detail:mode}));}catch(e){}});});
  });
