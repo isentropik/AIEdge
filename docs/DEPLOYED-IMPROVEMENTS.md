@@ -53,3 +53,11 @@ The full RGB-frame diagnostic passed marker registration and all six dial prepro
 The first locked candidate failed cleanly because its requested 921,600-byte RGB heap block exceeded the largest available block of 901,120 bytes. The corrected candidate puts RGB in the unused verified-model workspace and separately allocates the smaller preprocessing scratch buffer. Both diagnostic paths hold camera and processing access to protect shared memory. Failure evidence is retained.
 
 The private fixture/package was transferred only to the test board; temporary server and firewall access were removed and verified. No private images were published. Public installer/release artifacts remain unchanged. Physical power-loss recovery and the complete UI interaction audit remain open.
+
+## Test board: accurate cycle outcome reporting — September 23, 2026
+
+The flow wrapper now preserves the controller result; the scheduler distinguishes completed, failed, and skipped/busy rounds. Actual-source host checks passed all three reporting paths and running-flag cleanup; 12 controller failure regressions and the ESP32 build also passed.
+
+The candidate was installed using loader 0.1.11-test7 after verifying the test board MAC on COM8. Its normal camera cycle rejected missing/mismatched meter markers and logged `Round #1 failed (12 seconds)` at warning level, matching the failure telemetry. Original configuration was restored byte-for-byte and the camera remained available. This verifies failure reporting, not successful recognition accuracy. Wi-Fi and SD contents were preserved; no formatting.
+
+Evidence: `recorded-20260923T171859Z`, `normal-pipeline-outcome-retest-20260923`. Application SHA-256: `cbd4bd4dbe3f93ce292d44a876e46394e780c64e444253745252519b72d5ea65`. The private test package and public installer remain separate; no public binary release is implied.

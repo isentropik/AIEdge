@@ -161,14 +161,14 @@ bool doflow(void)
     std::string zw_time = getCurrentTimeString(LOGFILE_TIME_FORMAT);
     ESP_LOGD(TAG, "doflow - start %s", zw_time.c_str());
     flowisrunning = true;
-    flowctrl.doFlow(zw_time);
+    const bool succeeded = flowctrl.doFlow(zw_time);
     flowisrunning = false;
 
 #ifdef DEBUG_DETAIL_ON
     ESP_LOGD(TAG, "doflow - end %s", zw_time.c_str());
 #endif
 
-    return true;
+    return succeeded;
 }
 
 esp_err_t setCCstatusToCFstatus(void)
@@ -2121,6 +2121,8 @@ void task_autodoFlow(void *pvParameter)
         // An explicit early manual wake starts a new cadence from that run.
         if (!scheduledStartUs || fr_start < scheduledStartUs) scheduledStartUs = fr_start;
 
+        bool roundAttempted = false;
+        bool roundSucceeded = false;
         if (flowisrunning)
         {
 #ifdef DEBUG_DETAIL_ON
@@ -2133,7 +2135,8 @@ void task_autodoFlow(void *pvParameter)
             ESP_LOGD(TAG, "Autoflow: doFlow is started");
 #endif
             flowisrunning = true;
-            doflow();
+            roundAttempted = true;
+            roundSucceeded = doflow();
             servicePendingImage();
 #ifdef DEBUG_DETAIL_ON
             ESP_LOGD(TAG, "Remove older log files");
@@ -2143,7 +2146,11 @@ void task_autodoFlow(void *pvParameter)
         }
 
         // Round finished -> Logfile
-        LogFile.WriteToFile(ESP_LOG_INFO, TAG, "Round #" + std::to_string(countRounds) + " completed (" + std::to_string(getUpTime() - roundStartTime) + " seconds)");
+        const char* roundOutcome = !roundAttempted ? " skipped: processing already active (" :
+                                   roundSucceeded ? " completed (" : " failed (";
+        LogFile.WriteToFile(roundSucceeded ? ESP_LOG_INFO : ESP_LOG_WARN, TAG,
+            "Round #" + std::to_string(countRounds) + roundOutcome +
+            std::to_string(getUpTime() - roundStartTime) + " seconds)");
 
         // CPU Temp -> Logfile
         LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "CPU Temperature: " + std::to_string((int)temperatureRead()) + "°C");
