@@ -33,7 +33,7 @@ async function prepare() {
   const manifestURL = URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/json'}));
   urls.push(manifestURL);
   button.setAttribute('manifest',manifestURL);
-  await import('./vendor/esp-web-tools-aiedge.js?v=show-password-1');
+  await import('./vendor/esp-web-tools-aiedge.js?v=fast-usb-1');
   await customElements.whenDefined('esp-web-install-button');
   button.hidden=false;
   status.textContent='Installer files checked. Ready to connect.';
