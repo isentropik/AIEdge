@@ -53,3 +53,20 @@ unchanged. Original settings were preserved byte-for-byte, camera cycles remaine
 zero, and temporary transfer access was removed. Sustained 30-second live cycles
 and archive contention remain to be tested. Evidence is in the private
 `aiedge-cubic-candidate` directory and `recorded-20260923T213207Z` installation log.
+
+## Optimized build at 240 MHz
+
+A temporary 240 MHz trial of the same 21:27:15 UTC build completed three saved-JPEG
+runs in 15.478727, 15.420427 and 15.463575 seconds (median 15.463575). All six
+feature/output vectors matched exactly in each run. Median warp time across the
+six dials was 7.936043 seconds. No new camera captures or archive uploads ran.
+
+The original 160 MHz/LogLevel 2 configuration was restored byte-for-byte and
+startup frequency was verified. Final checks confirmed idle state, zero cycle
+attempts, camera availability and archiving disabled. A 71 C endpoint snapshot
+during the temporary trial is not a sustained thermal qualification.
+
+These results support proceeding to full camera-cycle and concurrent-storage
+trials; they do not establish 30-second capture cadence, real-image accuracy or
+long-term reliability. Private evidence: `cubic-cpu240-20260923/result.json`,
+`runs/preprocessing-summary.json`, boot logs and `final-health.json`.
