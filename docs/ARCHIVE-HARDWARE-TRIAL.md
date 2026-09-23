@@ -58,3 +58,38 @@ Source review found that the tested legacy queue root had no persistent destinat
 The next source change uses a SHA-256 namespace derived from length-delimited server, port, token, CA certificate and device identity. Timeout and firmware changes preserve the namespace. Different identities cannot automatically recover each other's files. Original files remain available when the exact original configuration is restored. Legacy unbound records are left untouched and require explicit recovery; the firmware does not guess their destination. This also means rotating credentials or trust files holds existing pending records in their old namespace. The UI must explain that behavior before saving changes.
 
 Actual-source host tests cover changed destinations, credentials, trust, device identity, stable timeout changes, fresh-engine recovery, and preservation of legacy files. Deployment and hardware verification of this follow-up are separate from the successful prior upload.
+
+
+The first destination-isolation hardware run verified that changed credentials
+left the original queued bytes untouched. Its subsequent acknowledgment-counter
+check was inconclusive: the test resumed editing configuration when the web
+server became available, before archive initialization had finished. USB showed
+the restored archive worker starting before the test's next requested restart.
+The queued file was subsequently absent, but the next boot's counters were zero.
+This is not recorded as a recovery pass. Original settings were restored.
+
+The corrected test waits for `Autostart is not enabled -> Not starting Flow`
+after the specific USB reset marker, and verifies the boot identity, before
+editing files. It reuses the previously approved image and keeps camera capture
+disabled. Evidence from the inconclusive run is preserved in
+`archive-destination-hardware-20260923`.
+
+
+## Verified destination isolation and recovery
+
+The corrected test passed on loader 0.1.11-test12 and application SHA-256 `9e9b0dcdca090f9debc490b9a8fd55154ea0ca7112eac218fb6df0c04804359e`. Changing credentials selected an empty queue, performed zero uploads, and preserved the original spool and settings bytes. Restoring the original credentials recovered that queue after a USB-confirmed restart: one server acknowledgment, zero pending images, and zero upload or cleanup failures.
+
+The receiver deduplicated the previously approved image: exactly one capture record remained, unchanged. All three ready-state snapshots showed zero capture attempts. This hardware test covers credential-change isolation; server, port, certificate and device-identity isolation are covered separately by host tests.
+
+Original configuration was restored byte-for-byte, temporary archive credentials removed, and archiving disabled. Both temporary firewall rules have removal receipts and the receiver was stopped. Evidence: `archive-destination-hardware-retest-20260923/verification.json`. The public installer binary remains unchanged; no private image or test package was published.
+
+
+## Verified settings editor and restart recovery
+
+Loader 0.1.11-test13 installed application SHA-256 `0b03dc0d42c62a4500e0eedb7c178eb063ae81abaee5dba43eaf8ff4e51345b5` on the test ESP32. Installation was recorded in `recorded-20260923T192730Z`.
+
+The settings API saved a disabled configuration, returned no secret values, and rejected a stale revision with HTTP 409 without altering saved bytes. The saved revision survived restart. Two deliberately staged incomplete settings files then tested recovery: an interrupted replacement recovered the exact prior revision; an interrupted first save recovered absence. USB initialization markers and changed boot identities verified each restart. This tests simulated torn files on hardware, not physical power removal during a write.
+
+All ready-state cycle counters remained zero; no image was captured or uploaded. Original device configuration was restored byte-for-byte and both temporary settings/journal files were absent afterward. Archiving remained off and the camera was detected. The four served settings/status UI assets matched the candidate source hashes. The temporary package server stopped and its board-only firewall rule has a verified removal receipt.
+
+Evidence: `archive-settings-hardware-20260923/result.json` and `verification.json`; USB `passive-20260923T193154Z.bin`. The public installer is unchanged; the private fixture package was not published. Physical interruption, sustained recognition/upload timing and broader receiver compatibility remain open.

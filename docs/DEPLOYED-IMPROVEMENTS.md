@@ -74,3 +74,17 @@ Installed with loader 0.1.11-test11; application SHA-256 `67d7fd877bed293cbe0ff7
 One original queued camera JPEG was delivered with matching hashes and original capture provenance after application updates/restarts. The board acknowledged delivery and cleared its queue, with zero new captures or upload/cleanup failures in the final retry. Original configuration and disabled archive state were restored; temporary receiver, credentials and firewall access removed. Actual-source host verification/transaction and transport tests passed. See [full evidence and limits](ARCHIVE-HARDWARE-TRIAL.md).
 
 This closes the observed SD writer, disabled-HTTPS, metadata-buffer and verification-memory defects on the test board. Sustained operation, wider server compatibility, concurrent recognition and physical interruption tests remain open. No private fixture was published, and the public installer binary remains unchanged.
+
+
+## Test board: destination-bound archive recovery — September 23, 2026
+
+Installed with loader 0.1.11-test12; application SHA-256 `9e9b0dcdca090f9debc490b9a8fd55154ea0ca7112eac218fb6df0c04804359e`. Changed credentials left the original queue untouched and sent no images. Restoring the original credentials recovered and cleared the queue after acknowledgment, using the same previously approved image with zero new captures. The receiver retained exactly one unchanged record. Original settings were restored, archiving disabled, and temporary receiver/firewall access removed.
+
+The earlier inconclusive test remains documented. This pass verifies credential-change isolation and restart recovery, not every possible destination change or sustained performance. Host tests cover the other namespace inputs. See [hardware evidence](ARCHIVE-HARDWARE-TRIAL.md). Archive setup and retained-queue management remain on the open list. The public installer binary is unchanged.
+
+
+## Test board: archive settings interface and recovery — September 23, 2026
+
+Installed using loader 0.1.11-test13; application SHA-256 `0b03dc0d42c62a4500e0eedb7c178eb063ae81abaee5dba43eaf8ff4e51345b5`. Settings now links to the optional image archive page, with server address, port, device name, token/certificate retention, theme support and live queue status. Saves use one validated revision, reject stale browser edits, preserve active upload destinations and explicitly require restart. Interrupted first-save/replacement recovery is connected to startup.
+
+Actual-board tests passed saving, stale-edit rejection, restart persistence and recovery from deliberately incomplete files. Original settings were restored, archiving remained off and all cycle counters stayed zero. Exact UI assets were verified on the board; mobile light/dark rendering passed locally. See [evidence and limits](ARCHIVE-HARDWARE-TRIAL.md). This does not constitute physical power-loss coverage or a public binary release.

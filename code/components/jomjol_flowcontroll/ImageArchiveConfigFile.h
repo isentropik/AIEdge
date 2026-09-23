@@ -1,5 +1,8 @@
 #pragma once
 #include "ImageArchiveConfig.h"
+#include "ImageArchiveUnifiedConfig.h"
+#include "ImageArchiveSettingsStore.h"
+#include "../jomjol_controlcamera/FileConfigStorage.h"
 #include "ImageArchiveTransport.h"
 #include <cstdio>
 #include <cerrno>
@@ -26,11 +29,25 @@ inline SmallFile readArchiveConfigFile(const std::string& path,size_t limit,std:
     out=body;return SmallFile::Ok;
 }
 // Directory is a trusted firmware-selected configuration directory, not a
-// request parameter. No files are created, rewritten, or logged here.
+// request parameter. Interrupted unified saves are recovered before parsing.
+// Caller holds the configuration/processing guard; credentials are never logged.
 inline ConfigLoad loadArchiveConfig(const std::string& directory,StartupConfig& config,Destination& destination) {
     config=StartupConfig{};destination=Destination{};
+    ConfigStorage::Files disk;
+    const auto recovery=SettingsStore::recoverSettings(disk,directory+"/image-archive-settings.json");
+    if(recovery!=ConfigJournal::Result::Ok)return ConfigLoad::IoError;
     std::string body;
-    auto read=readArchiveConfigFile(directory+"/image-archive.json",1024,body);
+    // A present unified document is authoritative, including invalid/disabled
+    // documents. Never fall back to stale legacy credentials after a failed save.
+    auto read=readArchiveConfigFile(directory+"/image-archive-settings.json",12288,body);
+    if(read!=SmallFile::Missing){
+        if(read==SmallFile::IoError)return ConfigLoad::IoError;
+        StartupConfig next;Destination nextTarget;
+        if(read!=SmallFile::Ok||!parseArchiveSettings(body,next,nextTarget))return ConfigLoad::Invalid;
+        if(!next.enabled)return ConfigLoad::Disabled;
+        config=next;destination=nextTarget;return ConfigLoad::Ready;
+    }
+    read=readArchiveConfigFile(directory+"/image-archive.json",1024,body);
     if(read==SmallFile::Missing)return ConfigLoad::Disabled;
     if(read==SmallFile::IoError)return ConfigLoad::IoError;
     StartupConfig next;

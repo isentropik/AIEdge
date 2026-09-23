@@ -40,11 +40,11 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 ## Lighting, storage and configuration
 
-- [ ] Deploy and hardware-check destination-bound archive queues. Host tests now prove restart recovery cannot adopt another server/credential/device queue; legacy unbound records are preserved. This is a prerequisite for editing the server safely in the UI.
+- [ ] Provide explicit recovery/management of retained destination and legacy unbound queues. The deployed setup UI explains retained queues; credential-change isolation and recovery pass on the test board. Broader storage-limit and destination-change hardware coverage remain open.
 
 - [ ] Verify all 19 SK6812 RGBW pixels, byte order, dedicated white-only output and master brightness at 0, 1, intermediate and full levels on hardware.
 - [ ] Make capture, preview and live-stream illumination consistent; allow responsive intensity changes without exposing an in-flight recognition capture to mixed settings.
-- [ ] Verify optional image archival to a configurable server IP/hostname and folder. One queued-image HTTPS delivery and recovery across updates/restarts now pass on the test board. Finish the setup UI and broaden actual-device coverage for server compatibility, rejected credentials, storage limits and sustained retry behavior. A real server is not required to configure the optional feature.
+- [ ] Broaden optional image-archive coverage for receiver compatibility, rejected credentials, storage limits, sustained retries and physical power interruption. The settings UI/API, stale-save rejection and recovery from simulated torn files now pass on the test board. Queued-image HTTPS delivery already passed. A real user storage server is not required to configure this optional feature; the receiver controls its destination folder.
 - [ ] Apply routine settings immediately or at a safe cycle boundary; distinguish saved, active, pending and failed states. Validate rollback on rejected changes.
 - [ ] Verify MQTT/HA reporting, units and freshness separately; no silent entity-ID or historical-total migration.
 

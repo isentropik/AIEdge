@@ -1,6 +1,7 @@
 #include "TelemetryBootIdentity.h"
 #include "ImageArchiveStatus.h"
 #include "ImageArchiveStartup.h"
+#include "ImageArchiveSettingsHttp.h"
 #include "ProcessingAccess.h"
 #include "FileConfigStorage.h"
 #include "MainFlowControl.h"
@@ -2328,6 +2329,15 @@ void register_server_main_flow_task_uri(httpd_handle_t server)
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_ota_health);
     camuri.user_ctx = NULL;
     httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/image_archive_settings";
+    camuri.method = HTTP_GET;
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(ImageArchive::archiveSettingsHttp);
+    camuri.user_ctx = NULL;
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register archive settings read");
+    camuri.method = HTTP_POST;
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register archive settings save");
+    camuri.method = HTTP_GET;
 
     camuri.uri = "/image_archive_status";
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_image_archive_status);

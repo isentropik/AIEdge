@@ -36,3 +36,14 @@ port, token, CA certificate or device identity selects a separate queue, while
 changing only a timeout preserves it. A fresh engine recovers the original queue
 when its original configuration is restored. Legacy unbound files are preserved
 and never adopted by the new destination. No network or camera is used.
+
+
+Archive settings and recovery tests (requires source trees for mbedTLS and cJSON):
+
+```sh
+python run_settings.py --mbedtls /path/to/mbedtls --cjson /path/to/cJSON
+```
+
+Use `--zig-python /path/to/python` if that interpreter provides `ziglang`, or select `--cc` and `--cxx`. The tests compile production settings, HTTP, hashing and file code. SDK HTTP calls are simulated, so these tests do not prove basic-auth registration or physical power-loss safety. They cover bounded/partial requests, guard contention, token retention/redaction, stale revisions, legacy migration, journal refusal and 249 crash/torn-write/recovery cases.
+
+Run the browser-state unit tests with `node settings_form.cjs` and `node status_ui.cjs`. Visual checks still require a browser.
