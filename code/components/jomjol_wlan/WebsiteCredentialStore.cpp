@@ -1,9 +1,9 @@
 #include "WebsiteCredentialStore.h"
 #include "../../../shared/WebsiteCredentialEsp.h"
 namespace AIEdgeAuth {
-Credential& deviceCredential() {
+WebsiteAccess& deviceWebsiteAccess() {
     static NvsBackend backend;
-    static Credential credential(backend);
-    return credential;
+    static WebsiteAccess access(backend);
+    return access;
 }
 }

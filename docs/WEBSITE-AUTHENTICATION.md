@@ -18,6 +18,14 @@ The store distinguishes uninitialized, first-time setup, ready and storage-error
 
 `tools/auth-tests/test_credential_store.py` exercises state transitions, every single-byte corruption of the record, truncation, failed reads/writes/commits, uncertain commits, readback mismatch, password change and reload. It also checks the actual ESP adapter with NVS and crypto-call substitutes. Those tests do not measure cryptographic implementation, physical power-loss behavior or flash retention. The SDK backend compiled in the managed ESP32 target on September 23, 2026. It is not connected to live HTTP access yet and has not been deployed.
 
+## Access gate (not yet connected to routes)
+
+`WebsiteAccess.h` connects the persistent credential to access decisions. First-time setup requires a random 32-byte token intended for a local USB channel; it is not exposed by a website endpoint. Successful setup consumes the token and cannot be replayed to overwrite a configured device. Password changes require the existing credential. Failed verification is limited to one expensive attempt per second, while a verified in-memory credential fingerprint lets legitimate follow-up asset requests proceed. A password change or uncertain write invalidates that cache. This remains single-HTTP-task code; it is not safe to call concurrently without serialization.
+
+Host fault tests cover setup without a token, invalid and replayed tokens, storage failure, reload, rate limiting, cached valid access during other failed attempts, password changes, cache invalidation and failed random generation. The HTTP adapter, USB delivery/recovery UX and route registration are still pending. No network authentication behavior has been changed on the device by this module.
+
+The loader no longer erases NVS automatically on initialization errors. It reports the problem on USB and stops initialization, preserving stored Wi-Fi and authentication data. A host test compiles that actual startup block and verifies error paths stop before network startup. Providing a useful protected recovery UI for this condition is still pending; this change is not a claim that storage has recovered.
+
 ## Remaining implementation and verification
 
 - Require first-time password creation before exposing application data or controls. The current empty-configuration behavior still allows access; do not describe this build as password-required.

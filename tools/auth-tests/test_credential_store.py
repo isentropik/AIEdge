@@ -42,9 +42,14 @@ int main(){NvsBackend b;uint8_t record[credentialBytes]={};
  assert(b.random(record,16)&&record[0]==0x6a);for(int failure:{0,9}){crypto=failure;assert(b.derive(record,16,record,record)==!failure);assert(b.digest(record,56,record)==!failure);}
 }
 ''')
+loader=(ROOT/'bootstrap/src/main.cpp').read_text()
+block=loader[loader.index(' auto nvs=nvs_flash_init();'):loader.index(' ESP_ERROR_CHECK(esp_netif_init());')]
+assert 'nvs_flash_erase' not in block
+loader_cpp=OUT/'loader_nvs.cpp'
+loader_cpp.write_text('#include <cassert>\n#include <cstdio>\nint error=0,calls=0;bool networkStarted=false;constexpr int ESP_OK=0;int nvs_flash_init(){++calls;return error;}const char*esp_err_to_name(int){return "test";}\nvoid boot(){'+block+'networkStarted=true;}\nint main(){for(int e:{0,1,2,3,100}){error=e;calls=0;networkStarted=false;boot();assert(calls==1&&networkStarted==(e==0));}}')
 env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(OUT/'global'),ZIG_LOCAL_CACHE_DIR=str(OUT/'local'))
-for source in [ROOT/'tools/auth-tests/credential_store_test.cpp',cpp]:
+for source in [ROOT/'tools/auth-tests/credential_store_test.cpp',ROOT/'tools/auth-tests/website_access_test.cpp',cpp,loader_cpp]:
  exe=OUT/(source.stem+'.exe')
  subprocess.run([sys.executable,'-m','ziglang','c++','-std=c++11','-O2','-UNDEBUG','-include','initializer_list','-I'+str(stubs),'-I'+str(ROOT/'shared'),str(source),'-o',str(exe)],check=True,env=env)
  subprocess.run([str(exe)],check=True)
-print('PASS: credential state transitions, corruption/write faults and NVS/crypto adapter contracts; not hardware or cryptographic implementation validation')
+print('PASS: website access, credential state transitions, corruption/write faults, NVS/crypto adapter contracts and loader NVS error preservation; not hardware or cryptographic implementation validation')
