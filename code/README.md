@@ -70,3 +70,18 @@ pio device monitor -p /dev/ttyUSB0
 
 # Update Parameters
 If you create or rename a parameter, make sure to update its documentation in `../param-docs/parameter-pages`! Check the `../param-docs/README.md` for more information.
+
+
+## Build identity
+
+`APP_VERSION` names the AIEdge application version. Each build generates
+`aiedge-metadata/version.cpp`, `version.txt`, and `build-metadata.json` in its
+CMake build directory. Incremental builds refresh this information too.
+Modified checkouts are marked `-dirty`; source archives are identified as
+`source-archive`, not as a commit from a surrounding repository.
+
+Package `aiedge-metadata/version.txt` as `html/version.txt` alongside that same
+firmware binary. Do not copy a version file left by a previous build. The
+metadata records UTC build time; `SOURCE_DATE_EPOCH` fixes it when a reproducible
+build is required. Run `python tools/ui-tests/test_build_metadata.py` from the
+repository root to check identity generation.

@@ -57,7 +57,7 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 - Finish interaction checks on every page, including camera/alignment editing and mobile setup completion. Read-only phone-width checks and served-asset hashes are not a substitute for saving and reloading each setting.
 - Finish in-app Wi-Fi editing; the current network page reports connection details and points to USB configuration.
-- Correct inherited build/version metadata. The application still reports the upstream version despite the verified candidate binary.
+- Deploy the corrected build/version metadata. Clean and incremental builds, identity tests and matching package validation now pass; the installed board still has the earlier version display.
 - Test actual power loss during update, physical no-card/full-card behavior, and repeated Wi-Fi recovery. Download interruption recovery has passed; other cases are not implied.
 - Complete public release packaging after these remaining checks. The public installer is unchanged.
 

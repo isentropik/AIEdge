@@ -1,69 +1,19 @@
-# This file was automatically generated for projects
-# without default 'CMakeLists.txt' file.
-
-##################################################################
-##################################################################
-execute_process(COMMAND git log --pretty=format:'%h' -n 1
-                OUTPUT_VARIABLE GIT_REV
-                ERROR_QUIET)
-
-string(TIMESTAMP BUILD_TIME "%Y-%m-%d %H:%M")
-
-# Check whether we got any revision (which isn't
-# always the case, e.g. when someone downloaded a zip
-# file from Github instead of a checkout)
-if ("${GIT_REV}" STREQUAL "")
-    set(GIT_REV "N/A")
-    set(GIT_DIFF "")
-    set(GIT_TAG "N/A")
-    set(GIT_BRANCH "N/A")
-else()
-    execute_process(
-        COMMAND bash -c "git diff --quiet --exit-code || echo +"
-        OUTPUT_VARIABLE GIT_DIFF)
-    execute_process(
-        COMMAND git describe --exact-match --tags
-        OUTPUT_VARIABLE GIT_TAG ERROR_QUIET)
-    execute_process(
-        COMMAND git rev-parse --abbrev-ref HEAD
-        OUTPUT_VARIABLE GIT_BRANCH)
-
-    string(STRIP "${GIT_REV}" GIT_REV)
-    string(SUBSTRING "${GIT_REV}" 1 7 GIT_REV)
-    string(STRIP "${GIT_DIFF}" GIT_DIFF)
-    string(STRIP "${GIT_TAG}" GIT_TAG)
-    string(STRIP "${GIT_BRANCH}" GIT_BRANCH)
+# Refresh identity for every build, including incremental builds.
+set(AIEDGE_METADATA_DIR "${CMAKE_BINARY_DIR}/aiedge-metadata")
+get_filename_component(AIEDGE_REPO "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
+set(AIEDGE_METADATA_SCRIPT "${CMAKE_SOURCE_DIR}/tools/build_metadata.py")
+execute_process(COMMAND "${PYTHON}" "${AIEDGE_METADATA_SCRIPT}"
+    --repo "${AIEDGE_REPO}" --output "${AIEDGE_METADATA_DIR}"
+    RESULT_VARIABLE metadata_result)
+if(NOT metadata_result EQUAL 0)
+    message(FATAL_ERROR "Could not generate AIEdge build identity")
 endif()
-
-set(VERSION "const char* GIT_REV=\"${GIT_REV}${GIT_DIFF}\";
-const char* GIT_TAG=\"${GIT_TAG}\";
-const char* GIT_BRANCH=\"${GIT_BRANCH}\";
-const char* BUILD_TIME=\"${BUILD_TIME}\";")
-
-if ("${GIT_TAG}" STREQUAL "") # Tag not set, show branch
-    set(VERSION_HTML "Development-Branch: ${GIT_BRANCH} (Commit: ${GIT_REV}${GIT_DIFF})\n${GIT_REV}")
-else() # Tag is set, ignore branch
-    set(VERSION_HTML "Release: ${GIT_TAG} (Commit: ${GIT_REV}${GIT_DIFF})\n${GIT_REV}")
-endif()
-
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/version.cpp)
-    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/version.cpp VERSION_)
-else()
-    set(VERSION_ "")
-endif()
-
-if (NOT "${VERSION}" STREQUAL "${VERSION_}")
-    file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/version.cpp "${VERSION}")
-    file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/../sd-card/html/version.txt "${VERSION_HTML}")
-endif()
-#######################################################################
-#######################################################################
-
-
-FILE(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/main/*.*)
-
-# idf_component_register(SRCS ${app_sources})
-
-idf_component_register(SRCS ${app_sources}
-                    INCLUDE_DIRS "."
-                    REQUIRES esp_psram)
+file(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/main/*.*)
+list(FILTER app_sources EXCLUDE REGEX "/version\\.cpp$")
+list(APPEND app_sources "${AIEDGE_METADATA_DIR}/version.cpp")
+idf_component_register(SRCS ${app_sources} INCLUDE_DIRS "." REQUIRES esp_psram)
+add_custom_target(aiedge_build_identity ALL
+    COMMAND "${PYTHON}" "${AIEDGE_METADATA_SCRIPT}" --repo "${AIEDGE_REPO}" --output "${AIEDGE_METADATA_DIR}"
+    BYPRODUCTS "${AIEDGE_METADATA_DIR}/version.cpp" "${AIEDGE_METADATA_DIR}/version.txt" "${AIEDGE_METADATA_DIR}/build-metadata.json"
+    VERBATIM)
+add_dependencies(${COMPONENT_LIB} aiedge_build_identity)
