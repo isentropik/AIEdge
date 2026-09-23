@@ -4,6 +4,12 @@
 
 This archive records released changes and their actual evidence. It does not imply every feature has passed long-term testing. Local-only edits stay in the open backlog.
 
+## Test-board authentication and USB recovery — September 23, 2026
+
+The private test application now requires website authentication. USB password setup and password-only recovery passed; configuration bytes and the Wi-Fi connection were preserved. An authenticated OTA using an uncompressed ZIP completed installation and restart with the password retained. The corrected application also accepted a console command immediately after binary installer traffic, without the previous extra-newline workaround. The loader version of that boundary fix remains unverified on hardware. These results do not establish encrypted transport, power-loss recovery or a public release.
+
+Compressed-package staging still fails at an archive read; that unresolved work remains in the open backlog.
+
 ## 0.1.10 development release — September 22, 2026
 
 Published through GitHub Releases and the web installer. The matched test-board installation completed; camera capture was not tested because the camera was disconnected.

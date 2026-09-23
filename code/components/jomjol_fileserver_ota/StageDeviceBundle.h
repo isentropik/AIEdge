@@ -7,6 +7,20 @@
 #include <cstring>
 namespace MeterBundle {
 enum class StageResult { Rejected, IoError, Conflict, Existing, Staged };
+struct ArchiveReadDiagnostic {
+ mz_file_read_func original;void* opaque;Checkpoint trace;const char* path;
+ static size_t read(void* context,mz_uint64 offset,void* buffer,size_t bytes){
+  auto& self=*static_cast<ArchiveReadDiagnostic*>(context);
+  errno=0;const size_t got=self.original(self.opaque,offset,buffer,bytes);const int error=errno;
+  if(got!=bytes){
+   checkpoint(self.trace,"archive.read_failed.offset",self.path,offset);
+   checkpoint(self.trace,"archive.read_failed.requested",self.path,bytes);
+   checkpoint(self.trace,"archive.read_failed.returned",self.path,got);
+   checkpoint(self.trace,"archive.read_failed.errno",self.path,error);
+  }
+  errno=error;return got;
+ }
+};
 // The convenience extract functions put the large inflater on the task stack.
 // The iterator keeps it on the heap and retains miniz's length/CRC checks.
 template<class Sink> bool extractBounded(mz_zip_archive& zip,mz_uint index,uint64_t expected,Sink sink){
@@ -57,6 +71,8 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  if(!hashValid(id)||!hashValid(model))return StageResult::Rejected;
  mz_zip_archive zip{};
  if(!mz_zip_reader_init_file(&zip,zipPath.c_str(),0))return StageResult::Rejected;
+ ArchiveReadDiagnostic readDiagnostic{zip.m_pRead,zip.m_pIO_opaque,trace,zipPath.c_str()};
+ zip.m_pRead=ArchiveReadDiagnostic::read;zip.m_pIO_opaque=&readDiagnostic;
  struct CloseZip {mz_zip_archive* p;void close(){if(p){mz_zip_reader_end(p);p=nullptr;}}~CloseZip(){close();}} closeZip{&zip};
  const auto count=mz_zip_reader_get_num_files(&zip);
  if(!count||count>ArchiveInventory::maximumEntries)return StageResult::Rejected;
