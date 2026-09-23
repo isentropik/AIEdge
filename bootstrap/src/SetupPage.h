@@ -60,12 +60,12 @@ progress{display:block;width:100%;height:10px;margin:14px 0 10px;accent-color:va
 <label for="password">Password</label><div class="password-field"><input id="password" type="password" maxlength="63" autocomplete="new-password" autocapitalize="none" spellcheck="false"><button id="show" type="button" aria-label="Show password" title="Show password"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2 12Q6 5 12 5Q18 5 22 12Q18 19 12 19Q6 19 2 12Z"></path><circle cx="12" cy="12" r="3"></circle><path id="eye-slash" style="display:none" d="M3 3L21 21"></path></svg></button></div>
 <button id="go" type="submit">Connect to Wi-Fi</button></fieldset></form>
 <section class="download-status"><p id="state" role="status">Checking device…</p><p id="detail" class="hint"></p><progress id="progress" max="100" value="0" aria-label="Package download"></progress>
-<div class="download-details"><p id="transfer" class="hint"></p><p id="speed" class="hint"></p></div><button id="retry" hidden>Retry download and installation</button>
+<div class="download-details"><p id="transfer" class="hint"></p><p id="speed" class="hint"></p></div><button id="retry" hidden>Retry download to device and install</button>
 <button id="refresh" type="button" class="secondary" hidden>Refresh device page</button></section>
 <footer class="setup-footer"><p class="hint">Keep AIEdge powered during installation.</p><p class="hint">Device address: <a id="device-address" hidden></a><span id="address-pending">waiting for network details</span></p><p class="hint"><a href="/debug-log" download="aiedge-loader-debug.txt">Download debug log</a> · Current boot only. If the device stops responding, use USB Logs &amp; Console.</p></footer></main>
 <script>
 const $=id=>document.getElementById(id), state=$('state'), fields=$('fields'), networks=$('networks'), password=$('password');
-let busy=true, scanning=false, started=false, choices=[];
+let busy=true, scanning=false, started=false, choices=[], expectedHostname='', openingApplication=false;
 // DOWNLOAD_FORMAT_BEGIN: shared with the host-side formatting checks.
 function sizeText(bytes){return bytes>=1000000?(bytes/1000000).toFixed(2)+' MB':bytes>=1000?(bytes/1000).toFixed(1)+' kB':Math.round(bytes)+' B';}
 function timeText(seconds){const n=Math.ceil(seconds);return n>=3600?Math.floor(n/3600)+' hr '+Math.ceil(n%3600/60)+' min':n>=60?Math.floor(n/60)+' min '+n%60+' sec':n+' sec';}
@@ -86,6 +86,18 @@ function transferText(s){
 // DOWNLOAD_FORMAT_END
 async function deviceFetch(url,options={}){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),8000);try{const r=await fetch(url,{...options,signal:controller.signal});const body=await r.arrayBuffer();return new Response(body,{status:r.status,statusText:r.statusText,headers:r.headers});}finally{clearTimeout(timer);}}
 $('refresh').onclick=()=>location.reload();
+async function openApplicationIfReady(){
+ try{
+  const response=await deviceFetch('/sysinfo',{cache:'no-store'});
+  if(!response.ok)return false;
+  const data=await response.json(),info=Array.isArray(data)&&data[0];
+  if(!info||!/^aiedge-[0-9a-f]{6}$/.test(info.hostname||'')||
+     (expectedHostname&&info.hostname!==expectedHostname)||
+     typeof info.gitrevision!=='string'||!info.gitrevision||typeof info.html!=='string')return false;
+  openingApplication=true;state.textContent='Installation complete. Opening AIEdge…';
+  location.replace('/?installed='+Date.now());return true;
+ }catch(e){return false;}
+}
 function controls(){fields.disabled=busy;$('scan').disabled=busy||scanning;$('go').disabled=busy||scanning;}
 function selection(){const manual=networks.value==='manual';$('manual').hidden=!manual;$('ssid').required=manual;const ap=choices[Number(networks.value)];const open=!manual&&networks.value!==''&&ap&&ap.open;password.disabled=!!open;$('show').disabled=!!open;password.required=!open;password.minLength=open?0:8;if(open)password.value='';}
 $('show').onclick=()=>{const show=password.type==='password';password.type=show?'text':'password';const label=show?'Hide password':'Show password';$('show').setAttribute('aria-label',label);$('show').title=label;$('eye-slash').style.display=show?'':'none';};networks.onchange=selection;
@@ -95,12 +107,12 @@ function renderNetworks(items){const previous=choices[Number(networks.value)]?.s
 choices.forEach((n,i)=>{const strength=n.rssi>=-60?'Strong':n.rssi>=-75?'Good':'Weak';const supported=n.supported&&new TextEncoder().encode(n.ssid).length<=31&&!/["\r\n]/.test(n.ssid);const option=new Option(`${n.ssid} · ${strength}${n.open?' · Open':''}${supported?'':' · Not supported'}`,String(i));option.disabled=!supported;networks.add(option);if(n.ssid===previous&&supported)networks.value=String(i);});networks.add(new Option('Hidden network / enter manually','manual'));if(manual)networks.value='manual';selection();$('scan-status').textContent=choices.length?`${choices.length} networks found. 2.4 GHz Wi-Fi only.`:'No networks found. Rescan or enter the name manually.';}
 $('wifi').onsubmit=async e=>{e.preventDefault();if(busy||scanning)return;const manual=networks.value==='manual';const ap=choices[Number(networks.value)];const name=manual?$('ssid').value:(networks.value!==''&&ap?ap.ssid:'');if(!name){state.textContent='Choose a Wi-Fi network first.';return;}if(new TextEncoder().encode(name).length>31||/["\r\n]/.test(name)||/["\r\n]/.test(password.value)){state.textContent='This build supports names up to 31 bytes, without quotes or line breaks.';return;}busy=true;controls();state.textContent='Connecting to Wi-Fi…';try{const r=await deviceFetch('/wifi',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ssid:name,password:password.disabled?'':password.value})});if(!r.ok){state.textContent=await r.text();busy=false;controls();}}catch(e){state.textContent='Connection interrupted. Checking device status…';}};
 $('retry').onclick=async()=>{busy=true;controls();$('retry').disabled=true;try{const r=await deviceFetch('/install',{method:'POST'});if(!r.ok)state.textContent=await r.text();}catch(e){state.textContent='Connection interrupted. Checking device…';}};
-async function poll(){try{const r=await deviceFetch('/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();if(/^aiedge-[0-9a-f]{6}$/.test(s.hostname||'')){const address=$('device-address');address.textContent=s.hostname+'.local';address.href='http://'+s.hostname+'.local';address.hidden=false;$('address-pending').hidden=true;}busy=s.phase>0&&s.phase!==7;state.textContent=s.message;$('progress').value=s.progress;const transfer=transferText(s);$('transfer').textContent=transfer.bytes;$('speed').textContent=transfer.speed;$('refresh').hidden=true;controls();
+async function poll(){try{const r=await deviceFetch('/status',{cache:'no-store'});if(!r.ok)throw Error();const s=await r.json();if(/^aiedge-[0-9a-f]{6}$/.test(s.hostname||'')){expectedHostname=s.hostname;const address=$('device-address');address.textContent=s.hostname+'.local';address.href='http://'+s.hostname+'.local';address.hidden=false;$('address-pending').hidden=true;}busy=s.phase>0&&s.phase!==7;state.textContent=s.message;$('progress').value=s.progress;const transfer=transferText(s);$('transfer').textContent=transfer.bytes;$('speed').textContent=transfer.speed;$('refresh').hidden=true;controls();
 $('wifi').hidden=busy||s.wifi_connected;
 $('intro').textContent=s.wifi_connected?'Wi-Fi connected':busy?'Reconnecting and continuing installation…':'Choose your home Wi-Fi. You can start the download once connected.';
 $('connection').textContent=s.wifi_saved?'Settings saved. AIEdge will reconnect automatically.':'';
 $('detail').textContent=s.detail||'';
-$('retry').hidden=!s.can_install;$('retry').disabled=busy;$('retry').textContent=s.phase===7?'Download and install ('+sizeText(s.total_bytes)+')':'Retry download and installation';$('progress').hidden=s.phase===7||s.phase===0||s.phase===1||s.phase===6;
-if(!started&&!busy&&!s.wifi_connected){started=true;await scan();}if(scanning){const n=await deviceFetch('/networks',{cache:'no-store'});if(!n.ok)throw Error();const result=await n.json();if(result.state!==1){scanning=false;controls();if(result.state===2)renderNetworks(result.networks);else $('scan-status').textContent='Scan failed. Rescan or enter the network manually.';}}}catch(e){state.textContent='Device not responding. Retrying automatically. Keep it powered and stay on its network.';$('speed').textContent='Connection lost — speed and time remaining unavailable.';$('refresh').hidden=false;}finally{setTimeout(poll,2000);}}
+$('retry').hidden=!s.can_install;$('retry').disabled=busy;$('retry').textContent=s.phase===7?'Download to device and install ('+sizeText(s.total_bytes)+')':'Retry download to device and install';$('progress').hidden=s.phase===7||s.phase===0||s.phase===1||s.phase===6;
+if(!started&&!busy&&!s.wifi_connected){started=true;await scan();}if(scanning){const n=await deviceFetch('/networks',{cache:'no-store'});if(!n.ok)throw Error();const result=await n.json();if(result.state!==1){scanning=false;controls();if(result.state===2)renderNetworks(result.networks);else $('scan-status').textContent='Scan failed. Rescan or enter the network manually.';}}}catch(e){if(await openApplicationIfReady())return;state.textContent='Device not responding. Retrying automatically. Keep it powered and stay on its network.';$('speed').textContent='Connection lost — speed and time remaining unavailable.';$('refresh').hidden=false;}finally{if(!openingApplication)setTimeout(poll,2000);}}
 controls();poll();
 </script></body></html>)HTML";

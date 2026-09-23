@@ -63,10 +63,11 @@ static SemaphoreHandle_t setup_lock;
 static SemaphoreHandle_t diagnostic_lock;
 static AIEdgeSetup::InstallJournal journal;
 static void diagnostic_record(const char* message){
- char line[256];snprintf(line,sizeof line,"[%lu ms] %s | free=%lu internal=%lu largest=%lu",
+ char line[256];snprintf(line,sizeof line,"[%lu ms] %s | free=%lu internal=%lu largest=%lu stack_min=%lu",
   (unsigned long)(esp_timer_get_time()/1000),message,(unsigned long)esp_get_free_heap_size(),
   (unsigned long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
-  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
+  (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+  (unsigned long)uxTaskGetStackHighWaterMark(nullptr));
  if(xSemaphoreTake(diagnostic_lock,pdMS_TO_TICKS(20))==pdTRUE){journal.append(line);xSemaphoreGive(diagnostic_lock);}
  printf("%s\n",line);
 }
@@ -131,7 +132,7 @@ static bool supported_ap(const wifi_ap_record_t& ap){
  return ap.authmode==WIFI_AUTH_OPEN||ap.authmode==WIFI_AUTH_WPA_PSK||ap.authmode==WIFI_AUTH_WPA2_PSK||ap.authmode==WIFI_AUTH_WPA_WPA2_PSK||ap.authmode==WIFI_AUTH_WPA2_WPA3_PSK;
 }
 static const char* description(int n) {
- switch(n){case 0:return "Ready for Wi-Fi setup";case 1:return "Connecting to Wi-Fi";case 2:return "Downloading AIEdge";case 3:return "Verifying package and SD files";case 4:return "Installing verified firmware";case 5:return "Installed. Restarting; open the device address below";case 6:return "Setting the clock for secure download";case AIEdgeSetup::readyToInstall:return "Ready to download and install";
+ switch(n){case 0:return "Ready for Wi-Fi setup";case 1:return "Connecting to Wi-Fi";case 2:return "Downloading AIEdge to device";case 3:return "Verifying package and SD files";case 4:return "Installing verified firmware";case 5:return "Installed. Restarting; AIEdge will open when ready";case 6:return "Setting the clock for secure download";case AIEdgeSetup::readyToInstall:return "Ready to download to device and install";
  case -1:return "SD card could not mount; nothing formatted";case -2:return "Wi-Fi connection failed";case -3:return "Package download failed; check Internet access and retry";case -4:return "Package verification failed";case -5:return "Could not save initial configuration";case -6:return "Firmware installation failed; loader retained";case -7:return "Could not synchronize time; check Internet access and retry";case -8:return "Wi-Fi connected, but saving credentials failed. Settings will not survive a restart.";default:return "Setup error";}
 }
 static std::string digest_partition(const esp_partition_t* p) {
@@ -221,8 +222,11 @@ static bool install_package() {
  FILE* f=fopen((object+"/firmware/firmware.bin").c_str(),"rb");if(!f)return false;
  diagnostic_checkpoint("flash.begin","inactive partition",0);
  if(!target||esp_ota_begin(target,manifest.firmware.bytes,&handle)!=ESP_OK){fclose(f);return false;}
- unsigned char buffer[4096];size_t count=0;bool ok=true;
- while(ok){diagnostic_checkpoint("read.begin","firmware.bin",count);size_t n=fread(buffer,1,sizeof buffer,f);if(n){diagnostic_checkpoint("flash.write","inactive partition",count);ok=esp_ota_write(handle,buffer,n)==ESP_OK;count+=n;vTaskDelay(1);}if(n<sizeof buffer){if(ferror(f))ok=false;break;}}
+ // Keep the flash transfer buffer off the stack shared with ZIP opening.
+ std::unique_ptr<unsigned char[]> buffer(new(std::nothrow) unsigned char[4096]);
+ if(!buffer){fclose(f);esp_ota_abort(handle);return false;}
+ size_t count=0;bool ok=true;
+ while(ok){diagnostic_checkpoint("read.begin","firmware.bin",count);size_t n=fread(buffer.get(),1,4096,f);if(n){diagnostic_checkpoint("flash.write","inactive partition",count);ok=esp_ota_write(handle,buffer.get(),n)==ESP_OK;count+=n;vTaskDelay(1);}if(n<4096){if(ferror(f))ok=false;break;}}
  fclose(f);
  if(!ok||count!=manifest.firmware.bytes){esp_ota_abort(handle);return false;}
  diagnostic_checkpoint("flash.verify","inactive partition",count);
@@ -352,7 +356,7 @@ static void improv_command(const AIEdgeImprov::Bytes& data){
   improv_state(current_improv_state());
   if(current_improv_state()==4)improv_send(AIEdgeImprov::result(2,{device_url()}));
   break;
- case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.8-dev.20260922","ESP32",device_hostname}));break;
+ case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.9-dev.20260922","ESP32",device_hostname}));break;
  case 4:
   if(begin_scan())serial_scan_pending=true;
   else improv_error(0xff);
@@ -413,7 +417,7 @@ extern "C" void app_main(){
  uint8_t station_mac[6];ESP_ERROR_CHECK(esp_read_mac(station_mac,ESP_MAC_WIFI_STA));device_hostname=AIEdgeIdentity::hostname(station_mac);
  setup_lock=xSemaphoreCreateMutex();configASSERT(setup_lock);
  diagnostic_lock=xSemaphoreCreateMutex();configASSERT(diagnostic_lock);
- char boot[96];snprintf(boot,sizeof boot,"loader=0.1.8 reset_reason=%d",int(esp_reset_reason()));diagnostic_record(boot);
+ char boot[96];snprintf(boot,sizeof boot,"loader=0.1.9 reset_reason=%d",int(esp_reset_reason()));diagnostic_record(boot);
  gpio_set_direction(GPIO_NUM_4,GPIO_MODE_OUTPUT);gpio_set_level(GPIO_NUM_4,0);
  sdmmc_host_t host=SDMMC_HOST_DEFAULT();sdmmc_slot_config_t slot=SDMMC_SLOT_CONFIG_DEFAULT();slot.width=1;slot.flags|=SDMMC_SLOT_FLAG_INTERNAL_PULLUP;gpio_set_pull_mode(GPIO_NUM_13,GPIO_PULLUP_ONLY);
  esp_vfs_fat_sdmmc_mount_config_t cfg={};cfg.format_if_mount_failed=false;cfg.max_files=8;sdmmc_card_t* card=nullptr;
@@ -448,7 +452,7 @@ extern "C" void app_main(){
  printf("AIEdge Wi-Fi loader ready: AIEdge-Setup, http://192.168.4.1; SD=%s\n",sd_ready?"mounted":"failed");
  diagnostic_record(sd_ready?"SD mounted; setup ready":"SD mount failed");
  if(xTaskCreate(diagnostic_task,"install_log",4096,nullptr,2,nullptr)!=pdPASS)diagnostic_record("Could not start diagnostic heartbeat");
- printf("AIEdge loader 0.1.8: hostname=%s.local; mDNS initialization=%s\n",device_hostname.c_str(),esp_err_to_name(discovery));
+ printf("AIEdge loader 0.1.9: hostname=%s.local; mDNS initialization=%s\n",device_hostname.c_str(),esp_err_to_name(discovery));
  std::string saved_name,saved_pass;
  if(read_saved_wifi(saved_name,saved_pass)){wifi_saved=true;if(sd_ready)begin_wifi(saved_name,saved_pass,false);}
 }

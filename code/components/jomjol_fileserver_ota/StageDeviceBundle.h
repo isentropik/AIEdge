@@ -4,8 +4,26 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <cerrno>
+#include <cstring>
 namespace MeterBundle {
 enum class StageResult { Rejected, IoError, Conflict, Existing, Staged };
+// The convenience extract functions put the large inflater on the task stack.
+// The iterator keeps it on the heap and retains miniz's length/CRC checks.
+template<class Sink> bool extractBounded(mz_zip_archive& zip,mz_uint index,uint64_t expected,Sink sink){
+ auto* iterator=mz_zip_reader_extract_iter_new(&zip,index,0);
+ if(!iterator)return false;
+ std::unique_ptr<unsigned char[]> buffer(new(std::nothrow) unsigned char[4096]);
+ uint64_t total=0;bool ok=bool(buffer);
+ while(ok){
+  const size_t n=mz_zip_reader_extract_iter_read(iterator,buffer.get(),4096);
+  if(!n)break;
+  if(total>expected||n>expected-total||!sink(total,buffer.get(),n)){ok=false;break;}
+  total+=n;
+ }
+ // Always free; finalization also rejects truncated output and CRC failures.
+ const bool complete=mz_zip_reader_extract_iter_free(iterator)!=0;
+ return ok&&complete&&total==expected;
+}
 inline bool bundleDirectory(const std::string& path){
  if(mkdir(path.c_str(),0700)!=0&&errno!=EEXIST)return false;
  struct stat st{};return stat(path.c_str(),&st)==0&&S_ISDIR(st.st_mode);
@@ -54,7 +72,9 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  if(!mz_zip_reader_file_stat(&zip,found->second,&ms)||!ms.m_uncomp_size||ms.m_uncomp_size>128*1024)return StageResult::Rejected;
  std::unique_ptr<char[]> bytes(new(std::nothrow) char[ms.m_uncomp_size]);
  if(!bytes)return StageResult::IoError;
- if(!mz_zip_reader_extract_to_mem(&zip,found->second,bytes.get(),ms.m_uncomp_size,0))return StageResult::Rejected;
+ if(!extractBounded(zip,found->second,ms.m_uncomp_size,[&](uint64_t offset,const unsigned char* data,size_t size){
+  std::memcpy(bytes.get()+offset,data,size);return true;
+ }))return StageResult::Rejected;
  const std::string body(bytes.get(),ms.m_uncomp_size);bytes.reset();
  auto sha=[](const std::string& text){Hash h;return h.update(reinterpret_cast<const unsigned char*>(text.data()),text.size())?h.finish():std::string();};
  Manifest m;
@@ -84,7 +104,9 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   if(fd<0)return StageResult::IoError;
   checkpoint(trace,"extract.begin",path);
   BundleSink<Hash> sink(fd,item.second.bytes,trace,path);
-  bool ok=mz_zip_reader_extract_to_callback(&zip,entries.at(item.first),BundleSink<Hash>::append,&sink,0)&&
+  bool ok=extractBounded(zip,entries.at(item.first),item.second.bytes,[&](uint64_t offset,const unsigned char* data,size_t size){
+           return BundleSink<Hash>::append(&sink,offset,data,size)==size;
+          })&&
           sink.ok&&sink.written==item.second.bytes&&sink.hash.finish()==item.second.hash;
   checkpoint(trace,"extract.sync",path,sink.written);
   if(ok&&fsync(fd)!=0)ok=false;

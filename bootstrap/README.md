@@ -24,7 +24,7 @@ Host protocol tests: compile `tests/improv_test.cpp` with a C++11 compiler and `
 
 After a successful Wi-Fi connection, the loader commits the credentials to internal nonvolatile storage and verifies them before downloading the package. A reset or power interruption can then reconnect automatically, even if the package download previously failed. Invalid or unsuccessful connection attempts do not replace the last verified saved network. A fresh USB installation or erase can remove these settings; reconnecting alone should not.
 
-Visit Device shows connection and installation status. If Wi-Fi is connected but the package fails, use **Retry download and installation** without reentering the network password. Download diagnostics report error codes or byte counts, never passwords or signed download URLs. The main application still receives its own SD-backed Wi-Fi configuration during installation.
+Visit Device shows connection and installation status. If Wi-Fi is connected but the package fails, use **Retry download to device and install** without reentering the network password. Download diagnostics report error codes or byte counts, never passwords or signed download URLs. The main application still receives its own SD-backed Wi-Fi configuration during installation.
 
 The loader and installed device pages have a **Theme** selector: System, Light or Dark. The choice is saved in that browser for the device address. Images and calibration canvases are not recolored.
 
@@ -52,7 +52,7 @@ The USB browser installer also gains a Show password eye button. It requires a w
 
 ## Start installation when ready (0.1.6 loader)
 
-Connecting Wi-Fi now stops at **Ready to download and install**. Choose **Visit Device**, then **Download and install** when ready. This also applies after restarting with saved Wi-Fi. Opening or refreshing the page never starts the download. Failed installation attempts offer a separate retry button; requests during an active installation are rejected.
+Connecting Wi-Fi now stops at **Ready to download to device and install**. Choose **Visit Device**, then **Download to device and install** when ready. This also applies after restarting with saved Wi-Fi. Opening or refreshing the page never starts the download. Failed installation attempts offer a separate retry button; requests during an active installation are rejected.
 
 Package hashing yields periodically so lower-priority system tasks can run. The page and USB log report SD verification, unpacking, initial configuration, firmware writing and startup preparation separately. All package and file hashes remain enforced. These changes improve diagnostics and scheduling; they do not establish the cause or resolution of the reported post-download lockup. Loader 0.1.5 reported successful mDNS initialization, but hostname reachability remains unverified.
 
@@ -73,3 +73,11 @@ The diagnostic loader preserves explicit download consent, package verification 
 The ready-to-install state allows scanning and changing Wi-Fi. Active connection and installation stages remain protected. Disconnected ready devices report ready for setup over USB, rather than connecting. Failed, cancelled, refused or timed-out scans return an Improv error; only a completed scan sends a successful network list, which may genuinely be empty. A timed-out scan is stopped so another scan can be attempted. Scan failures are recorded in the current-boot debug log without network names or credentials.
 
 Host tests exercise the actual scan and reply code for ready/busy states, driver failure, timeout, cancellation, empty success, deduplication and network results. Physical network discovery remains to be verified after updating the loader. This release does not establish a fix for the separate package-installation lockup.
+
+## ZIP extraction stack fix (0.1.9 loader)
+
+A recorded test passed package download and SD read-back verification, then reported a stack overflow in the download task as ZIP unpacking began. ZIP opening also nests two 4 KiB stack buffers. The installer now allocates its firmware-transfer buffer on the heap, reducing its own compiled stack frame from 4,768 to 704 bytes. Extraction uses the heap-backed miniz iterator instead of the large-stack convenience functions, with bounded 4 KiB transfers and checked completion. CRC, length limits and SHA verification remain required. The debug log includes minimum remaining task stack space.
+
+The corrected loader completed a recorded hardware installation: package download, all SD file checks, firmware write and reboot. The minimum reported installation-task stack space at completion was 2,368 bytes. The application then exposed a separate startup crash in the ESP32 hardware SHA digest routine. The 0.1.9 application package uses mbedTLS software SHA-256; integrity checks remain mandatory. Its model and web assets are unchanged. Full application-startup validation is still pending.
+
+The build passes 72 verification/staging/recovery cases, and all 80 installable files from the new package match after host extraction. The setup page now probes the application's system-information endpoint when loader status disappears, and automatically opens the application when it responds. Offline and invalid responses keep retrying. The device action is labeled **Download to device and install**. An unformatted or unsupported SD card prevents setup; it is never formatted automatically.

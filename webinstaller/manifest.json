@@ -1,6 +1,6 @@
 {
   "name": "AIEdge Wi-Fi loader",
-  "version": "0.1.8-dev.20260922",
+  "version": "0.1.9-dev.20260922",
   "new_install_prompt_erase": true,
   "new_install_improv_wait_time": 30,
   "builds": [
@@ -8,7 +8,7 @@
       "chipFamily": "ESP32",
       "parts": [
         {
-          "path": "releases/v0.1.8-dev.20260922/aiedge-web-installer.bin",
+          "path": "releases/v0.1.9-dev.20260922/aiedge-web-installer.bin",
           "offset": 0
         }
       ]

@@ -189,3 +189,7 @@ CONFIG_SPIRAM_BANKSWITCH_ENABLE=n
 #CONFIG_SPIRAM_BANKSWITCH_RESERVE is not set
 
 CONFIG_PM_ENABLE=y
+
+# The recorded ESP32 application boot aborts in sha_hal_read_digest while
+# verifying its bundle. Use mbedTLS software SHA; keep all digest checks.
+CONFIG_MBEDTLS_HARDWARE_SHA=n
