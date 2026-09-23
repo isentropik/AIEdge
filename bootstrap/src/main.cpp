@@ -378,7 +378,7 @@ static void improv_task(void*){
  for(;;){
   int n=uart_read_bytes(UART_NUM_0,bytes,sizeof bytes,pdMS_TO_TICKS(50));
   if(n>0){
-   if(esp_timer_get_time()-last_input>500000)parser.reset();
+   if(esp_timer_get_time()-last_input>500000){parser.reset();websiteParser.idle();}
    for(int i=0;i<n;++i){
     websiteParser.feed(bytes[i],[](const char* line){if(!AIEdgeAuth::queueLocalCommand(websiteServer,websiteHttp,line))printf("AIEdge USB password command busy; try again.\n");});
     parser.feed(bytes[i],improv_command,[]{improv_error(1);});

@@ -11,4 +11,8 @@ int main(){SerialParser p;std::vector<std::string> got;auto input=[&](const std:
  input(std::string("binary\0AIEdge AUTH RESET\n",25));assert(got.size()==2);
  input("\nAIEdge AUTH SETUP\n");assert(got.size()==3&&got.back()=="AIEdge AUTH SETUP");
  input("AIEdge AUTH RES");p.reset();input("ET\n");assert(got.size()==3);
+ input(std::string("IMPROV\1\3\2\3\0",11));p.idle();input("AIEdge AUTH SETUP\n");assert(got.size()==4);
+ input("AIEdge AUTH ");p.idle();input("SETUP\n");assert(got.size()==5);
+ input(std::string(200,'x'));p.idle();input("AIEdge AUTH SETUP\n");assert(got.size()==6);
+ input(std::string("noise\0",6));input("AIEdge AUTH RESET\n");assert(got.size()==6);
 }
