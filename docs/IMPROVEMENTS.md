@@ -31,6 +31,8 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 ## Meter recognition and physical calculations
 
+Prepared September 23: cumulative accounting now retains uniquely established turns from intervening frames instead of discarding them when endpoint-only bounds become ambiguous. Portable cumulative, checkpoint, session and history regressions pass, and the ESP32 build passes. Test-board deployment and real-image validation remain pending; default firmware accounting still has no assumed maximum-flow bound. See [accounting validation and limits](METER-ACCOUNTING-VALIDATION.md).
+
 - [ ] Extend the passing full-RGB-frame ESP32 registration/preprocessing/inference parity test to actual camera capture/JPEG decoding and confirmed real-image accuracy; preserve held-out data, raw hashes and uncertain labels.
 - [ ] Validate perspective compensation, stable dial/needle pivots and glare-sensitive edge estimates across positions.
 - [ ] Cross-check the main sequence using subsequent dials; preserve leading zeros and separate raw dial positions from converted quantities.
