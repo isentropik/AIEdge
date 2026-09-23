@@ -1,4 +1,5 @@
 #include "StorageRecovery.h"
+#include "basic_auth.h"
 #include "RecoveryWifi.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
@@ -121,10 +122,12 @@ bool startStorageRecovery(bool nvsAvailable) {
     config.recv_wait_timeout = 5; config.send_wait_timeout = 5;
     httpd_handle_t server = nullptr;
     if (!check(httpd_start(&server, &config), "Recovery server")) return false;
-    httpd_uri_t status = {}; status.uri = "/recovery/status"; status.method = HTTP_GET; status.handler = statusHandler;
-    httpd_uri_t info = {}; info.uri = "/info"; info.method = HTTP_GET; info.handler = identityHandler;
-    httpd_uri_t sysinfo = {}; sysinfo.uri = "/sysinfo"; sysinfo.method = HTTP_GET; sysinfo.handler = statusHandler;
-    httpd_uri_t root = {}; root.uri = "/*"; root.method = HTTP_GET; root.handler = pageHandler;
+    init_basic_auth();
+    if (!check(register_website_auth(server), "Website authentication")) { httpd_stop(server); return false; }
+    httpd_uri_t status = {}; status.uri = "/recovery/status"; status.method = HTTP_GET; status.handler = APPLY_BASIC_AUTH_FILTER(statusHandler);
+    httpd_uri_t info = {}; info.uri = "/info"; info.method = HTTP_GET; info.handler = APPLY_BASIC_AUTH_FILTER(identityHandler);
+    httpd_uri_t sysinfo = {}; sysinfo.uri = "/sysinfo"; sysinfo.method = HTTP_GET; sysinfo.handler = APPLY_BASIC_AUTH_FILTER(statusHandler);
+    httpd_uri_t root = {}; root.uri = "/*"; root.method = HTTP_GET; root.handler = APPLY_BASIC_AUTH_FILTER(pageHandler);
     if (!check(httpd_register_uri_handler(server, &status), "Status route") ||
         !check(httpd_register_uri_handler(server, &info), "Identity route") ||
         !check(httpd_register_uri_handler(server, &sysinfo), "System status route") ||

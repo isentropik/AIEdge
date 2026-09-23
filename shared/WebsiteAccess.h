@@ -14,6 +14,7 @@ public:
     WebsiteAccess(const WebsiteAccess&) = delete;
     WebsiteAccess& operator=(const WebsiteAccess&) = delete;
     State state() const { return credential.state(); }
+    bool setupAvailable() const { return state()==State::NeedsSetup && tokenReady; }
     // Called after radio initialization; setup token is delivered over USB only.
     State initialize(uint8_t* localToken) {
         tokenReady=cachedReady=false;nextAttempt=0;

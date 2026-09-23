@@ -14,6 +14,13 @@
 #include "driver/uart_vfs.h"
 #include "freertos/semphr.h"
 #include "ImprovSerial.h"
+#include "WebsiteCredentialEsp.h"
+#include "WebsiteHttp.h"
+static AIEdgeAuth::NvsBackend websiteBackend;
+static AIEdgeAuth::WebsiteAccess websiteAccess(websiteBackend);
+static AIEdgeAuth::WebsiteHttp websiteHttp(websiteAccess);
+#define WEBSITE_AUTH(handler) [](httpd_req_t* req){return websiteHttp.handle(req,handler);}
+static esp_err_t website_setup(httpd_req_t* req){return websiteHttp.handle(req,[](httpd_req_t*){return ESP_FAIL;});}
 #include "driver/sdmmc_host.h"
 #include "esp_vfs_fat.h"
 #include "esp_wifi.h"
@@ -432,14 +439,17 @@ extern "C" void app_main(){
  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,nullptr));ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,nullptr));
  wifi_config_t ap={};strcpy(reinterpret_cast<char*>(ap.ap.ssid),"AIEdge-Setup");strcpy(reinterpret_cast<char*>(ap.ap.password),"AIEdgeSetup");ap.ap.authmode=WIFI_AUTH_WPA2_PSK;ap.ap.max_connection=2;
  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP,&ap));ESP_ERROR_CHECK(esp_wifi_start());
- httpd_config_t http=HTTPD_DEFAULT_CONFIG();http.stack_size=8192;http.max_open_sockets=4;http.lru_purge_enable=true;http.recv_wait_timeout=5;http.send_wait_timeout=5;httpd_handle_t server=nullptr;ESP_ERROR_CHECK(httpd_start(&server,&http));
- httpd_uri_t h={};h.uri="/";h.method=HTTP_GET;h.handler=home;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
- h.uri="/status";h.handler=status;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.uri="/wifi";h.method=HTTP_POST;h.handler=credentials;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
- h.uri="/debug-log";h.method=HTTP_GET;h.handler=debug_log;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.method=HTTP_POST;
- h.uri="/retry";h.handler=retry_install;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
- h.uri="/install";h.handler=retry_install;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
- h.uri="/scan";h.handler=scan_start;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
- h.uri="/networks";h.method=HTTP_GET;h.handler=scan_results;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ websiteHttp.initialize();
+ httpd_config_t http=HTTPD_DEFAULT_CONFIG();http.max_uri_handlers=12;http.stack_size=8192;http.max_open_sockets=4;http.lru_purge_enable=true;http.recv_wait_timeout=5;http.send_wait_timeout=5;httpd_handle_t server=nullptr;ESP_ERROR_CHECK(httpd_start(&server,&http));
+ httpd_uri_t h={};h.uri="/auth/setup";h.method=HTTP_POST;h.handler=website_setup;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.method=HTTP_GET;ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/";h.method=HTTP_GET;h.handler=WEBSITE_AUTH(home);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/status";h.handler=WEBSITE_AUTH(status);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.uri="/wifi";h.method=HTTP_POST;h.handler=WEBSITE_AUTH(credentials);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/debug-log";h.method=HTTP_GET;h.handler=WEBSITE_AUTH(debug_log);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));h.method=HTTP_POST;
+ h.uri="/retry";h.handler=WEBSITE_AUTH(retry_install);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/install";h.handler=WEBSITE_AUTH(retry_install);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/scan";h.handler=WEBSITE_AUTH(scan_start);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
+ h.uri="/networks";h.method=HTTP_GET;h.handler=WEBSITE_AUTH(scan_results);ESP_ERROR_CHECK(httpd_register_uri_handler(server,&h));
  // Advertise on the setup AP as well as the connected home network.
  // Name discovery is optional: keep the IP setup page working if it fails.
  esp_err_t discovery=mdns_init();

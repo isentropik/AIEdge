@@ -1,0 +1,81 @@
+#pragma once
+#include "WebsiteAccess.h"
+#include "WebsiteSetupPage.h"
+#include "esp_http_server.h"
+#include "mbedtls/base64.h"
+#include "esp_timer.h"
+#include <cstdio>
+#include <cstring>
+namespace AIEdgeAuth {
+class WebsiteHttp {
+    WebsiteAccess& access;
+    static esp_err_t reply(httpd_req_t* req,const char* status,const char* text){
+        httpd_resp_set_status(req,status);httpd_resp_set_type(req,"text/plain; charset=utf-8");
+        httpd_resp_set_hdr(req,"Cache-Control","no-store");
+        return httpd_resp_send(req,text,std::strlen(text));
+    }
+    static esp_err_t unavailable(httpd_req_t* req){return reply(req,"503 Service Unavailable","Website credentials could not be loaded. Settings have not been erased. Check USB diagnostics.");}
+    static esp_err_t challenge(httpd_req_t* req){
+        httpd_resp_set_hdr(req,"WWW-Authenticate","Basic realm=\"AIEdge\", charset=\"UTF-8\"");
+        return reply(req,"401 Unauthorized","Sign in to AIEdge with username admin and your website password.");
+    }
+    static bool password(httpd_req_t* req,uint8_t* out,size_t& size){
+        char header[256]={};uint8_t decoded[192]={};size_t count=0;
+        const size_t n=httpd_req_get_hdr_value_len(req,"Authorization");
+        if(n<7||n>=sizeof header||httpd_req_get_hdr_value_str(req,"Authorization",header,sizeof header)!=ESP_OK)return false;
+        const char prefix[]="Basic ";unsigned mismatch=0;
+        for(size_t i=0;i<5;++i)mismatch|=(header[i]|32)^(prefix[i]|32);
+        bool ok=!mismatch&&header[5]==' '&&mbedtls_base64_decode(decoded,sizeof decoded,&count,reinterpret_cast<unsigned char*>(header+6),n-6)==0&&count>6&&count<=134&&!std::memcmp(decoded,"admin:",6);
+        if(ok){size=count-6;std::memcpy(out,decoded+6,size);}
+        wipe(decoded,sizeof decoded);wipe(header,sizeof header);return ok;
+    }
+    static bool body(httpd_req_t* req,uint8_t* out,size_t& size){
+        if(req->content_len<12||req->content_len>128)return false;
+        size=0;while(size<req->content_len){int got=httpd_req_recv(req,reinterpret_cast<char*>(out)+size,req->content_len-size);if(got<=0)return false;size+=got;}return true;
+    }
+    esp_err_t setup(httpd_req_t* req){
+        if(access.state()!=State::NeedsSetup)return reply(req,"409 Conflict","Website password is already configured or storage is unavailable. Reload the page.");
+        char encoded[65]={};uint8_t token[32]={},value[128]={};size_t size=0;
+        bool ok=httpd_req_get_hdr_value_len(req,"X-AIEdge-Setup")==64&&httpd_req_get_hdr_value_str(req,"X-AIEdge-Setup",encoded,sizeof encoded)==ESP_OK;
+        for(size_t i=0;ok&&i<64;++i){char c=encoded[i];int digit=c>='0'&&c<='9'?c-'0':c>='a'&&c<='f'?c-'a'+10:c>='A'&&c<='F'?c-'A'+10:-1;if(digit<0)ok=false;else token[i/2]|=digit<<((i%2)?0:4);}
+        ok=ok&&body(req,value,size)&&access.setup(token,sizeof token,value,size);
+        wipe(token,sizeof token);wipe(encoded,sizeof encoded);wipe(value,sizeof value);
+        if(access.state()==State::StorageError)return unavailable(req);
+        return reply(req,ok?"200 OK":"400 Bad Request",ok?"Password saved. Continue and sign in as admin.":"Password was not saved. Check the setup code and password requirements.");
+    }
+public:
+    explicit WebsiteHttp(WebsiteAccess& state):access(state){}
+    void initialize(){
+        uint8_t token[32]={};const auto state=access.initialize(token);
+        if(state==State::NeedsSetup&&access.setupAvailable()){
+            // USB stdout only: do not copy this secret into web diagnostics or files.
+            char encoded[65]={};constexpr char hex[]="0123456789abcdef";
+            for(size_t i=0;i<sizeof token;++i){encoded[2*i]=hex[token[i]>>4];encoded[2*i+1]=hex[token[i]&15];}
+            std::printf("AIEdge website setup code: %s\n",encoded);wipe(encoded,sizeof encoded);
+        }
+        wipe(token,sizeof token);
+    }
+    bool configured()const{return access.state()==State::Ready;}
+    esp_err_t handle(httpd_req_t* req,esp_err_t(*handler)(httpd_req_t*)){
+        const bool setupPath=!std::strcmp(req->uri,"/auth/setup");
+        if(setupPath&&req->method==HTTP_POST)return setup(req);
+        if(access.state()==State::NeedsSetup){
+            if(!access.setupAvailable())return unavailable(req);
+            if(req->method==HTTP_GET&&((req->uri[0]=='/'&&(req->uri[1]==0||req->uri[1]=='?'))||setupPath)){
+                httpd_resp_set_type(req,"text/html; charset=utf-8");httpd_resp_set_hdr(req,"Cache-Control","no-store");
+                return httpd_resp_send(req,setupPage,sizeof setupPage-1);
+            }
+            return reply(req,"423 Locked","Create the website password at the device home page first.");
+        }
+        if(access.state()!=State::Ready)return unavailable(req);
+        uint8_t supplied[128]={};size_t size=0;
+        const auto decision=password(req,supplied,size)?access.check(supplied,size,esp_timer_get_time()):Access::Unauthorized;
+        wipe(supplied,sizeof supplied);
+        if(decision==Access::RetryLater){httpd_resp_set_hdr(req,"Retry-After","1");return reply(req,"429 Too Many Requests","Wait a second before trying again.");}
+        if(decision==Access::StorageError)return unavailable(req);
+        if(decision!=Access::Allowed)return challenge(req);
+        if(setupPath)return reply(req,"200 OK","Website password is already configured.");
+        return handler(req);
+    }
+};
+}

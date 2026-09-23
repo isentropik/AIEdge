@@ -464,9 +464,9 @@ httpd_handle_t start_webserverAP(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.uri_match_fn = httpd_uri_match_wildcard;
     httpd_handle_t server = NULL;
-    if (httpd_start(&server, &config) == ESP_OK) {
-        // Do something
-    }
+    if (httpd_start(&server, &config) != ESP_OK) return nullptr;
+    init_basic_auth();
+    if (register_website_auth(server) != ESP_OK) { httpd_stop(server); return nullptr; }
 
     httpd_uri_t reboot_handle = {
         .uri       = "/reboot",  // Match all URIs of type /path/to/file

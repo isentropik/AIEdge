@@ -1,38 +1,33 @@
 # Website authentication
 
-Status: credential checking and persistent-storage foundation implemented and host-tested; required password setup is not yet implemented or deployed.
+Status: the password gate and first-time setup routes are integrated into local application, loader and recovery candidates. Host tests and both ESP32 builds pass. This is not deployed; recovery UX and on-device verification remain incomplete.
 
-The selected product behavior is password protection for the entire device website: pages, images, readings, logs, settings and updates. This includes the application, Wi-Fi loader and storage-recovery website. Wi-Fi credentials are separate from the website password.
+The selected behavior is password protection for the whole device website: pages, images, readings, logs, settings and updates. Wi-Fi credentials are separate. New credentials use username `admin`.
 
-## Current evidence
+## Implemented
 
-The application routes use the shared Basic authentication filter. The filter now owns its active credential snapshot, checks header retrieval and the complete credential value, rejects partial/invalid credential configuration and encoder failure, and uses the AIEdge authentication realm. Initialization clears any previous active credential. No credential values are logged by this filter.
+- The shared `WebsiteHttp` handler protects normal application routes, legacy AP setup routes, storage-recovery routes and loader routes. Missing configuration no longer means open access in these candidates.
+- Before setup, only the home/setup screen is available; other data and control requests return Locked. Creating the password requires a random 32-byte setup code printed to local USB stdout after Wi-Fi initialization. It changes at restart and is not exposed through a website endpoint. Setup uses an exact custom header and POST body, never a URL parameter. A consumed token cannot replace an existing password.
+- The embedded setup form includes password confirmation, an eye toggle, system/light/dark themes and a clear sign-in username. Passwords require 12–128 UTF-8 bytes and no control characters. A lost connection does not cause automatic resubmission of a potentially successful write.
+- Configured devices challenge unauthenticated requests using HTTP Basic authentication. Invalid guesses are limited to one expensive verification per second. A verified in-memory fingerprint allows subsequent valid asset requests without repeated PBKDF2 work. Storage failures deny access.
+- The shared NVS record is independent of SD storage. Version 1 stores a random 16-byte salt, PBKDF2-HMAC-SHA256 verifier (20,000 iterations) and SHA-256 checksum. No plaintext password is stored in this record. The checksum detects damaged records; it is not protection against physical flash modification.
+- Writes require commit plus exact validated readback. Uncertain writes invalidate active access until a fresh load. No unauthenticated network reset operation exists.
+- The loader preserves NVS on initialization failure, reports the problem over USB and stops startup. It no longer automatically erases Wi-Fi and website credentials.
 
-`tools/auth-tests/test_basic_auth.py` compiles the actual filter body with HTTP and base64 adapters. It checks correct credentials, every truncated prefix, every single-byte mutation and embedded NUL, oversized values, failed header reads, credential-source mutation, invalid configuration, encoding failure and reinitialization. Run with Python with the `ziglang` package installed. This is host coverage, not on-device authentication verification. The ESP32 managed target also compiled successfully on September 23, 2026; this candidate has not been flashed.
+The old `HTTP_USERNAME` / `HTTP_PASSWORD` fields in `wlan.ini` are not used by the new gate and are not automatically migrated or deleted. An upgrade without the new NVS record therefore requires first-time website setup. Do not deploy this change silently to an existing password-protected installation without handling that transition.
 
-## Persistent credential store
+## Evidence and limits
 
-`shared/WebsiteCredential.h` and `shared/WebsiteCredentialEsp.h` implement an SD-independent NVS credential record. The version-1 record has a random 16-byte salt, PBKDF2-HMAC-SHA256 verifier (20,000 iterations), and SHA-256 record checksum. No plaintext password is stored in this record. The checksum detects damaged records; it does not authenticate physical flash modifications. Work-factor latency and resistance to password guessing still need review on the board; this is not a final security qualification.
+- `tools/auth-tests/test_basic_auth.py` compiles the actual shared HTTP adapter with HTTP, base64, clock and storage substitutes. It checks setup, bad/missing/replayed codes, interrupted bodies, missing/wrong credentials, successful access across representative paths, oversized/malformed headers, header-read failures, throttling and failed storage/random generation.
+- `tools/auth-tests/test_credential_store.py` covers credential/access states, every single-byte record corruption, truncation, reads/writes/commit faults, uncertain commits, readback mismatch, password changes, reload and cache invalidation. It checks the ESP adapter contracts with NVS/crypto substitutes and compiles the loader's actual NVS startup block to verify settings are preserved on errors.
+- `tools/auth-tests/test_auth_routes.py` audits 78 handler assignments and checks setup registration in startup paths. This is a source audit, not runtime proof of every endpoint.
+- Application and private loader candidates compiled successfully against the ESP32 SDK on September 23, 2026. No candidate from this authentication work has been flashed. No cryptographic implementation, hardware timing, flash power-loss, browser sign-in or retention claim follows from the host tests.
+- Visual preview was blocked by the browser's local-file policy. The setup page has not had rendered visual verification.
 
-The store distinguishes uninitialized, first-time setup, ready and storage-error states. Missing records allow setup; corrupt records and inaccessible storage fail closed. A write is accepted only after commit and exact validated readback. Uncertain writes invalidate the active credential until a fresh load. There is no network reset operation. The eventual setup/change handlers must authorize calls to save; the storage class is not an authorization gate. The current legacy `wlan.ini` password path is unchanged and is not migrated by this module.
+## Remaining before deployment
 
-`tools/auth-tests/test_credential_store.py` exercises state transitions, every single-byte corruption of the record, truncation, failed reads/writes/commits, uncertain commits, readback mismatch, password change and reload. It also checks the actual ESP adapter with NVS and crypto-call substitutes. Those tests do not measure cryptographic implementation, physical power-loss behavior or flash retention. The SDK backend compiled in the managed ESP32 target on September 23, 2026. It is not connected to live HTTP access yet and has not been deployed.
-
-## Access gate (not yet connected to routes)
-
-`WebsiteAccess.h` connects the persistent credential to access decisions. First-time setup requires a random 32-byte token intended for a local USB channel; it is not exposed by a website endpoint. Successful setup consumes the token and cannot be replayed to overwrite a configured device. Password changes require the existing credential. Failed verification is limited to one expensive attempt per second, while a verified in-memory credential fingerprint lets legitimate follow-up asset requests proceed. A password change or uncertain write invalidates that cache. This remains single-HTTP-task code; it is not safe to call concurrently without serialization.
-
-Host fault tests cover setup without a token, invalid and replayed tokens, storage failure, reload, rate limiting, cached valid access during other failed attempts, password changes, cache invalidation and failed random generation. The HTTP adapter, USB delivery/recovery UX and route registration are still pending. No network authentication behavior has been changed on the device by this module.
-
-The loader no longer erases NVS automatically on initialization errors. It reports the problem on USB and stops initialization, preserving stored Wi-Fi and authentication data. A host test compiles that actual startup block and verifies error paths stop before network startup. Providing a useful protected recovery UI for this condition is still pending; this change is not a claim that storage has recovered.
-
-## Remaining implementation and verification
-
-- Require first-time password creation before exposing application data or controls. The current empty-configuration behavior still allows access; do not describe this build as password-required.
-- Store the device credential independently of the SD card so removing/failing storage cannot remove protection. Avoid storing or returning plaintext passwords; initialize and persist credentials atomically and fail closed on corrupt or unavailable credential storage.
-- Provide an explicit first-time setup authorization mechanism and physical recovery for a forgotten password. Recovery must not create an unauthenticated network reset endpoint. Preserve Wi-Fi and SD contents when resetting only the website password.
-- Protect the loader and recovery routes as well as the existing application routes. Audit dynamically registered routes, static assets, errors, images, streams and diagnostics.
-- Provide a beginner-friendly setup/change-password flow with show-password control, confirmation, clear saved/active state and no password in URLs, logs or exported diagnostic data.
-- Verify browser behavior, fresh boots, lost SD, failed saves, invalid credentials, password changes, OTA transitions and recovery on the test board. Keep setup usable before enabling enforcement on that board.
-
-Basic authentication on plain HTTP is not encrypted transport. A full-site password alone does not protect credentials from someone able to observe the network. Transport and credential storage must be addressed explicitly before presenting the complete implementation as secure.
+- Finish local USB delivery and password-only recovery so users cannot be stranded, preserving Wi-Fi and SD contents. Add a usable authenticated change-password screen/route; the core operation currently has only host coverage.
+- Decide and test legacy credential migration and the installer-to-application transition. Check that no diagnostic mechanism republishes setup codes.
+- Test real browser setup/sign-in, direct endpoint access, camera/SD failure, restarting, failed saves, OTA transitions and recovery on the test board. Measure password verification cost and UI/recognition contention.
+- Serialize access if more than one server/task can call the shared state. Current ownership assumes startup followed by one active HTTP server task.
+- Review transport protection. HTTP Basic authentication over plain HTTP is not encrypted. The password gate is not a claim of secure transport; use a trusted LAN during development. Work factor and security qualification remain pending.

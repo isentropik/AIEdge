@@ -1,59 +1,58 @@
-"""Exercise the actual authentication filter with deterministic HTTP/crypto adapters."""
-import json, os, subprocess, sys, tempfile
+"""Actual website HTTP adapter with deterministic HTTP, clock and base64 substitutes."""
+import os,sys,subprocess,tempfile
 from pathlib import Path
-ROOT=Path(__file__).resolve().parents[2]
-if os.name == 'nt':
-    import ctypes
-    ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002)
-OUT=Path(tempfile.mkdtemp(prefix='aiedge-auth-test-'))
-source=(ROOT/'code/components/jomjol_wlan/basic_auth.cpp').read_text(encoding='utf-8-sig')
-source='\n'.join(line for line in source.splitlines() if not line.startswith('#include'))
-cpp=OUT/'basic_auth_test.cpp'
-cpp.write_text(r'''
-#include <cassert>
+ROOT=Path(__file__).resolve().parents[2];OUT=Path(tempfile.mkdtemp(prefix='aiedge-http-auth-'));STUB=OUT/'stubs';(STUB/'mbedtls').mkdir(parents=True)
+if os.name=='nt':
+ import ctypes
+ ctypes.windll.kernel32.SetErrorMode(3)
+(STUB/'esp_http_server.h').write_text(r'''#pragma once
 #include <string>
-#include <vector>
+#include <map>
 #include <cstring>
 #include <algorithm>
-using esp_err_t=int;constexpr int ESP_OK=0;
-#define ESP_LOGE(...) ((void)0)
-struct {std::string http_username,http_password;} wlan_config;
-struct httpd_req_t {std::string authorization,status,body,realm,cache;bool readFail=false;int calls=0;};
-size_t httpd_req_get_hdr_value_len(httpd_req_t*r,const char*){return r->authorization.size();}
-int httpd_req_get_hdr_value_str(httpd_req_t*r,const char*,char*b,size_t n){if(r->readFail||n<=r->authorization.size())return -1;memcpy(b,r->authorization.data(),r->authorization.size());b[r->authorization.size()]=0;return 0;}
-int httpd_resp_set_status(httpd_req_t*r,const char*v){r->status=v;return 0;}
-int httpd_resp_set_type(httpd_req_t*,const char*){return 0;}
-int httpd_resp_set_hdr(httpd_req_t*r,const char*k,const char*v){if(std::string(k)=="WWW-Authenticate")r->realm=v;if(std::string(k)=="Cache-Control")r->cache=v;return 0;}
-int httpd_resp_send(httpd_req_t*r,const char*b,size_t n){r->body.assign(b,n);return 0;}
-bool encodeFail=false;
-int esp_crypto_base64_encode(unsigned char*out,size_t capacity,size_t*written,const unsigned char*data,size_t size){
- const char*alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string result;
- for(size_t i=0;i<size;i+=3){unsigned n=unsigned(data[i])<<16;if(i+1<size)n|=unsigned(data[i+1])<<8;if(i+2<size)n|=data[i+2];result+=alphabet[(n>>18)&63];result+=alphabet[(n>>12)&63];result+=(i+1<size?alphabet[(n>>6)&63]:'=');result+=(i+2<size?alphabet[n&63]:'=');}
- if(!out||capacity<result.size()+1){*written=result.size()+1;return -1;}if(encodeFail)return -1;
- memcpy(out,result.c_str(),result.size()+1);*written=result.size();return 0;
+using esp_err_t=int;constexpr int ESP_OK=0,HTTP_GET=0,HTTP_POST=1;
+struct httpd_req_t{const char*uri="/";int method=HTTP_GET,content_len=0,calls=0;size_t offset=0;bool headerFail=false,readFail=false;std::string body,response,status="200 OK",type;std::map<std::string,std::string> headers,out;};
+inline size_t httpd_req_get_hdr_value_len(httpd_req_t*r,const char*k){return r->headers[k].size();}
+inline int httpd_req_get_hdr_value_str(httpd_req_t*r,const char*k,char*b,size_t n){auto&v=r->headers[k];if(r->headerFail||v.size()>=n)return -1;memcpy(b,v.data(),v.size());b[v.size()]=0;return 0;}
+inline int httpd_req_recv(httpd_req_t*r,char*b,size_t n){if(r->readFail)return -1;size_t got=std::min({n,size_t(3),r->body.size()-r->offset});memcpy(b,r->body.data()+r->offset,got);r->offset+=got;return got;}
+inline int httpd_resp_set_status(httpd_req_t*r,const char*v){r->status=v;return 0;}
+inline int httpd_resp_set_type(httpd_req_t*r,const char*v){r->type=v;return 0;}
+inline int httpd_resp_set_hdr(httpd_req_t*r,const char*k,const char*v){r->out[k]=v;return 0;}
+inline int httpd_resp_send(httpd_req_t*r,const char*b,size_t n){r->response.assign(b,n);return 0;}
+''')
+(STUB/'esp_timer.h').write_text('#pragma once\n#include <cstdint>\nextern uint64_t now;inline uint64_t esp_timer_get_time(){return now;}\n')
+(STUB/'mbedtls/base64.h').write_text(r'''#pragma once
+#include <string>
+inline int mbedtls_base64_decode(unsigned char*out,size_t cap,size_t*count,const unsigned char*in,size_t n){
+ const std::string alphabet="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";unsigned value=0,bits=0;*count=0;
+ for(size_t i=0;i<n;++i){if(in[i]=='=')break;auto digit=alphabet.find(char(in[i]));if(digit==std::string::npos)return -1;value=(value<<6)|digit;bits+=6;if(bits>=8){bits-=8;if(*count>=cap)return -1;out[(*count)++]=(value>>bits)&255;}}return 0;
 }
-int target(httpd_req_t*r){++r->calls;return 17;}
-'''+source+r'''
-int main(){
- httpd_req_t r;init_basic_auth();assert(!basic_auth_configured());assert(basic_auth_request_filter(&r,target)==17&&r.calls==1);
- wlan_config.http_username="admin";wlan_config.http_password="test-password";init_basic_auth();assert(basic_auth_configured());
- const std::string correct="Basic YWRtaW46dGVzdC1wYXNzd29yZA==";
- auto reject=[&](const std::string&value,bool readFail=false){r={};r.authorization=value;r.readFail=readFail;assert(basic_auth_request_filter(&r,target)==0);assert(!r.calls&&r.status=="401 Unauthorized"&&r.cache=="no-store"&&r.realm.find("AIEdge")!=std::string::npos);};
- for(size_t n=0;n<correct.size();++n)reject(correct.substr(0,n));
- reject(correct+"x");reject(std::string(10000,'a'));reject(correct,true);
- for(size_t n=0;n<correct.size();++n){auto value=correct;value[n]='\0';reject(value);value=correct;value[n]^=1;reject(value);}
- r={};r.authorization=correct;assert(basic_auth_request_filter(&r,target)==17&&r.calls==1);
- wlan_config.http_password=std::string(10000,'z');r={};r.authorization=correct;assert(basic_auth_request_filter(&r,target)==17); // owned active snapshot
- wlan_config.http_password="";init_basic_auth();assert(!basic_auth_configured());reject(correct);
- wlan_config.http_username="";wlan_config.http_password="x";init_basic_auth();reject(correct);
- wlan_config.http_username="a:b";init_basic_auth();reject(correct);
- wlan_config.http_username="admin";wlan_config.http_password="test-password";encodeFail=true;init_basic_auth();reject(correct);encodeFail=false;
- init_basic_auth();assert(basic_auth_configured());wlan_config.http_username="";wlan_config.http_password="";init_basic_auth();assert(!basic_auth_configured());r={};assert(basic_auth_request_filter(&r,target)==17);
+''')
+cpp=OUT/'http.cpp';cpp.write_text(r'''
+#include "credential_test_backend.h"
+#include "WebsiteHttp.h"
+#include <string>
+uint64_t now=0;
+int target(httpd_req_t*r){++r->calls;return 777;}
+std::string encode(const std::string&s){const char*a="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";std::string out="Basic ";for(size_t i=0;i<s.size();i+=3){unsigned n=unsigned(uint8_t(s[i]))<<16;if(i+1<s.size())n|=unsigned(uint8_t(s[i+1]))<<8;if(i+2<s.size())n|=uint8_t(s[i+2]);out+=a[(n>>18)&63];out+=a[(n>>12)&63];out+=i+1<s.size()?a[(n>>6)&63]:'=';out+=i+2<s.size()?a[n&63]:'=';}return out;}
+int main(){Fake f;WebsiteAccess state(f);WebsiteHttp http(state);httpd_req_t r;
+ http.handle(&r,target);assert(r.status=="503 Service Unavailable"&&!r.calls);http.initialize();
+ r={};http.handle(&r,target);assert(r.status=="200 OK"&&r.response.find("Create a website password")!=std::string::npos&&!r.calls);
+ r={};r.uri="/?installed=123";http.handle(&r,target);assert(r.status=="200 OK"&&r.response.find("Create a website password")!=std::string::npos&&!r.calls);
+ for(auto path:{"/sysinfo","/img_tmp/alg.jpg","/fileserver/config/config.ini","/stream","/bundle_install","/status","/debug-log","/networks","/auth/setup?x"}){r={};r.uri=path;http.handle(&r,target);assert(r.status=="423 Locked"&&!r.calls);}
+ std::string token;char hex[3];for(unsigned i=1;i<=32;++i){snprintf(hex,sizeof hex,"%02x",i);token+=hex;}
+ auto setup=[&](const std::string&t,const std::string&p,bool readFail=false){r={};r.uri="/auth/setup";r.method=HTTP_POST;r.headers["X-AIEdge-Setup"]=t;r.body=p;r.content_len=p.size();r.readFail=readFail;http.handle(&r,target);};
+ const std::string pass(reinterpret_cast<const char*>(password));setup("",pass);assert(r.status=="400 Bad Request"&&f.writes==0);setup(std::string(64,'g'),pass);assert(r.status=="400 Bad Request"&&f.writes==0);setup(token,"short");assert(r.status=="400 Bad Request"&&f.writes==0);setup(token,pass,true);assert(r.status=="400 Bad Request"&&f.writes==0);setup(token,pass);assert(r.status=="200 OK"&&http.configured()&&f.writes==1);setup(token,pass);assert(r.status=="409 Conflict"&&f.writes==1);
+ const auto correct=encode("admin:"+pass);
+ for(auto path:{"/","/sysinfo","/img_tmp/alg.jpg","/fileserver/config/config.ini","/stream","/bundle_install","/status","/debug-log","/networks"}){r={};r.uri=path;http.handle(&r,target);assert(r.status=="401 Unauthorized"&&!r.calls&&r.out["WWW-Authenticate"].find("AIEdge")!=std::string::npos);r={};r.uri=path;r.headers["Authorization"]=correct;assert(http.handle(&r,target)==777&&r.calls==1);}
+ r={};r.headers["Authorization"]=correct;r.headerFail=true;http.handle(&r,target);assert(r.status=="401 Unauthorized"&&!r.calls);
+ for(auto bad:{encode("other:"+pass),std::string(300,'a'),std::string("Basic !")}){r={};r.headers["Authorization"]=bad;http.handle(&r,target);assert(r.status=="401 Unauthorized"&&!r.calls);}
+ r={};r.headers["Authorization"]=encode("admin:wrong");http.handle(&r,target);assert(r.status=="401 Unauthorized");r={};r.headers["Authorization"]=encode("admin:anotherwrong");http.handle(&r,target);assert(r.status=="429 Too Many Requests");r={};r.headers["Authorization"]=correct;assert(http.handle(&r,target)==777);
+ f.readError=true;http.initialize();r={};r.headers["Authorization"]=correct;http.handle(&r,target);assert(r.status=="503 Service Unavailable"&&!r.calls);
+ Fake noRandom;noRandom.randomError=true;WebsiteAccess a(noRandom);WebsiteHttp h(a);h.initialize();r={};h.handle(&r,target);assert(r.status=="503 Service Unavailable");
 }
-''',encoding='utf-8')
-exe=cpp.with_suffix('.exe')
-env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(OUT/'zig-global-cache'),ZIG_LOCAL_CACHE_DIR=str(OUT/'zig-local-cache'))
-subprocess.run([sys.executable,'-m','ziglang','c++','-std=c++11','-O2','-UNDEBUG',str(cpp),'-o',str(exe)],check=True,env=env)
+''')
+env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(OUT/'global'),ZIG_LOCAL_CACHE_DIR=str(OUT/'local'));exe=OUT/'http.exe'
+subprocess.run([sys.executable,'-m','ziglang','c++','-std=c++11','-O2','-UNDEBUG','-I'+str(STUB),'-I'+str(ROOT/'shared'),'-I'+str(ROOT/'tools/auth-tests'),str(cpp),'-o',str(exe)],check=True,env=env)
 subprocess.run([str(exe)],check=True)
-result={'passed':True,'actual_filter_source':True,'http_and_base64_adapters':True,'hardware_verified':False,'coverage':['missing/wrong/truncated/oversized headers','every embedded NUL and single-byte mutation','header read failure','exact valid credential','owned credential snapshot','partial configuration fails closed','encoder failure fails closed','reinitialization clears old credentials']}
-(OUT/'results.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
+print('PASS: actual HTTP gate setup/read/write/access failure paths with HTTP/base64/clock/backend substitutes; no hardware claim')

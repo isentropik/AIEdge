@@ -1,7 +1,6 @@
 #pragma once
-#include "../../../shared/WebsiteAccess.h"
+#include "../../../shared/WebsiteHttp.h"
 namespace AIEdgeAuth {
-// Startup and the single HTTP server task own access. Callers must not race
-// initialize/setup/check/change from background tasks.
-WebsiteAccess& deviceWebsiteAccess();
+// Startup and the single HTTP server task own access. No concurrent mutation.
+WebsiteHttp& deviceWebsiteHttp();
 }
