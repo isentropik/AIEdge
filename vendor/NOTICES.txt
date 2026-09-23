@@ -1,4 +1,4 @@
-AIEdge bundles ESP Web Tools 10.4.0 with faster USB flashing and one slow fallback, USB discovery recovery, erase-label wording and a password visibility eye button in tools/build.mjs.
+AIEdge bundles ESP Web Tools 10.4.0 with faster USB flashing and one slow fallback, USB discovery recovery, erase-label wording, readable Wi-Fi request errors and a password visibility eye button in tools/build.mjs.
 Upstream: https://github.com/esphome/esp-web-tools
 Browser flashing remains upstream work. AIEdge does not claim authorship of bundled dependencies.
 
