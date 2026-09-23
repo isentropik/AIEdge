@@ -1,8 +1,14 @@
 # Test-board processing measurements
 
-## Pending alignment preview optimization
+## Alignment preview optimization: test-board comparison
 
-The alignment stage encoded the raw frame into its preview buffer, then overwrote that JPEG with the annotated preview during the same successful stage. The local change removes the first encode and initializes/clears the cached preview length so a failed stage cannot expose an uninitialized or stale length. Rotation, alignment and the final annotated encoding remain in place. A test executes the actual method with image-operation substitutes and checks both alignment modes and temporary-image allocation failure. This establishes call/control behavior, not image parity or a measured speedup. On-device timing and preview checks remain pending.
+The alignment stage encoded the raw frame into its preview buffer, then overwrote that JPEG with the annotated preview during the same successful stage. The change removes the first encode and initializes/clears the cached preview length so a failed stage cannot expose an uninitialized or stale length. Rotation, alignment and the final annotated encoding remain in place. A test executes the actual method with image-operation substitutes and checks both alignment modes and temporary-image allocation failure. This establishes call/control behavior, not pixel parity.
+
+One normal-camera cycle per build, at 240 MHz with lighting and external publication disabled, measured the alignment/preview stage at 3.887154 seconds before and 3.498432 seconds after: 0.388722 seconds (about 10%) less in this pair. Capture/decode took 6.485778 and 6.592962 seconds respectively. Both final preview JPEGs decoded to 640 by 480 pixels. The images were separate captures, so their different hashes do not measure pixel parity. Both recognition stages rejected the scene; there were zero accepted readings. This limited comparison does not establish successful meter-reading latency, sustained performance or the 30-second goal.
+
+The optimized application SHA-256 is `0c3545b5840286f02907cd505d7af217373575955a3323ed5b5957363b27ac8b`, source commit `9c63109`. Its compressed OTA completed staging, application writing and verified reboot, retaining configuration and website authentication. Both measurement trials restored the original configuration byte-for-byte and verified a subsequent boot. Private evidence is in `preview-encode-baseline`, `preview-encode-after` and `aiedge-preview-encode-candidate/ota` under the workspace firmware-port-tests directory.
+
+## Earlier fixed-frame CPU comparison
 
 September 23, 2026. Firmware application SHA-256 `191b738f6a1e2a60f7bce6fbe99cc42855eedbb89a24975c82ae68d25114a1ce`.
 

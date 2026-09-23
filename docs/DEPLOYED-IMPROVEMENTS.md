@@ -4,6 +4,10 @@
 
 This archive records released changes and their actual evidence. It does not imply every feature has passed long-term testing. Local-only edits stay in the open backlog.
 
+## Test-board alignment preview encoding — September 23, 2026
+
+Removed a raw-preview JPEG encode that was overwritten by the annotated preview during the same stage. Preview length is initialized and cleared before processing. The actual-method host test covers both alignment modes and temporary-image allocation failure. After deployment, one before/after hardware pair measured the stage at 3.887154 and 3.498432 seconds; both previews decoded at 640 by 480. Both trials restored configuration exactly. Recognition rejected both scenes, so this is not accepted-reading accuracy or full-cycle performance evidence. See [measurement scope and evidence](PERFORMANCE-MEASUREMENTS.md).
+
 ## Test-board authentication and USB recovery — September 23, 2026
 
 The private test application now requires website authentication. USB password setup and password-only recovery passed; configuration bytes and the Wi-Fi connection were preserved. An authenticated OTA using an uncompressed ZIP completed installation and restart with the password retained. The corrected application also accepted a console command immediately after binary installer traffic, without the previous extra-newline workaround. The loader version of that boundary fix remains unverified on hardware. These results do not establish encrypted transport, power-loss recovery or a public release.
@@ -14,7 +18,9 @@ USB recording identified SDMMC `ESP_ERR_NO_MEM` while reading a compressed ZIP. 
 
 The fix was installed through authenticated OTA using an uncompressed package. Restart verification confirmed the expected running bundle, unchanged configuration and retained website password. A new compressed staging-only trial then verified all runtime files successfully; USB recording contained no staging or SD read/write failures. The probe was not installed. Allocator host checks cover PSRAM-only requests, multiplication overflow and failed-reallocation preservation; device staging regression checks and the ESP32 build also passed.
 
-Private evidence: `aiedge-zip-memory-candidate/ota/result.json` and `aiedge-compressed-memory-probe/ota/result.json` under the workspace firmware-port-tests directory. This is one successful compressed staging trial, not sustained-load, power-loss or public-release validation. Broader update/recovery coverage remains in the open backlog.
+The subsequent preview-encoding candidate also completed a full authenticated OTA from a compressed package: staging, application write, reboot and running-bundle verification passed. Configuration bytes and the website password remained unchanged. This adds one complete compressed installation, not sustained-load or power-loss validation.
+
+Private evidence: `aiedge-zip-memory-candidate/ota/result.json`, `aiedge-compressed-memory-probe/ota/result.json` and `aiedge-preview-encode-candidate/ota/result.json` under the workspace firmware-port-tests directory. These private test packages are not public releases. Broader update/recovery coverage remains in the open backlog.
 
 ## 0.1.10 development release — September 22, 2026
 
