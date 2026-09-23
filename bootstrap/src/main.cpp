@@ -26,6 +26,8 @@
 #include "esp_ota_ops.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_mac.h"
+#include "DeviceIdentity.h"
 #include "mdns.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -44,6 +46,7 @@ static std::atomic<unsigned> downloaded{0};
 static EventGroupHandle_t wifi_events;
 static bool sd_ready=false;
 static std::string ssid,password;
+static std::string device_hostname;
 static std::atomic<bool> wifi_saved{false};
 static std::string download_error;
 static std::atomic<int> scan_state{0}; // 1 scanning, 2 results ready, -1 failed
@@ -62,7 +65,7 @@ static void improv_error(uint8_t error){improv_send(AIEdgeImprov::frame(2,{error
 static std::string device_url(){
  esp_netif_ip_info_t info{};auto* netif=esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
  if(netif&&esp_netif_get_ip_info(netif,&info)==ESP_OK&&info.ip.addr){char url[64];snprintf(url,sizeof url,"http://" IPSTR,IP2STR(&info.ip));return url;}
- return "http://aiedge.local";
+ return "http://"+device_hostname+".local";
 }
 static bool read_saved_wifi(std::string& name,std::string& pass){
  nvs_handle_t h;if(nvs_open("aiedge_setup",NVS_READONLY,&h)!=ESP_OK)return false;
@@ -88,7 +91,7 @@ static bool supported_ap(const wifi_ap_record_t& ap){
  return ap.authmode==WIFI_AUTH_OPEN||ap.authmode==WIFI_AUTH_WPA_PSK||ap.authmode==WIFI_AUTH_WPA2_PSK||ap.authmode==WIFI_AUTH_WPA_WPA2_PSK||ap.authmode==WIFI_AUTH_WPA2_WPA3_PSK;
 }
 static const char* description(int n) {
- switch(n){case 0:return "Ready for Wi-Fi setup";case 1:return "Connecting to Wi-Fi";case 2:return "Downloading AIEdge";case 3:return "Verifying package and SD files";case 4:return "Installing verified firmware";case 5:return "Installed. Restarting; open aiedge.local";case 6:return "Setting the clock for secure download";
+ switch(n){case 0:return "Ready for Wi-Fi setup";case 1:return "Connecting to Wi-Fi";case 2:return "Downloading AIEdge";case 3:return "Verifying package and SD files";case 4:return "Installing verified firmware";case 5:return "Installed. Restarting; open the device address below";case 6:return "Setting the clock for secure download";
  case -1:return "SD card could not mount; nothing formatted";case -2:return "Wi-Fi connection failed";case -3:return "Package download failed; check Internet access and retry";case -4:return "Package verification failed";case -5:return "Could not save initial configuration";case -6:return "Firmware installation failed; loader retained";case -7:return "Could not synchronize time; check Internet access and retry";case -8:return "Wi-Fi connected, but saving credentials failed. Settings will not survive a restart.";default:return "Setup error";}
 }
 static std::string digest_partition(const esp_partition_t* p) {
@@ -97,7 +100,7 @@ static std::string digest_partition(const esp_partition_t* p) {
 }
 static bool save_wifi() {
  const char* path="/sdcard/wlan.ini";struct stat st{};
- std::string data="ssid = \""+ssid+"\"\npassword = \""+password+"\"\nhostname = \"aiedge\"\n";
+ std::string data="ssid = \""+ssid+"\"\npassword = \""+password+"\"\nhostname = \""+device_hostname+"\"\n";
  if(stat(path,&st)==0){ // Retry only with exactly the saved configuration.
   FILE* old=fopen(path,"rb");if(!old)return false;char bytes[256];
   size_t n=fread(bytes,1,sizeof bytes,old);bool same=!ferror(old)&&n==data.size()&&!memcmp(bytes,data.data(),n);fclose(old);return same;
@@ -112,11 +115,11 @@ static bool save_wifi() {
  return ok&&rename("/sdcard/aiedge-wlan.pending",path)==0;
 }
 static bool release_url(const std::string& url){
- return url.size()<=4096&&(url.rfind("https://github.com/",0)==0||url.rfind("https://release-assets.githubusercontent.com/",0)==0||url.rfind("https://objects.githubusercontent.com/",0)==0);
+ return url.size()<=AIEdgeIdentity::maxReleaseUrlBytes&&(url.rfind("https://github.com/",0)==0||url.rfind("https://release-assets.githubusercontent.com/",0)==0||url.rfind("https://objects.githubusercontent.com/",0)==0);
 }
 static esp_err_t download_event(esp_http_client_event_t* event){
  if(event->event_id==HTTP_EVENT_ON_HEADER&&event->header_key&&event->header_value&&!strcasecmp(event->header_key,"Location")){
-  auto* location=static_cast<std::string*>(event->user_data);if(strlen(event->header_value)<=4096)*location=event->header_value;
+  auto* location=static_cast<std::string*>(event->user_data);if(strlen(event->header_value)<=AIEdgeIdentity::maxReleaseUrlBytes)*location=event->header_value;
  }return ESP_OK;
 }
 static void download_failure(const std::string& message){SetupGuard guard;download_error=message;printf("AIEdge download: %s\n",message.c_str());}
@@ -125,7 +128,7 @@ static bool fetch_package() {
  std::string url=PACKAGE_URL,location;esp_http_client_handle_t client=nullptr;bool ok=false;
  for(int attempt=0;attempt<4;++attempt){
   if(!release_url(url))break;
-  esp_http_client_config_t cfg={};cfg.url=url.c_str();cfg.timeout_ms=10000;cfg.disable_auto_redirect=true;cfg.buffer_size=4096;cfg.crt_bundle_attach=esp_crt_bundle_attach;cfg.event_handler=download_event;cfg.user_data=&location;
+  esp_http_client_config_t cfg={};cfg.url=url.c_str();cfg.timeout_ms=10000;cfg.disable_auto_redirect=true;cfg.buffer_size=4096;cfg.buffer_size_tx=AIEdgeIdentity::httpRequestBufferBytes;cfg.crt_bundle_attach=esp_crt_bundle_attach;cfg.event_handler=download_event;cfg.user_data=&location;
   location.clear();client=esp_http_client_init(&cfg);if(!client)break;
   auto opened=esp_http_client_open(client,0);
   if(opened==ESP_OK){
@@ -207,7 +210,7 @@ static void wifi_event(void*,esp_event_base_t base,int32_t id,void* data) {
 }
 
 static esp_err_t home(httpd_req_t* req){httpd_resp_set_type(req,"text/html");return httpd_resp_send(req,page,HTTPD_RESP_USE_STRLEN);}
-static esp_err_t status(httpd_req_t* req){int n=phase; cJSON* j=cJSON_CreateObject();cJSON_AddNumberToObject(j,"phase",n);cJSON_AddStringToObject(j,"message",description(n));cJSON_AddBoolToObject(j,"wifi_connected",(xEventGroupGetBits(wifi_events)&1)!=0);cJSON_AddBoolToObject(j,"wifi_saved",wifi_saved);{SetupGuard guard;cJSON_AddStringToObject(j,"detail",download_error.c_str());}cJSON_AddNumberToObject(j,"progress",100.0*downloaded/PACKAGE_BYTES);char* s=cJSON_PrintUnformatted(j);httpd_resp_set_type(req,"application/json");auto r=httpd_resp_send(req,s,HTTPD_RESP_USE_STRLEN);cJSON_free(s);cJSON_Delete(j);return r;}
+static esp_err_t status(httpd_req_t* req){int n=phase; cJSON* j=cJSON_CreateObject();cJSON_AddNumberToObject(j,"phase",n);cJSON_AddStringToObject(j,"hostname",device_hostname.c_str());cJSON_AddStringToObject(j,"device_url",device_url().c_str());cJSON_AddStringToObject(j,"message",description(n));cJSON_AddBoolToObject(j,"wifi_connected",(xEventGroupGetBits(wifi_events)&1)!=0);cJSON_AddBoolToObject(j,"wifi_saved",wifi_saved);{SetupGuard guard;cJSON_AddStringToObject(j,"detail",download_error.c_str());}cJSON_AddNumberToObject(j,"progress",100.0*downloaded/PACKAGE_BYTES);char* s=cJSON_PrintUnformatted(j);httpd_resp_set_type(req,"application/json");auto r=httpd_resp_send(req,s,HTTPD_RESP_USE_STRLEN);cJSON_free(s);cJSON_Delete(j);return r;}
 // Both HTTP and USB provision through this one serialized operation.
 static bool begin_wifi(const std::string& name,const std::string& pass,bool from_serial){
  SetupGuard guard;
@@ -263,7 +266,7 @@ static void improv_command(const AIEdgeImprov::Bytes& data){
   improv_state(current_improv_state());
   if(current_improv_state()==4)improv_send(AIEdgeImprov::result(2,{device_url()}));
   break;
- case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.2-dev.20260922","ESP32","AIEdge"}));break;
+ case 3:improv_send(AIEdgeImprov::result(3,{"AIEdge Wi-Fi loader","0.1.3-dev.20260922","ESP32",device_hostname}));break;
  case 4:
   if(begin_scan())serial_scan_pending=true;
   else improv_send(AIEdgeImprov::result(4,{}));
@@ -312,13 +315,14 @@ static esp_err_t scan_results(httpd_req_t* req){
  auto result=httpd_resp_send(req,json,HTTPD_RESP_USE_STRLEN);cJSON_free(json);cJSON_Delete(root);return result;
 }
 extern "C" void app_main(){
+ uint8_t station_mac[6];ESP_ERROR_CHECK(esp_read_mac(station_mac,ESP_MAC_WIFI_STA));device_hostname=AIEdgeIdentity::hostname(station_mac);
  setup_lock=xSemaphoreCreateMutex();configASSERT(setup_lock);
  gpio_set_direction(GPIO_NUM_4,GPIO_MODE_OUTPUT);gpio_set_level(GPIO_NUM_4,0);
  sdmmc_host_t host=SDMMC_HOST_DEFAULT();sdmmc_slot_config_t slot=SDMMC_SLOT_CONFIG_DEFAULT();slot.width=1;slot.flags|=SDMMC_SLOT_FLAG_INTERNAL_PULLUP;gpio_set_pull_mode(GPIO_NUM_13,GPIO_PULLUP_ONLY);
  esp_vfs_fat_sdmmc_mount_config_t cfg={};cfg.format_if_mount_failed=false;cfg.max_files=8;sdmmc_card_t* card=nullptr;
  sd_ready=esp_vfs_fat_sdmmc_mount("/sdcard",&host,&slot,&cfg,&card)==ESP_OK;if(!sd_ready)phase=-1;
  auto nvs=nvs_flash_init();if(nvs==ESP_ERR_NVS_NO_FREE_PAGES||nvs==ESP_ERR_NVS_NEW_VERSION_FOUND){ESP_ERROR_CHECK(nvs_flash_erase());nvs=nvs_flash_init();}ESP_ERROR_CHECK(nvs);
- ESP_ERROR_CHECK(esp_netif_init());ESP_ERROR_CHECK(esp_event_loop_create_default());esp_netif_create_default_wifi_ap();auto* sta=esp_netif_create_default_wifi_sta();esp_netif_set_hostname(sta,"aiedge");wifi_events=xEventGroupCreate();
+ ESP_ERROR_CHECK(esp_netif_init());ESP_ERROR_CHECK(esp_event_loop_create_default());esp_netif_create_default_wifi_ap();auto* sta=esp_netif_create_default_wifi_sta();ESP_ERROR_CHECK(esp_netif_set_hostname(sta,device_hostname.c_str()));wifi_events=xEventGroupCreate();
  wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();ESP_ERROR_CHECK(esp_wifi_init(&init));ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
  ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,nullptr));ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,nullptr));
  wifi_config_t ap={};strcpy(reinterpret_cast<char*>(ap.ap.ssid),"AIEdge-Setup");strcpy(reinterpret_cast<char*>(ap.ap.password),"AIEdgeSetup");ap.ap.authmode=WIFI_AUTH_WPA2_PSK;ap.ap.max_connection=2;
@@ -332,10 +336,10 @@ extern "C" void app_main(){
  // Advertise on the setup AP as well as the connected home network.
  // Name discovery is optional: keep the IP setup page working if it fails.
  esp_err_t discovery=mdns_init();
- if(discovery==ESP_OK)discovery=mdns_hostname_set("aiedge");
+ if(discovery==ESP_OK)discovery=mdns_hostname_set(device_hostname.c_str());
  if(discovery==ESP_OK)discovery=mdns_instance_name_set("AIEdge setup");
  if(discovery==ESP_OK)discovery=mdns_service_add(nullptr,"_http","_tcp",80,nullptr,0);
- if(discovery==ESP_OK)printf("AIEdge setup name discovery ready: http://aiedge.local\n");
+ if(discovery==ESP_OK)printf("AIEdge setup name discovery ready: http://%s.local\n",device_hostname.c_str());
  else printf("AIEdge name discovery unavailable (%s); use http://192.168.4.1\n",esp_err_to_name(discovery));
  uart_config_t serial_cfg={};serial_cfg.baud_rate=115200;serial_cfg.data_bits=UART_DATA_8_BITS;serial_cfg.parity=UART_PARITY_DISABLE;serial_cfg.stop_bits=UART_STOP_BITS_1;serial_cfg.flow_ctrl=UART_HW_FLOWCTRL_DISABLE;serial_cfg.source_clk=UART_SCLK_DEFAULT;
  if(uart_param_config(UART_NUM_0,&serial_cfg)==ESP_OK&&uart_driver_install(UART_NUM_0,2048,0,0,nullptr,0)==ESP_OK){

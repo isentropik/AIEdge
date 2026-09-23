@@ -29,3 +29,11 @@ Visit Device shows connection and installation status. If Wi-Fi is connected but
 The loader and installed device pages have a **Theme** selector: System, Light or Dark. The choice is saved in that browser for the device address. Images and calibration canvases are not recolored.
 
 Validation: firmware compilation, host persistence tests (restart, malformed records, failed replacement save and unchanged-credential write avoidance), local package staging and browser theme/retry presentation checks passed. The reported device download failure still needs its detailed device-side error; this release does not claim the download root cause is resolved. Full hardware installation and reconnect testing remain necessary.
+
+## Unique hostname and GitHub download fix (0.1.3 loader)
+
+The default hostname is `aiedge-xxxxxx`, using the last three bytes of the Wi-Fi station MAC address in lowercase hexadecimal. DHCP, mDNS and the generated SD Wi-Fi configuration all use that same name. For example, `20:9b:a9:74:4b:20` becomes `aiedge-744b20.local`. The setup page shows the board's address. The setup hotspot name remains AIEdge-Setup.
+
+The downloader now sizes its HTTP transmit buffer for the full bounded redirect URL plus the request-line overhead. The ESP-IDF default was 512 bytes; an observed GitHub release redirect required an 890-byte request line. This fixes a verified source-level failure before downloading any package bytes. TLS verification, allowed redirect hosts, byte count and SHA-256 checks remain enforced. Complete hardware download validation remains pending.
+
+This loader continues to use the immutable 0.1.2 application package. The new interface redesign remains a separate local preview. Existing SD Wi-Fi files are not silently overwritten; a mismatch stops installation for review.
