@@ -11,7 +11,16 @@ function replaceOnce(text,from,to) {
  if(text.split(from).length!==2) throw new Error('Upstream patch anchor changed: '+from.slice(0,80));
  return text.replace(from,to);
 }
-await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,'esp-web-tools-aiedge.js'),bundle:true,format:'esm',target:'es2022',minify:true,legalComments:'eof',banner:{js:'/* ESP Web Tools 10.4.0, ESPHome / Open Home Foundation, Apache-2.0. Modified by AIEdge for bounded USB discovery recovery. See NOTICES.txt. */'},plugins:[{name:'aiedge-discovery',setup(b){
+await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,'esp-web-tools-aiedge.js'),bundle:true,format:'esm',target:'es2022',minify:true,legalComments:'eof',banner:{js:'/* ESP Web Tools 10.4.0, ESPHome / Open Home Foundation, Apache-2.0. AIEdge setup and USB speed changes; see NOTICES.txt. */'},plugins:[{name:'aiedge-discovery',setup(b){
+ b.onLoad({filter:/esp-web-tools[\\/]dist[\\/]flash\.js$/},async args=>{
+  let s=await fs.readFile(args.path,'utf8');
+  s="import {flashWithSpeedFallback} from "+JSON.stringify(path.join(here,'flash-speed.mjs'))+";\n"+s;
+  s=replaceOnce(s,'export const flash = async (onEvent, port, manifestPath, manifest, eraseFirst) => {',
+    'const flashOnce = async (onEvent, port, manifestPath, manifest, eraseFirst, baudrate) => {');
+  s=replaceOnce(s,'baudrate: 115200,','baudrate,');
+  s+='\nexport const flash = (onEvent, port, manifestPath, manifest, eraseFirst) => flashWithSpeedFallback((events, baud, erase) => flashOnce(events, port, manifestPath, manifest, erase, baud), onEvent, eraseFirst);\n';
+  return {contents:s,loader:'js',resolveDir:path.dirname(args.path)};
+ });
  b.onLoad({filter:/esp-web-tools[\\/]dist[\\/]install-dialog\.js$/},async args=>{
   let s=await fs.readFile(args.path,'utf8');
   s="import {Transport, HardReset} from 'esptool-js';\nimport {discoverWithRecovery} from "+JSON.stringify(path.join(here,'discovery.mjs'))+";\n"+s;
@@ -38,6 +47,7 @@ await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,
   });
   this._aiedgeStatus=undefined;`);
   s=replaceOnce(s,'this._renderProgress("Connecting")','this._renderProgress(this._aiedgeStatus || "Connecting")');
+  s=replaceOnce(s,'this._renderProgress("Preparing installation")','this._renderProgress(this._installState?.message || "Preparing installation")');
   s=replaceOnce(s,'undeterminateLabel = "Wrapping up";','undeterminateLabel = this._aiedgeStatus || "Detecting Wi-Fi setup";');
   s=replaceOnce(s,'label="Installation complete!"','.label=${supportsImprov ? "Loader installed. Wi-Fi setup is ready." : "Loader installed, but Wi-Fi setup did not respond after one automatic restart. Open Logs & Console to diagnose."}');
   s=replaceOnce(s,'supportsImprov && this._installErase','supportsImprov');
@@ -73,7 +83,7 @@ await build({entryPoints:[path.join(here,'entry.mjs')],outfile:path.join(output,
  });
 }}]});
 // Retain upstream and bundled dependency licenses, not just minifier comments.
-let notices='AIEdge bundles ESP Web Tools 10.4.0 with USB discovery recovery, erase-label wording and a password visibility eye button in tools/build.mjs.\nUpstream: https://github.com/esphome/esp-web-tools\nBrowser flashing remains upstream work. AIEdge does not claim authorship of bundled dependencies.\n\n';
+let notices='AIEdge bundles ESP Web Tools 10.4.0 with faster USB flashing and one slow fallback, USB discovery recovery, erase-label wording and a password visibility eye button in tools/build.mjs.\nUpstream: https://github.com/esphome/esp-web-tools\nBrowser flashing remains upstream work. AIEdge does not claim authorship of bundled dependencies.\n\n';
 async function visit(dir){for(const ent of await fs.readdir(dir,{withFileTypes:true})){
  if(!ent.isDirectory()||ent.name==='.bin'||ent.name==='@esbuild'||ent.name==='esbuild')continue;
  const sub=path.join(dir,ent.name);

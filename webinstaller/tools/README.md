@@ -15,3 +15,9 @@ Automated recovery and integrity checks pass. The user is testing the physical r
 ## Wi-Fi password visibility
 
 The USB Wi-Fi dialog includes an Show password eye button inside the password field. Toggling it only changes the password field type, preserving the entered value. It does not submit credentials. The setup hotspot page uses the same eye button. `password-fixture.html` exercises the actual bundle against a simulated serial device, without connecting to hardware.
+
+## Faster USB installation
+
+`flash-speed.mjs` wraps the pinned upstream flash operation: attempt 460,800 baud, then at most one 115,200-baud retry for initialization or write errors after transport cleanup succeeds. Each attempt uses the same verified image and restarts the full write. A completed full erase is not repeated. Unsupported boards, firmware download failures, unavailable ports, permission errors and failed cleanup do not trigger this retry. Logs and Improv Wi-Fi setup remain at 115,200 baud.
+
+Run `node flash-speed.test.mjs` and `node discovery.test.mjs` before `node build.mjs`. The tests cover both speeds, bounded failure, erase preservation and failures that must not retry. Physical speed, adapter compatibility and elapsed installation time still require hardware testing.

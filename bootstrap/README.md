@@ -49,3 +49,11 @@ The former two-minute transfer limit stopped a real download before it finished.
 The HTTP server now evicts idle browser connections and reserves sockets for the downloader and name lookup. Setup requests time out visibly and retry instead of leaving a stale speed estimate; setup/status responses are not cached. This addresses a source-level connection-capacity problem, but the user's initial blank page and mDNS failure are not yet proven fixed on hardware. USB diagnostics confirmed loader 0.1.4 and the intended hostname while IP HTTP and mDNS lookups failed; the board still answered ping. Version 0.1.5 prints the mDNS initialization result after UART setup to support further diagnosis.
 
 The USB browser installer also gains a Show password eye button. It requires a website refresh, not a firmware reflash. Download display and timeout changes are firmware changes and require updating the loader. The underlying application package remains the immutable 0.1.2 package.
+
+## Start installation when ready (0.1.6 loader)
+
+Connecting Wi-Fi now stops at **Ready to download and install**. Choose **Visit Device**, then **Download and install** when ready. This also applies after restarting with saved Wi-Fi. Opening or refreshing the page never starts the download. Failed installation attempts offer a separate retry button; requests during an active installation are rejected.
+
+Package hashing yields periodically so lower-priority system tasks can run. The page and USB log report SD verification, unpacking, initial configuration, firmware writing and startup preparation separately. All package and file hashes remain enforced. These changes improve diagnostics and scheduling; they do not establish the cause or resolution of the reported post-download lockup. Loader 0.1.5 reported successful mDNS initialization, but hostname reachability remains unverified.
+
+Validation: firmware build, saved-Wi-Fi tests, connected/reboot consent gates, failed connection/save paths, SHA-256 equivalence across different chunk sizes and browser consent behavior passed. Hardware installation and recovery testing remain necessary. The main application package is unchanged.
