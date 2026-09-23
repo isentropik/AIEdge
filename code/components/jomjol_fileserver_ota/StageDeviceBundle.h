@@ -110,11 +110,13 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   BundleSink<Hash> sink(fd,item.second.bytes,trace,path);
   bool ok=extractBounded(zip,entries.at(item.first),item.second.bytes,[&](uint64_t offset,const unsigned char* data,size_t size){
            return BundleSink<Hash>::append(&sink,offset,data,size)==size;
-          })&&
-          sink.ok&&sink.written==item.second.bytes&&sink.hash.finish()==item.second.hash;
+          });
+  if(!ok)checkpoint(trace,"extract.failed",path,static_cast<uint64_t>(mz_zip_get_last_error(&zip)));
+  if(ok){ok=sink.ok&&sink.written==item.second.bytes&&sink.hash.finish()==item.second.hash;
+   if(!ok)checkpoint(trace,"extract.integrity_failed",path,sink.written);}
   checkpoint(trace,"extract.sync",path,sink.written);
-  if(ok&&fsync(fd)!=0)ok=false;
-  if(close(fd)!=0)ok=false;
+  if(ok&&fsync(fd)!=0){ok=false;checkpoint(trace,"extract.sync_failed",path,errno);}
+  if(close(fd)!=0){ok=false;checkpoint(trace,"extract.close_failed",path,errno);}
   if(!ok||!verifyFile<Hash>(path,item.second,trace))return StageResult::IoError;
  }
  entries.clear();wanted.clear();closeZip.close();

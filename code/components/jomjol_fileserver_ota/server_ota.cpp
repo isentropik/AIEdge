@@ -283,7 +283,14 @@ struct BundleFlashAdapter {
 // Not an HTTP endpoint: caller must use a worker and an approved managed route.
 MeterBundle::StageResult stageManagedBundle(const std::string& zip,const std::string& id) {
     UpdateAccess update;if(!update)return MeterBundle::StageResult::Conflict;
-    return MeterBundle::stageZip<ImageArchive::Sha256>(zip,"/sdcard/bundles",id,polar::modelIdentity);
+    const auto trace=[](const char* step,const char* path,uint64_t detail){
+        if(strstr(step,"failed")||strcmp(step,"verify.fail")==0)
+            LogFile.WriteToFile(ESP_LOG_ERROR,TAG,std::string("Bundle staging ")+step+" path="+path+" detail="+std::to_string(detail));
+    };
+    const auto result=MeterBundle::stageZip<ImageArchive::Sha256>(zip,"/sdcard/bundles",id,polar::modelIdentity,trace);
+    if(result==MeterBundle::StageResult::IoError)
+        LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Bundle staging storage error; retained pending files for inspection");
+    return result;
 }
 bool installManagedBundle(const std::string& id) {
     ProcessingAccess processing;if(!processing)return false;
