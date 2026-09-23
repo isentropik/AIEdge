@@ -43,3 +43,13 @@ Private evidence: candidate `hardware/http-verification.json`, `runtime-result.j
 The analog-only build and revised setup, settings, recognition, history and system pages are installed on the test board. Fifteen served assets matched the package byte-for-byte. Camera detection is working. A journaled configuration save and readback, stale-edit rejection (HTTP 409), and restoration of the original config all passed on hardware. Setup/save callers now stop when persistence fails.
 
 A deliberately interrupted package transfer at 589,100 bytes was rejected; the loader remained responsive. Restarting and retrying the complete package successfully installed and booted the application. This is download-interruption recovery, not proof of power-loss recovery during flash writing. The full page interaction audit, in-app Wi-Fi editing, and accurate build/version display remain open. A local browser setup-confirmation check stalled in browser automation and is not counted as passed. Public installer/release artifacts have not been updated to this test candidate.
+
+## Full-frame diagnostic and build identity — September 23, 2026
+
+Test board only, candidate application SHA-256 `191b738f6a1e2a60f7bce6fbe99cc42855eedbb89a24975c82ae68d25114a1ce`, recorded installation `recorded-20260923T085333Z`. Camera detected; application and web metadata now report the matching AIEdge build/version.
+
+The full RGB-frame diagnostic passed marker registration and all six dial preprocessing/input and inference/output byte comparisons against the frozen reference. Processing measured 27.020280 seconds, including 3.550585 seconds for registration; the separate six-vector control also matched exactly. The largest observed status-request duration during this one run was 234 ms. These are one-frame implementation-parity results, not live camera/JPEG-to-publication timing or independent reading accuracy.
+
+The first locked candidate failed cleanly because its requested 921,600-byte RGB heap block exceeded the largest available block of 901,120 bytes. The corrected candidate puts RGB in the unused verified-model workspace and separately allocates the smaller preprocessing scratch buffer. Both diagnostic paths hold camera and processing access to protect shared memory. Failure evidence is retained.
+
+The private fixture/package was transferred only to the test board; temporary server and firewall access were removed and verified. No private images were published. Public installer/release artifacts remain unchanged. Physical power-loss recovery and the complete UI interaction audit remain open.

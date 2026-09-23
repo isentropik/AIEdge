@@ -31,7 +31,7 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 ## Meter recognition and physical calculations
 
-- [ ] Extend the passing six-vector ESP32 runtime test to the actual aligned-camera path and confirmed real-image accuracy; preserve held-out data, raw hashes and uncertain labels.
+- [ ] Extend the passing full-RGB-frame ESP32 registration/preprocessing/inference parity test to actual camera capture/JPEG decoding and confirmed real-image accuracy; preserve held-out data, raw hashes and uncertain labels.
 - [ ] Validate perspective compensation, stable dial/needle pivots and glare-sensitive edge estimates across positions.
 - [ ] Cross-check the main sequence using subsequent dials; preserve leading zeros and separate raw dial positions from converted quantities.
 - [ ] Reconcile the 5 ft³ secondary revolution with the final main dial: 20 revolutions per numbered step, 200 per full main-dial revolution.
@@ -57,7 +57,6 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 - Finish interaction checks on every page, including camera/alignment editing and mobile setup completion. Read-only phone-width checks and served-asset hashes are not a substitute for saving and reloading each setting.
 - Finish in-app Wi-Fi editing; the current network page reports connection details and points to USB configuration.
-- Deploy the corrected build/version metadata. Clean and incremental builds, identity tests and matching package validation now pass; the installed board still has the earlier version display.
 - Test actual power loss during update, physical no-card/full-card behavior, and repeated Wi-Fi recovery. Download interruption recovery has passed; other cases are not implied.
 - Complete public release packaging after these remaining checks. The public installer is unchanged.
 

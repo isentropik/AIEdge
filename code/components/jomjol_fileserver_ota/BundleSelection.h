@@ -31,6 +31,8 @@ public:
    return resolve(path.substr(8),path);
   if(path=="/sdcard/config/polar-int8.tflite")
    return resolve("model/polar-int8.tflite",path);
+  if(path=="/sdcard/config/polar-runtime-frame.rgb")
+   return resolve("diagnostics/polar-runtime-frame.rgb",path);
   if(path=="/sdcard/config/polar-runtime-vectors.bin")
    return resolve("diagnostics/polar-runtime-vectors.bin",path);
   return path;

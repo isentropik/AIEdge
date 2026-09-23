@@ -507,6 +507,76 @@ esp_err_t handler_polar_test_status(httpd_req_t* req)
     return httpd_resp_send(req,json.c_str(),json.size());
 }
 
+static portMUX_TYPE polarFrameTestMux = portMUX_INITIALIZER_UNLOCKED;
+static bool polarFrameTestActive = false;
+static PolarRuntimeTestResult polarFrameTestResult;
+
+static void polarFrameTestWorker(void*)
+{
+    const auto result = runPolarFullFrameTest();
+    portENTER_CRITICAL(&polarFrameTestMux);
+    polarFrameTestResult = result;
+    polarFrameTestActive = false;
+    portEXIT_CRITICAL(&polarFrameTestMux);
+    vTaskDelete(nullptr);
+}
+
+esp_err_t handler_polar_frame_test_start(httpd_req_t* req)
+{
+    httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    if(req->content_len || httpd_req_get_url_query_len(req)) {
+        httpd_resp_set_status(req,"400 Bad Request");
+        return httpd_resp_sendstr(req,"{\"status\":\"empty_request_required\"}");
+    }
+    portENTER_CRITICAL(&polarFrameTestMux);
+    const bool busy = polarFrameTestActive;
+    if(!busy) {
+        polarFrameTestActive = true;
+        polarFrameTestResult = PolarRuntimeTestResult{};
+        polarFrameTestResult.status = "queued_or_running";
+    }
+    portEXIT_CRITICAL(&polarFrameTestMux);
+    if(busy) {
+        httpd_resp_set_status(req,"409 Conflict");
+        return httpd_resp_sendstr(req,"{\"status\":\"diagnostic_active\"}");
+    }
+    if(xTaskCreate(polarFrameTestWorker,"polar_frame_test",8192,nullptr,1,nullptr)!=pdPASS) {
+        portENTER_CRITICAL(&polarFrameTestMux);
+        polarFrameTestResult.status = "task_creation_failed";
+        polarFrameTestActive = false;
+        portEXIT_CRITICAL(&polarFrameTestMux);
+        httpd_resp_set_status(req,"503 Service Unavailable");
+        return httpd_resp_sendstr(req,"{\"status\":\"task_creation_failed\"}");
+    }
+    httpd_resp_set_status(req,"202 Accepted");
+    return httpd_resp_sendstr(req,"{\"status\":\"accepted\",\"result_url\":\"/polar_frame_test\"}");
+}
+
+esp_err_t handler_polar_frame_test_status(httpd_req_t* req)
+{
+    portENTER_CRITICAL(&polarFrameTestMux);
+    const auto result = polarFrameTestResult;
+    const bool active = polarFrameTestActive;
+    portEXIT_CRITICAL(&polarFrameTestMux);
+    std::string json = "{\"active\":" + std::string(active ? "true" : "false") +
+        ",\"status\":\"" + result.status + "\",\"verified_accuracy\":false,\"completed\":" +
+        std::to_string(result.completed) + ",\"dials\":[";
+    for(int i=0;i<result.completed;++i) {
+        if(i)json += ",";
+        json += "{\"index\":" + std::to_string(i) +
+            ",\"differing_bytes\":" + std::to_string(result.differingBytes[i]) +
+            ",\"maximum_difference\":" + std::to_string(result.maximumDifference[i]) +
+            ",\"inference_us\":" + std::to_string(result.inferenceUs[i]) + "}";
+    }
+    json += "],\"scope\":\"held_out_rgb_frame\",\"camera_capture_tested\":false,\"alignment_us\":"+std::to_string(result.alignmentUs)+",\"total_processing_us\":"+std::to_string(result.totalUs)+",\"features\":[";
+    for(int i=0;i<result.completed;++i){if(i)json+=",";json+="{\"index\":"+std::to_string(i)+",\"differing_bytes\":"+std::to_string(result.featureDifferences[i])+",\"preprocessing_us\":"+std::to_string(result.preprocessingUs[i])+"}";}
+    json += "]}";
+    httpd_resp_set_type(req,"application/json");
+    httpd_resp_set_hdr(req,"Cache-Control","no-store");
+    return httpd_resp_send(req,json.c_str(),json.size());
+}
+
 static MeterOtaHealth::Evidence observeOtaHealth()
 {
     portENTER_CRITICAL(&polarTestMux);
@@ -2276,6 +2346,12 @@ void register_server_main_flow_task_uri(httpd_handle_t server)
     camuri.method = HTTP_GET;
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_polar_test_status);
     httpd_register_uri_handler(server, &camuri);
+
+    camuri.uri = "/polar_frame_test";camuri.method=HTTP_POST;
+    camuri.handler=APPLY_BASIC_AUTH_FILTER(handler_polar_frame_test_start);
+    httpd_register_uri_handler(server,&camuri);
+    camuri.method=HTTP_GET;camuri.handler=APPLY_BASIC_AUTH_FILTER(handler_polar_frame_test_status);
+    httpd_register_uri_handler(server,&camuri);
 
     camuri.uri = "/heap";
     camuri.handler = APPLY_BASIC_AUTH_FILTER(handler_get_heap);

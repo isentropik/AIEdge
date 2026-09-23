@@ -467,7 +467,7 @@ httpd_handle_t start_webserver(void)
     config.server_port = 80;
     config.ctrl_port = 32768;
     config.max_open_sockets = 5; //20210921 --> previously 7   
-    config.max_uri_handlers = 64; // 55 current routes, including the final image and web-page handlers.
+    config.max_uri_handlers = 72; // 55 current routes, including the final image and web-page handlers.
     config.max_resp_headers = 8;                        
     config.backlog_conn = 5;                        
     config.lru_purge_enable = true; // this cuts old connections if new ones are needed.               

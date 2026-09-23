@@ -1,3 +1,4 @@
+#include "../jomjol_controlcamera/CameraAccess.h"
 #include "../jomjol_fileserver_ota/RuntimeBundle.h"
 #include "PolarRuntimeTest.h"
 #include "ProcessingAccess.h"
@@ -16,6 +17,8 @@ PolarRuntimeTestResult runPolarRuntimeTest() {
     PolarRuntimeTestResult result;
     ProcessingAccess access;
     if(!access){result.status="processing_busy";return result;}
+    CameraAccess camera;
+    if(!camera){result.status="camera_busy";return result;}
     CTfLiteClass network;
     if(!network.LoadFrozenPolarModel(MeterBundle::frozenModelPath("/sdcard/config/polar-int8.tflite")) ||
        !network.MakeAllocate() || !network.HasPolarTensorContract()) {
