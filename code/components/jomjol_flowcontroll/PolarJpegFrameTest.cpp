@@ -72,7 +72,7 @@ PolarRuntimeTestResult runPolarJpegFrameTest() {
         result.alignmentUs=esp_timer_get_time()-alignmentStart;
         for(int i=0;i<6;++i){
             vTaskDelay(1);const auto begin=esp_timer_get_time();
-            if(!polar::prepareDial(rgb.get(),inverse,i,*scratch)){
+            if(!polar::prepareDial(rgb.get(),inverse,i,*scratch,&result.preprocessingProfile[i],esp_timer_get_time)){
                 result.status="full_frame_preprocessing_rejected";return result;
             }
             result.preprocessingUs[i]=esp_timer_get_time()-begin;

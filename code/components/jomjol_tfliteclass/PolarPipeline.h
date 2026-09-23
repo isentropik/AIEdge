@@ -5,6 +5,7 @@
 #include "PolarFeatures.h"
 #include "PolarCalibration.h"
 #include "PolarVisibility.h"
+#include "PolarProfile.h"
 
 namespace polar {
 // Allocate once in PSRAM/on heap, not on the task stack. Six dials reuse buffers.
@@ -34,15 +35,22 @@ inline AlignmentStatus alignFrame(const uint8_t* rgb,int width,int height,
     inverse[5]=-(inverse[3]*forward[2]+inverse[4]*forward[5]);
     return AlignmentStatus::Ok;
 }
-inline bool prepareDial(const uint8_t* rgb,const double* inverse,int index,PipelineScratch& scratch) {
+inline bool prepareDial(const uint8_t* rgb,const double* inverse,int index,PipelineScratch& scratch,
+                        DialProfile* profile=nullptr,int64_t (*clock)()=nullptr) {
+    if(profile)*profile=DialProfile{};
     if(index<0 || index>=6)return false;
+    DialProfileTimer timing(profile,clock);
     const auto& d=dials[index];
     if(!warpCrop(rgb,640,480,inverse,d.x,d.y,d.w,d.h,scratch.crop))return false;
+    timing.next();
     if(!grayscale(scratch.crop,d.w*d.h,scratch.gray))return false;
     if(!contrastValid(scratch.gray,d.w*d.h))return false;
+    timing.next();
     if(!visibility(scratch.gray,d,scratch.samples,scratch.sorted,scratch.visibilityScore) ||
        scratch.visibilityScore<visibilityThreshold)return false;
+    timing.next();
     if(!blur04(scratch.gray,scratch.temporary,d.w,d.h))return false;
+    timing.next();
     const double pi=3.14159265358979323846;
     for(int angle=0;angle<360;++angle) {
         const double a=angle*2*pi/360;
@@ -56,6 +64,7 @@ inline bool prepareDial(const uint8_t* rgb,const double* inverse,int index,Pipel
             scratch.coordinates[k+1]=(d.inverse[3]*x+d.inverse[4]*y+d.inverse[5])/z;
         }
     }
+    timing.next();
     return features(scratch.gray,d.w,d.h,scratch.coordinates,scratch.samples,scratch.sorted,scratch.features,384*40);
 }
 }

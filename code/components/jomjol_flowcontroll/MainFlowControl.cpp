@@ -575,6 +575,15 @@ esp_err_t handler_polar_frame_test_status(httpd_req_t* req)
     }
     json += "],\"scope\":\""+std::string(result.jpegInput?"held_out_jpeg_frame":"held_out_rgb_frame")+"\",\"jpeg_decode_us\":"+std::to_string(result.decodeUs)+",\"camera_capture_tested\":false,\"alignment_us\":"+std::to_string(result.alignmentUs)+",\"total_processing_us\":"+std::to_string(result.totalUs)+",\"features\":[";
     for(int i=0;i<result.completed;++i){if(i)json+=",";json+="{\"index\":"+std::to_string(i)+",\"differing_bytes\":"+std::to_string(result.featureDifferences[i])+",\"preprocessing_us\":"+std::to_string(result.preprocessingUs[i])+"}";}
+    json += "],\"preprocessing_profile\":[";
+    for(int i=0;i<6;++i){
+        if(i)json+=",";
+        const auto& p=result.preprocessingProfile[i];
+        json+="{\"index\":"+std::to_string(i)+",\"attempted_mask\":"+std::to_string(p.attemptedMask);
+        const char* names[]={"warp_us","gray_contrast_us","visibility_us","blur_us","coordinates_us","features_us"};
+        for(int j=0;j<6;++j)json+=",\""+std::string(names[j])+"\":"+std::to_string(p.us[j]);
+        json+="}";
+    }
     json += "]}";
     httpd_resp_set_type(req,"application/json");
     httpd_resp_set_hdr(req,"Cache-Control","no-store");
