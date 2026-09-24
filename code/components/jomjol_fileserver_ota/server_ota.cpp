@@ -283,11 +283,16 @@ struct BundleFlashAdapter {
 // Not an HTTP endpoint: caller must use a worker and an approved managed route.
 MeterBundle::StageResult stageManagedBundle(const std::string& zip,const std::string& id) {
     UpdateAccess update;if(!update)return MeterBundle::StageResult::Conflict;
+    // Exclusive UpdateAccess owns this fixed buffer. Do not open the log file
+    // or allocate diagnostic strings while staging is using scarce SD/heap resources.
+    static char firstFailure[512];
+    firstFailure[0]='\0';
     const auto trace=[](const char* step,const char* path,uint64_t detail){
-        if(strstr(step,"failed")||strcmp(step,"verify.fail")==0)
-            LogFile.WriteToFile(ESP_LOG_ERROR,TAG,std::string("Bundle staging ")+step+" path="+path+" detail="+std::to_string(detail));
+        if(!firstFailure[0]&&(strstr(step,"failed")||strcmp(step,"verify.fail")==0))
+            snprintf(firstFailure,sizeof(firstFailure),"Bundle staging %s path=%s detail=%llu",step,path,static_cast<unsigned long long>(detail));
     };
     const auto result=MeterBundle::stageZip<ImageArchive::Sha256>(zip,"/sdcard/bundles",id,polar::modelIdentity,trace);
+    if(firstFailure[0])LogFile.WriteToFile(ESP_LOG_ERROR,TAG,firstFailure);
     if(result==MeterBundle::StageResult::IoError)
         LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Bundle staging storage error; retained pending files for inspection");
     return result;

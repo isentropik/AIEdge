@@ -70,6 +70,12 @@ struct FakeFlash {
  }
 };
 int main(int argc,char** argv){
+ if(argc==4){
+  MeterBundle::File expected;expected.bytes=1;expected.hash=argv[2];
+  auto trace=[](const char* step,const char* path,uint64_t detail){std::cerr<<step<<" "<<path<<" "<<detail<<"\n";};
+  std::cout<<MeterBundle::verifyFile<ImageArchive::Sha256>(argv[1],expected,trace)<<"\n";return 0;
+ }
+
  {static unsigned reports=0;int cookie=7;
   auto read=[](void* context,mz_uint64 offset,void* buffer,size_t bytes)->size_t{assert(*static_cast<int*>(context)==7&&offset==123&&bytes==10);*static_cast<char*>(buffer)='x';errno=EIO;return 4;};
   auto trace=[](const char* step,const char* path,uint64_t detail){assert(std::string(path)=="test.zip");
@@ -162,6 +168,19 @@ with tempfile.TemporaryDirectory() as folder:
   p.unlink();check(False);p.write_bytes(data)
  check(True)
 print(f'{cases} streamed bundle verification cases passed with real SHA/readback; no mutations')
+
+# Exact early verification errors, with real files and no verifier mutations.
+with tempfile.TemporaryDirectory() as folder:
+ p=Path(folder)/'probe'
+ def probe(expected,step):
+  result=subprocess.run([str(exe),str(p),hashlib.sha256(b'a').hexdigest(),'file'],text=True,capture_output=True,check=True)
+  assert result.stdout.strip()==str(expected) and step in result.stderr,result.stderr
+ probe(0,'verify.stat_failed')
+ p.mkdir();probe(0,'verify.type_failed');p.rmdir()
+ p.write_bytes(b'aa');probe(0,'verify.size_failed');assert p.read_bytes()==b'aa'
+ p.write_bytes(b'b');probe(0,'verify.fail');assert p.read_bytes()==b'b'
+ p.write_bytes(b'a');probe(1,'verify.pass');assert p.read_bytes()==b'a'
+print('5 precise file-verification diagnostic cases passed')
 
 # Separate boot index fixtures; all calls are read-only, including missing index.
 boot_cases=0

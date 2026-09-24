@@ -1,6 +1,7 @@
 #pragma once
 #include "DeviceBundleManifest.h"
 #include <cstdio>
+#include <cerrno>
 #include <memory>
 #include <new>
 #include <utility>
@@ -12,12 +13,14 @@ struct Verification {bool verified=false;uint32_t files=0;uint64_t bytes=0;std::
 template<class Hash> bool verifyFile(const std::string& path,const File& expected,Checkpoint trace=nullptr){
  checkpoint(trace,"stat.begin",path);
  struct stat st{};
- if(stat(path.c_str(),&st)!=0||!S_ISREG(st.st_mode)||st.st_size<0||static_cast<uint64_t>(st.st_size)!=expected.bytes)return false;
+ if(stat(path.c_str(),&st)!=0){const int error=errno;checkpoint(trace,"verify.stat_failed",path,error);return false;}
+ if(!S_ISREG(st.st_mode)){checkpoint(trace,"verify.type_failed",path,st.st_mode);return false;}
+ if(st.st_size<0||static_cast<uint64_t>(st.st_size)!=expected.bytes){checkpoint(trace,"verify.size_failed",path,st.st_size);return false;}
  checkpoint(trace,"open.begin",path);
- FILE* input=std::fopen(path.c_str(),"rb");if(!input)return false;
+ FILE* input=std::fopen(path.c_str(),"rb");if(!input){const int error=errno;checkpoint(trace,"verify.open_failed",path,error);return false;}
  checkpoint(trace,"hash.init",path);
  Hash hash;std::unique_ptr<unsigned char[]> buffer(new(std::nothrow) unsigned char[1024]);
- if(!buffer){std::fclose(input);return false;}
+ if(!buffer){std::fclose(input);checkpoint(trace,"verify.alloc_failed",path,1024);return false;}
  uint64_t total=0;bool ok=true;
  while(true){checkpoint(trace,"read.begin",path,total);const size_t n=std::fread(buffer.get(),1,1024,input);
   checkpoint(trace,"hash.begin",path,total);
