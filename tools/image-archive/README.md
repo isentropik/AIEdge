@@ -82,8 +82,8 @@ hashes are excluded entirely. Any corrupt archive record stops preparation.
 
 This JSON file is the starting inventory for review, not a visual labelling UI
 or a training dataset. Labels remain null, splits remain unassigned, and training
-eligibility stays false. Near-duplicates and adjacent captures still need split
-review before training; exact hashes cannot identify those. Unknown capture UTC
+eligibility stays false. Visual near-duplicates still need split review before training; the temporal
+exclusion described below does not identify all similar images. Unknown capture UTC
 stays unknown. Do not compare monotonic capture times across device boots.
 
 The command never modifies archive records, overwrites an existing output, or
@@ -122,3 +122,24 @@ This is a read-only full-image review, not a dial-labelling interface. It has no
 needle overlay, suggested readings, label submission or training activation.
 Calibration-aware crop overlays and separate human-label records remain future
 work. Automated export checks pass; browser layout verification is pending.
+
+## Protect captures near held-out images
+
+Both review commands default to a five-minute exclusion window on either side
+of each protected capture. A different image hash is excluded when any of its
+capture records lies within that interval on the same device and boot. All
+occurrences of that image are then excluded, including later exact duplicates.
+The tool records the matched capture IDs and time difference in the inventory.
+It does not expand the window recursively from excluded neighbors.
+
+Use `--protect-window-seconds N` on both commands to choose an interval from 0
+to 86,400 seconds; 0 explicitly disables temporal exclusion. The default is a
+conservative review policy, not a measured independence threshold. Keep the
+same option when preparing a manifest and exporting its gallery.
+
+The tool never compares monotonic times across boots or devices. Protected
+hashes absent from the archive remain hash-protected, but their time neighbors
+cannot be found; the output and gallery report this gap. Similar stationary
+images outside the interval, or across restarts, may still leak information
+between training and evaluation. Review those separately before assigning any
+split. No reviewed image is automatically made eligible for training.

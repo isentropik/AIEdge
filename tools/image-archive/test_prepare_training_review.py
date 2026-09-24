@@ -65,4 +65,40 @@ class ReviewTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertFalse(json.loads(output.read_text())['training_eligible'])
 
+    def add_image(self,seconds,boot='boot1',device='test',data=None):
+        image=data or str((seconds,boot,device)).encode()
+        m=dict(self.metadata,capture_us=seconds*1000000+42,boot_id=boot,device_id=device,image_sha256=digest(image),image_bytes=len(image))
+        store_capture(self.root,m,image)
+        return digest(image)
+    def protect_first(self):
+        self.protection.write_text(json.dumps(dict(version=1,image_sha256s=[digest(self.image)])))
+    def test_time_window_inclusive_and_does_not_chain(self):
+        near=self.add_image(300);far=self.add_image(301);self.protect_first()
+        r=self.run_review();excluded={x['image_sha256']:x for x in r['excluded']}
+        self.assertEqual(excluded[near]['reason'],'protected_time_neighbor')
+        self.assertEqual(excluded[near]['temporal_match']['distance_us'],300000000)
+        self.assertNotIn(far,excluded);self.assertEqual(r['protect_window_seconds'],300)
+    def test_window_works_before_and_after_protected_capture(self):
+        first=digest(self.image);middle=self.add_image(400);last=self.add_image(699)
+        self.protection.write_text(json.dumps(dict(version=1,image_sha256s=[middle])))
+        r=prepare(self.root,self.protection,400)
+        excluded={x['image_sha256']:x['reason'] for x in r['excluded']}
+        self.assertEqual(excluded[first],'protected_time_neighbor');self.assertEqual(excluded[last],'protected_time_neighbor')
+    def test_monotonic_clock_never_compared_across_boots_or_devices(self):
+        boot=self.add_image(1,boot='boot2');device=self.add_image(1,device='other');self.protect_first()
+        excluded={x['image_sha256'] for x in self.run_review()['excluded']}
+        self.assertNotIn(boot,excluded);self.assertNotIn(device,excluded)
+    def test_hash_is_excluded_if_any_occurrence_is_near_protected(self):
+        other=b'same image twice';h=self.add_image(1,data=other);self.add_image(900,data=other);self.protect_first()
+        row=next(x for x in self.run_review()['excluded'] if x['image_sha256']==h)
+        self.assertEqual(len(row['capture_ids']),2);self.assertEqual(row['reason'],'protected_time_neighbor')
+    def test_external_hash_without_timestamps_is_reported(self):
+        self.protection.write_text(json.dumps(dict(version=1,image_sha256s=['f'*64])))
+        self.assertEqual(self.run_review()['protected_hashes_without_capture_records'],['f'*64])
+    def test_explicit_disable_and_invalid_windows(self):
+        near=self.add_image(1);self.protect_first()
+        self.assertNotIn(near,{x['image_sha256'] for x in prepare(self.root,self.protection,0)['excluded']})
+        for value in [-1,86401,True,1.5]:
+            with self.assertRaises(ValueError):prepare(self.root,self.protection,value)
+
 if __name__=='__main__':unittest.main()

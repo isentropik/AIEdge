@@ -45,4 +45,16 @@ class GalleryTests(unittest.TestCase):
   meta=dict(self.meta,capture_us=6,image_sha256=digest(data),image_bytes=len(data));store_capture(self.root,meta,data)
   self.generate();self.assertEqual(next(self.output.glob('*.png')).read_bytes(),data)
 
+ def test_time_neighbor_is_removed_when_exporting(self):
+  stream=io.BytesIO();Image.new('RGB',(8,8),(30,20,10)).save(stream,format='PNG');data=stream.getvalue()
+  meta=dict(self.meta,capture_us=1000005,image_sha256=digest(data),image_bytes=len(data));store_capture(self.root,meta,data)
+  self.protection.write_text(json.dumps(dict(version=1,image_sha256s=[digest(self.image)])))
+  with self.assertRaises(ValueError):self.generate()
+  self.assertFalse(self.output.exists())
+ def test_missing_temporal_anchors_visible_in_gallery(self):
+  self.protection.write_text(json.dumps(dict(version=1,image_sha256s=['f'*64])))
+  self.generate();page=(self.output/'index.html').read_text(encoding='utf-8')
+  self.assertIn('1 protected image hashes have no capture records here',page)
+  self.assertIn('300 seconds within the same device boot',page)
+
 if __name__=='__main__':unittest.main()
