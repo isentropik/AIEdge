@@ -20,3 +20,13 @@ operations, verifies timeout and retained spool data, then verifies a successful
 retry. Worker admission/memory and capture binding regressions also passed.
 HTTP and clock boundaries are simulated; this does not establish LAN timing or
 TLS/inference memory headroom on hardware.
+
+## Test-board deployment
+
+Managed OTA completed and the running bundle was verified after restart:
+`87f170e1535f5e42d6880b3dcd207f12603bce6513233ce0daf1e62a3618dda5`.
+The configuration remained byte-for-byte unchanged, the saved meter profile and
+revision were preserved, and website authentication still rejected anonymous
+access. Archive submission remains disabled in the test-board baseline. This
+verifies installation and preservation, not an on-device slow-server trial.
+The production meter was not changed.
