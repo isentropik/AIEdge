@@ -29,6 +29,14 @@ failures became blocked. The UI tests cover skipped-capture warnings and clearin
 stale counts when status cannot be read. This is deterministic host evidence, not
 physical network-outage, SD power-loss or sustained cadence validation.
 
-The additional UI counters are prepared in source; device deployment and rendered
-verification remain pending. Earlier successful HTTPS delivery does not establish
-these failure scenarios on hardware.
+The additional UI counters are deployed to the test board in bundle
+`ced4642ee9e563608b90e366c6fd8cb825af5e4ac189b4a1a21648f86da79e9d`.
+OTA and reboot verification passed with configuration and password unchanged.
+Both served asset hashes matched the package; a DOM fixture loaded the served
+script against actual device status and displayed both counters correctly.
+Archiving remained disabled. This was not a browser layout test. Rendered
+verification remains pending, and earlier successful HTTPS delivery does not
+establish these failure scenarios on hardware.
+
+Private deployment evidence is in `aiedge-archive-counters-candidate/ota` and
+`aiedge-archive-counters-candidate/asset-verification` under firmware-port-tests.

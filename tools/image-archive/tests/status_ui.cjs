@@ -16,6 +16,7 @@ function doc(){const nodes={};for(const id of ['refresh','notice','state','detai
  const ui=api.mount(d,async(path,options)=>{calls.push([path,options]);return {ok:true,json:async()=>response};});
  assert.equal(calls.length,0);await ui.refresh();assert.equal(calls.length,1);assert.equal(calls[0][0],'/image_archive_status');assert.equal(calls[0][1].method,'GET');assert.equal(calls[0][1].redirect,'error');assert.equal(calls[0][1].credentials,'same-origin');
  assert.equal(d.nodes.pending.textContent,'2');assert.equal(d.nodes.uploaded.textContent,'3');assert.equal(d.nodes.state.textContent,'Running');
+ response={...good,handoff_rejected:2,enqueue_rejected:3};await ui.refresh();assert.equal(d.nodes.notqueued.textContent,'2');assert.equal(d.nodes.notsaved.textContent,'3');
  response={};await ui.refresh();assert.equal(d.nodes.pending.textContent,'Unavailable');assert.equal(d.nodes.refresh.disabled,false);
  let release;const held=api.mount(d,()=>new Promise(r=>release=r));const task=held.refresh();await held.refresh();assert(d.nodes.refresh.disabled);release({ok:false});await task;assert.equal(d.nodes.refresh.disabled,false);
  console.log('Archive UI state, invalid data, stale-count clearing, fixed read-only request and duplicate-action tests passed');

@@ -44,7 +44,7 @@ The cumulative turn-tracking correction is installed on the test board and recor
 
 ## Lighting, storage and configuration
 
-- [ ] Deploy and render the archive status page's new skipped-capture counters. Actual-worker host fault tests preserve queued files for connection, credential, receipt and transient-server failures; physical outage coverage remains open. See [failure behavior](IMAGE-ARCHIVE-FAILURES.md).
+- [ ] Visually verify the deployed archive status page's skipped-capture counters. Served asset hashes and actual-status DOM checks pass. Actual-worker host fault tests preserve queued files for connection, credential, receipt and transient-server failures; physical outage coverage remains open. See [failure behavior](IMAGE-ARCHIVE-FAILURES.md).
 
 - [ ] Provide explicit recovery/management of retained destination and legacy unbound queues. The deployed setup UI explains retained queues; credential-change isolation and recovery pass on the test board. Broader storage-limit and destination-change hardware coverage remain open.
 

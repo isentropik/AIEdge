@@ -4,6 +4,10 @@
 
 This archive records released changes and their actual evidence. It does not imply every feature has passed long-term testing. Local-only edits stay in the open backlog.
 
+## Test-board archive rejection counters — September 23, 2026
+
+The archive page now shows captures refused at handoff and queued captures that could not be saved. It explains that recognition continues and that rejected captures are not guaranteed archived. Authenticated OTA and reboot passed; configuration and password were preserved. Readback matched both packaged web assets, and a DOM fixture rendered the returned live counts correctly. Archiving stayed disabled. This does not establish browser layout or physical outage handling. [Failure behavior and evidence](IMAGE-ARCHIVE-FAILURES.md).
+
 ## Test-board cumulative turn tracking — September 23, 2026
 
 Installed source `7cf92c8` through authenticated compressed OTA. Uniquely established wheel turns are retained between observations without summing positive jitter. Portable cumulative, checkpoint, session and history checks and the ESP32 build pass. Startup verified the expected bundle, unchanged configuration and retained password. Six frozen inference vectors matched all output bytes; running this diagnostic left accounting unchanged. Nine representative web routes denied unauthenticated requests.
