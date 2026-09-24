@@ -32,8 +32,9 @@ are not evidence of successful live meter throughput. The test camera is still
 viewing a different scene, as confirmed by the user.
 
 A newly retrieved production-meter cached image still matches the saved imaging
-configuration and passes the frozen desktop alignment/visibility checks. It has
-unconfirmed readings and a small last-two-main-dial consistency warning. Its
+configuration and passes the frozen desktop alignment/visibility checks. The user confirmed its fourth and fifth main dials as 5.3 and 4.5; the
+secondary remains unconfirmed. The small last-two-main-dial consistency warning
+remains visible. Its
 retrieval time is not a verified capture timestamp. It remains excluded from training.
 
 ## Before replacing the operating reader
@@ -74,3 +75,7 @@ The actual analog readout conversion now passes checks for leading zeros, tenths
 truncation, following-dial carries, decimal scaling and invalid-result rejection.
 Local consumption/session regressions also pass for jitter, rollovers, missing
 frames, restart gaps and ambiguity. These are not live-publication measurements.
+
+[Saved-image perturbation tests](IMAGE-PERTURBATION-VALIDATION.md) now cover
+brightness, translations and rotation with the frozen reader. These supplement
+the real-image reviews without counting synthetic variants as new accuracy data.

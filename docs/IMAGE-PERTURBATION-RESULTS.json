@@ -1,0 +1,901 @@
+{
+  "parent_sha256": "b8d7bc2604efa261738f8a526111d51ab31ac6092405817a87d5d084b6ddf463",
+  "training_allowed": false,
+  "not_independent_accuracy_evidence": true,
+  "model_sha256": "b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0",
+  "baseline_evidence_sha256": "1180a8320df08dc8fd74f93b9c7a6ccc02b419b202ce4c98d2c9c3500a15920b",
+  "source_hashes": {
+    "CTfLiteClass.h": "57c679c53c927e107fe92b286eaef46a28e2f86c4794900ccba601f6601e96e7",
+    "MeterAccounting.h": "074cae34377ca14f24fe3d512e3434227bb823e2a69d1c68b697749e93bf10e8",
+    "MeterCheckpoint.h": "2ac9fa2f8cad196ec6c9d8f9e01efbadacedb6b1d96af25d773ba843016f36fa",
+    "MeterCheckpointStore.h": "5e584ae74b3be12b88f1002360ccc9fd9d3deefbbb88f5d5edc6d4fecda4da60",
+    "MeterCumulative.h": "f0e8944111ebb028438e60dcbc65b219d8a66c7ca89683a0aecddcdac717e213",
+    "MeterDisplay.h": "aba37ec4ff8951b820b46cf8e3e204270ff061b833ff5cf1eea166674a0b9dce",
+    "MeterHistory.h": "d1423165504f4d8d39ddd8e7321c98af02464d59a2a90976b633bcaefd34be3a",
+    "MeterHistoryFiles.h": "c07e64c0f8f9445d021c0db8a1916e094ce8456dff64d7461e5f4a3e2d1a015a",
+    "MeterProfile.h": "998959d80747514112657e7f7462c878279777bdf18c25465f94d3643e4b3a67",
+    "MeterProfileEditor.h": "7fe627fd583cc6b6c243574baadf2e576269cd678a0f23ddce8dbc370552e12e",
+    "MeterProfileJson.h": "6940dfe2487dd93fdbebb0f74910985cfdf1ccd45b0efb63e5ec12184d623e6a",
+    "MeterProfileStore.h": "9953aa0fc2ab6ae460cb5e8c094dfd0d36fede9547f3d9faa6963f8867f70ae4",
+    "MeterRecovery.h": "1330af5c3e6eabf290c543d1a728caf21230594b8ab28a7779d315acfacdf49c",
+    "MeterSession.h": "2c2af227e97aa09a460d5fdabf42bd2962298f9919fc28b19b0bc3626c070750",
+    "MeterStatus.h": "b2483d2909982b4bd0610c0fa982a8bd5d05ad87085a2ae594beb9d7a35a2905",
+    "PolarAlignment.h": "59457935826a312110ce701a002a4dc170024845b5f71cced4838fc60fcfbd50",
+    "PolarAlignmentCheck.h": "15cc07a9f5eb57600d77461deced1c45d587f7334728f91b4e20276cfbf92e63",
+    "PolarCalibration.h": "98ae8ce2c7f71176ace91c9b6c4f086a522e7da35a89140dea59cfd70d42096c",
+    "PolarDecoder.h": "4072e8913b0859d570345cf1f935284e2189d6434630a5fd43e81f1912c12f50",
+    "PolarFeatures.h": "87658b63638cd128c10d58eb9d0cec11bf665c08794ba4031c814a88020a348a",
+    "PolarIdentity.h": "b4de4ea67943125b02c86154e10386a24fee2d9b4fbd2a34613b883569413a51",
+    "PolarImage.h": "2a9d20d637da1c15640829b52b93c989748d856ef53f01b3b2084350005a029f",
+    "PolarPercentile.h": "608086660e8e8a2760b13c321c5ec9a81cf0845a1878e0f1dadc104a808aa8d9",
+    "PolarPipeline.h": "765a8196bb176ba13182ce65912ebd9e2f11b14aee5231084dec663a16039861",
+    "PolarProfile.h": "ba4bc186e09299e5dbdb6fb046066e4937decd69df258c4a631a4ec54929498c",
+    "PolarVisibility.h": "803348c244b522a8d087e606efdc537e514cdf62a706161c7f2b8bc33a5c6b1a",
+    "PolarWarp.h": "64b550b4ac3f17ea8edb263b599d3a2d0e2de9558af851cb30172227623ca3ac",
+    "stb_image.h": "2d264ec3e6ce404fc2d0cfff4476c982eb3edf5a61122b03884fdef7bacd9deb"
+  },
+  "fixture_executable_hashes": {
+    "decode.exe": "db67c8340e87af9fba77ac2b2a8b33208fe44e44d46bc29e4c4a8369482b3113",
+    "prepare.exe": "cfbdf3cf3f9a9eefd5ca1c9296b23b180a9a813e00a36856faf881c18783710d",
+    "reading.exe": "1e4abd1cb495614662df291954e4ff6278dab9147edfae2027fa1679cad71d3b"
+  },
+  "script_sha256": "8d8a2869207850775d47f2ce8715778436793a72ae9403742aa337d1c23a7167",
+  "rows": [
+    {
+      "case": "baseline",
+      "transform": {
+        "kind": "identity"
+      },
+      "image_sha256": "42c3efc4badc2ea62f052c62fc08d0cf0d8d2333d09fe544f87132229642f3be",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        0.583828396441,
+        0.0020264358718,
+        0.999997946777,
+        0.683794345264
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "brightness-0.5",
+      "transform": {
+        "kind": "linear_rgb_gain",
+        "factor": 0.5
+      },
+      "image_sha256": "8eb730254ad91c97e860052005e703f2b18ab0f633d569dd00cc44df713ee4b1",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": false,
+      "inverse_alignment": [
+        0.999997968206,
+        -0.00201583307064,
+        0.581558906317,
+        0.00201583307064,
+        0.999997968206,
+        0.687041619189
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        false,
+        false
+      ],
+      "visibility": [
+        45.211173548180625,
+        54.68417934323959,
+        63.52886439861708,
+        57.44505529632926,
+        31.50169579641969,
+        37.600887158236375
+      ]
+    },
+    {
+      "case": "brightness-0.8",
+      "transform": {
+        "kind": "linear_rgb_gain",
+        "factor": 0.8
+      },
+      "image_sha256": "2d8edb480aa96ca82d2053de15c5a0a186a0f755af11748dacbdae3c1770049c",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.99999794699,
+        -0.00202633076487,
+        0.583606821258,
+        0.00202633076487,
+        0.99999794699,
+        0.684512649193
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        72.58732133190816,
+        87.27425465758708,
+        101.95526216322381,
+        91.84924775079513,
+        50.954432087277034,
+        60.46505480298312
+      ],
+      "readings": {
+        "main_10000k": 0.27992323,
+        "main_1000k": 2.51623082,
+        "main_100k": 5.61165571,
+        "main_10k": 5.30768347,
+        "main_1k": 4.43645191,
+        "secondary_5": 4.65196085
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.004578530999999941,
+        "main_1000k": 0.0034270300000001086,
+        "main_100k": 0.0031485499999996946,
+        "main_10k": 0.0026841100000005724,
+        "main_1k": 0.007019520000000057,
+        "secondary_5": 0.007904049999999607
+      },
+      "max_change": 0.007904049999999607
+    },
+    {
+      "case": "brightness-0.9",
+      "transform": {
+        "kind": "linear_rgb_gain",
+        "factor": 0.9
+      },
+      "image_sha256": "ded8c9e30dd11da8f571e444d4e138be8e22f8b402c0d9194acf629cdb99a1af",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997939262,
+        -0.00203014081485,
+        0.584615256813,
+        0.00203014081485,
+        0.999997939262,
+        0.681760187825
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        81.21344813537463,
+        97.92689786776963,
+        114.23366138862401,
+        103.27217409764401,
+        57.222321769796054,
+        68.20220308712135
+      ],
+      "readings": {
+        "main_10000k": 0.281810045,
+        "main_1000k": 2.51437902,
+        "main_100k": 5.60959196,
+        "main_10k": 5.3083005,
+        "main_1k": 4.43526697,
+        "secondary_5": 4.64809227
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.002691716000000177,
+        "main_1000k": 0.0015752300000002606,
+        "main_100k": 0.001084800000000108,
+        "main_10k": 0.002067080000000665,
+        "main_1k": 0.005834580000000145,
+        "secondary_5": 0.004035469999999819
+      },
+      "max_change": 0.005834580000000145
+    },
+    {
+      "case": "brightness-1.1",
+      "transform": {
+        "kind": "linear_rgb_gain",
+        "factor": 1.1
+      },
+      "image_sha256": "7f8c06dc77a88dbf006b7ebb552d0920a55f0ee2d8d0dee2598cc09a5e063550",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997949449,
+        -0.00202511663115,
+        0.58396111721,
+        0.00202511663115,
+        0.999997949449,
+        0.685917717192
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        99.33073451417232,
+        119.785228644099,
+        139.5086639164566,
+        127.0927382225012,
+        69.86470030061353,
+        83.1526276914948
+      ],
+      "readings": {
+        "main_10000k": 0.285185188,
+        "main_1000k": 2.51421452,
+        "main_100k": 5.60958624,
+        "main_10k": 5.30808067,
+        "main_1k": 4.42986107,
+        "secondary_5": 4.65399885
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0006834270000002363,
+        "main_1000k": 0.0014107299999999157,
+        "main_100k": 0.001079079999999344,
+        "main_10k": 0.002286910000000475,
+        "main_1k": 0.00042868000000062523,
+        "secondary_5": 0.00994204999999937
+      },
+      "max_change": 0.00994204999999937
+    },
+    {
+      "case": "brightness-1.2",
+      "transform": {
+        "kind": "linear_rgb_gain",
+        "factor": 1.2
+      },
+      "image_sha256": "e6d4179de6825b754dd64f01f413dbcf57d0ed2d4977faa1169b6a73164851bd",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.99999787937,
+        -0.00205943085842,
+        0.590509792212,
+        0.00205943085842,
+        0.99999787937,
+        0.670426304397
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        107.83432169934602,
+        130.79540182604038,
+        152.021927032049,
+        138.31814399546016,
+        76.25011449795636,
+        90.78031325013183
+      ],
+      "readings": {
+        "main_10000k": 0.28917101,
+        "main_1000k": 2.51464844,
+        "main_100k": 5.6088233,
+        "main_10k": 5.30849695,
+        "main_1k": 4.43292665,
+        "secondary_5": 4.65570593
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0046692489999999864,
+        "main_1000k": 0.0018446500000006694,
+        "main_100k": 0.00031613999999979825,
+        "main_10k": 0.0018706299999999842,
+        "main_1k": 0.0034942600000000823,
+        "secondary_5": 0.011649129999999452
+      },
+      "max_change": 0.011649129999999452
+    },
+    {
+      "case": "brightness-1.5",
+      "transform": {
+        "kind": "linear_rgb_gain",
+        "factor": 1.5
+      },
+      "image_sha256": "eec596cfb37e68a5b0dae14f6a8c5b0f4fedd85460e0d006b83ea1c8b93ab153",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997876348,
+        -0.00206089778339,
+        0.580604685244,
+        0.00206089778339,
+        0.999997876348,
+        0.667814792653
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        133.14479294410853,
+        151.34428083850148,
+        160.76174293188703,
+        171.6296303337724,
+        94.93173669113102,
+        113.25040264203525
+      ],
+      "readings": {
+        "main_10000k": 0.309570312,
+        "main_1000k": 2.50882363,
+        "main_100k": 5.59908152,
+        "main_10k": 5.31031132,
+        "main_1k": 4.44312191,
+        "secondary_5": 4.64659691
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.025068551000000383,
+        "main_1000k": 0.003980159999999344,
+        "main_100k": 0.009425639999999902,
+        "main_10k": 5.6260000000030175e-05,
+        "main_1k": 0.013689520000000677,
+        "secondary_5": 0.0025401099999999843
+      },
+      "max_change": 0.025068551000000383
+    },
+    {
+      "case": "shift-2-0",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": 2,
+        "dy": 0
+      },
+      "image_sha256": "8f33a211b6f38a4abca85c9e4e07b8539dda4acc6710d4bc74266c3a788fe244",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        2.58382839644,
+        0.0020264358718,
+        0.999997946777,
+        0.683794345264
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "shift--2-0",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": -2,
+        "dy": 0
+      },
+      "image_sha256": "b32e495c203c525e1c9fbf7f950fc28e21066004c91a9aa8fc890f4f82131851",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        -1.41617160356,
+        0.0020264358718,
+        0.999997946777,
+        0.683794345264
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "shift-0-2",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": 0,
+        "dy": 2
+      },
+      "image_sha256": "d6243de9d5d0288fbbfbc051f1cdfda46fa5cde25c957a2359f9d4d81281b799",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        0.583828396441,
+        0.0020264358718,
+        0.999997946777,
+        2.68379434526
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "shift-0--2",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": 0,
+        "dy": -2
+      },
+      "image_sha256": "daef15e8cc5f161617ff94583ba1a1eaa9a796c512c1872e9f6d743dbc86e8a1",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        0.583828396441,
+        0.0020264358718,
+        0.999997946777,
+        -1.31620565474
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "shift-5-5",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": 5,
+        "dy": 5
+      },
+      "image_sha256": "8e3f7436b1854e2e080d699ee92962c883ae0dd3924e15f173ae73dde9e1d24a",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        5.58382839644,
+        0.0020264358718,
+        0.999997946777,
+        5.68379434526
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "shift--5--5",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": -5,
+        "dy": -5
+      },
+      "image_sha256": "3cc3871dd039f54c5fb53c10b58f2c5f8dd41e7c4abcbf93be21a6c5a59f1545",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        -4.41617160356,
+        0.0020264358718,
+        0.999997946777,
+        -4.31620565474
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "shift-12-0",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": 12,
+        "dy": 0
+      },
+      "image_sha256": "3f874ef8267444d554121f94d745153a54f3101536a87cadda3db71d83741c43",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999997946777,
+        -0.0020264358718,
+        12.5838283964,
+        0.0020264358718,
+        0.999997946777,
+        0.683794345264
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        90.60232610830545,
+        108.80825824957307,
+        126.77501442292636,
+        115.03848140513443,
+        63.41397915976082,
+        75.87098550521718
+      ],
+      "readings": {
+        "main_10000k": 0.284501761,
+        "main_1000k": 2.51280379,
+        "main_100k": 5.60850716,
+        "main_10k": 5.31036758,
+        "main_1k": 4.42943239,
+        "secondary_5": 4.6440568
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.0,
+        "main_1000k": 0.0,
+        "main_100k": 0.0,
+        "main_10k": 0.0,
+        "main_1k": 0.0,
+        "secondary_5": 0.0
+      },
+      "max_change": 0.0
+    },
+    {
+      "case": "shift-30-0",
+      "transform": {
+        "kind": "translation_black_border",
+        "dx": 30,
+        "dy": 0
+      },
+      "image_sha256": "c7c5178b8bbcf88bb9a071741c82eef140087bde3705d036cce3e6b7cfa6d0ec",
+      "alignment_ok": false,
+      "training_allowed": false,
+      "accepted": false
+    },
+    {
+      "case": "rotation--1",
+      "transform": {
+        "kind": "rotation_about_image_center_bilinear_black_border",
+        "degrees": -1
+      },
+      "image_sha256": "cadcecd2677e4e9ab919610a7b1ec7845970eadf12e0aaaa6af328c03ac28ce2",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999838910963,
+        -0.0179485966952,
+        4.43584124818,
+        0.0179485966952,
+        0.999838910963,
+        -4.42655983244
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        92.65244958532554,
+        110.49792045624528,
+        126.15162677622793,
+        114.67516070978648,
+        62.77805773932106,
+        74.7718398624546
+      ],
+      "readings": {
+        "main_10000k": 0.277124196,
+        "main_1000k": 2.50282121,
+        "main_100k": 5.6143918,
+        "main_10k": 5.29896259,
+        "main_1k": 4.43283033,
+        "secondary_5": 4.66812038
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.007377564999999642,
+        "main_1000k": 0.009982579999999963,
+        "main_100k": 0.0058846399999996635,
+        "main_10k": 0.011404989999999948,
+        "main_1k": 0.0033979400000001547,
+        "secondary_5": 0.024063579999999973
+      },
+      "max_change": 0.024063579999999973
+    },
+    {
+      "case": "rotation-1",
+      "transform": {
+        "kind": "rotation_about_image_center_bilinear_black_border",
+        "degrees": 1
+      },
+      "image_sha256": "6cd443c78e55dcb2fffaebd3e85dc2cfac37a89c49c28d94dcbd4b5f80857e66",
+      "alignment_ok": true,
+      "training_allowed": false,
+      "accepted": true,
+      "inverse_alignment": [
+        0.999901869282,
+        0.0140089901679,
+        -3.20346208086,
+        -0.0140089901679,
+        0.999901869282,
+        5.87837397579
+      ],
+      "dial_accepted": [
+        true,
+        true,
+        true,
+        true,
+        true,
+        true
+      ],
+      "visibility": [
+        89.17335062365267,
+        109.25383017753796,
+        125.94073777627216,
+        114.40153348864771,
+        62.98129859548151,
+        75.04074199669246
+      ],
+      "readings": {
+        "main_10000k": 0.276785702,
+        "main_1000k": 2.51844525,
+        "main_100k": 5.60754442,
+        "main_10k": 5.31027651,
+        "main_1k": 4.4287281,
+        "secondary_5": 4.65340185
+      },
+      "circular_change_from_baseline": {
+        "main_10000k": 0.007716058999999831,
+        "main_1000k": 0.005641459999999654,
+        "main_100k": 0.000962740000000295,
+        "main_10k": 9.107000000074805e-05,
+        "main_1k": 0.0007042899999998298,
+        "secondary_5": 0.00934504999999941
+      },
+      "max_change": 0.00934504999999941
+    },
+    {
+      "case": "rotation--3",
+      "transform": {
+        "kind": "rotation_about_image_center_bilinear_black_border",
+        "degrees": -3
+      },
+      "image_sha256": "082635732beca15fc280d667bdf6c6ae9528a45e9387c63ab579a6a089557778",
+      "alignment_ok": false,
+      "training_allowed": false,
+      "accepted": false
+    },
+    {
+      "case": "rotation-3",
+      "transform": {
+        "kind": "rotation_about_image_center_bilinear_black_border",
+        "degrees": 3
+      },
+      "image_sha256": "e8513f22ce7d20b9e74f1a6f0a393093ea3a08626fe0cca58ba68d62d8d73c62",
+      "alignment_ok": false,
+      "training_allowed": false,
+      "accepted": false
+    }
+  ],
+  "local_report_sha256": "e3cb8fd4623716d116f0d59b4d13fd617e327831b6f99823bbf36cb27a20063a"
+}
