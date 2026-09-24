@@ -67,3 +67,31 @@ its images must not inherit labels from nearby archived crops.
 Private evidence: `reviewed-crop-sparse-audit-01/result.json` and
 `reviewed-crop-dense-control-01/result.json` under the existing firmware-port-tests
 directory. Both record source hashes, per-image results and unchanged label provenance.
+
+
+## Normal controller input regression — September 24, 2026
+
+The private `test_firmware_polar_flow.py` now decodes the immutable replay-14 JPEG
+with scalar stb and invokes the actual `ClassFlowCNNGeneral::doPolarNetwork`
+implementation. Before the inference substitute returns a result, it checks the
+input tensor byte-for-byte against the frozen sparse reference and checks dial
+direction. All 22 comparisons across the existing success/failure scenarios pass;
+these reuse six distinct reference tensors from one saved frame, not 22 images.
+
+The test still checks geometry/order rejection, allocation/model failures,
+all-or-nothing result publication, accounting calls and stale-result rejection.
+A separate negative control switched only a private test copy to dense sampling;
+the tensor assertion rejected it. Firmware source and device settings were not
+changed by that negative control.
+
+Reference JPEG SHA-256:
+`b6c9a9a0bd291c053535c57fd4f9bf979c12f90ca00a6051a6d9d0de0d6d667b`.
+Frozen sparse tensor/output fixture SHA-256:
+`4c3071a9b06433671004e3438b94c8a4f3962515231a433cd889398282f1cda4`.
+
+This closes an input-comparison gap in the normal-controller host regression.
+Inference execution, memory allocation and device services are still substituted
+in this test. It does not establish actual normal-cycle ESP32 memory usage,
+physical capture accuracy or capture-to-publication cadence. Private records:
+`polar-flow-results.json` and `normal-flow-tensor-negative-control.json` under
+`needle-training/firmware-port-tests`. No new training samples or labels were added.
