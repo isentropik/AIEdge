@@ -134,3 +134,31 @@ fails. These checks pass. Browser navigation to the deployed page was blocked
 by the browser access policy, so rendered visual verification remains pending.
 This follow-up changes tests and documentation only; no firmware redeployment
 is required for it.
+
+
+## Original main-pair label audit — September 24
+
+A fresh run of the frozen int8 model on the two original same-capture main-pair
+crop sets found that the discrepancy predates the firmware sampling changes.
+At the training timestamp, human labels 5.2 and 3.0 imply a signed linked residual
+of -0.100; the model gives -0.10548. At the original held-out timestamp, labels
+5.2 and 3.05 imply -0.105; the model gives -0.10739. Input hashes and matching
+capture stamps were checked. These are four crops from two nearby timestamps,
+not new independent accuracy evidence. Training-set agreement is not validation.
+
+This rules out the newer firmware sampling path as the sole origin of the
+mismatch. Approximate labels, printed-scale calibration and a physical pointer
+registration offset remain possible explanations. No label, tolerance, geometry,
+model, split or device setting was changed. Do not force linked labels to agree
+and then count that agreement as independent validation. Evidence: private
+`historical-pair-audit-20260924/result.json` under firmware-port-tests.
+
+A separate frozen-geometry audit verified that training-to-bundle homographies
+compose with their recorded alignment transport within 1e-12. The changed
+calibration hashes reflect coordinate transport. Recorded tick-anchor fit errors
+are below 0.020 dial units, but those anchors were used for fitting and cannot
+validate themselves. The transport helper omitted the optional dial-center
+metadata while correctly transforming the needle pivot and homography. A separate
+v2 helper now transforms that metadata; rotation/translation and nonmutation tests
+pass. Frozen runtime sources and artifacts remain unchanged. The inference path
+does not use that dial-center field, so this is not the reading-mismatch fix.
