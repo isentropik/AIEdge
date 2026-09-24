@@ -138,3 +138,40 @@ verified boot on the test board. Configuration, profile and password were
 preserved; zero camera cycles ran and archiving remained disabled. Private
 records: `aiedge-radius-cache-01/paired-timing.json`, `ota/result.json`, and
 `RESTORE.md` under firmware-port-tests. Production and public installer unchanged.
+
+
+## Full 15-frame sparse replay — September 24, 2026
+
+Installed test-board bundle
+`40bf77ff2b3406cd65e5eda767653261e4f713076685fb8a6ae63d3e2bfb516b`
+processed all 15 saved JPEG fixtures sequentially. All 90 dial input tensors and
+inference outputs matched their frozen reference bytes exactly. No diagnostic
+failed, no reboot occurred, configuration remained byte-identical, and automatic
+capture and archiving remained inactive.
+
+| Processing stage | Median seconds |
+| --- | ---: |
+| JPEG decode | 0.742 |
+| Alignment | 3.974 |
+| Six-dial preprocessing | 6.848 |
+| Six-dial inference | 1.767 |
+| Other diagnostic work | 0.346 |
+| Total | 13.677 |
+
+Total processing ranged from 13.454 to 13.797 seconds. Stage medians need not
+sum to the median total. The 45 diagnostic-status requests had no failures:
+median 235 ms, empirical nearest-rank p95 343 ms, maximum 406 ms. This measures
+one status endpoint during the replay, not every website operation or archive
+traffic. Reported temperature was 65 C before and after; reported free heap was
+2,016,371 and 2,016,751 bytes respectively. Two snapshots cannot establish peak
+memory, fragmentation, thermal qualification or absence of a long-term leak.
+
+These are reused saved-image fixtures and strict numerical parity checks, not
+independent reading-accuracy samples. The diagnostic excludes camera capture,
+initial fixture verification, publication and image upload; it does not prove
+30-second capture cadence. The recurring main-pair reading discrepancy remains
+open. No images were exported and no production device was accessed.
+
+Private evidence: `current-sparse-15-replay-20260924/` under firmware-port-tests,
+including per-run terminal results, poll records, boot identity, configuration
+checks, timing analysis and final system snapshot.
