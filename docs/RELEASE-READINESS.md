@@ -59,3 +59,19 @@ successful six-dial recognition, publication, image upload, or other web pages.
 The original configuration was restored byte-for-byte and the saved meter profile
 was preserved. Successful live-meter cadence remains unverified while the test
 camera views a different scene.
+
+## Saved-reading recovery update
+
+The test board now runs bundle
+`dcff21d1e6ddfa15888dbccb28b9401929245760323b6dd78d2aecd35877a0e4`,
+which contains the saved-reading recovery fix. The recorded OTA verified the
+new running bundle and preserved configuration, meter profile and website
+authentication. A post-update saved-JPEG replay completed all six dials in
+14.253834 seconds with exact feature/output reference parity, unchanged settings
+and zero camera cycles. This remains a diagnostic replay, not a measurement of
+live capture-to-publication cadence. The production device is unchanged.
+
+Actual-source host tests reject missing fields, invalid numeric values and
+malformed timestamps; empty files close cleanly. Failed open/write/close tests
+retain the pending-save flag. This does not make the legacy saved-state file
+update atomic or establish physical SD power-loss durability.
