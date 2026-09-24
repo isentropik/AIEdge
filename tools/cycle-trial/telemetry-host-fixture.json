@@ -1,0 +1,64 @@
+{
+  "passed": true,
+  "scope": "actual telemetry header and HTTP serializer; host clock/mutex/HTTP stubs",
+  "checks": [
+    "32 concurrent rejections",
+    "stage retries and bounded storage",
+    "abandoned cycle failure",
+    "stale/future capture rejection",
+    "inter-capture timing",
+    "deadline boundary",
+    "idempotent finish",
+    "JSON and unknown validity"
+  ],
+  "initial": {
+    "clock": "monotonic_us_since_boot",
+    "target_us": 30000000,
+    "active": false,
+    "boot_id": "000102030405060708090a0b0c0d0e0f",
+    "attempts": 0,
+    "pipeline_completed": 0,
+    "accepted_reader_cycles": 0,
+    "accepted_reader_streak": 0,
+    "failed": 0,
+    "overlaps_rejected": 0,
+    "over_target": 0,
+    "missed_schedule_slots": 0,
+    "valid_readings": null,
+    "last": {
+      "start_us": 0,
+      "end_us": 0,
+      "capture_us": 0,
+      "capture_interval_us": 0,
+      "reader_accepted": false,
+      "stage_attempts": 0,
+      "pipeline_completed": false,
+      "stages": []
+    }
+  },
+  "final": {
+    "clock": "monotonic_us_since_boot",
+    "target_us": 30000000,
+    "active": false,
+    "boot_id": "000102030405060708090a0b0c0d0e0f",
+    "attempts": 5,
+    "pipeline_completed": 3,
+    "accepted_reader_cycles": 1,
+    "accepted_reader_streak": 0,
+    "failed": 2,
+    "overlaps_rejected": 33,
+    "over_target": 1,
+    "missed_schedule_slots": 0,
+    "valid_readings": null,
+    "last": {
+      "start_us": 40000000,
+      "end_us": 70000001,
+      "capture_us": 40000050,
+      "capture_interval_us": 39999000,
+      "reader_accepted": false,
+      "stage_attempts": 0,
+      "pipeline_completed": true,
+      "stages": []
+    }
+  }
+}
