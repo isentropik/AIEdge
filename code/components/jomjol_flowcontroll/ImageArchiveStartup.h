@@ -16,11 +16,12 @@ inline std::string archiveHex(const unsigned char* bytes,size_t size){
     for(size_t i=0;i<size;++i){result+=hex[bytes[i]>>4];result+=hex[bytes[i]&15];}
     return result;
 }
-// Caller holds processing and camera guards after flow/GPIO initialization.
+// Caller holds processing and camera guards. Normal capture requires flow/GPIO
+// initialization. Recovery-only mode never installs or enables a capture observer.
 // Identical configuration may resume capture after reload; destination/profile
 // changes never retarget an existing worker or its queued records.
-inline const char* startConfiguredArchive(bool frozenProfile) {
-    static bool workerStarted=false;
+inline const char* startConfiguredArchive(bool frozenProfile,bool recoveryOnly=false) {
+    static bool workerStarted=false,captureBound=false;
     static Destination activeDestination;
     static CaptureProfile activeProfile;
     disableCaptureArchive(); // Fail closed even when called outside InitFlow.
@@ -28,12 +29,18 @@ inline const char* startConfiguredArchive(bool frozenProfile) {
     const auto loaded=loadArchiveConfig("/sdcard/config",config,destination);
     if(loaded==ConfigLoad::Disabled)return workerStarted?"Image archive capture disabled; queued uploads retain their existing destination":"Image archive disabled";
     if(loaded!=ConfigLoad::Ready)return "Image archive configuration could not be loaded";
-    if(!frozenProfile)return "Image archive requires the configured frozen PolarV1 profile";
+    if(!frozenProfile && !recoveryOnly)return "Image archive requires the configured frozen PolarV1 profile";
     if(workerStarted){
         if(config.device!=activeProfile.device||destination.host!=activeDestination.host||
            destination.port!=activeDestination.port||destination.timeoutMs!=activeDestination.timeoutMs||
            destination.token!=activeDestination.token||destination.certificatePem!=activeDestination.certificatePem)
             return "Archive destination or identity changed; restart required, existing queue destination unchanged";
+        if(recoveryOnly)return "Image archive queued-upload recovery active; capture disabled";
+        if(!captureBound){
+            captureBound=true;
+            return bindCaptureArchive(activeProfile)?"Image archive capture bound after queued-upload recovery":
+                "Image archive capture binding failed";
+        }
         return resumeCaptureArchive(activeProfile)?"Image archive capture resumed with unchanged destination":
             "Image archive capture could not resume";
     }
@@ -55,6 +62,8 @@ inline const char* startConfiguredArchive(bool frozenProfile) {
     }
     if(!startArchiveWorker(root,destination))return "Image archive worker could not start";
     activeDestination=destination;activeProfile=profile;workerStarted=true;
+    if(recoveryOnly)return "Image archive queued-upload recovery started; capture disabled, connectivity not yet verified";
+    captureBound=true; // Binding may install immutable state even if it reports failure.
     if(!bindCaptureArchive(profile))return "Image archive capture binding failed";
     return "Image archive worker started; recovery and connectivity not yet verified";
 }

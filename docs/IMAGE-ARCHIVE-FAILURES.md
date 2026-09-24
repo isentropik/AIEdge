@@ -84,3 +84,27 @@ HTTP 503 follows its pending retry branch with increasing delay capped at five
 minutes, so that response does not authorize payload deletion. Queue host tests
 also pass. This combines receiver fault injection and queue code/host evidence;
 it is not a physical full-disk or ESP32 network-outage test.
+
+
+## Camera-only startup failure: queued-upload recovery
+
+A prepared firmware change starts destination-bound queue recovery when camera
+initialization alone fails (with optional noncritical camera-framebuffer/NTP
+warnings). It does not initialize recognition or bind a capture observer. A
+storage, memory, bundle or other critical error still blocks this recovery path.
+Normal capture can bind later only with the required frozen profile and unchanged
+archive destination/identity. Existing queued records retain their original
+metadata and destination namespace; no legacy unbound queue is adopted.
+
+Actual startup-source host tests passed for capture-disabled recovery, repeated
+startup, changed destinations, missing profile, later binding and re-disablement.
+The boot-branch fixture verifies critical-status combinations and processing,
+camera-lock and storage guards. The full host/UI suite and clean managed ESP32
+build passed for local candidate `aiedge-archive-camera-recovery-02`, bundle
+`99f393258c9ca08caf33092ab771e61dcdad0f1b7fa8e5884195d0a8177c4ed0`.
+This candidate is not deployed or hardware-verified. Its archive companion files
+were found to come from an older private workspace copy; do not distribute that
+package. The local builder now selects public archive sources, includes their
+87-test suite, and verifies source bytes remain unchanged. A replacement package
+and test-board validation remain pending. No real-image transfer to the new share
+is implied by these checks.

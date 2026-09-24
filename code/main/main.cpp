@@ -29,6 +29,9 @@
 #include "MainFlowControl.h"
 #include "MeterDisplayStartup.h"
 #include "FileConfigStorage.h"
+#include "ImageArchiveStartup.h"
+#include "ProcessingAccess.h"
+#include "CameraAccess.h"
 #include "server_file.h"
 #include "server_ota.h"
 #include "BootBundle.h"
@@ -588,6 +591,16 @@ extern "C" void app_main(void)
     }
     else { // Any other error is critical and makes running the flow impossible. Init is going to abort.
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Initialization failed. Flow task start aborted. Loading reduced web interface...");
+        // A camera-only failure must not strand already captured uploads. Do not
+        // recover queues when storage, memory, assets or other startup checks failed.
+        const auto status=getSystemStatus();
+        if((status & SYSTEM_STATUS_CAM_BAD) &&
+           (status & ~(SYSTEM_STATUS_CAM_BAD | SYSTEM_STATUS_CAM_FB_BAD | SYSTEM_STATUS_NTP_BAD))==0) {
+            ProcessingAccess processing;
+            CameraAccess camera(pdMS_TO_TICKS(1000));
+            if(processing && camera && ConfigStorage::safe().load())
+                LogFile.WriteToFile(ESP_LOG_INFO,TAG,ImageArchive::startConfiguredArchive(false,true));
+        }
     }
 }
 
