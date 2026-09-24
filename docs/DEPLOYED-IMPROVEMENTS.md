@@ -216,3 +216,10 @@ The test board now runs bundle `ee3deff18d1a94f8d544cc668acbf736677a2d4fb5156adb
 Authenticated managed OTA, reboot and bundle verification passed. Original configuration, meter profile/revision and password protection were preserved. The changed alignment page and two build metadata files matched the package when served. Alignment guidance explains fixed distinctive marks, spacing, and the editor's current two-marker limit.
 
 One frozen six-dial sparse saved-image diagnostic completed in 14.293106 seconds with exact tensor/output parity, zero camera cycles and unchanged configuration. This is a port/runtime check, not new accuracy evidence or complete capture cadence. An initial read-only preflight timed out before any mutation; a later USB observation showed startup, and the unchanged previous bundle was verified before installation began. The outage cause remains unproven. Production and the public installer were unchanged.
+
+
+## Saved-history units and camera-independent profile startup — September 24, 2026
+
+Test bundle `9d0fdc7a4d249ed72f97f944dbd1e05cf8b93d1acabaeaae537e80b399750f37` restores compatible saved display preferences before HTTP startup even if camera initialization fails. Storage/bundle failures keep the preference inactive; journal recovery is shared with flow reload. Saved-history diagnostics now offer ft3/m3 display conversion without rewriting canonical stored totals, and retain unknown bounds and gap warnings.
+
+79 host scripts, six UI checks and a clean ESP32 build passed. Managed OTA and verified boot preserved configuration/profile/password. Hardware reported camera unavailable while profile activation was `display_only` before any settings write. The history preference switched ft3 to m3 and back without restarting; canonical fields and original preference were preserved. The board had empty history, so this hardware check proves activation and null handling rather than nonzero conversion; numerical conversion is verified by host fixtures. Three served assets matched their package hashes. Production and the public installer were unchanged.
