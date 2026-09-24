@@ -207,3 +207,12 @@ Bundle `bbff5440551f17555c8bdffba21d8a5454f5722bcc8da49285dce522342290cc` preser
 ## September 24 - strict saved timestamps (test board)
 
 Bundle `f4681eda427aa4e2a035bd6fa825a6413eec0df1a25423dab43a650d9bdee01e` rejects impossible dates, honors saved numeric UTC offsets and excludes future readings from freshness. Actual-loader host tests, ESP32 build and verified OTA/boot pass; config/profile/password and all runtime assets are preserved. See [development status](STATUS.md) for limitations and evidence.
+
+
+## Publication-checkout build and alignment guidance — September 24, 2026
+
+The test board now runs bundle `ee3deff18d1a94f8d544cc668acbf736677a2d4fb5156adbc7314833a0107383`, built directly from the AIEdge publication checkout. The local package workflow now targets that checkout for firmware and tests, and includes an explicit current-UI validation gate. For this candidate, 78 host scripts and a clean build passed; six supplemental current-UI checks passed, with all 245 inventoried package hashes verified.
+
+Authenticated managed OTA, reboot and bundle verification passed. Original configuration, meter profile/revision and password protection were preserved. The changed alignment page and two build metadata files matched the package when served. Alignment guidance explains fixed distinctive marks, spacing, and the editor's current two-marker limit.
+
+One frozen six-dial sparse saved-image diagnostic completed in 14.293106 seconds with exact tensor/output parity, zero camera cycles and unchanged configuration. This is a port/runtime check, not new accuracy evidence or complete capture cadence. An initial read-only preflight timed out before any mutation; a later USB observation showed startup, and the unchanged previous bundle was verified before installation began. The outage cause remains unproven. Production and the public installer were unchanged.
