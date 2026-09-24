@@ -314,3 +314,25 @@ seconds. See [measurements and limitations](PERFORMANCE-MEASUREMENTS.md).
 85 host scripts, seven UI checks, clean build and managed OTA verification passed.
 Configuration/profile preserved; zero camera cycles and no archival. Test board
 only; live cadence, independent accuracy and public release remain outstanding.
+
+
+## September 24 — count automatic rounds skipped by the busy guard
+
+Test-board bundle `35af1e4d21774bde843728f3fcba02325df07a69b55e52a3bdf45abc975bfa31`
+now increments `missed_schedule_slots` when an automatic round is skipped because
+`flowisrunning` is already set. Previously this branch logged the skip but omitted
+it from telemetry. The existing end-of-round calculation still counts later slots
+missed due to elapsed processing/housekeeping time; the current skipped slot and
+later missed slots are distinct. Scheduling, recognition and overlap-rejection
+behavior are unchanged. This does not classify every rejected request as a missed
+automatic slot.
+
+The public `tools/bundle-tests/test_cycle_schedule.py` passes 10,015 arithmetic
+cases and eight controller checks, including idle/busy and busy-plus-overrun
+cases. The candidate passed 85 host scripts, seven UI checks and a clean build.
+Managed OTA verified the running bundle, unchanged configuration/profile and
+preserved password. Automatic capture and archival remain inactive. No physical
+busy-autostart contention was induced; host branch coverage and installed-bundle
+verification are separate evidence. Live capture cadence remains unverified.
+Private deployment/rollback records: `aiedge-busy-slot-count-01/ota` and
+`aiedge-busy-slot-count-01/RESTORE.md`. Production and public installer unchanged.

@@ -56,3 +56,19 @@ python tools/bundle-tests/test_pending_recovery.py
 
 This smaller test covers the 32-slot preservation bound and filesystem conflicts
 without requiring the SDK. Both runners compile into temporary directories.
+
+
+## Automatic capture scheduling
+
+With the same Python/ziglang setup, run:
+
+```sh
+python tools/bundle-tests/test_cycle_schedule.py
+```
+
+This extracts the actual controller's busy-round guard and end-of-round delay
+block, compiles them with a deterministic clock/RTOS substitute, and compares
+10,015 schedule calculations with an integer reference. Eight controller checks
+cover busy-round counting, later missed slots, deadline boundaries and invalid
+intervals. It needs no ESP-IDF path, device or private image fixtures. Passing does
+not establish hardware scheduling latency or a sustained capture cadence.

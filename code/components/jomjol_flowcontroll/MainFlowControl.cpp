@@ -2149,6 +2149,9 @@ void task_autodoFlow(void *pvParameter)
         bool roundSucceeded = false;
         if (flowisrunning)
         {
+            // This scheduled round itself was skipped. after() below counts
+            // only later slots missed while the round/housekeeping took time.
+            CycleTelemetry::schedule(1);
 #ifdef DEBUG_DETAIL_ON
             ESP_LOGD(TAG, "Autoflow: doFlow is already running!");
 #endif
