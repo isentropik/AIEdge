@@ -28,3 +28,18 @@ The 480 comparisons cover RGB/grayscale, 13x9, 144x146 and 640x480 buffers,
 positive/negative/zero/right-angle rotations, flips and both temporary-buffer
 paths. Every output byte and resulting geometry must match. Host math/memory
 checks do not measure ESP32 cache performance.
+
+## Normal recognition failure handling
+
+Run `python test_normal_recognition.py --cxx c++` (or `--zig-python`).
+The harness compiles the actual `ClassFlowCNNPolar.cpp` control flow, using the
+real frozen dial geometry and simulated model, alignment, preprocessing, preview
+and accounting boundaries. It exercises successful publication, model/allocation
+failures, every dial's preprocessing/inference/preview failures, missing or
+changed image geometry, missing/extra/reordered ROIs, and a failed frame following
+a successful frame. During processing, all six public results must remain rejected
+and NaN; accounting must receive no observation unless every dial succeeds.
+
+This checks control flow, not model accuracy, allocator capacity, camera behavior
+or timing on the ESP32. Fault fixtures do not substitute for a sustained valid
+capture-to-publication hardware run.

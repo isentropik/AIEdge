@@ -34,3 +34,10 @@ See [reviewed crops](REVIEWED-CROP-VALIDATION.md),
 [alignment timing](ROTATION-TRAVERSAL-VALIDATION.md),
 [archive timeout](ARCHIVE-UPLOAD-DEADLINE.md), and the
 [remaining improvement backlog](IMPROVEMENTS.md).
+
+The actual normal recognition control flow also passes host fault injection:
+model/allocation/alignment failures, per-dial preprocessing/inference/preview
+failures, geometry changes, and stale results after an earlier successful frame.
+No failing case publishes partial readings or advances accounting. These checks
+use dependency fixtures and do not establish ESP32 memory capacity or timing.
+See [normal recognition tests](../tools/camera-tests/README.md#normal-recognition-failure-handling).
