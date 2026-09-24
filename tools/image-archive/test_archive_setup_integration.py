@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from prepare_archive_setup import prepare
 from image_archive_store import canonical,digest
+from probe_archive_receiver import run_probe, ProbeError, synthetic_png
 
 class GeneratedReceiverTest(unittest.TestCase):
  def test_generated_launcher_tls_upload(self):
@@ -56,6 +57,17 @@ class GeneratedReceiverTest(unittest.TestCase):
      record=(archive/'captures'/f'{receipt["capture_id"]}.json').read_bytes();self.assertEqual(digest(record),receipt['record_sha256'])
      self.assertEqual(post('/v1/captures',image,headers)[0],200)
      self.assertEqual(len(list((archive/'captures').iterdir())),1)
+     bad_token=root/'bad-token.txt';bad_token.write_text('x'*40,encoding='utf-8')
+     with self.assertRaisesRegex(ProbeError,'settings upload: HTTP 401'):
+      run_probe(config['host'],config['port'],certfile,bad_token,3)
+     self.assertEqual(len(list((archive/'captures').iterdir())),1)
+     result=run_probe(config['host'],config['port'],certfile,setup/'server/archive-token.txt',3)
+     self.assertTrue(result['success']);self.assertTrue(result['duplicate_verified'])
+     self.assertEqual(len(list((archive/'captures').iterdir())),2)
+     saved=json.loads((archive/'captures'/f"{result['capture_id']}.json").read_text(encoding='utf-8'))
+     self.assertEqual(saved['metadata']['device_id'],'synthetic-probe')
+     self.assertFalse(saved['training_eligible']);self.assertIsNone(saved['metadata']['capture_utc'])
+     self.assertEqual((archive/'blobs'/f"{result['image_sha256']}.image").read_bytes(),synthetic_png())
     finally:
      if process.poll() is None:process.terminate()
      try:process.wait(timeout=5)

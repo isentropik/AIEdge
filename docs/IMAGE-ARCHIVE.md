@@ -56,9 +56,34 @@ file-mode settings alone do not enforce Windows permissions.
    your local network if the server firewall requires it. Do not expose it to
    the Internet just to use this feature.
 
+Docker is optional; running the Python receiver directly is supported.
 For a server-hosted container, see the [NAS/container recipe](IMAGE-ARCHIVE-CONTAINER.md).
 The generator does not install a background service or configure your NAS.
 There is no image-browsing website at the receiver address.
+
+## Test the connection without a meter image
+
+With the receiver running, open a terminal in the repository's
+`tools/image-archive` folder and run:
+
+```sh
+python probe_archive_receiver.py --host storage.example.net --ca-file /path/to/ca.pem --token-file /path/to/archive-setup/server/archive-token.txt
+```
+
+Use your receiver's actual hostname, CA certificate and generated token file.
+Use `--port` if it is not on port 8766. This computer must be allowed through the
+receiver's firewall. The probe creates a small, solid-color PNG locally, uploads
+its synthetic metadata, and checks that uploading the same capture again is
+recognized as a duplicate. It never connects to the meter or reads camera images.
+
+Success means TLS, authentication and the receiver's hash receipts passed from
+this computer. It does not prove that the ESP32 can reach the receiver. For an
+independent disk check, run the archive audit described in the tools README.
+The synthetic capture stays in the archive under device `synthetic-probe`,
+unreviewed and ineligible for training. No files are deleted. Each invocation
+creates a new synthetic capture identity. If a request fails, records might
+already exist; the probe stops without automatically repeating an uncertain
+write. Neither tokens nor server error bodies are printed.
 
 ## Enable it on a compatible AIEdge build
 
