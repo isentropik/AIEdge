@@ -150,6 +150,8 @@ esp_err_t CCamera::InitCam(void)
     ESP_LOGD(TAG, "Init Camera");
 
     // An unsuccessful retry must never retain the previous ready state.
+    CCstatus.CameraInitAttempted = true;
+    CCstatus.CameraInitError = ESP_ERR_INVALID_STATE;
     CCstatus.CameraInitSuccessful = false;
     CCstatus.CamSensor_id = 0;
 
@@ -164,6 +166,7 @@ esp_err_t CCamera::InitCam(void)
 
     // initialize the camera
     esp_err_t err = esp_camera_init(&camera_config);
+    CCstatus.CameraInitError = err;
     vTaskDelay(cam_xDelay);
 
     if (err != ESP_OK)
@@ -204,6 +207,7 @@ esp_err_t CCamera::InitCam(void)
     }
     else
     {
+        CCstatus.CameraInitError = ESP_FAIL;
         return ESP_FAIL;
     }
 }

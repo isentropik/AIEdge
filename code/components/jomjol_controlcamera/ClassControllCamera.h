@@ -62,6 +62,8 @@ typedef struct
     bool isImageSize;
 
     bool CameraInitSuccessful;
+    bool CameraInitAttempted = false;
+    esp_err_t CameraInitError = ESP_ERR_INVALID_STATE;
     bool changedCameraSettings;
     bool DemoMode;
     bool SaveAllFiles;

@@ -336,3 +336,37 @@ busy-autostart contention was induced; host branch coverage and installed-bundle
 verification are separate evidence. Live capture cadence remains unverified.
 Private deployment/rollback records: `aiedge-busy-slot-count-01/ota` and
 `aiedge-busy-slot-count-01/RESTORE.md`. Production and public installer unchanged.
+
+
+## Camera initialization diagnostics — September 24, 2026
+
+Test-board bundle
+`dae4a3914ce82f2d00c4be2d0c14c16ff52856dd877dbefe0eb7f05891a75d52`
+retains the latest initialization result and shows it in device information.
+Camera availability now requires successful initialization as well as no camera
+failure flag. The release build disables SDK error-name lookup; the diagnostic
+therefore formats numeric codes directly instead of displaying UNKNOWN ERROR.
+An intermediate candidate exposed that lookup limitation during runtime
+verification and was superseded; its failed check is retained privately.
+
+All 85 host checks, eight UI checks and a clean ESP32 build passed. Managed OTA,
+verified boot, original configuration/profile/password preservation and exact
+served-page verification passed. The test board reports `Failed (0x105)` and
+camera unavailable. The SDK defines 0x105 as ESP_ERR_NOT_FOUND; the physical cause
+(camera, connection, power or board configuration) remains unproven. No physical
+camera repair is claimed.
+
+One retained saved-JPEG recognition check completed in 11.507346 seconds with all
+six input tensors and output arrays matching exactly. This is regression evidence,
+not new accuracy or live capture-cadence evidence. Automatic captures remained at
+zero and archiving stayed disabled. Production and public installer unchanged.
+
+The pipeline gate was also corrected to test rejection of the exact retained
+all-black cached frame, independently rejected by the frozen Python registration.
+All 126 remaining dial preprocessing comparisons matched, with three expected
+visibility rejections. No thresholds, labels or model weights were changed.
+
+Private evidence: `camera-readonly-diagnosis-20260924/`, failed
+`aiedge-camera-diagnostic-01/` and `aiedge-camera-diagnostic-02/` records, and
+`aiedge-camera-diagnostic-03/{ota,runtime-verification,saved-jpeg-smoke,RESTORE.md}`
+under firmware-port-tests. The last directory contains the accepted deployment.

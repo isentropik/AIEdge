@@ -4,6 +4,8 @@
 
 #include "server_help.h"
 #include "ClassLogFile.h"
+#include "ClassControllCamera.h"
+#include "CameraInitReport.h"
 
 #include "time_sntp.h"
 
@@ -400,7 +402,8 @@ esp_err_t sysinfo_handler(httpd_req_t *req)
     add("gittag",gittag);add("gitrevision",gitrevision);add("html",htmlversion);
     add("cputemp",cputemp);add("hostname",*getHostname());add("IPv4",*getIPAddress());
     add("freeHeapMem",freeheapmem);
-    if(!cJSON_AddBoolToObject(object,"camera_available",!isSetSystemStatusFlag(SYSTEM_STATUS_CAM_BAD)))ok=false;
+    if(!cJSON_AddBoolToObject(object,"camera_available",CCstatus.CameraInitSuccessful && !isSetSystemStatusFlag(SYSTEM_STATUS_CAM_BAD)))ok=false;
+    add("camera_initialization",cameraInitReport(CCstatus.CameraInitAttempted,CCstatus.CameraInitError));
     char* json=ok?cJSON_PrintUnformatted(array):nullptr;
     cJSON_Delete(array);
     if(!json)return httpd_resp_send_err(req,HTTPD_500_INTERNAL_SERVER_ERROR,"Out of memory");

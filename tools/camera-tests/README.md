@@ -84,3 +84,11 @@ The saved-reading regression also exercises `SavedReadingTime.h`: Gregorian leap
 `test_init.py` compiles the actual `CCamera::InitCam` body with driver boundaries stubbed. It checks all three supported sensor IDs, success followed by driver error, missing sensor after successful driver initialization, unsupported sensor, and later recovery. Ready state and cached sensor ID are cleared before deinitialization; failed probes cannot expose stale readiness. This test does not establish the physical cause of a missing camera or verify electrical recovery.
 
 Run with a Python environment containing ziglang: `python test_init.py`.
+
+The initialization test also checks retained attempt/error state and the portable
+`CameraInitReport.h` formatter. Device information reports Success, Not attempted,
+or Failed with the numeric code. It does not depend on ESP-IDF's optional error
+name table, which is disabled in the release configuration. A code identifies
+the initialization failure, not its physical cause. The camera-available flag
+also requires actual successful initialization; absence of a camera-error flag
+alone is not evidence that initialization ran.
