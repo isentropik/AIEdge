@@ -31,13 +31,13 @@
   }
   function accounting(s) {
     const d=s.display;if(!d||!['ft3','m3'].includes(d.unit))return "Choose compatible meter details to enable converted consumption display.";
-    const unit=d.unit==='ft3'?'ft³':'m³',i=d.interval||{},c=d.cumulative_since_anchor||{};
+    const unit=d.unit==='ft3'?'ftÂ³':'mÂ³',i=d.interval||{},c=d.cumulative_since_anchor||{};
     const quantity=v=>number(v)===null?'Unknown':Number(v.toPrecision(8))+' '+unit;
     return ['State: '+String(s.state||'unknown'),
-      'Interval bounds: '+quantity(i.minimum)+' – '+quantity(i.maximum),
+      'Interval bounds: '+quantity(i.minimum)+' â€“ '+quantity(i.maximum),
       'Interval estimate: '+quantity(i.estimate),
       'Average flow: '+(number(i.average_per_second)===null?'Unknown':quantity(i.average_per_second)+'/s'),
-      'Since anchor'+(c.current===true?'':' (not current)')+': '+quantity(c.minimum)+' – '+quantity(c.maximum),
+      'Since anchor'+(c.current===true?'':' (not current)')+': '+quantity(c.minimum)+' â€“ '+quantity(c.maximum),
       'Cumulative estimate: '+quantity(c.current===true?c.estimate:null),
       'Unresolved whole turns remain unknown; these are not lifetime totals.'].join('\n');
   }
