@@ -1,7 +1,7 @@
 import io,json,tempfile,unittest
 from pathlib import Path
 from PIL import Image
-from build_review_gallery import build
+from build_review_gallery import build,image_warnings
 from prepare_training_review import prepare
 from image_archive_store import digest,store_settings,store_capture
 
@@ -60,5 +60,26 @@ class GalleryTests(unittest.TestCase):
   self.generate();page=(self.output/'index.html').read_text(encoding='utf-8')
   self.assertIn('1 protected image hashes have no capture records here',page)
   self.assertIn('300 seconds within the same device boot',page)
+
+class QualityTests(unittest.TestCase):
+ def test_exact_blank_colors_and_transparency(self):
+  for color in [(0,0,0),(255,255,255),(24,90,130)]:
+   with self.subTest(color=color):self.assertIn('Uniform',image_warnings(Image.new('RGB',(8,8),color))[0])
+  hidden=Image.new('RGBA',(8,8),(100,20,30,0));hidden.putpixel((0,0),(255,0,0,0))
+  self.assertIn('transparent',image_warnings(hidden)[0])
+ def test_low_contrast_detail_is_not_rejected(self):
+  image=Image.new('RGB',(8,8),(0,0,0));image.putpixel((0,0),(1,0,0))
+  self.assertEqual(image_warnings(image),[])
+ def test_palette_alpha_detail_is_visible(self):
+  image=Image.new('P',(8,8));image.putpalette([0,0,0]*256)
+  image.info['transparency']=0;image.putpixel((0,0),1)
+  self.assertEqual(image_warnings(image),[])
+ def test_warning_export_keeps_review_rows_compatible(self):
+  fixture=GalleryTests();fixture.setUp();self.addCleanup(fixture.doCleanups)
+  before=prepare(fixture.root,fixture.protection)['groups'][0]['images']
+  result=fixture.generate()
+  self.assertEqual(result['images'],before)
+  self.assertIn('Uniform',result['quality_warnings'][digest(fixture.image)][0])
+  self.assertIn('Image warning:',(fixture.output/'index.html').read_text(encoding='utf-8'))
 
 if __name__=='__main__':unittest.main()

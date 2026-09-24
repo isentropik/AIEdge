@@ -22,6 +22,20 @@ try{const saved=localStorage.getItem('aiedge-review-theme');if(['system','light'
 theme.addEventListener('change',()=>{apply(theme.value);try{localStorage.setItem('aiedge-review-theme',theme.value);}catch(e){}});
 """
 
+def image_warnings(image):
+    """Detect only exact blankness, not recognition quality or reading accuracy."""
+    rgba=image.convert('RGBA')
+    if rgba.getchannel('A').getextrema()==(0,0):
+        return ['Fully transparent image: no visible dial. Leave readings unknown.']
+    # Check the visible result on both backgrounds; hidden RGB and palette
+    # transparency must not hide an otherwise empty image.
+    for color in ('black','white'):
+        visible=Image.alpha_composite(Image.new('RGBA',rgba.size,color),rgba).convert('RGB')
+        if any(low!=high for low,high in visible.getextrema()):
+            return []
+    return ['Uniform image: no visible dial detail. Leave readings unknown.']
+
+
 def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_seconds=300):
     if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=12:
         raise ValueError('Use a nonnegative offset and a limit from 1 to 12')
@@ -33,7 +47,7 @@ def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_sec
     if len(groups)!=1:raise ValueError('Select an existing review group ID')
     group=groups[0];selected=group['images'][offset:offset+limit]
     if not selected:raise ValueError('No images at requested offset')
-    blobs=[]
+    blobs=[];quality_warnings={}
     for row in selected:
         data=read_bounded(archive/'blobs'/(row['image_sha256']+'.image'),MAX_IMAGE_BYTES)
         if digest(data)!=row['image_sha256']:raise ValueError('Image changed after audit')
@@ -42,12 +56,14 @@ def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_sec
                 raise ValueError('Review supports single JPEG/PNG images up to two million pixels')
             extension='jpg' if image.format=='JPEG' else 'png'
             image.load()
+            quality_warnings[row['image_sha256']]=image_warnings(image)
         blobs.append((row['image_sha256']+'.'+extension,data))
     cards=[]
     esc=lambda v:html.escape(str(v),quote=True)
     for number,(row,(name,data)) in enumerate(zip(selected,blobs),offset+1):
         captures=''.join('<li>'+esc(c['capture_utc'] or 'UTC unknown')+' — boot '+esc(c['boot_id'])+', capture '+esc(c['capture_us'])+' µs</li>' for c in row['captures'])
-        cards.append(f'<article><section><h2>Image {number}</h2><p class="muted">Unreviewed · excluded from training</p></section><a href="{name}" target="_blank" rel="noopener"><img src="{name}" alt="Archived meter capture {number}" loading="lazy"></a><section><p>Tap the image to open its original size.</p><details><summary>Capture details ({len(row["captures"])})</summary><ul>{captures}</ul><p>SHA-256 <code>{row["image_sha256"]}</code></p></details></section></article>')
+        warning=''.join('<p role="note"><strong>Image warning:</strong> '+esc(w)+'</p>' for w in quality_warnings[row['image_sha256']])
+        cards.append(f'<article><section><h2>Image {number}</h2>{warning}<p class="muted">Unreviewed · excluded from training</p></section><a href="{name}" target="_blank" rel="noopener"><img src="{name}" alt="Archived meter capture {number}" loading="lazy"></a><section><p>Tap the image to open its original size.</p><details><summary>Capture details ({len(row["captures"])})</summary><ul>{captures}</ul><p>SHA-256 <code>{row["image_sha256"]}</code></p></details></section></article>')
     identity=''.join('<dt>'+esc(k.replace('_',' '))+'</dt><dd><code>'+esc(v)+'</code></dd>' for k,v in group['identity'].items())
     page='<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIEdge archive review</title><style>'+STYLE+'</style><main><header><h1>AIEdge archive review</h1><label>Theme <select aria-label="Theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header><p>Original archived images from one capture-settings group. No readings have been assigned.</p><p class="muted">Exact duplicates are combined. Similar images may still be present. This page does not change labels or training splits.</p><details><summary>Capture-settings group</summary><dl>'+identity+'</dl></details><p>'+f'Showing {offset+1}–{offset+len(selected)} of {len(group["images"])} unique images, ordered by image hash.'+'</p>'+''.join(cards)+'</main><script>'+SCRIPT+'</script></html>'
     notice=f'<p class="muted">Held-out protection window: {protect_window_seconds} seconds within the same device boot. This is not visual near-duplicate detection.</p>'
@@ -57,7 +73,7 @@ def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_sec
     output.mkdir(parents=True,exist_ok=False)
     for name,data in blobs:
         with (output/name).open('xb') as f:f.write(data)
-    manifest=dict(version=1,group_id=group_id,identity=group['identity'],images=selected,protected_manifest_sha256=review['protected_manifest_sha256'],protect_window_seconds=review['protect_window_seconds'],protected_hashes_without_capture_records=review['protected_hashes_without_capture_records'],training_eligible=False,limits=review['limits'])
+    manifest=dict(version=1,quality_warnings=quality_warnings,quality_check_scope='Exact uniform pixels and full transparency only; no warning does not establish image quality or accuracy',group_id=group_id,identity=group['identity'],images=selected,protected_manifest_sha256=review['protected_manifest_sha256'],protect_window_seconds=review['protect_window_seconds'],protected_hashes_without_capture_records=review['protected_hashes_without_capture_records'],training_eligible=False,limits=review['limits'])
     (output/'review.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
     (output/'index.html').write_text(page,encoding='utf-8')
     return manifest

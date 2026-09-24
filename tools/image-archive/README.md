@@ -259,3 +259,13 @@ calibration or pointer offsets; never automatically correct labels to make them
 agree. The tool preserves the labels, records their file hash and review method,
 and does not change splits or admit images to training. The output must be a new
 file. Existing split and near-duplicate protections still apply.
+
+
+### Blank-image warnings
+
+The review gallery warns when an image is exactly uniform or fully transparent.
+Keep its readings unknown; the original file and capture details remain available
+for diagnosis. Warnings are stored separately from label rows in `review.json`.
+This does not delete captures, change training eligibility, or alter held-out
+protection. A picture without a warning may still have glare, poor focus, wrong
+alignment or an unreadable needle; this check is not an accuracy score.
