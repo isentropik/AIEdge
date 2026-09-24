@@ -40,3 +40,18 @@ establish these failure scenarios on hardware.
 
 Private deployment evidence is in `aiedge-archive-counters-candidate/ota` and
 `aiedge-archive-counters-candidate/asset-verification` under firmware-port-tests.
+
+## Interrupted receiver process
+
+`tools/image-archive/test_process_interruption.py` terminates a child receiver
+storage process with `os._exit` at three boundaries: after committing the image
+blob, immediately before linking the capture record, and immediately after linking
+that record. No success receipt is produced by the interrupted process. Retrying
+preserves the original image and produces one verified, unreviewed capture record;
+conflicting metadata cannot overwrite it. These cases passed on local Windows
+storage on September 23. They are also part of the receiver's normal unittest
+discovery command.
+
+Unfinished `.pending-*` files are intentionally preserved. They are not capture
+records, acknowledgment evidence or training data. This test does not establish
+physical power-loss durability, network-share semantics or ESP32 retry behavior.
