@@ -43,3 +43,12 @@ and NaN; accounting must receive no observation unless every dial succeeds.
 This checks control flow, not model accuracy, allocator capacity, camera behavior
 or timing on the ESP32. Fault fixtures do not substitute for a sustained valid
 capture-to-publication hardware run.
+
+## Analog readout conversion
+
+Run `python test_analog_readout.py --cxx c++` (or `--zig-python`).
+This compiles the actual analog branch of `getReadout`, `PointerEvalAnalogNew`
+and `ShiftDecimal`. It checks the current saved-image estimates, leading zeros,
+tenths truncation, following-dial carry handling, main decimal scaling, the
+separate legacy secondary position, and rejected/nonfinite/out-of-range values.
+The fixtures do not exercise all postprocessing, MQTT delivery, or UI formatting.

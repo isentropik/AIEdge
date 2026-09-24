@@ -59,3 +59,18 @@ useful cadence target belong to follow-up work. Existing failures that threaten
 readings, data integrity, installation or recovery still need fixing before release.
 
 See [release evidence](RELEASE-READINESS.md) and the [improvement backlog](IMPROVEMENTS.md).
+
+## Agreed commissioning route
+
+Continue with saved images and surrogate sequence files first. The planned live
+transition is a clean installation of the complete stack on the operating unit,
+wiping its flash and SD card after the useful surrogate tests are complete.
+No wipe has been performed. Preserve the existing configuration, calibration,
+network/publication identity and recovery material before that operation; a
+config.ini copy alone is not a flash/SD backup. Clean installation also requires
+Wi-Fi and first-time website-password setup.
+
+The actual analog readout conversion now passes checks for leading zeros, tenths
+truncation, following-dial carries, decimal scaling and invalid-result rejection.
+Local consumption/session regressions also pass for jitter, rollovers, missing
+frames, restart gaps and ambiguity. These are not live-publication measurements.
