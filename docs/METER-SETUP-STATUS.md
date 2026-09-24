@@ -73,3 +73,33 @@ hash; no marker, calibration, model or device setting changed. Evidence:
 `automatic-markers-reference-review-20260924/verification.json` under the private
 firmware-port-tests directory. This corrects visual review provenance; it does
 not add recognition accuracy evidence or activate automatic setup.
+
+
+## Later retained frame and human review — September 24
+
+A subsequent cached full image, retrieved at 19:03:13 UTC, passed the active
+alignment and all six visibility checks in the actual firmware host pipeline
+with both dense and sparse sampling. Its capture timestamp is unknown. The user
+accepted the displayed fourth-main, last-main and secondary estimates of 5.34,
+4.78 and 7.15 on the 0–10 scale. This is approximate visual confirmation of
+model-assisted displays, not independent hundredth-unit ground truth or three
+independent captures. The image and review derivatives remain held out.
+
+The confirmed main pair still has a 0.138 circular residual: the following
+4.78 implies 5.478, versus the preceding 5.34. This exceeds the provisional
+0.11 combined bound. Both host diagnostic and firmware accounting use that
+consistency rule; with valid timestamps, accounting rejects inconsistent main
+inputs as Review/MainInconsistent. This cached image has no capture timestamp
+and establishes no consumption or flow. The cause remains unresolved; no
+calibration, tolerance, raw reading or model was changed to force agreement.
+
+The same image rejected one marker in the separate frozen automatic-placement
+proposal: its competing-match margin was 0.13785 against the provisional 0.15
+gate, despite a 0.97399 best correlation and zero integer-pixel drift. The other
+two proposed markers passed. This is a proposal failure, not an active-alignment
+failure. Templates and gates remain frozen; the proposal is not ready to activate.
+
+Private evidence: `current-frame-firmware-check-20260924/result.json`,
+`current-frame-review-20260924/confirmation-evaluation.json`,
+`current-frame-review-20260924/consistency-investigation.json`, and
+`automatic-markers-current-frame-20260924/result.json` under firmware-port-tests.
