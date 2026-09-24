@@ -1,3 +1,5 @@
+const fs=require('node:fs');const path=require('node:path');
+for(const name of ['meter-profile.html','meter-profile.js','meter_diagnostics.html','meter_diagnostics.js'])new TextDecoder('utf-8',{fatal:true}).decode(fs.readFileSync(path.join(__dirname,'../../sd-card/html',name)));
 const assert=require('node:assert/strict');
 const api=require('../../sd-card/html/meter-profile.js');
 const gas={version:1,kind:'gas',source_unit:'ft3',display_unit:'m3',units_per_count:1,has_secondary:true,secondary_units_per_revolution:5,confirmed:true};
