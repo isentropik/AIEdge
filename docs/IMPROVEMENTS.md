@@ -31,6 +31,8 @@ Updated September 23, 2026 (Pacific time). This is the running list of open work
 
 ## Meter recognition and physical calculations
 
+The [reviewed crop port check](REVIEWED-CROP-VALIDATION.md) retains 27/27 within 0.1 through firmware image-processing primitives and desktop reference inference. These reuse existing labels and omit full-frame registration; they do not close real-camera validation or expand independent evidence.
+
 The cumulative turn-tracking correction is installed on the test board and recorded in the [deployment archive](DEPLOYED-IMPROVEMENTS.md). Physical-sequence accounting and real-image validation remain pending; default firmware accounting still has no assumed maximum-flow bound. See [accounting validation and limits](METER-ACCOUNTING-VALIDATION.md).
 
 - [ ] Extend the passing full-RGB-frame ESP32 registration/preprocessing/inference parity test to actual camera capture/JPEG decoding and confirmed real-image accuracy; preserve held-out data, raw hashes and uncertain labels.
