@@ -27,7 +27,12 @@
     if(s.active===true)return "A saved-history scan is running. Refresh to check its result.";
     if(!number(s.scanned_at_uptime_us))return "No saved-history scan result yet.";
     if(s.valid!==true)return "History is not available: "+String(s.reason||"Unknown reason");
-    return "Completed segments: "+count(s.segments)+"\nCovered consumption: "+count(s.covered_minimum_ft3)+"–"+count(s.covered_maximum_ft3)+" ft³\nThis excludes the active segment and unresolved gaps. It is not a lifetime total.";
+    const d=s.display,converted=d&&['ft3','m3'].includes(d.unit);
+    const unit=converted?(d.unit==='m3'?'m³':'ft³'):'ft³ (stored units)';
+    const lo=converted?d.minimum:s.covered_minimum_ft3,hi=converted?d.maximum:s.covered_maximum_ft3;
+    const valid=number(lo)!==null&&number(hi)!==null&&hi>=lo;
+    const bounds=valid?Number(lo.toPrecision(8))+'–'+Number(hi.toPrecision(8))+' '+unit:'Unknown';
+    return "Completed segments: "+count(s.segments)+"\nCovered consumption: "+bounds+"\nThis excludes the active segment and unresolved gaps. It is not a lifetime total.";
   }
   function accounting(s) {
     const d=s.display;if(!d||!['ft3','m3'].includes(d.unit))return "Choose compatible meter details to enable converted consumption display.";

@@ -438,6 +438,7 @@ esp_err_t handler_meter_history_status(httpd_req_t* req) {
         "\"scanned_at_uptime_us\":"+std::to_string(scanned)+",\"segments\":"+std::to_string(result.segments)+
         ",\"duplicates\":"+std::to_string(result.duplicates)+",\"covered_minimum_ft3\":"+(result.valid?meter::jsonNumber(result.coveredMinimumFt3):"null")+
         ",\"covered_maximum_ft3\":"+(result.valid?meter::jsonNumber(result.coveredMaximumFt3):"null")+
+        ",\"display\":"+meter::historyDisplayJson(result.valid,result.coveredMinimumFt3,result.coveredMaximumFt3,meter::activeDisplayUnit())+
         ",\"lifetime_complete\":false,\"verified_accuracy\":false}";
     httpd_resp_set_type(req,"application/json");httpd_resp_set_hdr(req,"Cache-Control","no-store");
     return httpd_resp_send(req,json.c_str(),json.size());

@@ -26,5 +26,13 @@ inline std::string displayJson(const SessionResult& s,RegisterUnit unit){
  ",\"estimate\":"+(cumulativeEstimate?displayNumber(c.estimatedFt3,unit):"null")+"}}";
  return out;
 }
+// A display-only view of completed history; canonical stored ft3 remain unchanged.
+inline std::string historyDisplayJson(bool valid,double lo,double hi,RegisterUnit unit){
+ if(!displayUnitSupported(unit))return "null";
+ const bool available=valid&&displayBounds(lo,hi);
+ const char* name=unit==RegisterUnit::CubicFoot?"ft3":"m3";
+ return "{\"unit\":\""+std::string(name)+"\",\"canonical_unit\":\"ft3\",\"minimum\":"+
+  (available?displayNumber(lo,unit):"null")+",\"maximum\":"+(available?displayNumber(hi,unit):"null")+"}";
+}
 inline std::string statusWithDisplayJson(const SessionResult& s,RegisterUnit unit){auto out=statusJson(s);out.pop_back();return out+",\"display\":"+displayJson(s,unit)+"}";}
 }
