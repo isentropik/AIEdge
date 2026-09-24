@@ -1190,13 +1190,25 @@ std::string getFormatedUptime(bool compact)
 
 const char *get404(void)
 {
-	return "<pre>\n\n\n\n"
-		   "        _\n"
-		   "    .__(.)< ( oh oh! This page does not exist! )\n"
-		   "    \\___)\n"
-		   "\n\n"
-		   "                You could try your <a href=index.html target=_parent>luck</a> here!</pre>\n"
-		   "<script>document.cookie = \"page=overview.html\"</script>"; // Make sure we load the overview page
+    // Keep recovery navigation usable even when SD-hosted styles are missing.
+    return R"AIEdge(<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Page not found | AIEdge</title>
+<style>
+:root{color-scheme:light;--bg:#f3f6f7;--surface:#fff;--ink:#172b35;--muted:#526874;--line:#ccd8de;--link:#006c61}
+@media(prefers-color-scheme:dark){:root:not([data-aiedge-theme="light"]){color-scheme:dark;--bg:#101b22;--surface:#1b2931;--ink:#e8f0f4;--muted:#b0c4ce;--line:#526874;--link:#7cddd0}}
+:root[data-aiedge-theme="dark"]{color-scheme:dark;--bg:#101b22;--surface:#1b2931;--ink:#e8f0f4;--muted:#b0c4ce;--line:#526874;--link:#7cddd0}
+*{box-sizing:border-box}body{margin:0;padding:clamp(16px,5vw,48px);background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,sans-serif}
+main{max-width:640px;margin:0 auto;background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:clamp(20px,5vw,36px)}
+header{display:flex;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:36px}.brand{font-size:24px;font-weight:700;color:var(--ink);text-decoration:none}
+.aiedge-theme-picker{margin-left:auto;font-size:14px}select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px}
+h1{font-size:clamp(24px,5vw,32px);line-height:1.2;margin:0 0 16px}p{color:var(--muted);margin:0 0 24px}nav{display:flex;gap:12px;flex-wrap:wrap}nav a{color:var(--link);padding:10px 16px;border:1px solid var(--line);border-radius:8px;text-decoration:none}a:focus-visible,select:focus-visible{outline:3px solid var(--link);outline-offset:4px}
+</style><script src="/aiedge-theme.js?v=shared-1"></script></head>
+<body><main><header class="aiedge-header"><a class="brand" href="/index.html#overview" target="_top">AIEdge</a></header>
+<h1>Page not found</h1><p>This address is unavailable. Return to the overview or check device status.</p>
+<nav aria-label="Recovery navigation"><a href="/index.html#overview" target="_top">Overview</a><a href="/index.html#system" target="_top">Device &amp; maintenance</a></nav>
+</main></body></html>)AIEdge";
 }
 
 std::string UrlDecode(const std::string &value)

@@ -258,3 +258,21 @@ six-dial tensor/output parity and reduced median processing from 13.968 to
 13.596 seconds. See [measurements and limitations](PERFORMANCE-MEASUREMENTS.md#reusing-fixed-radius-values--september-24-2026).
 This does not resolve camera availability or establish live capture cadence.
 Production and the public installer were unchanged.
+
+
+## September 24: firmware missing-page response
+
+Replaced the legacy ASCII-art 404 page with an AIEdge page using responsive spacing,
+root-relative Overview and Device & maintenance links, and the existing browser theme
+preference. Inline fallback styling remains readable if the shared theme script is
+unavailable. Missing-page requests no longer change the page-selection cookie.
+HTTP status and request-handler behavior are unchanged.
+
+Test-board bundle `40bf77ff2b3406cd65e5eda767653261e4f713076685fb8a6ae63d3e2bfb516b`
+passed the managed build and was installed by authenticated OTA. Post-restart reads
+verified the complete compiled HTML response, HTTP 404 and HTML content type, home
+page and shared theme script availability, preserved configuration/profile/password,
+zero capture attempts and disabled archiving. The local comparison initially added
+Windows line endings twice; normalizing compiler stdout fixed the verification
+harness without changing firmware. Browser rendering remains unverified.
+This is a test-board deployment, not a public installer release or production update.
