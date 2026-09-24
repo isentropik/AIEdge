@@ -25,7 +25,7 @@ def unique_keys(pairs):
     return value
 
 
-def audit(root):
+def audit(root, include_records=False):
     root = Path(root)
     if not root.is_dir():
         raise ValueError('Archive folder does not exist')
@@ -35,6 +35,7 @@ def audit(root):
     issues = []
     groups = Counter()
     hashes = Counter()
+    verified_records = []
     valid = 0
     unknown_utc = 0
     records = sorted((root/'captures').glob('*.json'))
@@ -60,12 +61,14 @@ def audit(root):
             validate_settings(metadata['settings_sha256'], settings)
             hashes[metadata['image_sha256']] += 1
             groups[tuple(metadata[k] for k in ('device_id','firmware_sha256','model_sha256','calibration_sha256','settings_sha256'))] += 1
+            if include_records:
+                verified_records.append(record)
             valid += 1
             unknown_utc += metadata['capture_utc'] is None
         except (ValueError, OSError, TypeError, KeyError) as exc:
             issues.append({'record': path.name, 'error': str(exc)})
     keys = ('device_id','firmware_sha256','model_sha256','calibration_sha256','settings_sha256')
-    return {'version': 1, 'records_checked': len(records), 'valid_records': valid,
+    result = {'version': 1, 'records_checked': len(records), 'valid_records': valid,
             'invalid_records': len(issues), 'unique_image_hashes': len(hashes),
             'repeated_image_records': sum(n-1 for n in hashes.values()),
             'valid_records_without_utc': unknown_utc,
@@ -75,6 +78,9 @@ def audit(root):
                        'No image decoding, needle labels, near-duplicate or held-out split assignment.',
                        'Model and calibration hashes are recorded identities, not verification of external artifacts.',
                        'Only capture records and their referenced objects are checked; no orphan cleanup.']}
+    if include_records:
+        result['verified_records'] = verified_records
+    return result
 
 
 def main():
