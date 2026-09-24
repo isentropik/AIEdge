@@ -79,8 +79,8 @@ void CRotateImage::Rotate(float _angle, int _centerx, int _centery)
 
     RGBImageLock();
 
-    for (int x = 0; x < width; ++x)
-        for (int y = 0; y < height; ++y)
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
         {
             p_target = odata + (channels * (y * width + x));
 
@@ -181,8 +181,8 @@ void CRotateImage::RotateAntiAliasing(float _angle, int _centerx, int _centery)
 
     RGBImageLock();
 
-    for (int x = 0; x < width; ++x)
-        for (int y = 0; y < height; ++y)
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
         {
             p_target = odata + (channels * (y * width + x));
 
@@ -271,8 +271,8 @@ void CRotateImage::Translate(int _dx, int _dy)
 
     RGBImageLock();
 
-    for (int x = 0; x < width; ++x)
-        for (int y = 0; y < height; ++y)
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x)
         {
             p_target = odata + (channels * (y * width + x));
 
