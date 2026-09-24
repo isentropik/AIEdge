@@ -118,10 +118,20 @@ without resizing or recompression. Existing output folders are never overwritten
 If disk writing fails, leave the partial folder for inspection and retry into a
 new folder; it is not a completed gallery until `index.html` exists.
 
-This is a read-only full-image review, not a dial-labelling interface. It has no
-needle overlay, suggested readings, label submission or training activation.
-Calibration-aware crop overlays remain future work. Separate human-label records
-can now be saved with the command below. Automated export checks pass; browser layout verification is pending.
+By default this is a view-only gallery. Add `--dials main_10k main_1k secondary_5`
+(using your actual dial names) to include reading fields. On your phone or computer,
+select each image you want to review, type a value from 0 to below 10 or check **unknown**
+for every named dial, then enter a nickname and choose how you reviewed it.
+Download your answers before closing the page; unfinished entries are not saved.
+The file contains readings and image hashes, not the images themselves. Nothing
+is uploaded or admitted to training. Blank fields are not treated as zero or unknown.
+
+Use the downloaded file as `--answers` with the recorder below. The gallery embeds
+the exact review-file hash, so no manual hash copying is needed. The recorder still
+rechecks the archive and current held-out protections. This gallery has no needle
+overlay or suggested readings; calibration-aware crop overlays remain future work.
+Check named dial order and numbering direction yourself. Browser layout verification
+remains pending; Node is required to run the optional form's regression tests.
 
 ## Protect captures near held-out images
 
@@ -151,7 +161,7 @@ split. No reviewed image is automatically made eligible for training.
 read needles automatically, modify the gallery, or start training. Keep the
 original gallery and archive. Use a new output filename for each revision.
 
-Prepare an `answers.json` file like this, replacing the hash placeholders with
+Use the gallery form above, or prepare an `answers.json` file like this, replacing the hash placeholders with
 the actual values. `review_sha256` is the SHA-256 of the gallery's `review.json`
 file; each image hash is listed inside that file. A reviewer nickname is enough.
 

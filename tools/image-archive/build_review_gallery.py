@@ -8,6 +8,7 @@ from PIL import Image
 from audit_image_archive import read_bounded
 from image_archive_store import digest,MAX_IMAGE_BYTES
 from prepare_training_review import prepare
+import review_form
 
 STYLE="""
 :root{color-scheme:light dark;--bg:#f3f6f7;--card:#fff;--text:#16272b;--muted:#526469;--line:#cbd7da;--accent:#087565}
@@ -36,9 +37,10 @@ def image_warnings(image):
     return ['Uniform image: no visible dial detail. Leave readings unknown.']
 
 
-def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_seconds=300):
+def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_seconds=300,dials=None):
     if type(offset) is not int or offset<0 or type(limit) is not int or not 1<=limit<=12:
         raise ValueError('Use a nonnegative offset and a limit from 1 to 12')
+    if dials is not None:review_form.validate_dials(dials)
     archive=Path(archive);output=Path(output)
     if output.resolve().is_relative_to(archive.resolve()):raise ValueError('Gallery must be outside archive')
     if output.exists():raise ValueError('Gallery output already exists')
@@ -63,7 +65,8 @@ def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_sec
     for number,(row,(name,data)) in enumerate(zip(selected,blobs),offset+1):
         captures=''.join('<li>'+esc(c['capture_utc'] or 'UTC unknown')+' — boot '+esc(c['boot_id'])+', capture '+esc(c['capture_us'])+' µs</li>' for c in row['captures'])
         warning=''.join('<p role="note"><strong>Image warning:</strong> '+esc(w)+'</p>' for w in quality_warnings[row['image_sha256']])
-        cards.append(f'<article><section><h2>Image {number}</h2>{warning}<p class="muted">Unreviewed · excluded from training</p></section><a href="{name}" target="_blank" rel="noopener"><img src="{name}" alt="Archived meter capture {number}" loading="lazy"></a><section><p>Tap the image to open its original size.</p><details><summary>Capture details ({len(row["captures"])})</summary><ul>{captures}</ul><p>SHA-256 <code>{row["image_sha256"]}</code></p></details></section></article>')
+        form=review_form.fields(row['image_sha256'],dials) if dials else ''
+        cards.append(f'<article><section><h2>Image {number}</h2>{warning}<p class="muted">Unreviewed · excluded from training</p></section><a href="{name}" target="_blank" rel="noopener"><img src="{name}" alt="Archived meter capture {number}" loading="lazy"></a><section><p>Tap the image to open its original size.</p>{form}<details><summary>Capture details ({len(row["captures"])})</summary><ul>{captures}</ul><p>SHA-256 <code>{row["image_sha256"]}</code></p></details></section></article>')
     identity=''.join('<dt>'+esc(k.replace('_',' '))+'</dt><dd><code>'+esc(v)+'</code></dd>' for k,v in group['identity'].items())
     page='<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AIEdge archive review</title><style>'+STYLE+'</style><main><header><h1>AIEdge archive review</h1><label>Theme <select aria-label="Theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></header><p>Original archived images from one capture-settings group. No readings have been assigned.</p><p class="muted">Exact duplicates are combined. Similar images may still be present. This page does not change labels or training splits.</p><details><summary>Capture-settings group</summary><dl>'+identity+'</dl></details><p>'+f'Showing {offset+1}–{offset+len(selected)} of {len(group["images"])} unique images, ordered by image hash.'+'</p>'+''.join(cards)+'</main><script>'+SCRIPT+'</script></html>'
     notice=f'<p class="muted">Held-out protection window: {protect_window_seconds} seconds within the same device boot. This is not visual near-duplicate detection.</p>'
@@ -74,7 +77,12 @@ def build(archive,protection,group_id,output,offset=0,limit=6,protect_window_sec
     for name,data in blobs:
         with (output/name).open('xb') as f:f.write(data)
     manifest=dict(version=1,quality_warnings=quality_warnings,quality_check_scope='Exact uniform pixels and full transparency only; no warning does not establish image quality or accuracy',group_id=group_id,identity=group['identity'],images=selected,protected_manifest_sha256=review['protected_manifest_sha256'],protect_window_seconds=review['protect_window_seconds'],protected_hashes_without_capture_records=review['protected_hashes_without_capture_records'],training_eligible=False,limits=review['limits'])
-    (output/'review.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
+    if dials:manifest['label_form_dials']=dials
+    manifest_bytes=json.dumps(manifest,indent=2).encode('utf-8')
+    (output/'review.json').write_bytes(manifest_bytes)
+    if dials:
+        config=dict(review_sha256=digest(manifest_bytes),dials=dials,images=[r['image_sha256'] for r in selected])
+        page=page.replace('</style>',review_form.STYLE+'</style>',1).replace('</main>',review_form.panel(config)+'</main>',1)
     (output/'index.html').write_text(page,encoding='utf-8')
     return manifest
 
@@ -83,8 +91,9 @@ def main():
     p.add_argument('--protected-hashes',type=Path,required=True);p.add_argument('--group',required=True)
     p.add_argument('--output',type=Path,required=True);p.add_argument('--offset',type=int,default=0);p.add_argument('--limit',type=int,default=6)
     p.add_argument('--protect-window-seconds',type=int,default=300)
+    p.add_argument('--dials',nargs='+',help='Optional named dials to label on the 0-10 scale')
     a=p.parse_args()
-    try:build(a.archive,a.protected_hashes,a.group,a.output,a.offset,a.limit,a.protect_window_seconds)
+    try:build(a.archive,a.protected_hashes,a.group,a.output,a.offset,a.limit,a.protect_window_seconds,a.dials)
     except (ValueError,OSError) as exc:p.exit(2,str(exc)+'\n')
     print(str(a.output/'index.html'))
 if __name__=='__main__':main()
