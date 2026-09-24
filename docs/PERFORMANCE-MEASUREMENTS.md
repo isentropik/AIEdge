@@ -211,3 +211,37 @@ preserved, automatic capture stayed inactive, and archiving remained disabled.
 Private evidence: `aiedge-alignment-rows-baseline-01/` and
 `aiedge-alignment-rows-01/{paired-timing.json,ota,replay-verification,RESTORE.md}`.
 Production and public installer unchanged.
+
+
+## Full replay after marker-search optimization — September 24, 2026
+
+The currently installed test-board bundle
+`35af1e4d21774bde843728f3fcba02325df07a69b55e52a3bdf45abc975bfa31`
+completed all 15 saved-JPEG fixtures sequentially. All 90 dial input tensors and
+inference outputs matched the frozen references byte-for-byte. The board stayed
+in the same boot, configuration stayed byte-identical, and camera cycles and
+archive work remained inactive.
+
+| Stage | Median seconds |
+| --- | ---: |
+| JPEG decode | 0.751 |
+| Alignment | 2.029 |
+| Six-dial preprocessing | 6.809 |
+| Six-dial inference | 1.781 |
+| Total processing | 11.703 |
+
+Total processing ranged from 11.488 to 11.811 seconds. Stage medians do not
+necessarily sum to the total median; the total also includes diagnostic overhead.
+All 45 diagnostic-status requests succeeded: median 219 ms, empirical
+nearest-rank p95 297 ms, maximum 531 ms. This covers that endpoint during replay,
+not every web operation or slow-upload contention.
+
+This extends the three-image installed optimization check to the full retained
+fixture batch. It reuses images and expected outputs, so it is numerical
+regression evidence rather than new independent accuracy evidence. Camera
+capture, publication and archival are excluded; complete 30-second cadence is
+still unverified. No production device or public installer was changed.
+
+Private evidence: `alignment-rows-full-replay-20260924/` under firmware-port-tests,
+including preflight, every terminal result, status polls, unchanged-configuration
+checks, and reproducible `analyze.py` / `analysis.json`.
