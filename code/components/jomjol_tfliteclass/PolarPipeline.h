@@ -4,6 +4,7 @@
 #include "PolarWarp.h"
 #include "PolarFeatures.h"
 #include "PolarCalibration.h"
+#include "PolarAlignmentCheck.h"
 #include "PolarVisibility.h"
 #include "PolarProfile.h"
 
@@ -21,12 +22,15 @@ inline AlignmentStatus alignFrame(const uint8_t* rgb,int width,int height,
     if(!rgb || !inverse || width!=calibratedWidth || height!=calibratedHeight)
         return AlignmentStatus::InvalidInput;
     grayscale(rgb,width*height,scratch.fullGray);
-    MarkerMatch a,b;
+    MarkerMatch a,b,check;
     auto status=matchMarker(scratch.fullGray,width,height,marker0,marker0Spec[0],marker0Spec[1],marker0Spec[2],marker0Spec[3],scratch.scores,1681,a);
     if(status!=AlignmentStatus::Ok)return status;
     status=matchMarker(scratch.fullGray,width,height,marker1,marker1Spec[0],marker1Spec[1],marker1Spec[2],marker1Spec[3],scratch.scores,1681,b);
     if(status!=AlignmentStatus::Ok)return status;
-    double forward[6];status=registration(a,b,forward);
+    status=matchMarker(scratch.fullGray,width,height,checkMarker,checkMarkerSpec[0],checkMarkerSpec[1],checkMarkerSpec[2],checkMarkerSpec[3],scratch.scores,1681,check);
+    if(status!=AlignmentStatus::Ok)return status;
+    // Provisional three-pixel consistency limit; independent real captures still required.
+    double forward[6];status=confirmedRegistration(a,b,check,3.0,forward);
     if(status!=AlignmentStatus::Ok)return status;
     const double determinant=forward[0]*forward[4]-forward[1]*forward[3];
     inverse[0]=forward[4]/determinant;inverse[1]=-forward[1]/determinant;

@@ -5,7 +5,7 @@
 #include <cstddef>
 
 namespace polar {
-enum class AlignmentStatus { Ok, InvalidInput, FlatMarker, WeakMatch, Boundary, Spacing, Rotation };
+enum class AlignmentStatus { Ok, InvalidInput, FlatMarker, WeakMatch, Boundary, Spacing, Rotation, Confirmation, Geometry };
 struct MarkerMatch { double targetX, targetY, foundX, foundY, correlation; };
 inline double subpixel(double left,double middle,double right) {
     const double denominator=left-2*middle+right;
@@ -74,4 +74,31 @@ inline AlignmentStatus registration(const MarkerMatch& a,const MarkerMatch& b,do
     matrix[3]=s; matrix[4]=c; matrix[5]=(a.targetY+b.targetY)/2-s*x-c*y;
     return AlignmentStatus::Ok;
 }
+// The third observation verifies, but never refits, the two-marker correction.
+// Failure leaves the caller's matrix untouched.
+inline AlignmentStatus confirmedRegistration(const MarkerMatch& a,const MarkerMatch& b,
+        const MarkerMatch& check,double maximumResidual,double* matrix) {
+    if(!matrix || !std::isfinite(maximumResidual) || maximumResidual<=0)
+        return AlignmentStatus::InvalidInput;
+    const double values[]={check.targetX,check.targetY,check.foundX,check.foundY,check.correlation};
+    for(double v:values)if(!std::isfinite(v))return AlignmentStatus::InvalidInput;
+    if(check.correlation<.8)return AlignmentStatus::WeakMatch;
+    double candidate[6];auto status=registration(a,b,candidate);
+    if(status!=AlignmentStatus::Ok)return status;
+    const double ab=std::hypot(b.targetX-a.targetX,b.targetY-a.targetY);
+    const double ac=std::hypot(check.targetX-a.targetX,check.targetY-a.targetY);
+    const double bc=std::hypot(check.targetX-b.targetX,check.targetY-b.targetY);
+    const double longest=std::max(ab,std::max(ac,bc));
+    const double area2=std::abs((b.targetX-a.targetX)*(check.targetY-a.targetY)-
+                              (b.targetY-a.targetY)*(check.targetX-a.targetX));
+    if(std::min(ab,std::min(ac,bc))<1 || area2/(longest*longest)<.1)
+        return AlignmentStatus::Geometry;
+    const double x=candidate[0]*check.foundX+candidate[1]*check.foundY+candidate[2];
+    const double y=candidate[3]*check.foundX+candidate[4]*check.foundY+candidate[5];
+    if(std::hypot(x-check.targetX,y-check.targetY)>maximumResidual)
+        return AlignmentStatus::Confirmation;
+    std::copy(candidate,candidate+6,matrix);
+    return AlignmentStatus::Ok;
+}
+
 }

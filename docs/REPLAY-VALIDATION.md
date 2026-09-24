@@ -142,3 +142,12 @@ This guard is host-tested only and is not yet deployed to the test board.
 The standalone boundary regression is `tools/bundle-tests/rotation_guard_test.cpp`.
 Compile with a C++11 compiler, assertions enabled, and include path
 `code/components/jomjol_tfliteclass`. No private images are needed.
+
+
+## Independent alignment check (September 23, local build)
+
+A third fixed printed-label patch checks the original two-marker rigid transform without refitting it. The additional patch is at (108,76), size 48 x 24, in the frozen 640 x 480 reference, outside configured dial regions. Dial geometry, separate needle pivots and model weights remain unchanged. Firmware rejects weak third matches, near-collinear marker geometry or residual above a provisional three-pixel limit. The two-degree automatic rotation limit remains in force.
+
+Actual C++ host checks across 195 saved image cases accepted 120 and rejected 75, matching the prior rotation-guard baseline. Accepted transforms remained unchanged to harness precision; failed checks left output untouched. These are reused development images, not independent accuracy validation. Identity images repeated across suites are not additional evidence. Focused tests cover disagreement, weak correlation, nonfinite inputs, collinearity, invalid tolerance and the residual boundary. The ESP32 build passed.
+
+Test-board installation and added-check timing remain pending. Automatic proposals and generic three-marker setup are not available in the device UI yet. The additional compiled patch belongs to this meter-specific calibration.
