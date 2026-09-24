@@ -122,9 +122,50 @@ class ReceiverTests(unittest.TestCase):
             self.assertEqual(conn.recv(1024), b'')
         self.assertEqual(self.post()[0],201)
 
+    def test_partial_body_disconnect_then_retry(self):
+        metadata = base64.b64encode(canonical(self.metadata)).decode()
+        headers = (f'POST /v1/captures HTTP/1.0\r\n'
+                   f'Authorization: Bearer {self.token}\r\n'
+                   f'Content-Type: application/octet-stream\r\n'
+                   f'Content-Length: {len(self.image)}\r\n'
+                   f'X-Meter-Metadata: {metadata}\r\n\r\n').encode()
+        with socket.create_connection(self.server.server_address, timeout=3) as conn:
+            conn.sendall(headers + self.image[:3])
+            conn.shutdown(socket.SHUT_WR)
+            response = b''
+            while chunk := conn.recv(4096):
+                response += chunk
+        self.assertIn(b'400 Bad Request', response)
+        self.assertNotIn(b'verified_readback', response)
+        self.assertFalse(list(self.root.rglob('*.image')))
+        self.assertFalse(list(self.root.rglob('*.json')))
+        self.assertEqual(self.post()[0], 201)
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_commit_with_lost_receipt_then_retry(self):
+        from image_archive_receiver import ArchiveHandler
+        original = ArchiveHandler.reply
+        dropped = []
+        def disconnect(handler, status, payload):
+            if status == 201:
+                dropped.append(payload['capture_id'])
+                handler.close_connection = True
+                handler.connection.shutdown(socket.SHUT_RDWR)
+                return
+            return original(handler, status, payload)
+        with patch.object(ArchiveHandler, 'reply', disconnect):
+            with self.assertRaises(http.client.RemoteDisconnected):
+                self.post()
+        self.assertEqual(len(dropped), 1)
+        status, receipt = self.post()
+        self.assertEqual(status, 200)
+        self.assertEqual(receipt['capture_id'], dropped[0])
+        self.assertTrue(receipt['duplicate'])
+        self.assertTrue(receipt['verified_readback'])
+        self.assertFalse(receipt['training_eligible'])
+        self.assertEqual(len(list((self.root/'captures').glob('*.json'))), 1)
+        blobs = list((self.root/'blobs').glob('*.image'))
+        self.assertEqual(len(blobs), 1)
+        self.assertEqual(blobs[0].read_bytes(), self.image)
 
 class DeadlineDisconnectTests(unittest.TestCase):
     def test_header_read_disconnect_is_contained(self):
@@ -140,3 +181,7 @@ class DeadlineDisconnectTests(unittest.TestCase):
         with patch('http.server.BaseHTTPRequestHandler.handle', side_effect=RuntimeError('bug')):
             with self.assertRaises(RuntimeError):
                 handler.handle()
+
+
+if __name__ == '__main__':
+    unittest.main()

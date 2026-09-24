@@ -55,3 +55,15 @@ discovery command.
 Unfinished `.pending-*` files are intentionally preserved. They are not capture
 records, acknowledgment evidence or training data. This test does not establish
 physical power-loss durability, network-share semantics or ESP32 retry behavior.
+
+## Interrupted HTTP upload and lost acknowledgment
+
+The receiver HTTP tests also exercise actual loopback sockets. A client that
+sends only part of its declared image body and disconnects receives no success
+receipt and leaves no image or capture record; a complete retry succeeds. When
+the receiver commits the record but the connection is deliberately closed before
+its acknowledgment is sent, the retry returns the same capture identity as a
+verified duplicate. Exactly one record and one unchanged image remain, excluded
+from training. All eleven receiver HTTP tests passed on September 23, including
+the two deadline-handler tests now included by direct script execution as well
+as unittest discovery. These are host network tests, not an ESP32 outage trial.
