@@ -50,6 +50,36 @@ class ArchiveTests(unittest.TestCase):
         next((self.root/'blobs').glob('*.image')).write_bytes(b'corrupt')
         with self.assertRaises(ArchiveConflict): self.put()
 
+    def test_oversized_retry_objects_are_read_with_a_bound(self):
+        from image_archive_store import store_settings
+        descriptor=b'capture-settings-v1\nfixture=1\n'
+        for kind in ('blob','record','settings'):
+            with self.subTest(kind=kind):
+                self.put()
+                settings_hash=digest(descriptor)
+                store_settings(self.root,settings_hash,descriptor)
+                path=(next((self.root/'blobs').glob('*.image')) if kind=='blob' else
+                      next((self.root/'captures').glob('*.json')) if kind=='record' else
+                      self.root/'settings'/f'{settings_hash}.txt')
+                original=path.read_bytes();path.write_bytes(original+b'x'*65536)
+                open_real=Path.open;reads=[]
+                class Reader:
+                    def __init__(self,stream):self.stream=stream
+                    def __enter__(self):return self
+                    def __exit__(self,*args):self.stream.close()
+                    def read(self,size=-1):
+                        if size<0 or size>len(original)+1:raise AssertionError('Unbounded archive read')
+                        reads.append(size);return self.stream.read(size)
+                def bounded_open(candidate,*args,**kwargs):
+                    stream=open_real(candidate,*args,**kwargs)
+                    return Reader(stream) if candidate==path and args==('rb',) else stream
+                try:
+                    with patch.object(Path,'open',bounded_open),self.assertRaises(ArchiveConflict):
+                        store_settings(self.root,settings_hash,descriptor) if kind=='settings' else self.put()
+                    self.assertTrue(reads)
+                    self.assertEqual(path.stat().st_size,len(original)+65536)
+                finally:path.write_bytes(original)
+
     def test_failed_publish_has_no_receipt_or_partial_final(self):
         with patch('image_archive_store.os.link', side_effect=OSError('storage unavailable')):
             with self.assertRaises(OSError): self.put()

@@ -92,11 +92,17 @@ def ensure_directory(path):
     sync_directory(path)
 
 
+def matches_existing(path, data):
+    """Compare at most expected size plus one byte, including corrupt retries."""
+    with path.open('rb') as stream:
+        return stream.read(len(data) + 1) == data
+
+
 def write_immutable(path, data):
     """Publish a fully written object without overwriting an existing object."""
     ensure_directory(path.parent)
     if path.exists():
-        if path.read_bytes() != data:
+        if not matches_existing(path, data):
             raise ArchiveConflict('Existing archive object differs')
         sync_directory(path.parent)
         return False
@@ -111,7 +117,7 @@ def write_immutable(path, data):
             created = True
         except FileExistsError:
             created = False
-        if path.read_bytes() != data:
+        if not matches_existing(path, data):
             raise ArchiveConflict('Archive readback mismatch')
         sync_directory(path.parent)
         return created
@@ -131,7 +137,7 @@ def store_capture(root, metadata, image):
     root = Path(root)
     record_path = root/'captures'/f'{capture_id}.json'
     # Reject conflicting capture metadata before creating an unnecessary blob.
-    if record_path.exists() and record_path.read_bytes() != encoded:
+    if record_path.exists() and not matches_existing(record_path, encoded):
         raise ArchiveConflict('Capture identity already has different data')
     write_immutable(root/'blobs'/f"{metadata['image_sha256']}.image", image)
     created = write_immutable(record_path, encoded)

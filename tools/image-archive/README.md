@@ -45,3 +45,10 @@ This does not label images, detect visually similar images, assign training/test
 splits, repair files or delete anything. Original archive records must remain
 unreviewed and ineligible for training. Keep human labels and split decisions in
 separate review records, with their source image hashes.
+
+## Duplicate upload checks
+
+Retries compare existing image, capture-record and settings files using a bounded
+read (the expected size plus one byte). Oversized or different existing files
+are rejected as conflicts and left unchanged. This also bounds publication
+readback; it does not repair damaged archives.
