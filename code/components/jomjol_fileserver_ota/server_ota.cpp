@@ -289,7 +289,7 @@ MeterBundle::StageResult stageManagedBundle(const std::string& zip,const std::st
     firstFailure[0]='\0';
     const auto trace=[](const char* step,const char* path,uint64_t detail){
         if(!firstFailure[0]&&(strstr(step,"failed")||strcmp(step,"verify.fail")==0))
-            snprintf(firstFailure,sizeof(firstFailure),"Bundle staging %s path=%s detail=%llu",step,path,static_cast<unsigned long long>(detail));
+            snprintf(firstFailure,sizeof(firstFailure),"Bundle staging %s path=%s detail=%lu",step,path,static_cast<unsigned long>(detail));
     };
     const auto result=MeterBundle::stageZip<ImageArchive::Sha256>(zip,"/sdcard/bundles",id,polar::modelIdentity,trace);
     if(firstFailure[0])LogFile.WriteToFile(ESP_LOG_ERROR,TAG,firstFailure);

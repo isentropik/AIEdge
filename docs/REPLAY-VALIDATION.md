@@ -41,7 +41,8 @@ the maximum circular difference from full-resolution model output was
 
 This is agreement with the baseline, not verified accuracy. It does not measure
 ESP32 speed. The sampler is now available as an opt-in preprocessing argument in local source;
-existing callers retain full resolution. It is not in the deployed firmware.
+existing callers retain full resolution. The diagnostic firmware contains the option,
+but its currently selected small bundle omits the 15-frame replay fixtures.
 The opt-in implementation reproduced every feature byte of the isolated experiment
 on all 15 frames. 243 synthetic crop/transform cases passed anchor, interpolation,
 odd/even and single-pixel boundary checks. Dense-mode regressions retained exact
@@ -51,10 +52,26 @@ and hardware timing remain required before adoption.
 
 ## Sparse diagnostic selection
 
-The next test build accepts POST `/polar_jpeg_test?frame=0&sparse=1`.
+The diagnostic build accepts POST `/polar_jpeg_test?frame=0&sparse=1`.
 It retains frame indexes 0-14 and returns `sparse_sampling: true` in the status.
 Sparse reference vectors have separate compiled hashes and bundle files;
 comparison with them tests execution parity, not agreement with dense outputs.
 The host dense-versus-sparse reading comparison above remains a separate check.
 Normal meter processing and requests without `sparse=1` remain dense.
 Sparse hardware timing is pending until deployment and the batch finish.
+
+## Large replay package staging investigation
+
+The dense 15-frame baseline remains complete. The larger sparse-reference bundle
+fails SD readback verification during staging; it has not been activated. The
+card reports approximately 60 GB free. A preserved partial diagnostic vector file
+was downloaded independently and matched the package byte-for-byte. Smaller
+diagnostic firmware updates installed successfully with settings and password
+verified unchanged.
+
+Deferred error logging identifies a verification failure while the ZIP and its
+indexes are still allocated. Resource pressure is a hypothesis, not a confirmed
+allocator failure. The next candidate releases ZIP/index resources before the
+independent full-tree readback. Extraction still validates length, CRC and SHA,
+syncs and closes each file; full readback must succeed before publishing the
+bundle. Hardware validation of this change and sparse timing remain pending.

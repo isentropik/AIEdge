@@ -147,7 +147,9 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   checkpoint(trace,"extract.sync",path,sink.written);
   if(ok&&fsync(fd)!=0){ok=false;checkpoint(trace,"extract.sync_failed",path,errno);}
   if(close(fd)!=0){ok=false;checkpoint(trace,"extract.close_failed",path,errno);}
-  if(!ok||!verifyFile<Hash>(path,item.second,trace))return StageResult::IoError;
+  // The sink has checked length, CRC and SHA, and the file is synced/closed.
+  // Independent SD readback follows after ZIP/index allocations are released.
+  if(!ok)return StageResult::IoError;
  }
  entries.clear();wanted.clear();closeZip.close();
  Manifest verified;if(!verify<Hash>(pending,id,verified,trace).verified)return StageResult::Rejected;

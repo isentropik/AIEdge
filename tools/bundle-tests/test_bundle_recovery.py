@@ -38,6 +38,7 @@ source=OUT/'test.cpp';source.write_text(r"""
 #include <io.h>
 #endif
 static bool failSync=false;
+static bool corruptReadback=false;
 static int testSync(int fd){
  if(failSync)return -1;
 #ifdef _WIN32
@@ -84,8 +85,14 @@ int main(int argc,char** argv){
   MeterBundle::ArchiveReadDiagnostic diagnostic{read,&cookie,trace,"test.zip"};char buffer[10]{};
   assert(MeterBundle::ArchiveReadDiagnostic::read(&diagnostic,123,buffer,10)==4&&buffer[0]=='x'&&errno==EIO&&reports==4);
  }
- if(argc==9){failSync=std::string(argv[5])=="fail_sync";
-  auto trace=[](const char* step,const char* path,uint64_t detail){std::cerr<<step<<" "<<path<<" "<<detail<<"\n";};
+ if(argc==9){failSync=std::string(argv[5])=="fail_sync";corruptReadback=std::string(argv[5])=="corrupt_readback";
+  auto trace=[](const char* step,const char* path,uint64_t detail){
+   std::cerr<<step<<" "<<path<<" "<<detail<<"\n";
+   if(corruptReadback&&std::string(step)=="manifest.begin"){
+    corruptReadback=false;std::string root(path);root.resize(root.find_last_of('/'));
+    FILE* f=fopen((root+"/html/index.html").c_str(),"wb");assert(f);assert(fwrite("evil",1,4,f)==4);assert(fclose(f)==0);
+   }
+  };
   std::cout<<static_cast<int>(MeterBundle::stageZip<ImageArchive::Sha256>(argv[1],argv[2],argv[3],argv[4],trace))<<"\n";
   return 0;
  }
@@ -298,6 +305,8 @@ with tempfile.TemporaryDirectory() as folder:
  stage(1,'blockedapps');assert (root/'blockedapps/apps').read_bytes()==b'preserve'
  assert not (root/'blockedapps/pending'/identity).exists()
  write_zip(list(files.items())+[('docs/ignored.txt',b'not a runtime asset')])
+ failed=stage(0,'readback-corruption',mode='corrupt_readback');assert not (failed/'objects'/identity).exists()
+ assert (failed/'pending'/identity/'html/index.html').read_bytes()==b'evil'
  base=stage(4,'good');stage(3,'good')
  assert not (base/'objects'/identity/'docs').exists()
  assert not list((base/'apps').iterdir())
