@@ -102,3 +102,13 @@ restart. Already queued records may be completed before shutdown. Disabling
 archival does not erase images already stored on either device.
 
 For implementation details, see [archive status](../IMAGE-ARCHIVE-STATUS.md).
+
+
+## Review the collected data
+
+The [read-only archive check](../tools/image-archive/README.md#check-collected-images-before-review)
+verifies saved image hashes and camera-settings records, lists failures, and
+counts exact repeated images. Run it before choosing images to label. Different
+lighting or calibration settings appear as separate groups for review; they are
+not automatically combined into training data. A passing check proves file
+integrity, not correct needle readings.
