@@ -105,3 +105,36 @@ and model allocations from using shared PSRAM concurrently. No new camera image
 was taken; automatic processing and image archiving remained disabled and the
 test-board configuration was unchanged. This diagnostic firmware was installed
 only on the test board; the public installer release was not updated.
+
+
+## Reusing fixed radius values — September 24, 2026
+
+The visibility and polar-coordinate loops now calculate their 12 and 20 fixed
+radii once per dial. The expressions, sampling positions, model and calibration
+are unchanged. This removes 68,928 repeated radius evaluations per six-dial run.
+The target compiler already hoists sine/cosine, so that proposed rewrite was
+not applied. A standalone target-compiler stack check showed 272 additional
+bytes across the affected calls; this is not a whole-task high-water measurement.
+
+Three paired saved-JPEG sparse replays on the same test board measured:
+
+| Stage | Before median | After median |
+| --- | ---: | ---: |
+| Total processing | 13.967761 s | 13.596269 s |
+| Visibility | 1.140526 s | 1.009979 s |
+| Coordinate generation | 1.062514 s | 0.902183 s |
+
+Median paired saving was 0.371492 seconds, about 2.7% of the baseline median.
+All 18 dial input tensors and outputs matched the frozen references exactly.
+These are sequential runs on three reused images, not randomized repeated
+performance evidence, new accuracy evidence, or live capture-to-publication
+cadence. Third-run observation was interrupted; its completed frame-2 result
+was recovered by a read-only request with unchanged boot ID and configuration.
+Third-run polling latency is unavailable. No diagnostic was restarted.
+
+Bundle `40fd361540ff77eeaad5f096481563459a7e9de74236ba11cf42f68ddcfb607e`
+passed 81 host scripts, seven UI checks and a clean build, then managed OTA and
+verified boot on the test board. Configuration, profile and password were
+preserved; zero camera cycles ran and archiving remained disabled. Private
+records: `aiedge-radius-cache-01/paired-timing.json`, `ota/result.json`, and
+`RESTORE.md` under firmware-port-tests. Production and public installer unchanged.

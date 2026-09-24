@@ -246,3 +246,15 @@ Test bundle `8326f25fdb1ef0ff8c1aaa563ea74b30925fdc2be53b948ba617faeb6a51fa7e` c
 The actual-method host fixture covers all three supported sensors, failed retries, missing and unsupported sensors, and recovery. Packaging passed 81 host scripts, seven UI checks and a clean ESP32 build. OTA/verified boot preserved configuration/profile/password, both served build metadata files matched the package, and one six-dial saved-image diagnostic retained exact tensor/output parity in 13.980167 seconds with zero camera cycles.
 
 The board still reports camera unavailable. Its logs show repeated 0x105 address-probe failures; this deployment fixes stale state handling, not that underlying probe failure. The physical cause remains unresolved. Private evidence: `camera-readonly-audit-20260924/` and `aiedge-camera-init-state-01/` under firmware-port-tests. Production and the public installer were unchanged.
+
+
+## Fixed radius reuse — September 24, 2026
+
+Test bundle `40fd361540ff77eeaad5f096481563459a7e9de74236ba11cf42f68ddcfb607e`
+reuses each dial's unchanged radius values across angles. All 81 host scripts,
+seven UI checks and the clean build passed. Managed OTA/verified boot preserved
+configuration/profile/password. Three paired saved-image trials retained exact
+six-dial tensor/output parity and reduced median processing from 13.968 to
+13.596 seconds. See [measurements and limitations](PERFORMANCE-MEASUREMENTS.md#reusing-fixed-radius-values--september-24-2026).
+This does not resolve camera availability or establish live capture cadence.
+Production and the public installer were unchanged.

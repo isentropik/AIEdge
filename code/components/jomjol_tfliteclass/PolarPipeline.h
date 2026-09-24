@@ -56,10 +56,12 @@ inline bool prepareDial(const uint8_t* rgb,const double* inverse,int index,Pipel
     if(!blur04(scratch.gray,scratch.temporary,d.w,d.h))return false;
     timing.next();
     const double pi=3.14159265358979323846;
+    double radii[20];
+    for(int r=0;r<20;++r)radii[r]=.32+(.94-.32)*r/19;
     for(int angle=0;angle<360;++angle) {
         const double a=angle*2*pi/360;
         for(int r=0;r<20;++r) {
-            const double radius=.32+(.94-.32)*r/19;
+            const double radius=radii[r];
             const double x=d.pivot[0]+std::sin(a)*radius,y=d.pivot[1]-std::cos(a)*radius;
             const double z=d.inverse[6]*x+d.inverse[7]*y+d.inverse[8];
             if(!std::isfinite(z) || std::abs(z)<1e-12)return false;

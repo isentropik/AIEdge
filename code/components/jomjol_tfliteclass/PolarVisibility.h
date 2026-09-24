@@ -30,8 +30,10 @@ inline bool visibility(const uint8_t* gray,const DialGeometry& d,double* samples
                        double* sorted,double& score) {
     if(!gray || !samples || !sorted || d.w<2 || d.h<2)return false;
     const double pi=3.14159265358979323846;
+    double radii[12];
+    for(int r=0;r<12;++r)radii[r]=.35+(.60-.35)*r/11;
     for(int a=0;a<360;++a)for(int r=0;r<12;++r) {
-        const double angle=a*pi/180,radius=.35+(.60-.35)*r/11;
+        const double angle=a*pi/180,radius=radii[r];
         const double u=d.pivot[0]+std::sin(angle)*radius,v=d.pivot[1]-std::cos(angle)*radius;
         const double z=d.inverse[6]*u+d.inverse[7]*v+d.inverse[8];
         if(!std::isfinite(z) || std::abs(z)<1e-12)return false;
