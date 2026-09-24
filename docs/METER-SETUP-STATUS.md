@@ -162,3 +162,15 @@ metadata while correctly transforming the needle pivot and homography. A separat
 v2 helper now transforms that metadata; rotation/translation and nonmutation tests
 pass. Frozen runtime sources and artifacts remain unchanged. The inference path
 does not use that dial-center field, so this is not the reading-mismatch fix.
+
+
+An unchanged model-free two-edge reader was also evaluated on those four original
+crops. Its fourth-main fixed-pivot readings were 5.1592 and 5.1485, while its
+unconstrained centerline readings were 5.3524 and 5.2989. That 0.15–0.19 disagreement
+makes it unsuitable as an independent correction. Its last-main estimates were
+2.9427 and 2.9221; the latter differs from the approximate 3.05 label by 0.1279.
+All four passed that reader's heuristic gate, illustrating why a passed gate is
+not verified accuracy. It shares the frozen geometry and reused images; none of
+these results establish the correct pivot or label. No method, pivot, label or
+threshold was selected or adjusted from this check. Evidence:
+`historical-pair-audit-20260924/independent-edges.json` under firmware-port-tests.
