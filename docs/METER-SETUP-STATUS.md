@@ -59,3 +59,17 @@ The exact/near-duplicate C++ fixture rejects both ambiguous cases while acceptin
 
 
 The subsequent [full saved-image replay](REPLAY-VALIDATION.md) passed on all 15 frames and 90 dial outputs, with a 14.001-second median processing time and zero status-request errors. It remains a diagnostic compatibility benchmark, not a live capture or independent accuracy result.
+
+
+## Proposal overlay reference correction — September 24
+
+The offline marker review now embeds the exact frozen aligned median used for
+selection, rounded to 8-bit grayscale only for display. Previously the SVG used
+a separate cached JPEG, so the background was not guaranteed to share the
+proposal geometry. Ten local tests pass, including decoding the embedded PNG,
+checking its pixels and dimensions, and verifying the input array is unchanged.
+The existing frozen proposal was rendered again after verifying its reference
+hash; no marker, calibration, model or device setting changed. Evidence:
+`automatic-markers-reference-review-20260924/verification.json` under the private
+firmware-port-tests directory. This corrects visual review provenance; it does
+not add recognition accuracy evidence or activate automatic setup.
