@@ -131,3 +131,30 @@ and concurrent requests. The vendor dialog is appended separately to the documen
 body. All three live Pages files matched their committed Git blobs after
 publication. This verifies served code and simulated controller behavior, not a
 new physical USB flash. Firmware binaries and loader version were unchanged.
+
+## Interrupted staging recovery - September 23, 2026
+
+Source `bb6aade` is installed on the test board in bundle
+`ec1a54e3883dddd0e86ed8d2641e32de57ff946ee2229a33f33899b55d04f5cb`.
+A software restart during an active staging job originally left the next attempt
+at `busy_or_staging_conflict`. The running firmware and settings survived.
+
+The repair preserves the interrupted directory under
+`/sdcard/bundles/interrupted/<bundle-id>-<slot>` before extracting a fresh copy.
+It never removes prior evidence or modifies completed bundle objects. There are
+32 retained slots per bundle; exhaustion or a preservation failure stops staging.
+Retained files consume SD space and are not automatically deleted.
+
+Actual-source host tests passed preservation, conflicting files, a blocked
+recovery directory, and the retention limit. The complete miniz stager passed
+13 cases including retry after a failed sync, with retained bytes unchanged.
+Verification, boot-selection, index and transaction regressions also passed.
+The ESP32 build and authenticated OTA/reboot verification passed.
+
+On hardware, retrying the original interrupted probe now returned `staged`.
+The retained original manifest matched its source bytes. Configuration and
+password remained intact; the probe was never flashed or selected for boot.
+This is software-restart staging recovery, not sudden-power-loss durability or
+recovery from interruption during firmware flashing. Those tests remain open.
+Private evidence: `aiedge-stage-interruption-probe/recovered-hardware.json` and
+`aiedge-stage-recovery-verified-candidate/ota/result.json` under firmware-port-tests.
