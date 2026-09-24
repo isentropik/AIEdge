@@ -57,7 +57,7 @@ It retains frame indexes 0-14 and returns `sparse_sampling: true` in the status.
 Sparse reference vectors have separate compiled hashes and bundle files;
 comparison with them tests execution parity, not agreement with dense outputs.
 The host dense-versus-sparse reading comparison above remains a separate check.
-Normal meter processing and requests without `sparse=1` remain dense.
+At that test stage, normal processing was dense. Normal recognition later switched to sparse sampling in commit `2c954f7`; replay requests without `sparse=1` still use dense sampling.
 The hardware batch is complete; results are recorded below.
 
 ## Large replay package staging investigation
@@ -90,7 +90,7 @@ no camera cycles ran, and the diagnostic batch verified the same boot throughout
 
 These are saved-JPEG processing times, excluding camera/light acquisition, result
 publication and archive upload. They do not establish live 30-second cadence or
-reading accuracy. Normal recognition remains dense. The baseline and sparse runs
+reading accuracy. At that stage normal recognition was dense; commit `2c954f7` subsequently enabled sparse sampling in the normal path. The baseline and sparse runs
 used different firmware builds; they used the same immutable image batch and
 frozen model. Broader lighting/alignment and labeled-position coverage are still
 needed before enabling sparse sampling for normal readings.
@@ -215,8 +215,8 @@ This rules out mixed historical preprocessing as the sole explanation of the
 recurring discrepancy. It does not establish which prediction is physically
 correct: these are model outputs, and unique hashes are not independent poses.
 The sparse approximation contributes a small shift; dense processing already
-has the larger inconsistency. Normal recognition remains dense and no threshold,
-calibration or model was changed. Further work needs independent geometry or
+has the larger inconsistency. Current normal recognition explicitly uses sparse sampling (commit `2c954f7`).
+No sampling setting, threshold, calibration or model was changed by this comparison. Further work needs independent geometry or
 needle evidence, not an offset fitted to protected outputs.
 
 Private evidence: `controlled-cross-dial-20260924/result.json` and
