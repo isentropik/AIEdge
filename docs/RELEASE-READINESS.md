@@ -12,8 +12,13 @@ for the production meter. This is an evidence inventory, not a release approval.
 | Remote training-image storage | A queued 21,723-byte JPEG was delivered over ESP32 HTTPS with verified receipt; images remain unreviewed | Sustained upload/inference overlap, unavailable/full receiver, resource margins and recovery |
 | Usable replacement firmware | Test board boots with camera, modern interface and device authentication | Remaining setup/UI review and verified production reporting |
 
-Three full-frame dial reviews are pending. Their model estimates are not labels,
-and those source frames and review derivatives remain excluded from training.
+Three dial estimates from one held-out full image were confirmed by the reviewer.
+These are confirmations of displayed estimates, not independent precision
+measurements. The source frame and review derivatives remain excluded from training.
+A fresh test-board replay of that saved JPEG completed all six dials in 14.31 seconds
+with exactly matching feature and inference-output bytes. This diagnostic releases
+image storage before inference allocation; it does not verify the normal capture
+path, simultaneous memory use, or sustained capture-to-publication cadence.
 Nearby crop timestamps cannot supply labels for cached full images with unknown
 capture time.
 
