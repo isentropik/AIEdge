@@ -2,24 +2,47 @@
 
 [Back to AIEdge](../README.md) · [Installation](INSTALLATION.md) · [Glossary](GLOSSARY.md)
 
-**The release is ready for development testing, not yet proven as a complete installation on the board.** Passing a computer-based check does not prove a meter is read accurately or that a device will recover after a failed update.
+Updated September 23, 2026 (Pacific time). **AIEdge runs on the test board, but is
+not yet verified as a replacement for the operating meter reader.** The production
+meter has not been changed by these test-board deployments.
 
-In the table, the *loader* is the small Wi-Fi installer, *package integrity* means the files match their expected fingerprints, and *mDNS* is the name discovery used by `aiedge.local`.
+## What has been verified
 
-| Check | Evidence / limitation |
-| --- | --- |
-| Main package | Clean ESP32 build and 73 completed local test scripts. These are not 73 hardware tests. |
-| Package integrity | Production host stager verified 78 runtime files; full ZIP hash recorded. |
-| Initial loader | Four flash regions hash-verified; board boot confirmed setup AP and mounted SD. |
-| Initial transfer | Failed before receiving package bytes from the PC. Windows inbound blocking was suspected; no firewall change succeeded. |
-| GitHub loader, mDNS, network picker | Compiled successfully for ESP32. Setup JavaScript syntax and package integrity checks pass. These changes are not yet flashed or verified end to end on hardware. |
-| Accuracy | Limited human-labelled tests on one meter. Not coverage of every position, lighting or meter. Unlabelled predictions are not accuracy evidence. |
-| Timing | Sustained valid-reading cadence and end-to-end duration on the target remain to be measured. |
-| Recovery | Original board flash preserved; automatic bad-app/power-loss rollback unproven. |
-| UI | Initial branding/style implemented; full mobile/device rendering verification incomplete. |
+| Feature | Current evidence | Still needed |
+| --- | --- | --- |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `90818ec0a5b95252725e752c3393ce26194110f193857bb48494af76805b4236`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
+| Camera | A fresh single-image, no-flash preview succeeds on the current test firmware. | The test camera currently sees room furnishings, not the meter. Place it at the meter and verify calibration before live recognition. |
+| Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
+| Processing time | One instrumented saved-JPEG run took 22.065 seconds with exact reference parity. | Sustained valid capture-to-publication cadence toward 30 seconds, including image storage and web use. |
+| Remote image storage | Optional queue and HTTPS receiver implemented; a recorded image delivery passed. Host tests cover failed connections, rejected credentials, receipts and receiver interruption. | Physical outage/retry and SD power-loss tests, storage limits, and sustained operation. |
+| Website access | Whole-device password protection deployed. Thirty read-only route checks passed across protected and authorized requests. | Broader interaction and browser behavior review. |
+| Interface and lighting | Shared interface and RGBW support implemented; several pages and assets verified on the test board. | Every page on mobile, all 19 RGBW pixels, and live brightness behavior on the installed strip. |
 
-See the implementation notes for detailed limitations. Do not replace invalid or unknown readings with plausible-looking values.
+Saved-image timing excludes camera acquisition and result publication. Matching
+reference output demonstrates port consistency, not independent accuracy.
+Unlabeled predictions, fast rejected frames and repeated stationary views do not
+establish the live-reading target.
 
-## Browser installer and USB Wi-Fi (0.1.1)
+## Before a live meter trial
 
-The combined USB image has been checked against its four source files and flash addresses. Host tests cover Improv packet framing, checksum rejection, partial-input recovery, malformed credentials and scan-response formatting. The ESP32 loader compiles successfully. These are local checks; they do not establish successful browser flashing, live network scanning or credential handling on the physical board.
+1. Position the test camera so the entire meter face and alignment markers are visible.
+2. Review a new image against the frozen reference: resolution, rotation, marker
+   positions, all six dial crops and their directions must agree. A moved camera
+   may require a new calibration; do not bypass geometry rejection to start a run.
+3. Confirm readings from real images, keeping trial images out of training.
+4. Measure capture timestamps, accepted readings, missed captures, web latency
+   and image delivery over a sustained run. Report failures as well as successes.
+
+The original installation observations are historical, not the current board
+state. See the [deployment archive](DEPLOYED-IMPROVEMENTS.md) for individual
+repairs and the [open backlog](IMPROVEMENTS.md) for remaining work.
+
+Supporting evidence: [reviewed crop check](REVIEWED-CROP-VALIDATION.md),
+[saved-image timing](CROP-TIMING-TRIAL.md),
+[image delivery behavior](IMAGE-ARCHIVE-FAILURES.md), and
+[cadence trial instructions](../tools/cycle-trial/README.md).
+
+The newest private camera check is
+`needle-training/firmware-port-tests/camera-readiness-20260924T011245Z/result.json`.
+Its image is excluded from training and is not published in this repository.
