@@ -28,6 +28,20 @@ template<class Hash> IndexResult prepareIndex(const std::string& base,
   return S_ISREG(st.st_mode)&&indexEquals(final,id)?IndexResult::Existing:IndexResult::Conflict;
  if(errno!=ENOENT)return IndexResult::IoError;
  const std::string pending=final+".pending";
+ // A prior interrupted write must not permanently block the same verified app.
+ // Preserve it under a bounded diagnostic name; never treat it as a mapping.
+ if(stat(pending.c_str(),&st)==0) {
+  if(!S_ISREG(st.st_mode))return IndexResult::Conflict;
+  bool preserved=false;
+  for(unsigned slot=0;slot<32;++slot) {
+   const std::string saved=pending+".interrupted-"+std::to_string(slot);
+   if(stat(saved.c_str(),&st)==0)continue;
+   if(errno!=ENOENT)return IndexResult::IoError;
+   if(std::rename(pending.c_str(),saved.c_str())!=0)return IndexResult::IoError;
+   preserved=true;break;
+  }
+  if(!preserved)return IndexResult::Conflict;
+ } else if(errno!=ENOENT)return IndexResult::IoError;
  int flags=O_WRONLY|O_CREAT|O_EXCL;
 #ifdef O_BINARY
  flags|=O_BINARY;
