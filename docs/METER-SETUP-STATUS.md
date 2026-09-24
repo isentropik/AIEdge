@@ -105,7 +105,7 @@ Private evidence: `current-frame-firmware-check-20260924/result.json`,
 `automatic-markers-current-frame-20260924/result.json` under firmware-port-tests.
 
 
-## Cross-dial rejection detail — prepared September 24
+## Cross-dial rejection detail — deployed to the test board September 24
 
 The diagnostics page now explains a main-dial inconsistency using the current
 raw observation and reported error assumption. It names each disagreeing pair
@@ -116,5 +116,11 @@ accounting state is changed. Other rejection reasons are also displayed.
 
 Node tests pass for the confirmed-frame discrepancy, circular rollover, invalid
 inputs, missing preferences, immutable observations and existing unknown/stale
-quantity handling. Packaging, rendered review and test-board verification of this
-UI change remain pending.
+quantity handling. Bundle `4b32be5d916be370211fb3a6d82cba5452819156772223764bbd25afe22dc4e9`
+passed the full packaging checks and clean ESP32 build, managed OTA and verified
+boot. Configuration, profile and password were preserved. Both served diagnostics
+assets matched package bytes, with zero camera attempts and archival inactive.
+The older local refresh fixture was corrected to include the accounting panel
+and verify all four GET requests. Rendered visual review remains pending; no
+recognition accuracy or live-capture claim is made. Evidence: private
+`aiedge-dial-diagnostics-01/ota/result.json` and `served-assets.json`.
