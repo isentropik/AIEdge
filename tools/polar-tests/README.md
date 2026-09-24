@@ -28,3 +28,10 @@ The helper uses exact integer coefficients only for the horizontal pass whose
 inputs are bytes. The vertical pass still uses the original double arithmetic.
 It preserves interpolation, edge handling and output clipping. Passing this
 regression does not establish an ESP32 performance improvement.
+
+`preparation_status_test.cpp` checks that malformed geometry and blank images
+retain distinct failure reasons in both sampling modes, and that an earlier
+visibility score cannot survive a new rejected attempt. Compile as above with
+`preparation_status_test.cpp` as the input. These reasons identify failed checks,
+not a proven physical cause: low contrast does not by itself mean the LEDs failed,
+and low needle visibility does not automatically mean the model needs retraining.

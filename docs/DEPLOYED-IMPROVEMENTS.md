@@ -276,3 +276,29 @@ zero capture attempts and disabled archiving. The local comparison initially add
 Windows line endings twice; normalizing compiler stdout fixed the verification
 harness without changing firmware. Browser rendering remains unverified.
 This is a test-board deployment, not a public installer release or production update.
+
+
+## September 24: specific dial-preparation failure messages
+
+Normal polar recognition now logs the dial name and failed preprocessing check,
+including low contrast, low needle visibility, invalid crop transform, sampling
+geometry, and feature extraction. A new attempt clears its diagnostic visibility
+score before any early rejection, so an old score cannot describe a new failure.
+Calculations, acceptance thresholds, fixed geometry, sampling and model are unchanged.
+
+Bundle `9044f07d9a9bc3c83c87e93ea487d7dea669cef590844e500e2a95488a027317`
+passed 84 host scripts, seven UI checks and the clean ESP32 build. Managed OTA and
+verified boot preserved configuration/profile/password. One six-dial saved JPEG
+replay matched all input tensors and outputs exactly in 13.680509 seconds, with
+zero camera cycles and archival disabled. Host comparisons covered 120 preprocessing
+cases with zero byte differences and 15 actual-flow checks. A public targeted test
+covers malformed input, nonfinite transforms, dark/gray/white blank images and
+stale-score clearing in both sampling modes. Failure branches were host-tested;
+this was not a live bad-lighting capture test.
+
+These messages identify failed checks, not physical root causes. Low contrast can
+come from exposure, glare or obstruction; low needle visibility alone does not
+prove retraining is needed. No automatic recalibration, model training, threshold
+adjustment or lighting-change detector was introduced. Private evidence:
+`aiedge-preparation-reasons-01/` under firmware-port-tests. Production and the
+public installer release remain unchanged.

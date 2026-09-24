@@ -9,6 +9,24 @@
 #include "PolarProfile.h"
 
 namespace polar {
+enum class PreparationStatus { NotStarted, InvalidDial, Warp, Grayscale, LowContrast,
+    VisibilityCalculation, LowVisibility, Blur, Coordinates, Features, Ok };
+inline const char* preparationStatusName(PreparationStatus status) {
+    switch(status) {
+    case PreparationStatus::NotStarted: return "not_started";
+    case PreparationStatus::InvalidDial: return "invalid_dial";
+    case PreparationStatus::Warp: return "crop_transform_failed";
+    case PreparationStatus::Grayscale: return "grayscale_failed";
+    case PreparationStatus::LowContrast: return "low_contrast";
+    case PreparationStatus::VisibilityCalculation: return "visibility_calculation_failed";
+    case PreparationStatus::LowVisibility: return "needle_visibility_low";
+    case PreparationStatus::Blur: return "filter_failed";
+    case PreparationStatus::Coordinates: return "sampling_geometry_invalid";
+    case PreparationStatus::Features: return "feature_extraction_failed";
+    case PreparationStatus::Ok: return "ok";
+    }
+    return "unknown";
+}
 // Allocate once in PSRAM/on heap, not on the task stack. Six dials reuse buffers.
 struct PipelineScratch {
     uint8_t fullGray[640*480];
@@ -16,6 +34,7 @@ struct PipelineScratch {
     double scores[1681],coordinates[14400],samples[7200],sorted[360];
     int8_t features[384*40];
     double visibilityScore;
+    PreparationStatus preparationStatus;
 };
 inline AlignmentStatus alignFrame(const uint8_t* rgb,int width,int height,
                                   PipelineScratch& scratch,double* inverse) {
@@ -41,20 +60,29 @@ inline AlignmentStatus alignFrame(const uint8_t* rgb,int width,int height,
 }
 inline bool prepareDial(const uint8_t* rgb,const double* inverse,int index,PipelineScratch& scratch,
                         DialProfile* profile=nullptr,int64_t (*clock)()=nullptr, bool sparse=false) {
+    scratch.preparationStatus=PreparationStatus::InvalidDial;
+    scratch.visibilityScore=-1;
     if(profile)*profile=DialProfile{};
     if(index<0 || index>=6)return false;
     DialProfileTimer timing(profile,clock);
     const auto& d=dials[index];
+    scratch.preparationStatus=PreparationStatus::Warp;
     if(!warpCrop(rgb,640,480,inverse,d.x,d.y,d.w,d.h,scratch.crop,sparse))return false;
     timing.next();
+    scratch.preparationStatus=PreparationStatus::Grayscale;
     if(!grayscale(scratch.crop,d.w*d.h,scratch.gray))return false;
+    scratch.preparationStatus=PreparationStatus::LowContrast;
     if(!contrastValid(scratch.gray,d.w*d.h))return false;
     timing.next();
-    if(!visibility(scratch.gray,d,scratch.samples,scratch.sorted,scratch.visibilityScore) ||
-       scratch.visibilityScore<visibilityThreshold)return false;
+    scratch.preparationStatus=PreparationStatus::VisibilityCalculation;
+    if(!visibility(scratch.gray,d,scratch.samples,scratch.sorted,scratch.visibilityScore))return false;
+    scratch.preparationStatus=PreparationStatus::LowVisibility;
+    if(scratch.visibilityScore<visibilityThreshold)return false;
     timing.next();
+    scratch.preparationStatus=PreparationStatus::Blur;
     if(!blur04(scratch.gray,scratch.temporary,d.w,d.h))return false;
     timing.next();
+    scratch.preparationStatus=PreparationStatus::Coordinates;
     const double pi=3.14159265358979323846;
     double radii[20];
     for(int r=0;r<20;++r)radii[r]=.32+(.94-.32)*r/19;
@@ -71,6 +99,9 @@ inline bool prepareDial(const uint8_t* rgb,const double* inverse,int index,Pipel
         }
     }
     timing.next();
-    return features(scratch.gray,d.w,d.h,scratch.coordinates,scratch.samples,scratch.sorted,scratch.features,384*40);
+    scratch.preparationStatus=PreparationStatus::Features;
+    if(!features(scratch.gray,d.w,d.h,scratch.coordinates,scratch.samples,scratch.sorted,scratch.features,384*40))return false;
+    scratch.preparationStatus=PreparationStatus::Ok;
+    return true;
 }
 }
