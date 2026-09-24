@@ -193,3 +193,32 @@ All 45 diagnostic-status requests succeeded. Median latency was 203 ms, nearest-
 Numerical parity verifies compatibility with the frozen reference pipeline, not physical reading accuracy. Similar/stationary dial positions are not independent accuracy evidence. Camera capture, lighting, MQTT publication, simultaneous image archiving, cold-boot behavior and sustained 30-second scheduling still need their own verification. The test board reported camera unavailable at preflight; the saved-image diagnostics remain usable in that state.
 
 Private evidence: `needle-training/firmware-port-tests/aiedge-alignment-ambiguity-01/full-replay/`, including the preflight, per-run results and polls, final summary and timing analysis. The separate host ambiguity fixtures verify rejection of exact/near duplicate peaks; this normal replay batch did not inject ambiguous markers on the board.
+
+
+## Controlled retained-frame consistency comparison — September 24
+
+Seventeen retained full frames were processed again with one freshly compiled
+current C++ decoder, alignment, crop/feature and output-decoder snapshot, and the
+frozen int8 model using the TFLite reference interpreter. Input hashes were
+verified against capture records; the headers match the current firmware source.
+Both dense and sparse modes passed alignment and all six visibility checks on
+every frame. This is a host comparison, not an ESP32 timing run.
+
+The last main pair required review in 14/17 dense results and 17/17 sparse
+results. Its signed residual was -0.12919 to -0.10870 in dense mode (median
+-0.11550), versus -0.13478 to -0.11696 in sparse mode (median -0.12237). Sparse
+processing shifts the fourth main dial by a median -0.00809 units relative to
+dense, while the last main dial shifts by +0.00035. Three dense results just
+below the 0.11 gate cross it with sparse sampling.
+
+This rules out mixed historical preprocessing as the sole explanation of the
+recurring discrepancy. It does not establish which prediction is physically
+correct: these are model outputs, and unique hashes are not independent poses.
+The sparse approximation contributes a small shift; dense processing already
+has the larger inconsistency. Normal recognition remains dense and no threshold,
+calibration or model was changed. Further work needs independent geometry or
+needle evidence, not an offset fitted to protected outputs.
+
+Private evidence: `controlled-cross-dial-20260924/result.json` and
+`sampling-effect.json` under firmware-port-tests. The record includes executable,
+native source/header and model hashes, per-frame features/scores and results.
