@@ -42,7 +42,7 @@ the maximum circular difference from full-resolution model output was
 This is agreement with the baseline, not verified accuracy. It does not measure
 ESP32 speed. The sampler is now available as an opt-in preprocessing argument in local source;
 existing callers retain full resolution. The diagnostic firmware contains the option,
-but its currently selected small bundle omits the 15-frame replay fixtures.
+and the selected test-board bundle now includes all 15-frame replay fixtures.
 The opt-in implementation reproduced every feature byte of the isolated experiment
 on all 15 frames. 243 synthetic crop/transform cases passed anchor, interpolation,
 odd/even and single-pixel boundary checks. Dense-mode regressions retained exact
@@ -58,7 +58,7 @@ Sparse reference vectors have separate compiled hashes and bundle files;
 comparison with them tests execution parity, not agreement with dense outputs.
 The host dense-versus-sparse reading comparison above remains a separate check.
 Normal meter processing and requests without `sparse=1` remain dense.
-Sparse hardware timing is pending until deployment and the batch finish.
+The hardware batch is complete; results are recorded below.
 
 ## Large replay package staging investigation
 
@@ -74,4 +74,25 @@ indexes are still allocated. Resource pressure is a hypothesis, not a confirmed
 allocator failure. The next candidate releases ZIP/index resources before the
 independent full-tree readback. Extraction still validates length, CRC and SHA,
 syncs and closes each file; full readback must succeed before publishing the
-bundle. Hardware validation of this change and sparse timing remain pending.
+bundle. On the test ESP32, the updated stager successfully extracted and independently
+verified the full 146-runtime-file replay bundle that previously failed. This
+confirms recovery for that package; it does not identify the exact exhausted
+resource or prove arbitrary package limits. Sparse timing results follow below.
+
+## Completed sparse ESP32 replay
+
+All 15 held-out full images (90 dial evaluations) completed on the test ESP32
+with exact feature/output agreement to the separately generated sparse references.
+Median processing time was **13.569199 seconds**, compared with the dense
+baseline's **22.198651 seconds**: **38.87% less elapsed processing time**.
+Sparse runs ranged from 13.311147 to 13.659937 seconds. Configuration was unchanged,
+no camera cycles ran, and the diagnostic batch verified the same boot throughout.
+
+These are saved-JPEG processing times, excluding camera/light acquisition, result
+publication and archive upload. They do not establish live 30-second cadence or
+reading accuracy. Normal recognition remains dense. The baseline and sparse runs
+used different firmware builds; they used the same immutable image batch and
+frozen model. Broader lighting/alignment and labeled-position coverage are still
+needed before enabling sparse sampling for normal readings.
+
+Mean crop-warp time summed across six dials: 11.915 seconds dense, 3.222 seconds sparse.
