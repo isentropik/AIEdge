@@ -62,3 +62,12 @@ timestamp values, and descriptor closure. Injected open/write/close failures
 verify that failed saves retain the pending-write flag. This prevents startup
 crashes and false successful saves; it does not make the legacy file update
 atomic or prove physical SD durability.
+
+## Surrogate frame ownership
+
+The capture regression also injects a demo JPEG buffer and verifies that the
+camera driver's original pointer and length are unchanged when returned. A
+failed demo load must reject the cycle without decoding the unrelated live
+frame. Demo images retain invalid capture timestamps and never reach the raw
+capture archive observer as real captures. These are host boundary tests, not
+a successful normal-path ESP32 surrogate run.

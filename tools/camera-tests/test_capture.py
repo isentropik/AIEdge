@@ -32,6 +32,7 @@ const char* TAG="test";
 struct {int ImageWidth=2,ImageHeight=2;bool DemoMode=false;} CCstatus;
 struct Logger {void WriteToFile(int,const char*,string){} } LogFile;
 bool decodeOk=true,wrongSize=false,led=false,light=false,lightFails=false,offFails=false;
+bool demoOk=true;uint8_t demoBytes[2]={4,5};uint8_t* decodedSource=nullptr;
 int returns=0,captureGets=0,reboots=0,observed=0;
 struct CImageBasis {
  int channels=3,width=CCstatus.ImageWidth,height=CCstatus.ImageHeight,capacity=width*height*3;
@@ -42,7 +43,7 @@ struct CImageBasis {
  CImageBasis(string):data(capacity,88),rgb_image(data.data()){}
  int getBufferSize(){return capacity;}
  void EmptyImage(){std::memset(rgb_image,0,capacity);}
- void LoadFromMemory(uint8_t*,int){for(size_t i=0;i<data.size();++i)data[i]=uint8_t(i*19+7);if(!decodeOk)rgb_image=nullptr;if(wrongSize)width=3;}
+ void LoadFromMemory(uint8_t* bytes,int){decodedSource=bytes;for(size_t i=0;i<data.size();++i)data[i]=uint8_t(i*19+7);if(!decodeOk)rgb_image=nullptr;if(wrongSize)width=3;}
 };
 struct camera_fb_t {uint8_t* buf=nullptr;int len=1;struct {int64_t tv_sec=2,tv_usec=345;} timestamp;};
 uint8_t originalBytes[3]={1,2,3};
@@ -58,7 +59,7 @@ class CCamera {
 public:
  void LEDOnOff(bool state){led=state;}
  bool LightOnOff(bool state){light=state;return !(state?lightFails:offFails);}
- void loadNextDemoImage(camera_fb_t*){}
+ bool loadNextDemoImage(camera_fb_t* f){if(!demoOk)return false;f->buf=demoBytes;f->len=2;return true;}
  esp_err_t CaptureToBasisImage(CImageBasis*,int);
 };
 '''+body+r'''
@@ -71,7 +72,7 @@ int main(){
  }));
  assert(!RawCaptureObserver::install(nullptr));
  auto reset=[](){
-  decodeOk=true;wrongSize=false;lightFails=offFails=false;CCstatus.DemoMode=false;CCstatus.ImageWidth=CCstatus.ImageHeight=2;
+  demoOk=true;decodedSource=nullptr;decodeOk=true;wrongSize=false;lightFails=offFails=false;CCstatus.DemoMode=false;CCstatus.ImageWidth=CCstatus.ImageHeight=2;
   captureGets=returns=0;led=light=false;frames[0]=&first;frames[1]=&second;
   second.timestamp.tv_sec=2;second.timestamp.tv_usec=345;
   second.buf=originalBytes;second.len=3;observed=0;
@@ -100,7 +101,8 @@ int main(){
   assert(observed==1);
   assert(!led && !light);for(size_t i=0;i<image.data.size();++i)assert(image.data[i]==uint8_t(i*19+7));}
  {reset();CImageBasis image("test");CCstatus.DemoMode=true;
-  assert(camera.CaptureToBasisImage(&image,10)==ESP_OK);assert(!image.captureTimestampValid);assert(observed==0);}
+  assert(camera.CaptureToBasisImage(&image,10)==ESP_OK);assert(!image.captureTimestampValid);assert(observed==0);assert(decodedSource==demoBytes);assert(second.buf==originalBytes&&second.len==3);}
+ {reset();CImageBasis image("missing demo");CCstatus.DemoMode=true;demoOk=false;failure(image);assert(decodedSource==nullptr&&returns==2);assert(second.buf==originalBytes&&second.len==3);}
  {reset();CImageBasis image("test");second.timestamp.tv_sec=4;
   assert(camera.CaptureToBasisImage(&image,10)==ESP_OK);assert(!image.captureTimestampValid);assert(observed==0);}
  {reset();CImageBasis image("test");second.timestamp.tv_usec=-1;
@@ -115,7 +117,7 @@ cpp=OUT/'capture_test.cpp';exe=OUT/'capture_test.exe';cpp.write_text(harness,enc
 env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(OUT/'zig-global-cache'),ZIG_LOCAL_CACHE_DIR=str(OUT/'zig-local-cache'))
 subprocess.run(([args.zig_python,'-m','ziglang','c++'] if args.zig_python else [args.cxx])+['-std=c++11','-O2', '-UNDEBUG','-I'+str(ROOT/'code/components/jomjol_controlcamera'),str(cpp),'-o',str(exe)],check=True,env=env)
 subprocess.run([str(exe)],check=True)
-report={'passed':15,'scope':'actual capture body; full 640x480 byte comparison; illumination activation/off rejection; camera, decode and clock stubs',
+report={'passed':16,'scope':'actual capture body; full 640x480 byte comparison; illumination activation/off rejection; camera, decode and clock stubs',
         'hardware_capture_verified':False}
 (OUT/'capture-results.json').write_text(json.dumps(report,indent=2));print(json.dumps(report));temporary.cleanup()
 

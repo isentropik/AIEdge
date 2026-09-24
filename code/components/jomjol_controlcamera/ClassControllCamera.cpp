@@ -731,18 +731,19 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
     const bool frameTimeValid = !CCstatus.DemoMode && fb->timestamp.tv_sec >= 0 &&
         fb->timestamp.tv_usec >= 0 && fb->timestamp.tv_usec < 1000000 &&
         frameCaptureUs > 0 && frameCaptureUs <= esp_timer_get_time();
-    if (CCstatus.DemoMode)
-    {
-        // Use images stored on SD-Card instead of camera image
-        /* Replace Framebuffer with image from SD-Card */
-        loadNextDemoImage(fb);
+    camera_fb_t sourceFrame = *fb;
+    if (CCstatus.DemoMode && !loadNextDemoImage(&sourceFrame)) {
+        LEDOnOff(false);
+        LightOnOff(false);
+        esp_camera_fb_return(fb);
+        return ESP_FAIL;
     }
 
     CImageBasis *_zwImage = new CImageBasis("zwImage");
 
     if (_zwImage)
     {
-        _zwImage->LoadFromMemory(fb->buf, fb->len);
+        _zwImage->LoadFromMemory(sourceFrame.buf, sourceFrame.len);
     }
     else
     {
@@ -918,12 +919,11 @@ esp_err_t CCamera::CaptureToHTTP(httpd_req_t *req, int delay)
             // Use images stored on SD-Card instead of camera image
             LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Using Demo image!");
             /* Replace Framebuffer with image from SD-Card */
-            loadNextDemoImage(fb);
-
-            if (!fb->buf || !fb->len) {
+            camera_fb_t sourceFrame = *fb;
+            if (!loadNextDemoImage(&sourceFrame) || !sourceFrame.buf || !sourceFrame.len) {
                 httpd_resp_send_500(req);
                 res = ESP_FAIL;
-            } else res = httpd_resp_send(req, (const char *)fb->buf, fb->len);
+            } else res = httpd_resp_send(req, (const char *)sourceFrame.buf, sourceFrame.len);
         }
         else
         {
@@ -1209,6 +1209,7 @@ std::vector<std::string> demoFiles;
 void CCamera::useDemoMode(void)
 {
     char line[50];
+    demoFiles.clear();
 
     FILE *fd = fopen("/sdcard/demo/files.txt", "r");
 
@@ -1219,18 +1220,19 @@ void CCamera::useDemoMode(void)
         return;
     }
 
-    demoImage = (uint8_t *)malloc(DEMO_IMAGE_SIZE);
+    if (!demoImage) demoImage = (uint8_t *)malloc(DEMO_IMAGE_SIZE);
 
     if (demoImage == NULL)
     {
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unable to acquire required memory for demo image!");
+        fclose(fd);
         return;
     }
 
     while (fgets(line, sizeof(line), fd) != NULL)
     {
-        line[strlen(line) - 1] = '\0';
-        demoFiles.push_back(line);
+        line[strcspn(line, "\r\n")] = '\0';
+        if (line[0]) demoFiles.push_back(line);
     }
 
     fclose(fd);
@@ -1251,7 +1253,9 @@ bool CCamera::loadNextDemoImage(camera_fb_t *fb)
     int readBytes;
     long fileSize;
 
-    snprintf(filename, sizeof(filename), "/sdcard/demo/%s", demoFiles[getCountFlowRounds() % demoFiles.size()].c_str());
+    if (!fb || !demoImage || demoFiles.empty()) return false;
+    const int length = snprintf(filename, sizeof(filename), "/sdcard/demo/%s", demoFiles[getCountFlowRounds() % demoFiles.size()].c_str());
+    if (length < 0 || length >= sizeof(filename)) return false;
 
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "Using " + std::string(filename) + " as demo image");
 
@@ -1267,17 +1271,20 @@ bool CCamera::loadNextDemoImage(camera_fb_t *fb)
 
     fileSize = GetFileSize(filename);
 
-    if (fileSize > DEMO_IMAGE_SIZE)
+    if (fileSize <= 0 || fileSize > DEMO_IMAGE_SIZE)
     {
         char buf[100];
         snprintf(buf, sizeof(buf), "Demo Image (%d bytes) is larger than provided buffer (%d bytes)!", (int)fileSize, DEMO_IMAGE_SIZE);
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, std::string(buf));
+        fclose(fp);
         return false;
     }
 
     readBytes = fread(demoImage, 1, DEMO_IMAGE_SIZE, fp);
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "read " + std::to_string(readBytes) + " bytes");
-    fclose(fp);
+    const bool readOk = !ferror(fp) && readBytes == fileSize;
+    const bool closed = fclose(fp) == 0;
+    if (!readOk || !closed) return false;
 
     fb->buf = demoImage; // Update pointer
     fb->len = readBytes;
