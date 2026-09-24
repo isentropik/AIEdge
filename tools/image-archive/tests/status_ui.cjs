@@ -1,9 +1,12 @@
 const assert=require('node:assert/strict');
 const api=require('../../../sd-card/html/image-archive.js');
-const good={version:1,worker_started:true,engine_ready:true,capture_enabled:true,pending:2,blocked:0,acknowledged_awaiting_cleanup:0,stored:1,upload_acknowledgments:3,upload_failures:4};
-function doc(){const nodes={};for(const id of ['refresh','notice','state','detail','pending','blocked','cleanup','stored','uploaded','failures'])nodes[id]={textContent:'',disabled:false,addEventListener(){}};return {nodes,getElementById:id=>nodes[id]};}
+const good={version:1,worker_started:true,engine_ready:true,capture_enabled:true,pending:2,blocked:0,acknowledged_awaiting_cleanup:0,stored:1,upload_acknowledgments:3,upload_failures:4,handoff_rejected:0,enqueue_rejected:0};
+function doc(){const nodes={};for(const id of ['refresh','notice','state','detail','pending','blocked','cleanup','stored','uploaded','failures','notqueued','notsaved'])nodes[id]={textContent:'',disabled:false,addEventListener(){}};return {nodes,getElementById:id=>nodes[id]};}
 (async()=>{
  assert.equal(api.describe(good)[0],'Running');
+ assert.equal(api.describe({...good,handoff_rejected:1})[0],'Some captures were not archived');
+ assert.equal(api.describe({...good,enqueue_rejected:1})[0],'Some captures were not archived');
+ assert.equal(api.describe({...good,blocked:1,handoff_rejected:2})[0],'Needs attention');
  assert.equal(api.describe({...good,worker_started:false})[0],'Not running');
  assert.equal(api.describe({...good,engine_ready:false})[0],'Starting');
  assert.equal(api.describe({...good,blocked:1})[0],'Needs attention');
