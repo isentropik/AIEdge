@@ -2,6 +2,7 @@
 #include "VerifyDeviceBundle.h"
 #include "miniz/miniz.h"
 #include "BundleZipMemory.h"
+#include "PendingBundleRecovery.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <cerrno>
@@ -119,7 +120,9 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  if(errno!=ENOENT)return StageResult::IoError;
  if(!bundleDirectory(base)||!bundleDirectory(base+"/objects")||!bundleDirectory(base+"/pending")||
     !bundleDirectory(base+"/apps"))return StageResult::IoError;
- if(mkdir(pending.c_str(),0700)!=0)return errno==EEXIST?StageResult::Conflict:StageResult::IoError;
+ const auto recovery=preparePending(base,id);
+ if(recovery!=PendingRecovery::Ready)
+  return recovery==PendingRecovery::Conflict?StageResult::Conflict:StageResult::IoError;
  for(const auto& item:wanted){
   if(!bundleParents(pending,item.first))return StageResult::IoError;
   int flags=O_WRONLY|O_CREAT|O_EXCL;
