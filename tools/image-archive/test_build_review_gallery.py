@@ -21,6 +21,10 @@ class GalleryTests(unittest.TestCase):
   self.assertEqual(next(self.output.glob('*.jpg')).read_bytes(),self.image)
   page=(self.output/'index.html').read_text(encoding='utf-8')
   self.assertIn('UTC unknown',page);self.assertIn('width=device-width',page);self.assertIn('value="dark"',page)
+  self.assertIn('UTC unknown \u2014 boot test, capture 5 \u00b5s',page)
+  self.assertIn('Unreviewed \u00b7 excluded from training',page)
+  self.assertIn('Showing 1\u20131 of 1 unique images',page)
+  for damaged in ('\u00c2','\u00e2\u20ac','\ufffd'):self.assertNotIn(damaged,page)
   self.assertEqual(original,{str(p):p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
  def test_existing_review_never_overwritten(self):
   self.generate();(self.output/'index.html').write_text('keep')
