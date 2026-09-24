@@ -108,3 +108,17 @@ package. The local builder now selects public archive sources, includes their
 87-test suite, and verifies source bytes remain unchanged. A replacement package
 and test-board validation remain pending. No real-image transfer to the new share
 is implied by these checks.
+
+
+The replacement candidate `aiedge-archive-camera-recovery-03`, bundle
+`b12fd280a9c6c3f6f2f0f7796f749275233acc21ea7f6f48b52e382ebf570095`,
+passed the full package checks and a clean build, then managed OTA and authenticated
+boot verification on the test board. All eleven packaged archive companion files
+match the current public tools byte-for-byte. Configuration, display profile and
+password protection were preserved. Archiving remains disabled with zero camera
+attempts. The synthetic device-to-SMB trial stopped during read-only preflight:
+Windows denied creation of the temporary inbound firewall rule and a missing-file
+preflight request disconnected. No archive settings were changed and no receiver
+was started. Camera-independent recovery is compiled and deployed but its physical
+upload behavior remains unverified. Host-to-SMB synthetic HTTPS checks remain the
+only completed network-share delivery test. Production was not changed.
