@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {watchRelease} from '../release-watch.mjs';
+let time=0,calls=0,current=0,stale=0,offline=0,reply='0.1.10',fail=false;
+const w=watchRelease({version:'0.1.10',now:()=>time,fetchManifest:async()=>{calls++;if(fail)throw Error('offline');return {name:'AIEdge Wi-Fi loader',version:reply}},onCurrent:()=>current++,onStale:()=>stale++,onUnavailable:()=>offline++});
+assert.equal(await w.check(),true);assert.equal(calls,0);
+time=60001;assert(w.needsCheck());assert(await w.check());assert.equal(current,1);assert(!w.needsCheck());
+time+=60001;fail=true;assert.equal(await w.check(),false);assert.equal(offline,1);assert(w.needsCheck());
+fail=false;reply='0.1.11';assert.equal(await w.check(),false);assert.equal(stale,1);const before=calls;assert.equal(await w.check(true),false);assert.equal(calls,before);
+let resolve,n=0;const concurrent=watchRelease({version:'a',now:()=>time,fetchManifest:()=>{n++;return new Promise(r=>resolve=r)},onCurrent:()=>{},onStale:()=>{},onUnavailable:()=>{}});
+const a=concurrent.check(true),b=concurrent.check(true);assert.equal(n,1);resolve({name:'AIEdge Wi-Fi loader',version:'a'});assert(await a);assert(await b);
+console.log('Release watcher: fresh, expired, offline, superseded and concurrent checks passed');

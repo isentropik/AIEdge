@@ -1,3 +1,4 @@
+import {watchRelease} from './release-watch.mjs';
 // Original AIEdge page code. Flashing component: ESP Web Tools (Apache-2.0).
 const status = document.querySelector('#status');
 const button = document.querySelector('#install');
@@ -36,7 +37,26 @@ async function prepare() {
   await import('./vendor/esp-web-tools-aiedge.js?v=wifi-scan-018');
   await customElements.whenDefined('esp-web-install-button');
   button.hidden=false;
-  status.textContent='Installer files checked. Ready to connect.';
+  const ready=()=>{status.textContent=`Installer ${manifest.version} checked. Ready to connect.`;};
+  ready();
+  const versionLabel=document.querySelector('#verified-version');
+  if(versionLabel)versionLabel.textContent=manifest.version;
+  const watcher=watchRelease({version:manifest.version,
+    fetchManifest:async()=>await (await fetchChecked('manifest.json')).json(),
+    onCurrent:ready,
+    onStale:latest=>{button.hidden=true;status.textContent=`A newer installer (${latest}) is available. Finish any active installation, then refresh this page before installing again.`;},
+    onUnavailable:()=>{status.textContent='Could not check the latest installer. Reconnect to the Internet and try again. Any active installation is unchanged.';}
+  });
+  // Capture only a new connection click. Never touch an existing component dialog.
+  button.addEventListener('click',event=>{
+    if(!watcher.needsCheck())return;
+    event.preventDefault();event.stopImmediatePropagation();
+    status.textContent='Checking the latest installer. Click Connect again when ready.';
+    watcher.check(true);
+  },true);
+  window.addEventListener('focus',()=>watcher.check());
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)watcher.check();});
+  setInterval(()=>{if(!document.hidden)watcher.check();},60000);
 }
 prepare().catch(error=>{
   button.hidden=true;
