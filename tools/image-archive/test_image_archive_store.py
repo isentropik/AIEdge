@@ -81,7 +81,7 @@ class ArchiveTests(unittest.TestCase):
                 finally:path.write_bytes(original)
 
     def test_failed_publish_has_no_receipt_or_partial_final(self):
-        with patch('image_archive_store.os.link', side_effect=OSError('storage unavailable')):
+        with patch('image_archive_store.publish_no_replace', side_effect=OSError('storage unavailable')):
             with self.assertRaises(OSError): self.put()
         self.assertFalse(list(self.root.rglob('*.image')))
         self.assertFalse(list(self.root.rglob('.pending-*')))

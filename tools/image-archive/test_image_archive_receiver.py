@@ -84,7 +84,7 @@ class ReceiverTests(unittest.TestCase):
         self.assertFalse(list(self.root.rglob('*.image')))
 
     def test_storage_failure_has_no_success_receipt(self):
-        with patch('image_archive_store.os.link', side_effect=OSError('disk fault')):
+        with patch('image_archive_store.publish_no_replace', side_effect=OSError('disk fault')):
             status, result = self.post()
         self.assertEqual(status,503)
         self.assertNotIn('verified_readback',result)
@@ -92,12 +92,13 @@ class ReceiverTests(unittest.TestCase):
 
     def test_disk_full_after_blob_before_record_then_retry(self):
         import errno,os
-        real_link=os.link
+        from image_archive_store import publish_no_replace
+        real_link=publish_no_replace
         def full_for_record(source,destination,*args,**kwargs):
             if Path(destination).parent.name=='captures':
                 raise OSError(errno.ENOSPC,'No space left on device')
             return real_link(source,destination,*args,**kwargs)
-        with patch('image_archive_store.os.link',side_effect=full_for_record):
+        with patch('image_archive_store.publish_no_replace',side_effect=full_for_record):
             status,failed=self.post()
         self.assertEqual(status,503)
         self.assertNotIn('verified_readback',failed)

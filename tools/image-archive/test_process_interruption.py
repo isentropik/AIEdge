@@ -1,5 +1,6 @@
 """Abrupt receiver-process exit on disposable files, not physical power loss."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -16,7 +17,7 @@ root=Path(sys.argv[1]);mode=sys.argv[2]
 fixture=json.loads((root/'fixture.json').read_text())
 image=bytes.fromhex(fixture['image']);metadata=fixture['metadata']
 original_write=store.write_immutable
-original_link=store.os.link
+original_link=store.publish_no_replace
 def write(path,data):
     result=original_write(path,data)
     if mode=='after_blob' and path.parent.name=='blobs':os._exit(73)
@@ -27,7 +28,7 @@ def link(source,destination):
         if mode=='after_record_link':
             original_link(source,destination);os._exit(73)
     return original_link(source,destination)
-store.write_immutable=write;store.os.link=link
+store.write_immutable=write;store.publish_no_replace=link
 receipt=store.store_capture(root,metadata,image)
 (root/'receipt.json').write_text(json.dumps(receipt))
 '''
@@ -52,7 +53,8 @@ class InterruptionTests(unittest.TestCase):
                 before=list((root/'captures').glob('*.json'))
                 self.assertEqual(len(before),int(mode=='after_record_link'))
                 pending=list(root.rglob('.pending-*'))
-                if mode!='after_blob':self.assertEqual(len(pending),1)
+                expected = int(mode=='before_record_link' or (mode=='after_record_link' and os.name!='nt'))
+                self.assertEqual(len(pending),expected)
                 receipt=store_capture(root,metadata,image)
                 self.assertEqual(receipt['duplicate'],mode=='after_record_link')
                 self.assertTrue(receipt['verified_readback'])

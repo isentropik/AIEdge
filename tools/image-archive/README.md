@@ -196,3 +196,30 @@ Saved records include capture provenance, review/submission hashes, review metho
 and unknown readings. They stay `split: unassigned` and `training_eligible: false`.
 Before training, independently check dial mapping, near-duplicates and dataset
 splits. Human confirmation alone does not grant training eligibility.
+
+
+### Windows network shares
+
+The receiver can write to a UNC folder using its Windows account's existing
+share access. The ESP32 still uploads over HTTPS; it does not connect to SMB.
+A Windows service may need its own share permissions even when your interactive
+account can open the folder. Do not put share passwords in command-line arguments.
+
+Before starting uploads, run:
+
+```powershell
+python probe_archive_storage.py '\\server\share\aiedge'
+```
+
+This creates a new test subfolder and leaves existing files alone. Keep the
+result for troubleshooting. Windows publishes a flushed temporary file using
+non-replacing rename; other systems use hard links. There is no copy/overwrite
+fallback. Windows rename refuses an existing destination ([Python documentation](https://docs.python.org/3/library/os.html#os.rename)). Some SMB servers report an
+access-denied error under contention; that remains a storage failure without a
+success receipt. A retry checks the original file and accepts only identical data.
+
+A real Windows-to-SMB test on September 24 passed creation, readback, identical
+retry and conflict protection. Eight competing writes produced one intact winner;
+conflicts and a storage error did not overwrite it, and subsequent retries behaved
+correctly. This verifies tested file operations, not power-loss durability or a
+complete ESP32-to-share upload. Windows directory fsync is not provided here.

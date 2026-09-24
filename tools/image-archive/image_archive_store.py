@@ -3,7 +3,8 @@
 Raw blobs are content addressed. Capture identity includes device, boot and sensor
 capture time, so identical images from distinct captures retain distinct records.
 An orphan blob after a failed record write is safe; no receipt is returned until
-both objects have been read back. Filesystems must support atomic hard links.
+both objects have been read back. Publication uses non-replacing Windows rename
+or POSIX hard links within the destination directory.
 """
 import hashlib
 import json
@@ -98,6 +99,18 @@ def matches_existing(path, data):
         return stream.read(len(data) + 1) == data
 
 
+def publish_no_replace(source, destination):
+    """Publish without replacement; never use POSIX rename (it overwrites).
+
+    Windows rename rejects an existing destination, including on SMB shares.
+    Both names are in the same directory. Errors propagate without copy fallback.
+    """
+    if os.name == 'nt':
+        os.rename(source, destination)
+    else:
+        os.link(source, destination)
+
+
 def write_immutable(path, data):
     """Publish a fully written object without overwriting an existing object."""
     ensure_directory(path.parent)
@@ -113,7 +126,7 @@ def write_immutable(path, data):
             stream.flush()
             os.fsync(stream.fileno())
         try:
-            os.link(temporary, path)
+            publish_no_replace(temporary, path)
             created = True
         except FileExistsError:
             created = False
@@ -122,7 +135,10 @@ def write_immutable(path, data):
         sync_directory(path.parent)
         return created
     finally:
-        os.unlink(temporary)
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass  # Successful Windows rename consumed the temporary name.
 
 
 def store_capture(root, metadata, image):
