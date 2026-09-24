@@ -4,6 +4,7 @@
 #include "FileConfigStorage.h"
 #include "CycleTelemetry.h"
 #include "PolarAccounting.h"
+#include "../jomjol_tfliteclass/MeterProfileStore.h"
 
 #include "connect_wlan.h"
 #include "read_wlanini.h"
@@ -326,6 +327,11 @@ void ClassFlowControll::InitFlow(std::string config)
     CameraAccess access(pdMS_TO_TICKS(1000));
     if (!access) { aktstatus = "Configuration busy"; aktstatusWithTime = aktstatus; return; }
     ConfigStorage::Files storage;
+    const auto profileRecovery=meter::ProfileStore::recoverSettings(storage,"/sdcard/config/meter-profile.json");
+    if(profileRecovery!=ConfigJournal::Result::Ok && profileRecovery!=ConfigJournal::Result::CleanupPending){
+        aktstatus="Meter settings recovery required";aktstatusWithTime=aktstatus;
+        LogFile.WriteToFile(ESP_LOG_ERROR,TAG,aktstatus);return;
+    }
     const auto recovered = ConfigJournal::recover(storage, FormatFileName(config));
     if (recovered != ConfigJournal::Result::Ok && recovered != ConfigJournal::Result::CleanupPending)
     {

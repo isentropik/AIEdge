@@ -2,6 +2,7 @@
 #include "ImageArchiveStatus.h"
 #include "ImageArchiveStartup.h"
 #include "ImageArchiveSettingsHttp.h"
+#include "MeterProfileSettingsHttp.h"
 #include "ProcessingAccess.h"
 #include "FileConfigStorage.h"
 #include "MainFlowControl.h"
@@ -2357,6 +2358,15 @@ void register_server_main_flow_task_uri(httpd_handle_t server)
     if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register archive settings read");
     camuri.method = HTTP_POST;
     if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register archive settings save");
+    camuri.method = HTTP_GET;
+
+    camuri.uri = "/meter_profile";
+    camuri.method = HTTP_GET;
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(meter::profileSettingsHttp);
+    camuri.user_ctx = NULL;
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register meter profile read");
+    camuri.method = HTTP_POST;
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register meter profile save");
     camuri.method = HTTP_GET;
 
     camuri.uri = "/image_archive_status";

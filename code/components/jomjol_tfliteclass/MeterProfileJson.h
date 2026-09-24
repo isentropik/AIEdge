@@ -29,7 +29,8 @@ inline bool parseProfile(const std::string& bytes,RegisterProfile& output) {
  cJSON* fields[8]={};
  for(auto* c=root->child;c;c=c->next){
   int index=-1;for(int i=0;i<8;++i)if(c->string&&!std::strcmp(c->string,names[i]))index=i;
-  if(index<0||fields[index])return false;fields[index]=c;
+  if(index<0||fields[index])return false;
+  fields[index]=c;
  }
  for(auto* f:fields)if(!f)return false;
  if(!cJSON_IsNumber(fields[0])||fields[0]->valuedouble!=1||!cJSON_IsString(fields[1])||
