@@ -120,8 +120,8 @@ new folder; it is not a completed gallery until `index.html` exists.
 
 This is a read-only full-image review, not a dial-labelling interface. It has no
 needle overlay, suggested readings, label submission or training activation.
-Calibration-aware crop overlays and separate human-label records remain future
-work. Automated export checks pass; browser layout verification is pending.
+Calibration-aware crop overlays remain future work. Separate human-label records
+can now be saved with the command below. Automated export checks pass; browser layout verification is pending.
 
 ## Protect captures near held-out images
 
@@ -143,3 +143,56 @@ cannot be found; the output and gallery report this gap. Similar stationary
 images outside the interval, or across restarts, may still leak information
 between training and evaluation. Review those separately before assigning any
 split. No reviewed image is automatically made eligible for training.
+
+
+## Save human readings separately
+
+`record_review_labels.py` records readings supplied by a person. It does not
+read needles automatically, modify the gallery, or start training. Keep the
+original gallery and archive. Use a new output filename for each revision.
+
+Prepare an `answers.json` file like this, replacing the hash placeholders with
+the actual values. `review_sha256` is the SHA-256 of the gallery's `review.json`
+file; each image hash is listed inside that file. A reviewer nickname is enough.
+
+```json
+{
+  "version": 1,
+  "review_sha256": "REPLACE_WITH_REVIEW_FILE_SHA256",
+  "reviewer": "your nickname",
+  "method": "independent_reading",
+  "dials": ["main_10k", "main_1k"],
+  "images": [
+    {
+      "image_sha256": "REPLACE_WITH_IMAGE_SHA256",
+      "readings": {"main_10k": 5.3, "main_1k": null}
+    }
+  ]
+}
+```
+
+These dial names and numbers are examples, not suggested labels. Use names that
+match your calibration. Every submitted image must have an entry for every
+declared dial. Use `null` when you cannot read one. Positions use the dial's own
+numbering on a 0–10 scale, with 0 included and 10 excluded; these are not physical
+volume or electricity units. Normalize a secondary 0–5 wheel to that scale before
+recording it. Never use filename predictions as labels.
+
+Set `method` to `confirmation_of_shown_estimate` if the reviewer saw and accepted
+a model estimate. This preserves the distinction from an independent reading.
+The tool records that statement; it cannot verify who supplied it or its accuracy.
+
+```sh
+python record_review_labels.py /path/to/archive --review /path/to/gallery/review.json --answers /path/to/answers.json --protected-hashes /path/to/protected.json --output /path/to/new-labels.json
+```
+
+The output must be outside both the archive and original gallery. The command
+checks the exact review hash, audits the current archive, and reapplies current
+held-out and temporal protection. Changed capture provenance, protected images,
+duplicate submissions, invalid values and existing outputs are rejected. A
+nonempty subset of the gallery may be submitted; omitted images remain untouched.
+
+Saved records include capture provenance, review/submission hashes, review method,
+and unknown readings. They stay `split: unassigned` and `training_eligible: false`.
+Before training, independently check dial mapping, near-duplicates and dataset
+splits. Human confirmation alone does not grant training eligibility.
