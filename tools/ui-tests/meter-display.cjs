@@ -21,3 +21,21 @@ h.display=null;assert.match(history(h),/1000–2000 ft³ \(stored units\)/);
 h.valid=false;assert.match(history(h),/History is not available/);
 h.valid=true;h.active=true;assert.match(history(h),/scan is running/);
 console.log('History display conversion, unknown bounds, canonical fallback and scan state passed');
+
+// Real retained-frame discrepancy: explain the rejection without changing readings.
+const {accountingReason}=require('../../sd-card/html/meter_diagnostics.js');
+const rejected={reason:'main_dials_inconsistent',state:'rejected',assumptions:{main_dial_error:0.1},raw_observation:{main_dial_positions:[0.289215684,2.50806093,5.60520554,5.34,4.78]}};
+const before=JSON.stringify(rejected);
+assert.match(accountingReason(rejected),/Main dial 4 reads 5.340; dial 5 implies 5.478/);
+assert.match(accountingReason(rejected),/Difference 0.138 exceeds 0.110/);
+assert.equal(JSON.stringify(rejected),before);
+assert.match(accounting(rejected),/Main dials disagree/); // Also visible without display preference.
+for(const bad of [null,[],[0,1,null,3,4],[0,1,2,3,10],[0,1,NaN,3,4]]) {
+ const r={...rejected,raw_observation:{main_dial_positions:bad}};
+ assert.doesNotMatch(accountingReason(r),/Main dial 4|implies|NaN/);
+ assert.match(accountingReason(r),/unavailable/);
+}
+const wrap={...rejected,raw_observation:{main_dial_positions:[9.999998,9.99998,9.9998,9.998,9.98]}};
+assert.doesNotMatch(accountingReason(wrap),/exceeds/);
+assert.equal(accountingReason({}), '');
+assert.equal(accountingReason({reason:'whole_turn_count_unresolved'}),'Reason: whole turn count unresolved');

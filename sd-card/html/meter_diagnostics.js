@@ -34,17 +34,40 @@
     const bounds=valid?Number(lo.toPrecision(8))+'–'+Number(hi.toPrecision(8))+' '+unit:'Unknown';
     return "Completed segments: "+count(s.segments)+"\nCovered consumption: "+bounds+"\nThis excludes the active segment and unresolved gaps. It is not a lifetime total.";
   }
+  function accountingReason(s) {
+    if(s.reason !== 'main_dials_inconsistent')return s.reason ? 'Reason: '+String(s.reason).replace(/_/g,' ') : '';
+    const lines=['Main dials disagree. Consumption and flow for this observation are unavailable.'];
+    const values=s.raw_observation && s.raw_observation.main_dial_positions;
+    const tolerance=s.assumptions && s.assumptions.main_dial_error;
+    if(!Array.isArray(values)||values.length!==5||values.some(v=>number(v)===null||v>=10)||
+       number(tolerance)===null||tolerance>=0.5)return lines.join('\n');
+    const allowed=tolerance+tolerance/10;
+    for(let i=0;i<4;i++) {
+      let linked=0,residual=Infinity;
+      for(let k=0;k<10;k++) {
+        const candidate=k+values[i+1]/10;
+        const distance=Math.abs(((candidate-values[i]+5)%10+10)%10-5);
+        if(distance<residual){linked=candidate;residual=distance;}
+      }
+      if(residual>allowed+1e-9)lines.push('Main dial '+(i+1)+' reads '+values[i].toFixed(3)+
+        '; dial '+(i+2)+' implies '+linked.toFixed(3)+'. Difference '+residual.toFixed(3)+
+        ' exceeds '+allowed.toFixed(3)+' on the 0–10 dial scale.');
+    }
+    lines.push('Main dials are numbered from highest to lowest place value. Raw readings have not been corrected.');
+    return lines.join('\n');
+  }
   function accounting(s) {
-    const d=s.display;if(!d||!['ft3','m3'].includes(d.unit))return "Choose compatible meter details to enable converted consumption display.";
+    const reason=accountingReason(s);
+    const d=s.display;if(!d||!['ft3','m3'].includes(d.unit))return [reason,"Choose compatible meter details to enable converted consumption display."].filter(Boolean).join("\n");
     const unit=d.unit==='ft3'?'ft³':'m³',i=d.interval||{},c=d.cumulative_since_anchor||{};
     const quantity=v=>number(v)===null?'Unknown':Number(v.toPrecision(8))+' '+unit;
-    return ['State: '+String(s.state||'unknown'),
+    return ['State: '+String(s.state||'unknown'),reason,
       'Interval bounds: '+quantity(i.minimum)+' – '+quantity(i.maximum),
       'Interval estimate: '+quantity(i.estimate),
       'Average flow: '+(number(i.average_per_second)===null?'Unknown':quantity(i.average_per_second)+'/s'),
       'Since anchor'+(c.current===true?'':' (not current)')+': '+quantity(c.minimum)+' – '+quantity(c.maximum),
       'Cumulative estimate: '+quantity(c.current===true?c.estimate:null),
-      'Unresolved whole turns remain unknown; these are not lifetime totals.'].join('\n');
+      'Unresolved whole turns remain unknown; these are not lifetime totals.'].filter(Boolean).join('\n');
   }
   async function request(fetcher,path,method="GET") {
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),5000);
@@ -79,7 +102,7 @@
     refresh.addEventListener("click",()=>run(false));scan.addEventListener("click",()=>run(true));
     return {refresh:()=>run(false),scan:()=>run(true)};
   }
-  const api={timing,archive,history,accounting,request,mount};
+  const api={timing,archive,history,accounting,accountingReason,request,mount};
   if(typeof module!=="undefined" && module.exports)module.exports=api;
   else mount(root.document,root.fetch.bind(root));
 })(typeof window!=="undefined"?window:globalThis);

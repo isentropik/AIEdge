@@ -103,3 +103,18 @@ Private evidence: `current-frame-firmware-check-20260924/result.json`,
 `current-frame-review-20260924/confirmation-evaluation.json`,
 `current-frame-review-20260924/consistency-investigation.json`, and
 `automatic-markers-current-frame-20260924/result.json` under firmware-port-tests.
+
+
+## Cross-dial rejection detail — prepared September 24
+
+The diagnostics page now explains a main-dial inconsistency using the current
+raw observation and reported error assumption. It names each disagreeing pair
+from highest to lowest place value and shows measured position, linked position,
+circular residual and allowed bound on the 0–10 scale. The warning remains visible
+without a compatible display-unit preference. No raw reading, threshold or
+accounting state is changed. Other rejection reasons are also displayed.
+
+Node tests pass for the confirmed-frame discrepancy, circular rollover, invalid
+inputs, missing preferences, immutable observations and existing unknown/stale
+quantity handling. Packaging, rendered review and test-board verification of this
+UI change remain pending.
