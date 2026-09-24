@@ -14,11 +14,11 @@ migration remains deferred while saved-image and test-board testing continues.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `9d0fdc7a4d249ed72f97f944dbd1e05cf8b93d1acabaeaae537e80b399750f37`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `40fd361540ff77eeaad5f096481563459a7e9de74236ba11cf42f68ddcfb607e`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
-| Camera | An earlier single-image, no-flash preview succeeded. The latest test boot reports camera unavailable; the website and saved display profile remain usable. | The test camera currently sees room furnishings, not the meter. Place it at the meter and verify calibration before live recognition. |
+| Camera | An earlier single-image, no-flash preview succeeded. The latest test boot reports camera unavailable; the website and saved display profile remain usable. | Resolve the latest 0x105 camera address-probe failure first; its physical cause is unresolved. Then place the camera at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
-| Processing time | Latest saved-JPEG diagnostic: 14.29 seconds with exact reference parity. Five normal-path SD surrogate cycles took 21.21–21.36 seconds at approximately 30-second start intervals; demo timestamps correctly remained invalid. | Sustained valid capture-to-publication cadence toward 30 seconds, including image storage and web use. |
+| Processing time | Latest three-image saved-JPEG comparison: 13.60-second median with exact reference parity (previous bundle: 13.97 seconds). Five normal-path SD surrogate cycles took 21.21–21.36 seconds at approximately 30-second start intervals; demo timestamps correctly remained invalid. | Sustained valid capture-to-publication cadence toward 30 seconds, including image storage and web use. |
 | Remote image storage | Optional queue and HTTPS receiver implemented; a recorded image delivery passed. Host tests cover failed connections, rejected credentials, receipts and receiver interruption. | Physical outage/retry and SD power-loss tests, storage limits, and sustained operation. |
 | Website access | Whole-device password protection deployed. Thirty read-only route checks passed across protected and authorized requests. | Broader interaction and browser behavior review. |
 | Interface and lighting | Shared interface and RGBW support implemented; several pages and assets verified on the test board. | Every page on mobile, all 19 RGBW pixels, and live brightness behavior on the installed strip. |
@@ -66,3 +66,25 @@ The next September 24 update validates calendar dates and time fields before acc
 The ESP32 build and managed OTA/boot checks passed with configuration, profile and password preserved. All runtime assets and the recognition model are unchanged. Timestamp behavior is verified in actual-loader host tests; no new real-meter accuracy claim or hardware clock-fault test is implied. Private evidence: `needle-training/firmware-port-tests/aiedge-strict-saved-times/{validation.json,ota/result.json}`. The earlier title-encoding concern was a diagnostic decoding error: raw served UTF-8 bytes were correct.
 
 Camera-independent profile startup is now installed and verified: with the camera unavailable, the compatible saved profile activates before HTTP starts. History display unit switching and restoration passed without restart or canonical-value changes. The test board has empty history; nonzero numerical conversions are host-tested.
+
+
+## Frozen geometry reproduction — September 24
+
+The local packaging workflow now regenerates the frozen geometry in memory and
+requires byte-for-byte agreement with the active AIEdge calibration and identity
+headers before a future candidate build. The exporter previously pointed at the
+retired checkout; it now verifies `AIEdge-publication` by default. Optional output
+requires a new folder and cannot overwrite existing files. Historical CRLF bytes
+are preserved explicitly so the established calibration identity does not change
+merely because generation runs on another operating system.
+
+The verified geometry SHA-256 remains
+`98ae8ce2c7f71176ace91c9b6c4f086a522e7da35a89140dea59cfd70d42096c`.
+Three regressions cover exact active-header reproduction, changed geometry or
+identity rejection, and separate-export overwrite refusal. Private source
+artifacts are checked against the frozen reader manifest before generation.
+Evidence: `geometry-reproduction-verified-20260924/geometry-export.json` under
+firmware-port-tests. No firmware, model, geometry, accounting identity or live
+setting changed. This gate covers the exported dial geometry and original two
+marker templates; independent check-marker and preprocessing source validation
+remain covered by their separate regression tests and package source hashes.
