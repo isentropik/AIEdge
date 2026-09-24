@@ -5,6 +5,9 @@
 
 #include <iomanip>
 #include <sstream>
+#include <cerrno>
+#include <cmath>
+#include <cstdlib>
 
 #include <time.h>
 
@@ -169,6 +172,7 @@ bool ClassFlowPostProcessing::LoadPreValue(void) {
     zwtime = trim(std::string(zw));
 	
     if (zwtime.length() == 0) {
+        fclose(pFile);
         return false;
     }
 
@@ -176,21 +180,35 @@ bool ClassFlowPostProcessing::LoadPreValue(void) {
 	
     //  Conversion to the new format
     if (splitted.size() > 1) {
-        while ((splitted.size() > 1) && !_done) {
+        while (!_done) {
+            if (splitted.size() != 3) {
+                fclose(pFile);
+                return false;
+            }
             name = trim(splitted[0]);
             zwtime = trim(splitted[1]);
             zwvalue = trim(splitted[2]);
 
             for (int j = 0; j < NUMBERS.size(); ++j) {
                 if (NUMBERS[j]->name == name) {
-                    NUMBERS[j]->PreValue = stod(zwvalue.c_str());
+                    char* valueEnd = nullptr;
+                    errno = 0;
+                    const double parsedValue = std::strtod(zwvalue.c_str(), &valueEnd);
+                    if (valueEnd == zwvalue.c_str() || *valueEnd != '\0' || errno == ERANGE || !std::isfinite(parsedValue)) {
+                        fclose(pFile);
+                        return false;
+                    }
+                    NUMBERS[j]->PreValue = parsedValue;
                     NUMBERS[j]->ReturnPreValue = RundeOutput(NUMBERS[j]->PreValue, NUMBERS[j]->Nachkomma + 1);      // To be on the safe side, 1 digit more, as Exgtended Resolution may be on (will only be set during the first run).
 
                     time_t tStart;
                     int yy, month, dd, hh, mm, ss;
-                    struct tm whenStart;
+                    struct tm whenStart{};
 
-                    sscanf(zwtime.c_str(), PREVALUE_TIME_FORMAT_INPUT, &yy, &month, &dd, &hh, &mm, &ss);
+                    if (sscanf(zwtime.c_str(), PREVALUE_TIME_FORMAT_INPUT, &yy, &month, &dd, &hh, &mm, &ss) != 6) {
+                        fclose(pFile);
+                        return false;
+                    }
                     whenStart.tm_year = yy - 1900;
                     whenStart.tm_mon = month - 1;
                     whenStart.tm_mday = dd;
@@ -222,28 +240,31 @@ bool ClassFlowPostProcessing::LoadPreValue(void) {
                 ESP_LOGD(TAG, "Read line Prevalue.ini: %s", zw);
                 splitted = HelperZerlegeZeile(trim(std::string(zw)), "\t");
 		    
-                if (splitted.size() > 1) {
-                    name = trim(splitted[0]);
-                    zwtime = trim(splitted[1]);
-                    zwvalue = trim(splitted[2]);
-                }
+                // The next iteration validates every field before indexing.
             }
         }
         fclose(pFile);
     }   
     else {
         // Old Format
-        fgets(zw, 1024, pFile);
+        if (!fgets(zw, 1024, pFile)) {
+            fclose(pFile);
+            return false;
+        }
         fclose(pFile);
         ESP_LOGD(TAG, "%s", zw);
         zwvalue = trim(std::string(zw));
-        NUMBERS[0]->PreValue = stod(zwvalue.c_str());
+        char* valueEnd = nullptr;
+        errno = 0;
+        const double parsedValue = std::strtod(zwvalue.c_str(), &valueEnd);
+        if (NUMBERS.empty() || valueEnd == zwvalue.c_str() || *valueEnd != '\0' || errno == ERANGE || !std::isfinite(parsedValue)) return false;
+        NUMBERS[0]->PreValue = parsedValue;
 
         time_t tStart;
         int yy, month, dd, hh, mm, ss;
-        struct tm whenStart;
+        struct tm whenStart{};
 
-        sscanf(zwtime.c_str(), PREVALUE_TIME_FORMAT_INPUT, &yy, &month, &dd, &hh, &mm, &ss);
+        if (sscanf(zwtime.c_str(), PREVALUE_TIME_FORMAT_INPUT, &yy, &month, &dd, &hh, &mm, &ss) != 6) return false;
         whenStart.tm_year = yy - 1900;
         whenStart.tm_mon = month - 1;
         whenStart.tm_mday = dd;
@@ -289,7 +310,12 @@ void ClassFlowPostProcessing::SavePreValue() {
     }
 
     pFile = fopen(FilePreValue.c_str(), "w");
+    if (!pFile) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Cannot open saved-reading file for writing");
+        return; // Keep UpdatePreValueINI set so a later cycle can retry.
+    }
 
+    bool written = true;
     for (int j = 0; j < NUMBERS.size(); ++j) {
         char buffer[80];
         struct tm* timeinfo = localtime(&NUMBERS[j]->timeStampLastPreValue);
@@ -301,14 +327,12 @@ void ClassFlowPostProcessing::SavePreValue() {
         _zw = NUMBERS[j]->name + "\t" + NUMBERS[j]->timeStamp + "\t" + RundeOutput(NUMBERS[j]->PreValue, NUMBERS[j]->Nachkomma) + "\n";
         ESP_LOGD(TAG, "Write PreValue line: %s", _zw.c_str());
 			
-        if (pFile) {
-            fputs(_zw.c_str(), pFile);
-        }
+        if (fputs(_zw.c_str(), pFile) == EOF) written = false;
     }
 
-    UpdatePreValueINI = false;
-
-    fclose(pFile);
+    if (fclose(pFile) != 0) written = false;
+    if (written) UpdatePreValueINI = false;
+    else LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Cannot finish writing saved readings");
 }
 
 ClassFlowPostProcessing::ClassFlowPostProcessing(std::vector<ClassFlow*>* lfc, ClassFlowCNNGeneral *_analog, ClassFlowCNNGeneral *_digit) {

@@ -52,3 +52,13 @@ and `ShiftDecimal`. It checks the current saved-image estimates, leading zeros,
 tenths truncation, following-dial carry handling, main decimal scaling, the
 separate legacy secondary position, and rejected/nonfinite/out-of-range values.
 The fixtures do not exercise all postprocessing, MQTT delivery, or UI formatting.
+
+## Saved-reading recovery
+
+`test_saved_readings.py --zig-python /path/to/python-with-ziglang` compiles the
+actual `LoadPreValue` and `SavePreValue` methods. Temporary files cover valid
+current and legacy formats, empty files, missing fields, malformed numeric or
+timestamp values, and descriptor closure. Injected open/write/close failures
+verify that failed saves retain the pending-write flag. This prevents startup
+crashes and false successful saves; it does not make the legacy file update
+atomic or prove physical SD durability.
