@@ -36,6 +36,7 @@
 #include "MeterStatus.h"
 #include "MeterHistoryFiles.h"
 #include "PolarRuntimeTest.h"
+#include "PolarReplayCatalog.h"
 
 #include "ClassFlowControll.h"
 
@@ -494,7 +495,7 @@ esp_err_t handler_polar_test_status(httpd_req_t* req)
     portEXIT_CRITICAL(&polarTestMux);
     std::string json = "{\"active\":" + std::string(active ? "true" : "false") +
         ",\"status\":\"" + result.status + "\",\"verified_accuracy\":false,\"completed\":" +
-        std::to_string(result.completed) + ",\"dials\":[";
+        std::to_string(result.completed) + ",\"replay_frame\":"+std::to_string(result.replayFrame)+",\"dials\":[";
     for(int i=0;i<result.completed;++i) {
         if(i)json += ",";
         json += "{\"index\":" + std::to_string(i) +
@@ -514,7 +515,8 @@ static PolarRuntimeTestResult polarFrameTestResult;
 
 static void polarFrameTestWorker(void* jpeg)
 {
-    const auto result = jpeg ? runPolarJpegFrameTest() : runPolarFullFrameTest();
+    const auto mode=reinterpret_cast<intptr_t>(jpeg);
+    const auto result = mode ? runPolarJpegFrameTest(static_cast<int>(mode)-2) : runPolarFullFrameTest();
     portENTER_CRITICAL(&polarFrameTestMux);
     polarFrameTestResult = result;
     polarFrameTestActive = false;
@@ -524,12 +526,16 @@ static void polarFrameTestWorker(void* jpeg)
 
 esp_err_t handler_polar_frame_test_start(httpd_req_t* req)
 {
-    const bool jpeg=std::string(req->uri)=="/polar_jpeg_test";
+    const std::string uri(req->uri);
+    const bool jpeg=uri.substr(0,uri.find('?'))=="/polar_jpeg_test";
     httpd_resp_set_type(req,"application/json");
     httpd_resp_set_hdr(req,"Cache-Control","no-store");
-    if(req->content_len || httpd_req_get_url_query_len(req)) {
+    int frame=-1;char query[32]={};
+    const auto queryLength=httpd_req_get_url_query_len(req);
+    if(req->content_len || (queryLength && (!jpeg || queryLength>=sizeof(query) ||
+       httpd_req_get_url_query_str(req,query,sizeof(query))!=ESP_OK || !PolarReplay::parse(query,frame)))) {
         httpd_resp_set_status(req,"400 Bad Request");
-        return httpd_resp_sendstr(req,"{\"status\":\"empty_request_required\"}");
+        return httpd_resp_sendstr(req,"{\"status\":\"invalid_replay_request\"}");
     }
     portENTER_CRITICAL(&polarFrameTestMux);
     const bool busy = polarFrameTestActive;
@@ -538,13 +544,14 @@ esp_err_t handler_polar_frame_test_start(httpd_req_t* req)
         polarFrameTestResult = PolarRuntimeTestResult{};
         polarFrameTestResult.status = "queued_or_running";
         polarFrameTestResult.jpegInput = jpeg;
+        polarFrameTestResult.replayFrame=frame;
     }
     portEXIT_CRITICAL(&polarFrameTestMux);
     if(busy) {
         httpd_resp_set_status(req,"409 Conflict");
         return httpd_resp_sendstr(req,"{\"status\":\"diagnostic_active\"}");
     }
-    if(xTaskCreate(polarFrameTestWorker,"polar_frame_test",8192,jpeg?reinterpret_cast<void*>(1):nullptr,1,nullptr)!=pdPASS) {
+    if(xTaskCreate(polarFrameTestWorker,"polar_frame_test",8192,jpeg?reinterpret_cast<void*>(static_cast<intptr_t>(frame+2)):nullptr,1,nullptr)!=pdPASS) {
         portENTER_CRITICAL(&polarFrameTestMux);
         polarFrameTestResult.status = "task_creation_failed";
         polarFrameTestActive = false;
@@ -565,7 +572,7 @@ esp_err_t handler_polar_frame_test_status(httpd_req_t* req)
     portEXIT_CRITICAL(&polarFrameTestMux);
     std::string json = "{\"active\":" + std::string(active ? "true" : "false") +
         ",\"status\":\"" + result.status + "\",\"verified_accuracy\":false,\"completed\":" +
-        std::to_string(result.completed) + ",\"dials\":[";
+        std::to_string(result.completed) + ",\"replay_frame\":"+std::to_string(result.replayFrame)+",\"dials\":[";
     for(int i=0;i<result.completed;++i) {
         if(i)json += ",";
         json += "{\"index\":" + std::to_string(i) +

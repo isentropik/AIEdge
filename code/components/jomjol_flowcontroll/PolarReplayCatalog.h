@@ -1,0 +1,32 @@
+#pragma once
+#include <cstddef>
+#include <cstring>
+// Hashes of held-out private frames. Images are not distributed in the repository.
+namespace PolarReplay {
+struct Frame {size_t jpegBytes; const char* jpegHash; const char* vectorsHash;};
+static const Frame frames[]={
+{56811,"6639db4005f893dc25f812ed74cf70d9ddb59a1e8fdd731028c3d40c485e3845","5c5bfbc963527192a20af2d046378cdd2c75610e587897cd32397ff3619c6ef4"},
+{57017,"9b9fb1445191be4f99480d17a92b2641189c8c7cfa6c60f28aad32ca56fdc7b0","661ac47006aa2013bd555c3f88aa7e80d99b266639408fcf043551cb65de690a"},
+{57056,"e5708eed5ecef1286e3d6d15b8d51470f204828f6929c7ab2dde3c85c4a9809f","3ce2ee76ada3b472bd03d7379846382e0a1e71dea0922471fd05fc4a0427d2cf"},
+{57064,"c170892cf5ba8be7031010201b3798e26492c860b1e39e468db83d8875cb41bf","dd12d84a016ef153070159f371ff3e0b07e5b817ba01bd0b761f11f3db7bed4f"},
+{57040,"349f8c4e7d092b5695e24985743ce44e63dfdb087fd6b964328cf0eeb529f074","7c5e1816407d83867469fdb86d8e4f6c4da54aab97709b4a4686e82a5ba4a8b3"},
+{57111,"4263060ceb027deede0b952cf95948d04a91171463bd589b9e1d0b4d629c25ac","c916e129627c24aebc0eb8b9b3c84c9d993425918bf9053fbf9e604114a7f3b4"},
+{57163,"3143d8a8881eab533cdf79de73aa2c15495373ffe0a1d1f02dcf1fb48cfa117f","7e0e517a939ba9b3f25cc2abb015f7786ca8cfdd0550af94595bd99293238939"},
+{57556,"4d4ffc0e5c16fa8976ee7161f08d75902233000b621c67881c406a24280f739f","91b44df63bfebda4044328409ec9a7762b822c38fac0dae91ff25ed978beb4d2"},
+{57490,"5e7799a1496168d128c7f588cf6c916a37745946aa86e967c34d7abf7ebce4bb","86d446bcb5dae8f0606af46379aca8f76fa249c82a56b9f57d6b8d80c7809a9b"},
+{57517,"e1e795e79f5c91f65e420879e74b762296cc99967aa94bb1cf7b98cdbe7dde49","4be83d29a7c997c1be6bcbd3615dabdb12bfdf611cfb58e8f1774e79fc2cc4b7"},
+{57504,"fa202142f9eaa690e8ee1465bb00f2e7be0212187604677dfddf575af1426688","7d44ab04cc48c4c984def9296eee38635ae8ba20cd0341b74e1f922076b719a8"},
+{57480,"3007ba66d151b65993308edea36bc11762660054272083f59a3e8d66d0c2bb82","4fc544443595994ab88b8d4b4a10bf18fff83e2b61b16e21655ac73108befc85"},
+{57371,"503e62059ac94963ec2ed09e5c8d331cd1ce0c0d73194c1626f06b13c0a43c54","3f78ca274b7755785d6fa216d76f86cf107e40560139845435c2ff2cae9db81e"},
+{57553,"9b0ffda30c979f29a015747605ee9cf6e42a4f0faac9364e6d2276b595815107","6d84945d66c7c3b22a7adaa382770487d99d179cdc3a568b33cd20ea10a9e58e"},
+{57573,"b6c9a9a0bd291c053535c57fd4f9bf979c12f90ca00a6051a6d9d0de0d6d667b","a5bd8e61d2be7c94a40c9d9eaec9bab26f782cb931849aa9a50186db9122f919"}};
+constexpr int count=sizeof(frames)/sizeof(frames[0]);
+// Strict raw query: no duplicate keys, suffixes, decoding or arbitrary paths.
+inline bool parse(const char* query,int& index) {
+ if(!query || std::strncmp(query,"frame=",6)!=0)return false;
+ const char* p=query+6;if(!*p)return false;
+ int value=0;
+ for(;*p;++p){if(*p<'0'||*p>'9')return false;value=value*10+(*p-'0');if(value>=count)return false;}
+ index=value;return true;
+}
+}

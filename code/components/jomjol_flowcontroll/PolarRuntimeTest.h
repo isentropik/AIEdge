@@ -11,9 +11,10 @@ struct PolarRuntimeTestResult {
     int featureDifferences[6]={};
     polar::DialProfile preprocessingProfile[6];
     bool jpegInput=false;
+    int replayFrame=-1;
     int64_t decodeUs=0;
 };
 PolarRuntimeTestResult runPolarRuntimeTest();
 
 PolarRuntimeTestResult runPolarFullFrameTest();
-PolarRuntimeTestResult runPolarJpegFrameTest();
+PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame=-1);

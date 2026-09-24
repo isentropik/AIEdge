@@ -1,4 +1,5 @@
 #include "PolarRuntimeTest.h"
+#include "PolarReplayCatalog.h"
 #include "ProcessingAccess.h"
 #include "../jomjol_controlcamera/CameraAccess.h"
 #include "../jomjol_fileserver_ota/RuntimeBundle.h"
@@ -40,15 +41,27 @@ struct DecodeMemory {
 
 // Saved private JPEG only. No capture, settings change, publication or training.
 // Decoder and model use the same shared PSRAM sequentially, never concurrently.
-PolarRuntimeTestResult runPolarJpegFrameTest() {
-    PolarRuntimeTestResult result;result.jpegInput=true;
+PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame) {
+    PolarRuntimeTestResult result;result.jpegInput=true;result.replayFrame=replayFrame;
+    if(replayFrame < -1 || replayFrame>=PolarReplay::count){result.status="replay_frame_rejected";return result;}
     ProcessingAccess processing;if(!processing){result.status="processing_busy";return result;}
     CameraAccess camera;if(!camera){result.status="camera_busy";return result;}
-    constexpr size_t jpegBytes=57573,inputBytes=15360,outputBytes=360;
+    constexpr size_t inputBytes=15360,outputBytes=360;
+    size_t jpegBytes=57573;
+    const char* jpegHash="b6c9a9a0bd291c053535c57fd4f9bf979c12f90ca00a6051a6d9d0de0d6d667b";
+    const char* vectorsHash="a5bd8e61d2be7c94a40c9d9eaec9bab26f782cb931849aa9a50186db9122f919";
+    std::string jpegPath="/sdcard/config/polar-runtime-frame.jpg",vectorsPath="/sdcard/config/polar-jpeg-vectors.bin";
+    if(replayFrame>=0){
+        const auto& frame=PolarReplay::frames[replayFrame];jpegBytes=frame.jpegBytes;
+        jpegHash=frame.jpegHash;vectorsHash=frame.vectorsHash;
+        char stem[64];std::snprintf(stem,sizeof(stem),"diagnostics/replay-%02d",replayFrame);
+        jpegPath=MeterBundle::bootSelection().resolve(std::string(stem)+".jpg","");
+        vectorsPath=MeterBundle::bootSelection().resolve(std::string(stem)+".bin","");
+        if(jpegPath.empty()||vectorsPath.empty()){result.status="replay_assets_unavailable";return result;}
+    }
     auto jpeg=buffer(jpegBytes),features=buffer(6*inputBytes);
     if(!jpeg || !features){result.status="jpeg_fixture_memory_unavailable";return result;}
-    if(!readFixture("/sdcard/config/polar-runtime-frame.jpg",jpeg.get(),jpegBytes,
-                    "b6c9a9a0bd291c053535c57fd4f9bf979c12f90ca00a6051a6d9d0de0d6d667b")) {
+    if(!readFixture(jpegPath.c_str(),jpeg.get(),jpegBytes,jpegHash)) {
         result.status="jpeg_fixture_rejected";return result;
     }
     const auto started=esp_timer_get_time();
@@ -81,8 +94,7 @@ PolarRuntimeTestResult runPolarJpegFrameTest() {
     } // Release RGB and shared decoder ownership before model allocation.
     auto vectors=buffer(8+6*(inputBytes+outputBytes));
     if(!vectors){result.status="jpeg_fixture_memory_unavailable";return result;}
-    if(!readFixture("/sdcard/config/polar-jpeg-vectors.bin",vectors.get(),8+6*(inputBytes+outputBytes),
-                    "a5bd8e61d2be7c94a40c9d9eaec9bab26f782cb931849aa9a50186db9122f919")){
+    if(!readFixture(vectorsPath.c_str(),vectors.get(),8+6*(inputBytes+outputBytes),vectorsHash)){
         result.status="jpeg_fixture_rejected";return result;
     }
     CTfLiteClass network;
