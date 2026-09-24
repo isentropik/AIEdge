@@ -77,3 +77,10 @@ a successful normal-path ESP32 surrogate run.
 ## Saved timestamp validation
 
 The saved-reading regression also exercises `SavedReadingTime.h`: Gregorian leap-year rules, field ranges, strict suffixes, UTC `Z`, numeric `+/-HHMM` offsets and equivalent instants. Offset-free historical timestamps retain local-time interpretation; dates that the system normalizes are rejected. Future timestamps never set the previous-reading freshness flag, including the legacy two-line format. The parser does not repair an incorrect device clock or resolve an ambiguous historical local time lacking an offset.
+
+
+## Camera initialization state
+
+`test_init.py` compiles the actual `CCamera::InitCam` body with driver boundaries stubbed. It checks all three supported sensor IDs, success followed by driver error, missing sensor after successful driver initialization, unsupported sensor, and later recovery. Ready state and cached sensor ID are cleared before deinitialization; failed probes cannot expose stale readiness. This test does not establish the physical cause of a missing camera or verify electrical recovery.
+
+Run with a Python environment containing ziglang: `python test_init.py`.

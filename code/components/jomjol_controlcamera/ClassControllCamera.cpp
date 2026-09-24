@@ -149,6 +149,10 @@ esp_err_t CCamera::InitCam(void)
 {
     ESP_LOGD(TAG, "Init Camera");
 
+    // An unsuccessful retry must never retain the previous ready state.
+    CCstatus.CameraInitSuccessful = false;
+    CCstatus.CamSensor_id = 0;
+
     TickType_t cam_xDelay = 100 / portTICK_PERIOD_MS;
 
     CCstatus.ImageQuality = camera_config.jpeg_quality;
@@ -168,13 +172,12 @@ esp_err_t CCamera::InitCam(void)
         return err;
     }
 
-    CCstatus.CameraInitSuccessful = true;
-
     // Get a reference to the sensor
     sensor_t *s = esp_camera_sensor_get();
 
     if (s != NULL)
     {
+        CCstatus.CameraInitSuccessful = true;
         CCstatus.CamSensor_id = s->id.PID;
 
         // Dump camera module, warn for unsupported modules.
@@ -362,7 +365,7 @@ esp_err_t CCamera::getSensorDatenToCCstatus(void)
         CCstatus.ImageRawGma = s->status.raw_gma;
         CCstatus.ImageLenc = s->status.lenc;
 
-        // CCstatus.ImageSharpness = s->status.sharpness; // gibt -1 zurück, da es nicht unterstützt wird
+        // CCstatus.ImageSharpness = s->status.sharpness; // gibt -1 zurÃ¼ck, da es nicht unterstÃ¼tzt wird
         CCstatus.ImageDenoiseLevel = s->status.denoise;
 
         return ESP_OK;
