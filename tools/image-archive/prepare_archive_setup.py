@@ -69,7 +69,8 @@ Windows, verify NTFS permissions; chmod is not an ACL privacy guarantee.
 
 1. Review server/receiver-arguments.json. The folder and certificate/key paths
    refer to the storage server, not the meter. The destination filesystem must
-   support atomic hard links. The TLS certificate must match the configured IP
+   support hard links on Linux or same-folder no-replace rename on Windows.
+   Test the actual share with the storage probe. The TLS certificate must match the configured IP
    or hostname and chain to the supplied CA. CA parsing alone does not prove it.
 2. Copy server/ to the intended storage server. Install Python 3.10 or newer,
    provision the certificate/key and destination permissions, then run

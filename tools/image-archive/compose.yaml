@@ -1,0 +1,41 @@
+services:
+  image-archive:
+    build:
+      context: .
+    image: aiedge-image-archive:local
+    user: "${ARCHIVE_UID:?Set a non-root storage user ID}:${ARCHIVE_GID:?Set its group ID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    ports:
+      - "${ARCHIVE_BIND_IP:?Set the storage server LAN IP}:8766:8766"
+    volumes:
+      - type: bind
+        source: "${ARCHIVE_FOLDER:?Set an existing absolute archive folder}"
+        target: /archive
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ARCHIVE_TOKEN_FILE:?Set the generated server archive-token.txt path}"
+        target: /run/archive/token.txt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ARCHIVE_CERT_FILE:?Set the HTTPS certificate path}"
+        target: /run/archive/server.pem
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${ARCHIVE_KEY_FILE:?Set the HTTPS private key path}"
+        target: /run/archive/server-key.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"

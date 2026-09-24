@@ -15,9 +15,9 @@ feature. You can leave archiving disabled and use AIEdge normally.
 - A computer or NAS that can run Python 3.10 or newer.
 - Its IP address or a hostname the ESP32 can resolve, such as `storage.example.net`.
 - An absolute folder path on that server, such as `/srv/meter-images` or
-  `D:\MeterImages`. The receiver must be allowed to write there. The filesystem
-  must support hard links, which are used to publish files without overwriting
-  existing captures.
+  `D:\MeterImages`. The receiver must be allowed to write there. On Linux, the filesystem must support hard links for publication without
+  overwriting captures. Windows uses a same-folder rename that refuses replacement;
+  check the actual share with the supplied storage probe.
 - An HTTPS certificate and its private key on the server, plus the certificate
   authority (CA) certificate trusted by the meter. The certificate must cover the
   exact hostname or IP you enter. A CA certificate alone does not establish this.
@@ -56,6 +56,7 @@ file-mode settings alone do not enforce Windows permissions.
    your local network if the server firewall requires it. Do not expose it to
    the Internet just to use this feature.
 
+For a server-hosted container, see the [NAS/container recipe](IMAGE-ARCHIVE-CONTAINER.md).
 The generator does not install a background service or configure your NAS.
 There is no image-browsing website at the receiver address.
 
