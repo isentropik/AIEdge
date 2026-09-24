@@ -268,8 +268,16 @@ with tempfile.TemporaryDirectory() as folder:
   assert result.stdout.strip()==str(expected),result.stdout
   if mode=='fail_sync':assert 'extract.sync_failed' in result.stderr,result.stderr
   if name=='hashfail':assert 'extract.integrity_failed' in result.stderr,result.stderr
+  if name=='blockedbase':assert any(step in result.stderr for step in ['object.stat_failed','directory.type_failed']),result.stderr
+  if name=='blockedapps':assert 'directory.type_failed' in result.stderr,result.stderr
   stage_cases+=1
   return base
+ write_zip(list(files.items()))
+ (root/'blockedbase').write_bytes(b'preserve')
+ stage(1,'blockedbase');assert (root/'blockedbase').read_bytes()==b'preserve'
+ (root/'blockedapps').mkdir();(root/'blockedapps/apps').write_bytes(b'preserve')
+ stage(1,'blockedapps');assert (root/'blockedapps/apps').read_bytes()==b'preserve'
+ assert not (root/'blockedapps/pending'/identity).exists()
  write_zip(list(files.items())+[('docs/ignored.txt',b'not a runtime asset')])
  base=stage(4,'good');stage(3,'good')
  assert not (base/'objects'/identity/'docs').exists()

@@ -44,14 +44,17 @@ template<class Sink> bool extractBounded(mz_zip_archive& zip,mz_uint index,uint6
  if(total!=expected)checkpoint(trace,"extract.byte_count_failed",path,total);
  return ok&&complete&&total==expected;
 }
-inline bool bundleDirectory(const std::string& path){
- if(mkdir(path.c_str(),0700)!=0&&errno!=EEXIST)return false;
- struct stat st{};return stat(path.c_str(),&st)==0&&S_ISDIR(st.st_mode);
+inline bool bundleDirectory(const std::string& path,Checkpoint trace=nullptr){
+ if(mkdir(path.c_str(),0700)!=0&&errno!=EEXIST){const int error=errno;checkpoint(trace,"directory.mkdir_failed",path,error);return false;}
+ struct stat st{};
+ if(stat(path.c_str(),&st)!=0){const int error=errno;checkpoint(trace,"directory.stat_failed",path,error);return false;}
+ if(!S_ISDIR(st.st_mode)){checkpoint(trace,"directory.type_failed",path,st.st_mode);return false;}
+ return true;
 }
-inline bool bundleParents(const std::string& root,const std::string& name){
+inline bool bundleParents(const std::string& root,const std::string& name,Checkpoint trace=nullptr){
  size_t at=0;
  while((at=name.find('/',at))!=std::string::npos){
-  if(!bundleDirectory(root+"/"+name.substr(0,at)))return false;
+  if(!bundleDirectory(root+"/"+name.substr(0,at),trace))return false;
   ++at;
  }
  return true;
@@ -94,7 +97,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  mz_zip_archive_file_stat ms{};
  if(!mz_zip_reader_file_stat(&zip,found->second,&ms)||!ms.m_uncomp_size||ms.m_uncomp_size>128*1024)return StageResult::Rejected;
  std::unique_ptr<char[]> bytes(new(std::nothrow) char[ms.m_uncomp_size]);
- if(!bytes)return StageResult::IoError;
+ if(!bytes){checkpoint(trace,"manifest.alloc_failed",zipPath,ms.m_uncomp_size);return StageResult::IoError;}
  if(!extractBounded(zip,found->second,ms.m_uncomp_size,[&](uint64_t offset,const unsigned char* data,size_t size){
   std::memcpy(bytes.get()+offset,data,size);return true;
  },trace,"device-manifest.json"))return StageResult::Rejected;
@@ -117,20 +120,22 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   entries.clear();wanted.clear();closeZip.close();Manifest existing;
   return S_ISDIR(st.st_mode)&&verify<Hash>(object,id,existing,trace).verified?StageResult::Existing:StageResult::Conflict;
  }
- if(errno!=ENOENT)return StageResult::IoError;
- if(!bundleDirectory(base)||!bundleDirectory(base+"/objects")||!bundleDirectory(base+"/pending")||
-    !bundleDirectory(base+"/apps"))return StageResult::IoError;
+ if(errno!=ENOENT){const int error=errno;checkpoint(trace,"object.stat_failed",object,error);return StageResult::IoError;}
+ if(!bundleDirectory(base,trace)||!bundleDirectory(base+"/objects",trace)||!bundleDirectory(base+"/pending",trace)||
+    !bundleDirectory(base+"/apps",trace))return StageResult::IoError;
  const auto recovery=preparePending(base,id);
- if(recovery!=PendingRecovery::Ready)
+ if(recovery!=PendingRecovery::Ready){
+  const int error=errno;checkpoint(trace,recovery==PendingRecovery::Conflict?"pending.conflict_failed":"pending.prepare_failed",pending,error);
   return recovery==PendingRecovery::Conflict?StageResult::Conflict:StageResult::IoError;
+ }
  for(const auto& item:wanted){
-  if(!bundleParents(pending,item.first))return StageResult::IoError;
+  if(!bundleParents(pending,item.first,trace))return StageResult::IoError;
   int flags=O_WRONLY|O_CREAT|O_EXCL;
 #ifdef O_BINARY
   flags|=O_BINARY;
 #endif
   const std::string path=pending+"/"+item.first;int fd=open(path.c_str(),flags,0600);
-  if(fd<0)return StageResult::IoError;
+  if(fd<0){const int error=errno;checkpoint(trace,"extract.open_failed",path,error);return StageResult::IoError;}
   checkpoint(trace,"extract.begin",path);
   BundleSink<Hash> sink(fd,item.second.bytes,trace,path);
   bool ok=extractBounded(zip,entries.at(item.first),item.second.bytes,[&](uint64_t offset,const unsigned char* data,size_t size){
@@ -147,7 +152,8 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  entries.clear();wanted.clear();closeZip.close();
  Manifest verified;if(!verify<Hash>(pending,id,verified,trace).verified)return StageResult::Rejected;
  if(stat(object.c_str(),&st)==0)return StageResult::Conflict;
- if(errno!=ENOENT||std::rename(pending.c_str(),object.c_str())!=0)return StageResult::IoError;
+ if(errno!=ENOENT){const int error=errno;checkpoint(trace,"object.final_stat_failed",object,error);return StageResult::IoError;}
+ if(std::rename(pending.c_str(),object.c_str())!=0){const int error=errno;checkpoint(trace,"object.rename_failed",object,error);return StageResult::IoError;}
  return StageResult::Staged;
 }
 }
