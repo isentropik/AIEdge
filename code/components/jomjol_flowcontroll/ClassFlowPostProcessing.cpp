@@ -1,4 +1,5 @@
 #include "ClassFlowPostProcessing.h"
+#include "SavedReadingTime.h"
 #include "Helper.h"
 #include "ClassFlowTakeImage.h"
 #include "ClassLogFile.h"
@@ -234,29 +235,17 @@ bool ClassFlowPostProcessing::LoadPreValue(void) {
                     NUMBERS[j]->ReturnPreValue = RundeOutput(NUMBERS[j]->PreValue, NUMBERS[j]->Nachkomma + 1);      // To be on the safe side, 1 digit more, as Exgtended Resolution may be on (will only be set during the first run).
 
                     time_t tStart;
-                    int yy, month, dd, hh, mm, ss;
-                    struct tm whenStart{};
-
-                    if (sscanf(zwtime.c_str(), PREVALUE_TIME_FORMAT_INPUT, &yy, &month, &dd, &hh, &mm, &ss) != 6) {
+                    if (!SavedReadingTime::parse(zwtime, NUMBERS[j]->timeStampLastPreValue)) {
                         fclose(pFile);
                         return false;
                     }
-                    whenStart.tm_year = yy - 1900;
-                    whenStart.tm_mon = month - 1;
-                    whenStart.tm_mday = dd;
-                    whenStart.tm_hour = hh;
-                    whenStart.tm_min = mm;
-                    whenStart.tm_sec = ss;
-                    whenStart.tm_isdst = -1;
-
-                    NUMBERS[j]->timeStampLastPreValue = mktime(&whenStart);
 
                     time(&tStart);
                     localtime(&tStart);
                     double difference = difftime(tStart, NUMBERS[j]->timeStampLastPreValue);
                     difference /= 60;
 			
-                    if (difference > PreValueAgeStartup) {
+                    if (difference < 0 || difference > PreValueAgeStartup) {
                         NUMBERS[j]->PreValueOkay = false;
                     }
                     else {
@@ -293,28 +282,14 @@ bool ClassFlowPostProcessing::LoadPreValue(void) {
         NUMBERS[0]->PreValue = parsedValue;
 
         time_t tStart;
-        int yy, month, dd, hh, mm, ss;
-        struct tm whenStart{};
-
-        if (sscanf(zwtime.c_str(), PREVALUE_TIME_FORMAT_INPUT, &yy, &month, &dd, &hh, &mm, &ss) != 6) return false;
-        whenStart.tm_year = yy - 1900;
-        whenStart.tm_mon = month - 1;
-        whenStart.tm_mday = dd;
-        whenStart.tm_hour = hh;
-        whenStart.tm_min = mm;
-        whenStart.tm_sec = ss;
-        whenStart.tm_isdst = -1;
-
-        ESP_LOGD(TAG, "TIME: %d, %d, %d, %d, %d, %d", whenStart.tm_year, whenStart.tm_mon, whenStart.tm_wday, whenStart.tm_hour, whenStart.tm_min, whenStart.tm_sec);
-
-        NUMBERS[0]->timeStampLastPreValue = mktime(&whenStart);
+        if (!SavedReadingTime::parse(zwtime, NUMBERS[0]->timeStampLastPreValue)) return false;
 
         time(&tStart);
         localtime(&tStart);
         double difference = difftime(tStart, NUMBERS[0]->timeStampLastPreValue);
         difference /= 60;
 			
-        if (difference > PreValueAgeStartup) {
+        if (difference < 0 || difference > PreValueAgeStartup) {
             return false;
         }
 

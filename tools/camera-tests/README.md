@@ -73,3 +73,7 @@ failed demo load must reject the cycle without decoding the unrelated live
 frame. Demo images retain invalid capture timestamps and never reach the raw
 capture archive observer as real captures. These are host boundary tests, not
 a successful normal-path ESP32 surrogate run.
+
+## Saved timestamp validation
+
+The saved-reading regression also exercises `SavedReadingTime.h`: Gregorian leap-year rules, field ranges, strict suffixes, UTC `Z`, numeric `+/-HHMM` offsets and equivalent instants. Offset-free historical timestamps retain local-time interpretation; dates that the system normalizes are rejected. Future timestamps never set the previous-reading freshness flag, including the legacy two-line format. The parser does not repair an incorrect device clock or resolve an ambiguous historical local time lacking an offset.
