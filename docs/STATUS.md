@@ -14,7 +14,7 @@ migration remains deferred while saved-image and test-board testing continues.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `bbff5440551f17555c8bdffba21d8a5454f5722bcc8da49285dce522342290cc`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `f4681eda427aa4e2a035bd6fa825a6413eec0df1a25423dab43a650d9bdee01e`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
 | Camera | A fresh single-image, no-flash preview succeeds on the current test firmware. | The test camera currently sees room furnishings, not the meter. Place it at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
@@ -58,3 +58,9 @@ The September 24 test-board update preserves the prior in-memory readings when a
 Managed OTA and restart verification passed with configuration, meter profile and password preserved. All 146 runtime assets were retained byte-for-byte; six served routes were checked, including the configured setup-mode index route. A post-install six-dial saved-JPEG replay matched reference features and outputs exactly in 14.267908 seconds. This is port-regression evidence, not new labeled accuracy or live capture cadence.
 
 Private evidence: `needle-training/firmware-port-tests/aiedge-transactional-readings-06/{ota,replay-smoke,served-assets.json}`. The general build-checkout package was rejected before installation because its older HTML would regress the UI; the installed package preserved the verified modern assets. Future packaging now takes an explicit modern UI source and guards its hashes separately from firmware sources.
+
+## Strict saved timestamps
+
+The next September 24 update validates calendar dates and time fields before accepting saved readings, honors stored UTC offsets, and never treats future timestamps as fresh. Host regressions reproduced the previous acceptance of February 30, then passed strict date, leap-year, offset-equivalence, future-time and rollback cases. Offset-free legacy files retain local-time interpretation; an incorrect system clock and ambiguous local timestamps without offsets cannot be repaired by this parser.
+
+The ESP32 build and managed OTA/boot checks passed with configuration, profile and password preserved. All runtime assets and the recognition model are unchanged. Timestamp behavior is verified in actual-loader host tests; no new real-meter accuracy claim or hardware clock-fault test is implied. Private evidence: `needle-training/firmware-port-tests/aiedge-strict-saved-times/{validation.json,ota/result.json}`. The earlier title-encoding concern was a diagnostic decoding error: raw served UTF-8 bytes were correct.

@@ -203,3 +203,7 @@ A physical slow-server test remains open. See [validation](ARCHIVE-UPLOAD-DEADLI
 ## September 24 - saved-reading load rollback (test board)
 
 Bundle `bbff5440551f17555c8bdffba21d8a5454f5722bcc8da49285dce522342290cc` preserves prior runtime reading fields if loading fails after a valid row. Actual-method host fault coverage and the ESP32 build pass; managed OTA, verified boot, preserved config/profile/password and exact six-dial saved-image parity pass. UI/runtime assets remain unchanged. This does not make legacy saved-file writes atomic or validate physical power-loss durability. See [development status](STATUS.md) for evidence.
+
+## September 24 - strict saved timestamps (test board)
+
+Bundle `f4681eda427aa4e2a035bd6fa825a6413eec0df1a25423dab43a650d9bdee01e` rejects impossible dates, honors saved numeric UTC offsets and excludes future readings from freshness. Actual-loader host tests, ESP32 build and verified OTA/boot pass; config/profile/password and all runtime assets are preserved. See [development status](STATUS.md) for limitations and evidence.
