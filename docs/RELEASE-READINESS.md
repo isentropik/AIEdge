@@ -75,3 +75,34 @@ Actual-source host tests reject missing fields, invalid numeric values and
 malformed timestamps; empty files close cleanly. Failed open/write/close tests
 retain the pending-save flag. This does not make the legacy saved-state file
 update atomic or establish physical SD power-loss durability.
+
+## Normal-path saved-image trial
+
+Bundle `3898a8db23383d77ecf31b5cf19bd49968a6ef4c944d4d390167bcc18b1b3652`
+was installed and verified on the test board, preserving its configuration,
+profile and website authentication. One SD demo image then completed the normal
+pipeline with the normal model/image/workspace allocation lifetimes:
+
+| Stage | Seconds |
+| --- | ---: |
+| Camera acquisition plus substituted JPEG decode/copy | 4.797 |
+| Legacy alignment | 2.018 |
+| Polar registration and all six dial inferences | 14.517 |
+| Complete observed pipeline span | 21.360 |
+
+This closes the single-run normal recognition memory-layout gap left by the
+phased JPEG diagnostic. It does not prove sustained operation, MQTT delivery,
+TLS/inference overlap or physical meter accuracy. The demo source was re-encoded
+to fit the legacy 30 KB buffer; raw parent and derivative hashes were preserved
+and both remain excluded from training. No human labels were manufactured.
+
+The driver buffer remained owned by the camera; demo loading now works on a
+local descriptor and rejects file-load failures. Demo timestamps remained invalid
+(capture_us = 0), accounting rejected the interval, and accepted real-reader
+cycles remained zero. All three pipeline stages succeeded. No external
+publication or archiving was enabled.
+
+The original configuration and meter profile were restored and temporary demo
+files removed. A stale HTTP session reset during cleanup; a fresh session verified
+the restored configuration and exact remaining temporary bytes before removal.
+Production was not changed.

@@ -1,6 +1,6 @@
 # Development status
 
-[Back to AIEdge](../README.md) · [Installation](INSTALLATION.md) · [Glossary](GLOSSARY.md)
+[Back to AIEdge](../README.md) Â· [Installation](INSTALLATION.md) Â· [Glossary](GLOSSARY.md)
 
 Updated September 23, 2026 (Pacific time). **AIEdge runs on the test board, but is
 not yet verified as a replacement for the operating meter reader.** The production
@@ -13,11 +13,11 @@ work from the remaining production-migration checks.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `dcff21d1e6ddfa15888dbccb28b9401929245760323b6dd78d2aecd35877a0e4`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `3898a8db23383d77ecf31b5cf19bd49968a6ef4c944d4d390167bcc18b1b3652`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
 | Camera | A fresh single-image, no-flash preview succeeds on the current test firmware. | The test camera currently sees room furnishings, not the meter. Place it at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
-| Processing time | Latest saved-JPEG replay took 14.25 seconds with exact reference parity. | Sustained valid capture-to-publication cadence toward 30 seconds, including image storage and web use. |
+| Processing time | Saved-JPEG diagnostic: 14.25 seconds with exact reference parity. One normal-path SD surrogate completed in 21.36 seconds; demo timestamps correctly remained invalid. | Sustained valid capture-to-publication cadence toward 30 seconds, including image storage and web use. |
 | Remote image storage | Optional queue and HTTPS receiver implemented; a recorded image delivery passed. Host tests cover failed connections, rejected credentials, receipts and receiver interruption. | Physical outage/retry and SD power-loss tests, storage limits, and sustained operation. |
 | Website access | Whole-device password protection deployed. Thirty read-only route checks passed across protected and authorized requests. | Broader interaction and browser behavior review. |
 | Interface and lighting | Shared interface and RGBW support implemented; several pages and assets verified on the test board. | Every page on mobile, all 19 RGBW pixels, and live brightness behavior on the installed strip. |
