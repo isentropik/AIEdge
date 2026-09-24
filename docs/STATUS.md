@@ -14,7 +14,7 @@ migration remains deferred while saved-image and test-board testing continues.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `40fd361540ff77eeaad5f096481563459a7e9de74236ba11cf42f68ddcfb607e`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `4b32be5d916be370211fb3a6d82cba5452819156772223764bbd25afe22dc4e9`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
 | Camera | An earlier single-image, no-flash preview succeeded. The latest test boot reports camera unavailable; the website and saved display profile remain usable. | Resolve the latest 0x105 camera address-probe failure first; its physical cause is unresolved. Then place the camera at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
@@ -88,3 +88,27 @@ firmware-port-tests. No firmware, model, geometry, accounting identity or live
 setting changed. This gate covers the exported dial geometry and original two
 marker templates; independent check-marker and preprocessing source validation
 remain covered by their separate regression tests and package source hashes.
+
+
+## Retrospective cross-dial screening — September 24
+
+Seventeen retained full-frame images were rechecked for source/input hash
+agreement, the frozen model identity, accepted alignment and unchanged recorded
+imaging settings. Exact hashes were deduplicated; these are not seventeen
+independent needle positions. The last main-dial pair exceeds the provisional
+0.11 consistency bound in 14 images. Its signed residual ranges from -0.1280 to
+-0.1094 (median -0.1157), while the last dial ranges from 3.2412 to 4.7741. The
+other three main pairs pass in all seventeen images.
+
+This points to a recurring relative offset in the observed range, not an isolated
+frame failure. It does not identify which dial is responsible or distinguish
+calibration, recognition bias and mechanical pointer offset. Historical outputs
+share a model hash but are not asserted to share every preprocessing revision.
+The next controlled comparison should use one frozen current preprocessing
+pipeline and independently check printed tick positions and needle geometry.
+Do not fit an offset to these protected observations or expand error bounds
+merely to make them pass. No training or device change was made by this audit.
+
+Private evidence: `cross-dial-retrospective-20260924/result.json` under
+firmware-port-tests, including source-result hashes, per-pair signed residuals,
+position ranges and limitations.
