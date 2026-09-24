@@ -89,3 +89,36 @@ stays unknown. Do not compare monotonic capture times across device boots.
 The command never modifies archive records, overwrites an existing output, or
 writes the review inside the archive. Recheck hashes when consuming the images,
 since the manifest describes the archive at the time it was read.
+
+## Open a full-image review gallery
+
+The optional gallery needs Pillow on the computer preparing the review. The
+receiver itself still uses only Python's standard library.
+
+```sh
+python -m pip install -r requirements-review.txt
+python build_review_gallery.py /path/to/archive --protected-hashes /path/to/protected.json --group GROUP_ID --output /path/to/new-gallery
+```
+
+Replace `GROUP_ID` with the full `group_id` from a prepared review manifest.
+Open `index.html` in the new folder. Keep the image files beside it. The gallery
+contains private copies of the original images and capture identities; store
+or share that folder only where you intend those images to be accessible.
+It starts no server and uploads nothing.
+
+The gallery shows six unique images by default, or up to twelve with `--limit`.
+Use `--offset 6` and a new output folder for the next batch. Ordering is by image
+hash, not capture time. Tap an image to open its original size. System, light and
+dark themes are available. Capture details preserve unknown UTC and boot identity.
+
+Every export reruns the integrity and protection checks, verifies each selected
+image hash, and decodes JPEG/PNG files before writing the gallery. Images must be
+single frames no larger than two million pixels. Original bytes are copied
+without resizing or recompression. Existing output folders are never overwritten.
+If disk writing fails, leave the partial folder for inspection and retry into a
+new folder; it is not a completed gallery until `index.html` exists.
+
+This is a read-only full-image review, not a dial-labelling interface. It has no
+needle overlay, suggested readings, label submission or training activation.
+Calibration-aware crop overlays and separate human-label records remain future
+work. Automated export checks pass; browser layout verification is pending.
