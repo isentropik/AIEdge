@@ -5,7 +5,7 @@
 #include <cstddef>
 
 namespace polar {
-enum class AlignmentStatus { Ok, InvalidInput, FlatMarker, WeakMatch, Boundary, Spacing, Rotation, Confirmation, Geometry };
+enum class AlignmentStatus { Ok, InvalidInput, FlatMarker, WeakMatch, Boundary, Spacing, Rotation, Confirmation, Geometry, Ambiguous };
 struct MarkerMatch { double targetX, targetY, foundX, foundY, correlation; };
 inline double subpixel(double left,double middle,double right) {
     const double denominator=left-2*middle+right;
@@ -42,6 +42,15 @@ inline AlignmentStatus matchMarker(const uint8_t* gray,int width,int height,
     if(scores[best]<.8) return AlignmentStatus::WeakMatch;
     const int yi=best/41,xi=best%41;
     if(xi==0 || xi==40 || yi==0 || yi==40) return AlignmentStatus::Boundary;
+    // A second separated peak can represent another copy of the same marking.
+    // Exclude only the local peak neighborhood; do not refit to a runner-up.
+    double runner=-1;
+    for(int y=0;y<41;++y)for(int x=0;x<41;++x) {
+        if(std::abs(x-xi)<=8 && std::abs(y-yi)<=8)continue;
+        runner=std::max(runner,scores[y*41+x]);
+    }
+    // Provisional local-search margin; not an accuracy probability.
+    if(scores[best]-runner<.05)return AlignmentStatus::Ambiguous;
     MarkerMatch next;
     next.targetX=tx+mw/2.0; next.targetY=ty+mh/2.0;
     next.foundX=next.targetX+xi-20+subpixel(scores[best-1],scores[best],scores[best+1]);

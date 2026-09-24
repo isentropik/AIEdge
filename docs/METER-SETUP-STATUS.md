@@ -49,3 +49,10 @@ No device marker, model, training label or firmware was changed. Independent cap
 The proposal now freezes the exact median reference array with a hash and records selection-image hashes. A later saved capture outside that 15-image set passed all three marker checks, with correlations 0.9891–0.9910 and zero integer-pixel drift after existing two-marker registration. The weakest competing-match margin was 0.1572, close to the provisional 0.15 gate. This is one additional capture, not population accuracy evidence; hash separation does not exclude visually similar frames. Four rejection tests cover selection overlap, damaged template data, capture-hash mismatch and changed imaging settings. No thresholds or templates were changed after seeing the later capture.
 
 Evidence: `automatic-markers-frozen-20260924/suggestions.json` and `automatic-markers-excluded-capture-20260924/result.json` under private firmware-port-tests. Existing model/training splits and device settings are untouched. Replacing the active alignment pipeline and on-device validation remain pending.
+
+
+## Firmware competing-match rejection — prepared September 24
+
+The portable matcher now rejects a second separated peak within 0.05 correlation of the best local-search match, excluding an eight-pixel neighborhood around that peak. `Ambiguous` is appended to the status enum so previous numeric status values remain unchanged. Failure preserves the caller's output. This provisional local-search margin is distinct from the offline whole-image proposal gate and is not an accuracy probability.
+
+The exact/near-duplicate C++ fixture rejects both ambiguous cases while accepting a unique marker. All 16 retained real frames preserve their original transforms within floating-point tolerance. The actual three-marker pipeline retains expected outcomes on 195 existing stress cases (120 accepted, 75 rejected). Package/build and on-device verification remain pending; the installed test bundle is unchanged.
