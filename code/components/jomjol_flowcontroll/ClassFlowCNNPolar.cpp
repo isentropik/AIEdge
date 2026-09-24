@@ -76,7 +76,10 @@ bool ClassFlowCNNGeneral::doPolarNetwork(string time) {
             vTaskDelay(1);
             const int64_t beginDial = esp_timer_get_time();
             scratch->visibilityScore = -1;
-            if (!polar::prepareDial(image->rgb_image,inverse,index,*scratch))
+            // Use the hardware-checked even-grid warp; crop coordinates and
+            // the fixed needle pivot remain unchanged. Dense sampling remains
+            // available in the replay endpoint for regression comparisons.
+            if (!polar::prepareDial(image->rgb_image,inverse,index,*scratch,nullptr,nullptr,true))
                 return fail(string(polar::dials[index].name) + ": preprocessing/visibility rejected");
             const int64_t prepared = esp_timer_get_time();
             if (!network.InferPolar(scratch->features,384*40,item->CCW,readings[index]))
@@ -105,7 +108,7 @@ bool ClassFlowCNNGeneral::doPolarNetwork(string time) {
     }
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "registration_us=" + std::to_string(aligned-started) +
         " polar_total_us=" + std::to_string(esp_timer_get_time()-started) +
-        " workspace_bytes=" + std::to_string(sizeof(polar::PipelineScratch)));
+        " sampling=even_grid workspace_bytes=" + std::to_string(sizeof(polar::PipelineScratch)));
     RemoveOldLogs();
     return true;
 }
