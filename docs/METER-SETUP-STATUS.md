@@ -124,3 +124,13 @@ The older local refresh fixture was corrected to include the accounting panel
 and verify all four GET requests. Rendered visual review remains pending; no
 recognition accuracy or live-capture claim is made. Evidence: private
 `aiedge-dial-diagnostics-01/ota/result.json` and `served-assets.json`.
+
+
+The public UI regression now derives panel IDs from the actual diagnostics HTML
+and exercises all four refresh requests. It checks rejected-frame explanations,
+unknown interval/flow/stale cumulative estimates, literal-text rendering of
+device reasons, and clearing the previous observation when accounting refresh
+fails. These checks pass. Browser navigation to the deployed page was blocked
+by the browser access policy, so rendered visual verification remains pending.
+This follow-up changes tests and documentation only; no firmware redeployment
+is required for it.

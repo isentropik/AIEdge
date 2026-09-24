@@ -39,3 +39,36 @@ const wrap={...rejected,raw_observation:{main_dial_positions:[9.999998,9.99998,9
 assert.doesNotMatch(accountingReason(wrap),/exceeds/);
 assert.equal(accountingReason({}), '');
 assert.equal(accountingReason({reason:'whole_turn_count_unresolved'}),'Reason: whole turn count unresolved');
+
+// Exercise the actual page IDs and refresh path, including accounting failures.
+(async()=>{
+ const fs=require('node:fs'),path=require('node:path');
+ const html=fs.readFileSync(path.join(__dirname,'../../sd-card/html/meter_diagnostics.html'),'utf8');
+ const nodes={};
+ for(const match of html.matchAll(/id="([^"]+)"/g))nodes[match[1]]={textContent:'Not loaded.',disabled:false,addEventListener(){},set innerHTML(v){throw Error('Use textContent for device data');}};
+ const {mount}=require('../../sd-card/html/meter_diagnostics.js');
+ const data={...rejected,display:{unit:'ft3',interval:{minimum:null,maximum:null,estimate:null,average_per_second:null},cumulative_since_anchor:{current:false,minimum:1,maximum:2,estimate:null}}};
+ const calls=[];let fail=false;
+ const ui=mount({getElementById:id=>nodes[id]},async(url,options)=>{
+  calls.push({url,method:options.method});
+  if(url==='/meter_accounting'&&fail)throw Error('offline');
+  return {ok:true,json:async()=>url==='/meter_accounting'?data:{}};
+ });
+ assert.equal(calls.length,0);
+ await ui.refresh();
+ assert.deepEqual(calls.map(x=>x.url),['/cycle_timing','/image_archive_status','/meter_history','/meter_accounting']);
+ assert(calls.every(x=>x.method==='GET'));
+ assert.match(nodes.accounting.textContent,/Main dial 4 reads 5.340/);
+ assert.match(nodes.accounting.textContent,/Interval estimate: Unknown/);
+ assert.match(nodes.accounting.textContent,/Average flow: Unknown/);
+ assert.match(nodes.accounting.textContent,/Cumulative estimate: Unknown/);
+ assert.match(nodes.status.textContent,/^Status refreshed/);
+ fail=true;await ui.refresh();
+ assert.equal(nodes.accounting.textContent,'Could not read current status: offline');
+ assert.doesNotMatch(nodes.accounting.textContent,/5.340/); // No stale rejected observation.
+ assert.match(nodes.status.textContent,/Some sections could not refresh/);
+ assert.equal(nodes.refresh.disabled,false);assert.equal(nodes.scan.disabled,false);
+ fail=false;data.reason='<img src=x onerror=bad>';await ui.refresh();
+ assert.match(nodes.accounting.textContent,/<img/); // Literal text only.
+ console.log('Actual page IDs, all four GETs, rejection details, unknown estimates and failed-refresh stale-data removal passed');
+})().catch(error=>{console.error(error);process.exitCode=1;});
