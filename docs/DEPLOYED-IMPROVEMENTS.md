@@ -158,3 +158,27 @@ This is software-restart staging recovery, not sudden-power-loss durability or
 recovery from interruption during firmware flashing. Those tests remain open.
 Private evidence: `aiedge-stage-interruption-probe/recovered-hardware.json` and
 `aiedge-stage-recovery-verified-candidate/ota/result.json` under firmware-port-tests.
+
+
+## Interrupted installation-index retry (September 23, 2026)
+
+Source `3bf0813` is installed on the test board in bundle
+`90818ec0a5b95252725e752c3393ce26194110f193857bb48494af76805b4236`.
+An interrupted index write previously left a `.pending` file that blocked retry.
+After verifying the candidate bundle, the repair preserves this file as
+`.pending.interrupted-N` and writes a fresh index. Existing final mappings remain
+immutable. Preservation is bounded to 32 slots; exhaustion or a conflicting
+non-file stops installation. Retained files are not automatically removed.
+
+The actual-source host suite passed 14 index cases, including failed sync,
+truncated/conflicting/oversized pending content, retention exhaustion, and a
+pending directory. All 82 bundle, boot-selection, index, transaction and staging
+cases passed. The ESP32 build and normal authenticated OTA/reboot passed;
+configuration bytes and website password were preserved.
+
+This proves normal deployment and host recovery behavior. It does not establish
+hardware interruption recovery during index publication, flash writing, or
+physical SD power-loss durability. Those checks remain open.
+Private evidence: `aiedge-index-recovery-candidate/ota/result.json` under
+`needle-training/firmware-port-tests`; host suite:
+`needle_reader_v2/test_verify_device_bundle.py` in the development workspace.
