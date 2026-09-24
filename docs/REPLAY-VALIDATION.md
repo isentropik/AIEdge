@@ -119,3 +119,26 @@ excluded from training and share the held-out group of their parent image.
 Uniform digital gain and image-plane rotation do not model physical glare, shadows,
 camera exposure, tilt or parallax. Severe-change rejection and real lighting tests
 remain to be done. No production setting changed.
+
+## Severe rotation rejection gap and guard
+
+A second synthetic suite found that black/white frames, Gaussian blur radius 6
+and a 40-pixel horizontal shift were rejected, but a +10-degree rotation passed
+alignment/visibility while the last main dial changed by up to 3.96 on the 0-10
+scale. Both dense and sparse modes were affected. This is evidence that accepted
+marker matches alone do not establish usable dial geometry/recognition.
+
+The source now rejects automatic registration corrections exceeding 2 degrees.
+This is a conservative operating boundary, not a proven accuracy guarantee inside
+that range. A larger change requires checking the reference/calibration instead
+of publishing a reading. Angle wrapping is handled; 36 synthetic boundary/wrap
+cases passed and rejection leaves the output transform unchanged.
+
+All 210 earlier small-condition frame evaluations retained exactly the same
+acceptance, transforms and readings after the guard. In the severe suite, 150
+perturbed frame evaluations were rejected and all 30 identity controls accepted.
+This guard is host-tested only and is not yet deployed to the test board.
+
+The standalone boundary regression is `tools/bundle-tests/rotation_guard_test.cpp`.
+Compile with a C++11 compiler, assertions enabled, and include path
+`code/components/jomjol_tfliteclass`. No private images are needed.

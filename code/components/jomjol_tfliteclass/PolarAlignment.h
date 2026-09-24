@@ -5,7 +5,7 @@
 #include <cstddef>
 
 namespace polar {
-enum class AlignmentStatus { Ok, InvalidInput, FlatMarker, WeakMatch, Boundary, Spacing };
+enum class AlignmentStatus { Ok, InvalidInput, FlatMarker, WeakMatch, Boundary, Spacing, Rotation };
 struct MarkerMatch { double targetX, targetY, foundX, foundY, correlation; };
 inline double subpixel(double left,double middle,double right) {
     const double denominator=left-2*middle+right;
@@ -62,6 +62,12 @@ inline AlignmentStatus registration(const MarkerMatch& a,const MarkerMatch& b,do
     if(destination<1e-9) return AlignmentStatus::InvalidInput;
     if(std::abs(std::hypot(ux,uy)/destination-1)>.02) return AlignmentStatus::Spacing;
     const double theta=std::atan2(vy,vx)-std::atan2(uy,ux);
+    // Automatic correction is limited to a conservative small-motion envelope.
+    // Larger rotations need a reference/calibration check: marker matches alone
+    // did not protect dial recognition in the 10-degree full-frame stress test.
+    constexpr double maximumRotationRadians=2.0*3.14159265358979323846/180.0;
+    const double wrappedTheta=std::atan2(std::sin(theta),std::cos(theta));
+    if(std::abs(wrappedTheta)>maximumRotationRadians+1e-12)return AlignmentStatus::Rotation;
     const double c=std::cos(theta),s=std::sin(theta);
     const double x=(a.foundX+b.foundX)/2,y=(a.foundY+b.foundY)/2;
     matrix[0]=c; matrix[1]=-s; matrix[2]=(a.targetX+b.targetX)/2-c*x+s*y;
