@@ -1,6 +1,6 @@
 # AIEdge improvement backlog
 
-Updated September 23, 2026 (Pacific time). This is the running list of open work. Deployed items move to the [deployment archive](DEPLOYED-IMPROVEMENTS.md); they do not remain as completed rows here. Partially completed items describe only the remaining work. A local build is not a deployment.
+Updated September 24, 2026 (Pacific time). This is the running list of open work. Deployed items move to the [deployment archive](DEPLOYED-IMPROVEMENTS.md); they do not remain as completed rows here. Partially completed items describe only the remaining work. A local build is not a deployment.
 
 ## Installation and recovery — highest priority
 
@@ -70,21 +70,14 @@ The cumulative turn-tracking correction is installed on the test board and recor
 Completed camera, analog-only, UI, download-retry and journaled-save changes are recorded in the [deployment archive](DEPLOYED-IMPROVEMENTS.md).
 
 
-## Meter identification and alignment setup (requested September 23)
+## Meter identification and alignment setup — remaining work
 
-- [ ] Add a meter-type step after the reference image: Gas, Water, Electricity, Other/Unknown. Suggest from visible labels and unit markings; leave uncertain results unselected. Require confirmation before activating calculations. Do not infer type from analog dial shape alone.
-- [ ] Offer physical register units appropriate to the selected type: gas cubic feet or cubic metres; water cubic metres, litres, US gallons or imperial gallons; electricity Wh or kWh. Explicitly distinguish US and imperial gallons. Provide Other rather than silently applying an unsupported conversion.
-- [ ] Confirm printed register multipliers, dial direction and quantity per numbered step/full revolution, including any secondary/test wheel. Preserve raw dial positions separately. Unit selection must configure conversion, stored metadata and reporting consistently, not merely change the label. Existing totals must not be silently reinterpreted when units change.
-- [ ] Preserve this meter's established calibration: secondary full revolution = 5 cubic feet; last main dial full revolution = 1,000 cubic feet, numbered step = 100 cubic feet. Electricity power in watts is derived from energy/time, not a cumulative register unit. Gas energy conversion needs an explicit supported factor, not an assumed volume-to-energy conversion.
-- [ ] Suggest three distinctive fixed alignment patches around the dial group, verify against multiple captures, show scaled spacing/collinearity feedback, and allow manual adjustment. Exclude configured moving dial regions; reject weak or ambiguous matches. A stationary needle is not evidence of a fixed marking.
-- [ ] Integrate third-marker storage and independent verification before presenting three-marker alignment as supported. Current editor stores two. Offline automatic proposals are experimental and do not change the device.
-- [ ] Validate setup save/readback/reload, ambiguous identification, unit conversions and unsupported choices; verify on the test board before marking deployed.
+The meter-type/unit form, journaled profile persistence, compatible gas display conversion, saved-history display conversion, and camera-independent profile startup are deployed on the test board. Completed evidence and limits are in [meter setup status](METER-SETUP-STATUS.md) and the [deployment archive](DEPLOYED-IMPROVEMENTS.md).
 
-
-Meter-profile foundation: `MeterProfile.h` now defines volume/energy units, explicit confirmation, printed register multipliers, secondary-wheel quantities and a physical-scale compatibility check. Host tests cover US/imperial gallon distinction, cubic-foot conversion, Wh/kWh conversion, incompatible dimensions, invalid inputs and display-only versus physical-scale changes. The profile is not yet activated in recognition/accounting, stored history or MQTT. No live units or totals changed. Setup must not advertise the feature as active until those paths are integrated and tested.
-
-
-Meter-profile persistence foundation: strict versioned JSON and journaled save/recovery are implemented locally in `MeterProfileJson.h` and `MeterProfileStore.h`. Host tests use the firmware's cJSON and cover first save, display-unit change, duplicate/unknown fields, unsupported units, unconfirmed input, numeric overflow, stale edits, physical-scale conflicts, interrupted initial/existing writes, corrupt journals and preservation of an independently valid revision. A physical-scale change is refused rather than relabeling history. The profile API, guarded startup recovery and meter-type/unit setup preview are installed on the test board. A save/readback and restart-persistence check passed with the established gas scale. Completed UI/persistence details are in [meter setup status](METER-SETUP-STATUS.md). Compatible gas display conversion is now installed and verified in consumption diagnostics and accounting snapshots, with original canonical values preserved. Generic recognition, history migration and legacy/HA publication-unit changes remain pending. See [meter setup status](METER-SETUP-STATUS.md) for completed work and verification limits.
-
-
-Profile API status: authenticated GET/POST `/meter_profile` is registered in local firmware, with no CORS grant, required JSON/revision header, a 2 KB body limit, bounded receive time, processing/update locks and explicit display-only versus inactive save responses. GET distinguishes a missing profile from corrupt storage/recovery needs. The current frozen gas-model scale is reported separately from activation. HTTP host tests cover successful save/readback, stale revisions, partial and oversized bodies, unsupported method/query, lock contention, physical-scale conflicts and damaged journals. The setup UI and compatible gas display conversion are now deployed on the test board. Generic physical-scale changes, converted saved-history display and legacy HA publication-unit migration remain incomplete.
+- Suggest meter type from visible labels and units, leaving uncertain results unselected. Require user confirmation; dial shape alone does not identify the meter type.
+- Integrate generic meter recognition and calibrated physical scales. The frozen gas model is not a water/electricity model. Preserve raw dial positions separately from physical quantities; do not reinterpret existing totals when units change.
+- Finish consistent reporting outside the additional display views. Legacy readings and Home Assistant entity units are unchanged; MQTT broker delivery and any publication-unit migration need separate verification.
+- Preserve the established gas calibration: secondary revolution = 5 cubic feet; last main dial revolution = 1,000 cubic feet and numbered step = 100 cubic feet. Electricity power requires energy/time; gas energy needs an explicit supported conversion factor.
+- Suggest distinctive fixed alignment patches around the dial group and verify them across multiple captures. Exclude moving dial regions and reject weak or ambiguous matches; a stationary needle is not evidence of a fixed marking.
+- Integrate third-marker storage and independent verification before advertising three-marker support. The editor currently saves two markers. Manual spacing feedback does not validate feature quality or matching accuracy.
+- Validate unsupported meter choices and generic calibration activation on representative data before describing them as usable recognition modes.

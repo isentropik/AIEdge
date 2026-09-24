@@ -223,3 +223,10 @@ One frozen six-dial sparse saved-image diagnostic completed in 14.293106 seconds
 Test bundle `9d0fdc7a4d249ed72f97f944dbd1e05cf8b93d1acabaeaae537e80b399750f37` restores compatible saved display preferences before HTTP startup even if camera initialization fails. Storage/bundle failures keep the preference inactive; journal recovery is shared with flow reload. Saved-history diagnostics now offer ft3/m3 display conversion without rewriting canonical stored totals, and retain unknown bounds and gap warnings.
 
 79 host scripts, six UI checks and a clean ESP32 build passed. Managed OTA and verified boot preserved configuration/profile/password. Hardware reported camera unavailable while profile activation was `display_only` before any settings write. The history preference switched ft3 to m3 and back without restarting; canonical fields and original preference were preserved. The board had empty history, so this hardware check proves activation and null handling rather than nonzero conversion; numerical conversion is verified by host fixtures. Three served assets matched their package hashes. Production and the public installer were unchanged.
+
+
+## Alignment marker placement feedback — September 24, 2026
+
+Test bundle `833ff837e10db98cdceca8013b3995de7cd05da7918e67fd9708c15e87fd185d` adds two-marker overlap/boundary checks and measured center separation to the editor. The 25% image-diagonal suggestion is advisory, not a validated matching threshold. Draft feedback neither saves nor moves existing marker coordinates. Guidance padding and dark-theme button contrast are corrected.
+
+79 host scripts, seven UI scripts and a clean ESP32 build passed. Browser review covered a 390px embedded editor, standalone light/dark rendering and numeric boundary feedback. Managed OTA/verified boot preserved configuration/profile/password, and four served files matched package bytes. Production and the public installer were unchanged. Automatic feature selection and third-marker support remain unfinished.
