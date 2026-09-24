@@ -222,3 +222,15 @@ needle evidence, not an offset fitted to protected outputs.
 Private evidence: `controlled-cross-dial-20260924/result.json` and
 `sampling-effect.json` under firmware-port-tests. The record includes executable,
 native source/header and model hashes, per-frame features/scores and results.
+
+
+An exploratory model-independent full-circle contrast probe on these same images
+was rejected as a reading method. With the frozen homography/pivot, it compared
+each candidate shaft against lateral samples but repeatedly returned nearly
+stationary positions near zero for both main dials, instead of tracking needle
+movement. The specific feature it selected was not visually verified; it must
+not be described as a detected needle, used as a label, or used to change
+calibration. The older two-edge fitter is secondary-only and depends on its
+original background, so it was not applied to the main dials. Private failure
+evidence is retained in `main-shaft-probe-20260924/result.json`; no firmware or
+training data changed.
