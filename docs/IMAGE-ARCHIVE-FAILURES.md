@@ -67,3 +67,20 @@ verified duplicate. Exactly one record and one unchanged image remain, excluded
 from training. All eleven receiver HTTP tests passed on September 23, including
 the two deadline-handler tests now included by direct script execution as well
 as unittest discovery. These are host network tests, not an ESP32 outage trial.
+
+
+## Full disk between image and capture record — September 24
+
+A loopback HTTP regression injects ENOSPC when publishing the capture metadata,
+after the image blob is already stored. The response is HTTP 503 without a
+verified-readback receipt. The complete original blob remains, no capture record
+is published, and normal exception cleanup removes temporary files. After the
+fault is removed, retry returns 201 with verified readback and creates exactly
+one record without another image blob; a later identical retry returns 200.
+All twelve receiver HTTP tests pass.
+
+The current device queue acknowledges only a matching receipt on HTTP 200/201.
+HTTP 503 follows its pending retry branch with increasing delay capped at five
+minutes, so that response does not authorize payload deletion. Queue host tests
+also pass. This combines receiver fault injection and queue code/host evidence;
+it is not a physical full-disk or ESP32 network-outage test.

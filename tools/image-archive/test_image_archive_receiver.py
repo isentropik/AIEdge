@@ -90,6 +90,30 @@ class ReceiverTests(unittest.TestCase):
         self.assertNotIn('verified_readback',result)
         self.assertEqual(self.post()[0],201)
 
+    def test_disk_full_after_blob_before_record_then_retry(self):
+        import errno,os
+        real_link=os.link
+        def full_for_record(source,destination,*args,**kwargs):
+            if Path(destination).parent.name=='captures':
+                raise OSError(errno.ENOSPC,'No space left on device')
+            return real_link(source,destination,*args,**kwargs)
+        with patch('image_archive_store.os.link',side_effect=full_for_record):
+            status,failed=self.post()
+        self.assertEqual(status,503)
+        self.assertNotIn('verified_readback',failed)
+        blobs=list((self.root/'blobs').glob('*.image'))
+        self.assertEqual(len(blobs),1)
+        self.assertEqual(blobs[0].read_bytes(),self.image)
+        self.assertFalse(list((self.root/'captures').glob('*.json')))
+        self.assertFalse(list(self.root.rglob('.pending-*')))
+        status,receipt=self.post()
+        self.assertEqual(status,201)
+        self.assertTrue(receipt['verified_readback'])
+        self.assertFalse(receipt['duplicate'])
+        self.assertEqual(len(list((self.root/'blobs').glob('*.image'))),1)
+        self.assertEqual(len(list((self.root/'captures').glob('*.json'))),1)
+        self.assertEqual(self.post()[0],200)
+
     def test_settings_required_and_retry(self):
         path = self.root/'settings'/f'{digest(self.settings)}.txt'
         path.unlink()
