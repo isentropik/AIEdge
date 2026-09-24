@@ -16,7 +16,7 @@
 #include <algorithm>
 
 namespace ImageArchive {
-static UploadAttempt uploadSettings(const Destination& d,const std::string& hash,const std::string& descriptor) {
+static UploadAttempt uploadSettings(const Destination& d,const std::string& hash,const std::string& descriptor,int64_t deadline) {
     UploadAttempt result;
     const std::string url="https://"+d.host+":"+std::to_string(d.port)+"/v1/settings";
     const std::string authorization="Bearer "+d.token;
@@ -27,7 +27,6 @@ static UploadAttempt uploadSettings(const Destination& d,const std::string& hash
     auto client=esp_http_client_init(&config);
     if(!client){result.error="settings_client_failed";return result;}
     struct Cleanup {esp_http_client_handle_t c;~Cleanup(){esp_http_client_close(c);esp_http_client_cleanup(c);}} cleanup{client};
-    const int64_t deadline=esp_timer_get_time()+static_cast<int64_t>(d.timeoutMs)*1000;
     auto timeLeft=[&](){const int64_t remaining=deadline-esp_timer_get_time();return remaining>0 &&
         esp_http_client_set_timeout_ms(client,static_cast<int>(std::max<int64_t>(1,remaining/1000)))==ESP_OK;};
     if(esp_http_client_set_header(client,"Authorization",authorization.c_str())!=ESP_OK ||
@@ -71,7 +70,10 @@ UploadAttempt uploadSpool(const std::string& root,const Ticket& ticket,const Des
     if(readSettingsFile<Sha256>(root,metadata.settingsHash,settings)!=SpoolResult::Saved) {
         result.error="settings_file_invalid_or_missing";return result;
     }
-    const auto settingsAttempt=uploadSettings(d,metadata.settingsHash,settings);
+    // One network budget covers settings and image, rather than restarting
+    // the timeout between requests while capture handoff remains reserved.
+    const int64_t deadline=esp_timer_get_time()+static_cast<int64_t>(d.timeoutMs)*1000;
+    const auto settingsAttempt=uploadSettings(d,metadata.settingsHash,settings,deadline);
     if(settingsAttempt.error)return settingsAttempt;
     unsigned char encoded[4097];size_t encodedSize=0;
     if(mbedtls_base64_encode(encoded,sizeof(encoded),&encodedSize,
@@ -92,7 +94,6 @@ UploadAttempt uploadSpool(const std::string& root,const Ticket& ticket,const Des
     auto client=esp_http_client_init(&config);
     if(!client){result.error="client_init_failed";return result;}
     struct ClientCleanup {esp_http_client_handle_t value;~ClientCleanup(){esp_http_client_close(value);esp_http_client_cleanup(value);}} cleanup{client};
-    const int64_t deadline=esp_timer_get_time()+static_cast<int64_t>(d.timeoutMs)*1000;
     auto timeLeft=[&](){
         const int64_t remaining=deadline-esp_timer_get_time();
         return remaining>0 && esp_http_client_set_timeout_ms(client,static_cast<int>(std::max<int64_t>(1,remaining/1000)))==ESP_OK;
