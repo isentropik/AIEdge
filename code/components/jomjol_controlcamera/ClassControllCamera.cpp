@@ -783,31 +783,13 @@ esp_err_t CCamera::CaptureToBasisImage(CImageBasis *_Image, int delay)
         RawCaptureObserver::notify(fb->buf,fb->len,frameCaptureUs,CCstatus.ImageWidth,CCstatus.ImageHeight,archiveSettings);
     esp_camera_fb_return(fb);
 
-    stbi_uc *p_target;
-    stbi_uc *p_source;
-    int channels = 3;
-    int width = CCstatus.ImageWidth;
-    int height = CCstatus.ImageHeight;
-
-#ifdef DEBUG_DETAIL_ON
-    std::string _zw = "Targetimage: " + std::to_string((int)_Image->rgb_image) + " Size: " + std::to_string(_Image->width) + ", " + std::to_string(_Image->height);
-    _zw = _zw + " _zwImage: " + std::to_string((int)_zwImage->rgb_image) + " Size: " + std::to_string(_zwImage->width) + ", " + std::to_string(_zwImage->height);
-    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, _zw);
-#endif
-
-    for (int x = 0; x < width; ++x)
-    {
-        for (int y = 0; y < height; ++y)
-        {
-            p_target = _Image->rgb_image + (channels * (y * width + x));
-            p_source = _zwImage->rgb_image + (channels * (y * width + x));
-
-            for (int c = 0; c < channels; c++)
-            {
-                p_target[c] = p_source[c];
-            }
-        }
-    }
+    // Both allocations hold the validated contiguous RGB frame. Preserve all
+    // bytes without the old column-major PSRAM traversal.
+    const int64_t copyStarted = esp_timer_get_time();
+    memcpy(_Image->rgb_image, _zwImage->rgb_image, static_cast<size_t>(requiredBytes));
+    LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, "capture_rgb_copy_us=" +
+        std::to_string(esp_timer_get_time() - copyStarted) +
+        " bytes=" + std::to_string(requiredBytes));
 
     delete _zwImage;
 
