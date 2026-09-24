@@ -96,3 +96,26 @@ frozen model. Broader lighting/alignment and labeled-position coverage are still
 needed before enabling sparse sampling for normal readings.
 
 Mean crop-warp time summed across six dials: 11.915 seconds dense, 3.222 seconds sparse.
+
+## Synthetic small-condition checks
+
+The frozen host pipeline was tested on all 15 held-out full frames with identity,
+0.85/1.15 global RGB gain, a 3-pixel right shift, a 3-pixel upward shift, and
++/-1-degree image rotations. Both dense and sparse modes were evaluated: 210
+full-frame evaluations / 1,260 dial evaluations, including the identity controls.
+Clean dense controls reproduced the existing reference feature/output bytes.
+All transforms ran marker alignment before crop sampling; fixed calibrations and
+needle pivots were unchanged. No alignment or visibility checks rejected.
+
+Maximum circular change from each mode's clean reading was 0.015179 dense and
+0.014770 sparse on the 0-10 dial scale. The two integer translations produced
+exactly unchanged readings. Maximum dense-versus-sparse difference across the
+cases was 0.010894; none exceeded 0.1. These are stability comparisons with model
+outputs, not human-labeled accuracy.
+
+Source and variant hashes, transform parameters, alignment matrices, model/header
+hashes, feature bytes and output scores are preserved locally. All variants remain
+excluded from training and share the held-out group of their parent image.
+Uniform digital gain and image-plane rotation do not model physical glare, shadows,
+camera exposure, tilt or parallax. Severe-change rejection and real lighting tests
+remain to be done. No production setting changed.
