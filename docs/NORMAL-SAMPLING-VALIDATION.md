@@ -13,3 +13,13 @@ Source `2c954f7`, bundle `0ab100fa3cbd9ec59d678a6f764c975eac98026be0efcd792693ad
 The candidate also carries the previously built authenticated meter-profile metadata endpoint. Device checks confirmed authentication on GET/POST, rejection of missing or stale revisions and invalid profiles, and unchanged profile/configuration afterward. Profile activation and meter-type setup remain unfinished; the endpoint explicitly reports `not_integrated`.
 
 Private evidence: `needle-training/firmware-port-tests/aiedge-normal-sparse-profile/{ota,profile-http,replay-smoke}`. This is a test-board development bundle, not a production-meter deployment or public installer release.
+
+## Normal camera-path allocation check
+
+A bounded test-board trial on bundle `e277163864b3093865c5ad2f8bffd40abceb9756e5a3fbe0bbe75370f18522a4` ran one actual camera cycle at 160 MHz with illumination off and external reporting disabled. Capture took 6.875065 seconds, the preceding alignment stage 3.886456 seconds, and the polar stage 2.084379 seconds before rejecting a weak marker match. The total failed cycle was 12.860928 seconds.
+
+The normal runner loads/verifies the model, allocates its tensors and obtains the reserved workspace before marker matching. Reaching `Marker registration rejected: 3` therefore confirms those allocations succeeded while the normal RGB image existed. The test did not reach six-dial preprocessing/inference, produce a valid reading, or verify a 30-second successful cadence. Do not use the fast rejection as a performance success.
+
+Saved-JPEG replay currently decodes/preprocesses before loading its model, so its 14.27-second result is not a direct measurement of the complete normal sequence. Normal capture overhead, valid full-cycle operation, external publication and archive load still require end-to-end verification.
+
+The original configuration was restored byte-for-byte and verified after restart; the saved gas profile was preserved. Evidence: `needle-training/firmware-port-tests/normal-sparse-camera-20260923/{result.json,summary.json,pipeline-log.txt}`.
