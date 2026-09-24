@@ -116,3 +116,18 @@ The earlier inconclusive test remains documented. This pass verifies credential-
 Installed using loader 0.1.11-test13; application SHA-256 `0b03dc0d42c62a4500e0eedb7c178eb063ae81abaee5dba43eaf8ff4e51345b5`. Settings now links to the optional image archive page, with server address, port, device name, token/certificate retention, theme support and live queue status. Saves use one validated revision, reject stale browser edits, preserve active upload destinations and explicitly require restart. Interrupted first-save/replacement recovery is connected to startup.
 
 Actual-board tests passed saving, stale-edit rejection, restart persistence and recovery from deliberately incomplete files. Original settings were restored, archiving remained off and all cycle counters stayed zero. Exact UI assets were verified on the board; mobile light/dark rendering passed locally. See [evidence and limits](ARCHIVE-HARDWARE-TRIAL.md). This does not constitute physical power-loss coverage or a public binary release.
+
+## Installer release freshness - September 23, 2026
+
+Published site commit `998c333` adds a verified version label and release checks
+on returning to the page, periodic visible-page checks, and expired connection
+clicks. A changed version disables new connections and requests a refresh.
+Existing dialogs and verified firmware blobs are preserved. An unavailable check
+blocks an expired new connection until checking succeeds. Already-open
+installations are not cancelled or retroactively version-checked.
+
+Watcher and page-controller tests passed for fresh, expired, offline, superseded
+and concurrent requests. The vendor dialog is appended separately to the document
+body. All three live Pages files matched their committed Git blobs after
+publication. This verifies served code and simulated controller behavior, not a
+new physical USB flash. Firmware binaries and loader version were unchanged.
