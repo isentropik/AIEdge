@@ -27,6 +27,8 @@
 
 #include "server_main.h"
 #include "MainFlowControl.h"
+#include "MeterDisplayStartup.h"
+#include "FileConfigStorage.h"
 #include "server_file.h"
 #include "server_ota.h"
 #include "BootBundle.h"
@@ -539,6 +541,15 @@ extern "C" void app_main(void)
     xDelay = 2000 / portTICK_PERIOD_MS;
     ESP_LOGD(TAG, "main: sleep for: %ldms", (long) xDelay * CONFIG_FREERTOS_HZ/portTICK_PERIOD_MS);
     vTaskDelay( xDelay ); 
+
+    // Display settings are independent of camera/flow availability. Restore
+    // before exposing HTTP saves so startup recovery cannot race an editor.
+    {
+        ConfigStorage::Files profileStorage;
+        const bool storageReady=(getSystemStatus() & (SYSTEM_STATUS_SDCARD_CHECK_BAD | SYSTEM_STATUS_FOLDER_CHECK_BAD))==0;
+        if(const char* error=meter::restoreDisplayProfile(profileStorage,"/sdcard/config/meter-profile.json",storageReady))
+            LogFile.WriteToFile(ESP_LOG_ERROR,TAG,error);
+    }
 
     // Start webserver + register handler
     // ********************************************
