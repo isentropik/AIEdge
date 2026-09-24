@@ -38,6 +38,10 @@ the maximum circular difference from full-resolution model output was
 0.01040315 on the 0-10 scale. No comparison differed by more than 0.1.
 
 This is agreement with the baseline, not verified accuracy. It does not measure
-ESP32 speed. The sparse sampler is isolated in experiment files and is not in
-the deployed firmware. Broader image coverage and hardware timing are required
-before adoption.
+ESP32 speed. The sampler is now available as an opt-in preprocessing argument in local source;
+existing callers retain full resolution. It is not in the deployed firmware.
+The opt-in implementation reproduced every feature byte of the isolated experiment
+on all 15 frames. 243 synthetic crop/transform cases passed anchor, interpolation,
+odd/even and single-pixel boundary checks. Dense-mode regressions retained exact
+parity across 16 crop cases and 108 preprocessing cases. Broader image coverage
+and hardware timing remain required before adoption.

@@ -36,12 +36,12 @@ inline AlignmentStatus alignFrame(const uint8_t* rgb,int width,int height,
     return AlignmentStatus::Ok;
 }
 inline bool prepareDial(const uint8_t* rgb,const double* inverse,int index,PipelineScratch& scratch,
-                        DialProfile* profile=nullptr,int64_t (*clock)()=nullptr) {
+                        DialProfile* profile=nullptr,int64_t (*clock)()=nullptr, bool sparse=false) {
     if(profile)*profile=DialProfile{};
     if(index<0 || index>=6)return false;
     DialProfileTimer timing(profile,clock);
     const auto& d=dials[index];
-    if(!warpCrop(rgb,640,480,inverse,d.x,d.y,d.w,d.h,scratch.crop))return false;
+    if(!warpCrop(rgb,640,480,inverse,d.x,d.y,d.w,d.h,scratch.crop,sparse))return false;
     timing.next();
     if(!grayscale(scratch.crop,d.w*d.h,scratch.gray))return false;
     if(!contrastValid(scratch.gray,d.w*d.h))return false;

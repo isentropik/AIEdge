@@ -20,12 +20,13 @@ inline double cubicBytes(uint8_t a,uint8_t b,uint8_t c,uint8_t d,double fraction
 // Sample a reference-frame ROI directly; avoid allocating a second full RGB frame.
 // inverse is reference-to-source affine (2x3), not the marker result's forward matrix.
 inline bool warpCrop(const uint8_t* source,int width,int height,const double* inverse,
-                     int left,int top,int cropWidth,int cropHeight,uint8_t* output) {
+                     int left,int top,int cropWidth,int cropHeight,uint8_t* output, bool sparse=false) {
     if(!source || !inverse || !output || source==output || width<1 || height<1 ||
        width>4096 || height>4096 || left<0 || top<0 || cropWidth<1 || cropHeight<1 ||
        cropWidth>width || cropHeight>height || left>width-cropWidth || top>height-cropHeight) return false;
     for(int i=0;i<6;++i) if(!std::isfinite(inverse[i])) return false;
-    for(int row=0;row<cropHeight;++row) for(int col=0;col<cropWidth;++col) {
+    const int step=sparse?2:1;
+    for(int row=0;row<cropHeight;row+=step) for(int col=0;col<cropWidth;col+=step) {
         const double x=left+col+.5,y=top+row+.5;
         double sx=inverse[0]*x+inverse[1]*y+inverse[2];
         double sy=inverse[3]*x+inverse[4]*y+inverse[5];
@@ -54,6 +55,20 @@ inline bool warpCrop(const uint8_t* source,int width,int height,const double* in
             const double v=cubic(rows[0],rows[1],rows[2],rows[3],dy);
             pixel[channel]=static_cast<uint8_t>(std::max(0.0,std::min(255.0,v)));
         }
+    }
+    if(sparse){
+    // Interpolate only from even-grid samples, preserving original crop coordinates.
+    for(int y=0;y<cropHeight;++y)for(int x=0;x<cropWidth;++x){
+        if(!(x&1)&&!(y&1))continue;
+        int x0=x&~1,y0=y&~1;
+        int x1=std::min(x0+2,(cropWidth-1)&~1),y1=std::min(y0+2,(cropHeight-1)&~1);
+        int fx=x&1,fy=y&1;
+        for(int c=0;c<3;++c){
+            int a=output[3*(y0*cropWidth+x0)+c],b=output[3*(y0*cropWidth+x1)+c];
+            int d=output[3*(y1*cropWidth+x0)+c],e=output[3*(y1*cropWidth+x1)+c];
+            output[3*(y*cropWidth+x)+c]=((2-fy)*((2-fx)*a+fx*b)+fy*((2-fx)*d+fx*e))/4;
+        }
+    }
     }
     return true;
 }
