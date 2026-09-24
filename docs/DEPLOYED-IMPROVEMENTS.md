@@ -183,3 +183,19 @@ Private evidence: `aiedge-index-recovery-candidate/ota/result.json` under
 `needle-training/firmware-port-tests`; public regression suite:
 [`tools/bundle-tests/test_bundle_recovery.py`](../tools/bundle-tests/test_bundle_recovery.py).
 See [run instructions](../tools/bundle-tests/README.md) for dependencies and limits.
+
+## Test-board capture and rotation memory access
+
+The camera uses a contiguous RGB copy, and rotation/translation traverse rows.
+Full-frame byte tests and transform parity tests passed. Both are installed,
+with original settings restored after bounded hardware timing trials.
+Individual measurements reduced the capture stage from 6.88 to 4.67 seconds
+and the alignment stage from 3.92 to 1.87 seconds; these are not sustained
+valid-reading cadence measurements. See [camera evidence](CAMERA-COPY-VALIDATION.md)
+and [rotation evidence](ROTATION-TRAVERSAL-VALIDATION.md).
+
+## Test-board archive upload deadline
+
+Settings and image requests share one network timeout budget. Failure/retry
+regressions passed and managed OTA preserved configuration and authentication.
+A physical slow-server test remains open. See [validation](ARCHIVE-UPLOAD-DEADLINE.md).
