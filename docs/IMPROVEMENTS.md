@@ -68,3 +68,17 @@ The cumulative turn-tracking correction is installed on the test board and recor
 - Complete public release packaging after these remaining checks. The public installer is unchanged.
 
 Completed camera, analog-only, UI, download-retry and journaled-save changes are recorded in the [deployment archive](DEPLOYED-IMPROVEMENTS.md).
+
+
+## Meter identification and alignment setup (requested September 23)
+
+- [ ] Add a meter-type step after the reference image: Gas, Water, Electricity, Other/Unknown. Suggest from visible labels and unit markings; leave uncertain results unselected. Require confirmation before activating calculations. Do not infer type from analog dial shape alone.
+- [ ] Offer physical register units appropriate to the selected type: gas cubic feet or cubic metres; water cubic metres, litres, US gallons or imperial gallons; electricity Wh or kWh. Explicitly distinguish US and imperial gallons. Provide Other rather than silently applying an unsupported conversion.
+- [ ] Confirm printed register multipliers, dial direction and quantity per numbered step/full revolution, including any secondary/test wheel. Preserve raw dial positions separately. Unit selection must configure conversion, stored metadata and reporting consistently, not merely change the label. Existing totals must not be silently reinterpreted when units change.
+- [ ] Preserve this meter's established calibration: secondary full revolution = 5 cubic feet; last main dial full revolution = 1,000 cubic feet, numbered step = 100 cubic feet. Electricity power in watts is derived from energy/time, not a cumulative register unit. Gas energy conversion needs an explicit supported factor, not an assumed volume-to-energy conversion.
+- [ ] Suggest three distinctive fixed alignment patches around the dial group, verify against multiple captures, show scaled spacing/collinearity feedback, and allow manual adjustment. Exclude configured moving dial regions; reject weak or ambiguous matches. A stationary needle is not evidence of a fixed marking.
+- [ ] Integrate third-marker storage and independent verification before presenting three-marker alignment as supported. Current editor stores two. Offline automatic proposals are experimental and do not change the device.
+- [ ] Validate setup save/readback/reload, ambiguous identification, unit conversions and unsupported choices; verify on the test board before marking deployed.
+
+
+Meter-profile foundation: `MeterProfile.h` now defines volume/energy units, explicit confirmation, printed register multipliers, secondary-wheel quantities and a physical-scale compatibility check. Host tests cover US/imperial gallon distinction, cubic-foot conversion, Wh/kWh conversion, incompatible dimensions, invalid inputs and display-only versus physical-scale changes. This helper is not yet connected to settings, recognition/accounting, stored history or MQTT. No live units or totals changed. Setup must not advertise the feature as active until those paths are integrated and tested.
