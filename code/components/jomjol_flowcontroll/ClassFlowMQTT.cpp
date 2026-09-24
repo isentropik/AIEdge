@@ -13,6 +13,7 @@
 #include "ClassFlowPostProcessing.h"
 #include "ClassFlowControll.h"
 #include "PolarAccounting.h"
+#include "MeterDisplayRuntime.h"
 #include "MeterStatus.h"
 #include "esp_timer.h"
 
@@ -368,7 +369,7 @@ bool ClassFlowMQTT::doFlow(string zwtime)
         const std::string payload="{\"schema\":\"meter-accounting-v1\",\"published_at_uptime_us\":"+
             std::to_string(esp_timer_get_time())+",\"current_boot_identity\":\""+
             std::to_string(PolarAccounting::bootIdentity())+"\",\"snapshot\":"+
-            meter::statusJson(accounting)+"}";
+            meter::statusWithDisplayJson(accounting,meter::activeDisplayUnit())+"}";
         success &= MQTTPublish(maintopic+"/accounting/status",payload,qos,false);
     }
 

@@ -4,7 +4,7 @@
 
 <title>Meter diagnostics</title><script src="meter_diagnostics.js" defer></script>
 
-<style>body{font:16px/1.5 system-ui,sans-serif;max-width:760px;margin:24px auto;padding:0 18px;color:#202b36;background:#fafbfc}section{padding:16px 20px;margin:16px 0;border:1px solid #d4dce3;border-radius:8px;background:white}h1{font-size:1.7rem}h2{font-size:1.2rem}button{font:inherit;padding:10px 16px;margin:0 8px 8px 0;cursor:pointer}button:disabled{opacity:.5;cursor:default}.result{white-space:pre-wrap;overflow-wrap:anywhere}#status{color:#475569}</style>
+<style>.diagnostic-card{padding:24px;margin:18px 0}.diagnostic-card h2{margin-top:0}.result{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7}.diagnostic-actions{display:flex;gap:12px;flex-wrap:wrap}.diagnostic-actions button{min-height:44px}</style>
 
 <link rel="stylesheet" href="aiedge.css?v=$COMMIT_HASH">
 
@@ -16,19 +16,21 @@
 <script defer src="aiedge-pages.js?v=shared-1"></script>
 </head>
 
-<body><h1>Meter diagnostics</h1><p>Inspect recent operation without triggering an image capture. Results update only when requested.</p>
+<body class="ae-page"><header class="ae-page-heading"><div><h1>Meter diagnostics</h1><p>Inspect recent operation without triggering an image capture. Results update only when requested.</p></div></header>
 
-<button id="refresh" type="button">Refresh status</button><button id="scan" type="button">Scan saved history</button>
+<div class="diagnostic-actions"><button class="ae-button" id="refresh" type="button">Refresh status</button><button class="ae-button" id="scan" type="button">Scan saved history</button></div>
 
 <p>Scanning reads saved consumption records on the SD card. If the meter is busy, try again after its cycle finishes.</p>
 
 <p id="status" role="status" aria-live="polite">Ready. Choose Refresh status to read the meter.</p>
 
-<section><h2>Capture and processing</h2><div id="timing" class="result">Not loaded.</div></section>
+<section class="ae-panel diagnostic-card"><h2>Capture and processing</h2><div id="timing" class="result">Not loaded.</div></section>
 
-<section><h2>Image archive</h2><div id="archive" class="result">Not loaded.</div></section>
+<section class="ae-panel diagnostic-card"><h2>Image archive</h2><div id="archive" class="result">Not loaded.</div></section>
 
-<section><h2>Saved consumption</h2><div id="history" class="result">Not loaded.</div></section>
+<section class="ae-panel diagnostic-card"><h2>Current consumption</h2><div id="accounting" class="result">Not loaded.</div><p>Display units apply to this section. Bounds are conditional on the reading-error assumptions, not verified accuracy. <a href="meter-profile.html">Change display units</a></p></section>
+
+<section class="ae-panel diagnostic-card"><h2>Saved consumption</h2><div id="history" class="result">Not loaded.</div></section>
 
 <p>Timing and accepted readings do not establish physical accuracy or successful delivery to Home Assistant.</p>
 

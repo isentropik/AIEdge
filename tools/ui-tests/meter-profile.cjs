@@ -6,7 +6,7 @@ function doc(){const nodes={};for(const id of ['profile-message','profile-load',
 (async()=>{
  for(const kind of Object.keys(api.choices))for(const unit of api.choices[kind])assert.equal(api.validateProfile({...gas,kind,source_unit:unit,display_unit:unit}).kind,kind);
  for(const patch of [{kind:'other'},{source_unit:'L'},{display_unit:'kWh'},{units_per_count:0},{units_per_count:Infinity},{secondary_units_per_revolution:0},{has_secondary:false},{confirmed:false}])assert.throws(()=>api.validateProfile({...gas,...patch}));
- for(const value of [null,{}, {...initial,revision:'bad'},{...initial,activation:'active'}, {...initial,profile:{}}])assert.throws(()=>api.validateSaved(value));
+ for(const value of [null,{}, {...initial,revision:'bad'},{...initial,activation:'unsupported'}, {...initial,profile:{}}])assert.throws(()=>api.validateSaved(value));
  const d=doc(),calls=[];let status=200,result=initial;
  const ui=api.mount(d,async(url,options)=>{calls.push([url,options]);return {ok:status===200,status,json:async()=>result};});
  assert(d.nodes['profile-save'].disabled);await ui.load();assert(!d.nodes['profile-save'].disabled);assert.equal(d.nodes['meter-kind'].value,'');
@@ -21,5 +21,7 @@ function doc(){const nodes={};for(const id of ['profile-message','profile-load',
  d.nodes['meter-confirm'].checked=true;status=409;result={error:'conflict'};await ui.save();assert.match(d.nodes['profile-message'].textContent,/Reload/);assert(d.nodes['profile-save'].disabled);
  status=200;result=initial;await ui.load();assert(!d.nodes['meter-kind'].disabled);
  d.nodes['meter-confirm'].checked=true;d.nodes['profile-form'].events.input();assert(!d.nodes['meter-confirm'].checked);
+ result={...initial,profile:gas,model_compatible:true,activation:'display_only'};await ui.load();assert.match(d.nodes['profile-message'].textContent,/Display units are active/);
+ d.nodes['meter-confirm'].checked=true;result={status:'saved_display_only',active_changed:true};await ui.save();assert.match(d.nodes['profile-message'].textContent,/apply now/);
  console.log('Meter form checks passed: units, scale validation, explicit confirmation, saved/active distinction, conflict, locking and no implicit retries');
 })().catch(e=>{console.error(e);process.exitCode=1;});

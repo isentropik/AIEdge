@@ -1,6 +1,7 @@
 #pragma once
 #include "../jomjol_tfliteclass/MeterProfileEditor.h"
 #include "ImageArchiveSettingsHttp.h"
+#include "MeterDisplayRuntime.h"
 namespace meter {
 inline esp_err_t handleProfileSettings(httpd_req_t* req,const std::string& directory){
  using ImageArchive::settingsReply;
@@ -30,11 +31,13 @@ inline esp_err_t handleProfileSettings(httpd_req_t* req,const std::string& direc
   if(saved.existed&&!samePhysicalScale(saved.profile,next))return settingsReply(req,"409 Conflict","{\"error\":\"physical_scale_change_requires_history_migration\"}");
   auto result=ProfileStore::commit(disk,path,saved.existed,saved.bytes,body);
   if(result!=ConfigJournal::Result::Ok)return settingsReply(req,"503 Service Unavailable","{\"error\":\"save_unconfirmed_reload_before_retry\"}");
-  // Saving metadata is not activation of a different recognition/accounting model.
-  return settingsReply(req,"200 OK","{\"status\":\"saved_not_active\",\"active_changed\":false}");
+  // Only the compatible display preference applies; physical accounting stays in ft3.
+  const bool active=applyDisplayProfile(next);
+  return settingsReply(req,"200 OK",active?"{\"status\":\"saved_display_only\",\"active_changed\":true}":"{\"status\":\"saved_not_active\",\"active_changed\":false}");
  }
+ const char* activation=!saved.existed?"not_configured":(!matchesFrozenGasScale(saved.profile)?"calibration_required":(activeDisplayUnit()==saved.profile.displayUnit?"display_only":"pending"));
  const std::string json="{\"revision\":\""+saved.revision+"\",\"profile\":"+(saved.existed?saved.bytes:"null")+
-  ",\"model_compatible\":"+(saved.existed&&matchesFrozenGasScale(saved.profile)?"true":"false")+",\"activation\":\"not_integrated\"}";
+  ",\"model_compatible\":"+(saved.existed&&matchesFrozenGasScale(saved.profile)?"true":"false")+",\"activation\":\""+activation+"\"}";
  return settingsReply(req,"200 OK",json.c_str());
 }
 inline esp_err_t profileSettingsHttp(httpd_req_t* req){return handleProfileSettings(req,"/sdcard/config");}

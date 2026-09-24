@@ -34,6 +34,7 @@
 #include "../jomjol_fileserver_ota/UpdateAccess.h"
 #include "CycleSchedule.h"
 #include "PolarAccounting.h"
+#include "MeterDisplayRuntime.h"
 #include "MeterStatus.h"
 #include "MeterHistoryFiles.h"
 #include "PolarRuntimeTest.h"
@@ -382,7 +383,7 @@ esp_err_t handler_image_archive_status(httpd_req_t* req)
 
 esp_err_t handler_meter_accounting(httpd_req_t* req)
 {
-    const auto json=meter::statusJson(PolarAccounting::snapshot());
+    const auto json=meter::statusWithDisplayJson(PolarAccounting::snapshot(),meter::activeDisplayUnit());
     httpd_resp_set_type(req,"application/json");
     httpd_resp_set_hdr(req,"Cache-Control","no-store");
     return httpd_resp_send(req,json.c_str(),json.size());

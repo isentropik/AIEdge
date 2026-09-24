@@ -29,6 +29,18 @@
     if(s.valid!==true)return "History is not available: "+String(s.reason||"Unknown reason");
     return "Completed segments: "+count(s.segments)+"\nCovered consumption: "+count(s.covered_minimum_ft3)+"â€“"+count(s.covered_maximum_ft3)+" ftÂ³\nThis excludes the active segment and unresolved gaps. It is not a lifetime total.";
   }
+  function accounting(s) {
+    const d=s.display;if(!d||!['ft3','m3'].includes(d.unit))return "Choose compatible meter details to enable converted consumption display.";
+    const unit=d.unit==='ft3'?'ft³':'m³',i=d.interval||{},c=d.cumulative_since_anchor||{};
+    const quantity=v=>number(v)===null?'Unknown':Number(v.toPrecision(8))+' '+unit;
+    return ['State: '+String(s.state||'unknown'),
+      'Interval bounds: '+quantity(i.minimum)+' – '+quantity(i.maximum),
+      'Interval estimate: '+quantity(i.estimate),
+      'Average flow: '+(number(i.average_per_second)===null?'Unknown':quantity(i.average_per_second)+'/s'),
+      'Since anchor'+(c.current===true?'':' (not current)')+': '+quantity(c.minimum)+' – '+quantity(c.maximum),
+      'Cumulative estimate: '+quantity(c.current===true?c.estimate:null),
+      'Unresolved whole turns remain unknown; these are not lifetime totals.'].join('\n');
+  }
   async function request(fetcher,path,method="GET") {
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),5000);
     try {
@@ -50,7 +62,7 @@
           await request(fetcher,"/meter_history","POST");
           status.textContent="Scan requested. Reading current statusâ€¦";
         }
-        for(const [id,path,render] of [["timing","/cycle_timing",timing],["archive","/image_archive_status",archive],["history","/meter_history",history]]){
+        for(const [id,path,render] of [["timing","/cycle_timing",timing],["archive","/image_archive_status",archive],["history","/meter_history",history],["accounting","/meter_accounting",accounting]]){
           const el=doc.getElementById(id);el.textContent="Refreshingâ€¦";
           try{el.textContent=render(await request(fetcher,path));}
           catch(error){errors++;el.textContent="Could not read current status: "+error.message;}
@@ -62,7 +74,7 @@
     refresh.addEventListener("click",()=>run(false));scan.addEventListener("click",()=>run(true));
     return {refresh:()=>run(false),scan:()=>run(true)};
   }
-  const api={timing,archive,history,request,mount};
+  const api={timing,archive,history,accounting,request,mount};
   if(typeof module!=="undefined" && module.exports)module.exports=api;
   else mount(root.document,root.fetch.bind(root));
 })(typeof window!=="undefined"?window:globalThis);

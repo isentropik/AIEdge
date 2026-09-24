@@ -4,6 +4,7 @@
 #include "FileConfigStorage.h"
 #include "CycleTelemetry.h"
 #include "PolarAccounting.h"
+#include "MeterDisplayRuntime.h"
 #include "../jomjol_tfliteclass/MeterProfileStore.h"
 
 #include "connect_wlan.h"
@@ -327,11 +328,18 @@ void ClassFlowControll::InitFlow(std::string config)
     CameraAccess access(pdMS_TO_TICKS(1000));
     if (!access) { aktstatus = "Configuration busy"; aktstatusWithTime = aktstatus; return; }
     ConfigStorage::Files storage;
+    meter::applyDisplayProfile(meter::RegisterProfile{});
     const auto profileRecovery=meter::ProfileStore::recoverSettings(storage,"/sdcard/config/meter-profile.json");
     if(profileRecovery!=ConfigJournal::Result::Ok && profileRecovery!=ConfigJournal::Result::CleanupPending){
         aktstatus="Meter settings recovery required";aktstatusWithTime=aktstatus;
         LogFile.WriteToFile(ESP_LOG_ERROR,TAG,aktstatus);return;
     }
+    std::string profileBytes;meter::RegisterProfile displayProfile;
+    const auto profileRead=storage.read("/sdcard/config/meter-profile.json",profileBytes);
+    if(profileRead==ConfigJournal::Read::Error || (profileRead==ConfigJournal::Read::Ok&&!meter::parseProfile(profileBytes,displayProfile))){
+        aktstatus="Meter settings unavailable";aktstatusWithTime=aktstatus;return;
+    }
+    meter::applyDisplayProfile(displayProfile);
     const auto recovered = ConfigJournal::recover(storage, FormatFileName(config));
     if (recovered != ConfigJournal::Result::Ok && recovered != ConfigJournal::Result::CleanupPending)
     {

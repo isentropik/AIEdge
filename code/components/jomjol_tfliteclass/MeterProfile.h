@@ -54,4 +54,10 @@ inline bool samePhysicalScale(const RegisterProfile& a,const RegisterProfile& b)
   a.unitsPerRegisterCount==b.unitsPerRegisterCount && a.hasSecondary==b.hasSecondary &&
   a.secondaryUnitsPerRevolution==b.secondaryUnitsPerRevolution;
 }
+// Explicitly bound to the installed frozen calibration; selecting another meter
+// type does not make this particular model suitable for that meter.
+inline bool matchesFrozenGasScale(const RegisterProfile& p){
+ return validProfile(p)&&p.kind==MeterKind::Gas&&p.sourceUnit==RegisterUnit::CubicFoot&&
+ p.unitsPerRegisterCount==1&&p.hasSecondary&&p.secondaryUnitsPerRevolution==5;
+}
 }
