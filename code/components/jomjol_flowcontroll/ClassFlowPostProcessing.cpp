@@ -150,6 +150,38 @@ bool ClassFlowPostProcessing::SetPreValue(double _newvalue, string _numbers, boo
 }
 
 bool ClassFlowPostProcessing::LoadPreValue(void) {
+    // Reject the whole saved state if a later row is damaged.
+    struct SavedReading {
+        decltype(NUMBERS)::value_type number;
+        decltype(NUMBERS[0]->PreValue) preValue;
+        decltype(NUMBERS[0]->Value) value;
+        time_t timestamp;
+        string returnPreValue, returnValue;
+        bool okay;
+    };
+    struct LoadTransaction {
+        std::vector<SavedReading> saved;
+        bool& update;
+        bool previousUpdate;
+        bool committed = false;
+        ~LoadTransaction() {
+            if (committed) return;
+            update = previousUpdate;
+            for (const auto& item : saved) {
+                item.number->PreValue = item.preValue;
+                item.number->Value = item.value;
+                item.number->timeStampLastPreValue = item.timestamp;
+                item.number->ReturnPreValue = item.returnPreValue;
+                item.number->ReturnValue = item.returnValue;
+                item.number->PreValueOkay = item.okay;
+            }
+        }
+    } transaction{{}, UpdatePreValueINI, UpdatePreValueINI};
+    for (auto* number : NUMBERS) {
+        transaction.saved.push_back({number, number->PreValue, number->Value,
+            number->timeStampLastPreValue, number->ReturnPreValue,
+            number->ReturnValue, number->PreValueOkay});
+    }
     std::vector<string> splitted;
     FILE* pFile;
     char zw[1024];
@@ -297,6 +329,7 @@ bool ClassFlowPostProcessing::LoadPreValue(void) {
         SavePreValue();
     } 
 
+    transaction.committed = true;
     return true;
 }
 

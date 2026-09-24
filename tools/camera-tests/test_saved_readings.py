@@ -42,6 +42,12 @@ int main(int argc,char**argv){assert(argc==2);string path=argv[1];Number n;Class
  time_t now=time(nullptr);char b[80];strftime(b,sizeof(b),PREVALUE_TIME_FORMAT_OUTPUT,localtime(&now));string stamp=b;
  assert(load("main\t"+stamp+"\t255440\n"));assert(n.PreValue==255440&&n.PreValueOkay);
  for(string data:{string(""),string("\n"),string("main\t")+stamp+"\n",string("main\t")+stamp+"\t1\nsecondary\t"+stamp+"\n",stamp+"\n",string("main\t")+stamp+"\tbad\n",string("main\t")+stamp+"\tnan\n",string("main\t")+stamp+"\tinf\n",string("main\t")+stamp+"\t1e999\n",string("main\tinvalid\t1\n"),stamp+"\ninvalid\n"})assert(!load(data));
+ // Failure after a valid first row must preserve every runtime value.
+ Number secondary;secondary.name="secondary";p.NUMBERS={&n,&secondary};
+ n.PreValue=42;n.Value=43;n.PreValueOkay=true;n.ReturnPreValue="42";n.ReturnValue="43";n.timeStampLastPreValue=123;p.UpdatePreValueINI=true;
+ {FILE*f=std::fopen(path.c_str(),"wb");string data="main\t"+stamp+"\t255440\nsecondary\t"+stamp+"\tbroken\n";fwrite(data.data(),1,data.size(),f);std::fclose(f);}
+ assert(!p.LoadPreValue());assert(openFiles==0);assert(n.PreValue==42&&n.Value==43&&n.PreValueOkay&&n.ReturnPreValue=="42"&&n.ReturnValue=="43"&&n.timeStampLastPreValue==123&&p.UpdatePreValueINI);
+ p.NUMBERS={&n};
  assert(load(stamp+"\n255440\n"));assert(n.PreValue==255440);
  for(int failure=0;failure<2;++failure){p.FilePreValue=path;p.UpdatePreValueINI=true;failWrite=failure==0;failClose=failure==1;p.SavePreValue();assert(p.UpdatePreValueINI&&openFiles==0);failWrite=failClose=false;}
  p.UpdatePreValueINI=true;p.SavePreValue();assert(!p.UpdatePreValueINI&&openFiles==0);

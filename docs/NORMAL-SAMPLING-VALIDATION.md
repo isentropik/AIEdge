@@ -23,3 +23,13 @@ The normal runner loads/verifies the model, allocates its tensors and obtains th
 Saved-JPEG replay currently decodes/preprocesses before loading its model, so its 14.27-second result is not a direct measurement of the complete normal sequence. Normal capture overhead, valid full-cycle operation, external publication and archive load still require end-to-end verification.
 
 The original configuration was restored byte-for-byte and verified after restart; the saved gas profile was preserved. Evidence: `needle-training/firmware-port-tests/normal-sparse-camera-20260923/{result.json,summary.json,pipeline-log.txt}`.
+
+## Five normal-path surrogate cycles
+
+September 24 test-board bundle `3898a8db23383d77ecf31b5cf19bd49968a6ef4c944d4d390167bcc18b1b3652` completed five saved-image substitutions through normal image acquisition, alignment and all-six-dial recognition at 160 MHz. Cycle times were 21.356, 21.214, 21.236, 21.221 and 21.240 seconds. Starts were 30.030, 29.987, 30.000 and 30.002 seconds apart; no failures, overlaps or missed schedule slots were reported.
+
+Mean stage durations were 4.757 seconds for acquisition/decode/copy, 1.947 seconds for preceding alignment and 14.522 seconds for polar recognition. Across 25 status reads, median response time was 203 ms and maximum 344 ms. These sampled requests do not establish latency for every website operation.
+
+The input was a retained real meter image re-encoded to fit the legacy 30 KB demo buffer; raw parent and derivative hashes are preserved. Repetition does not add accuracy evidence. Demo capture timestamps are intentionally invalid, accepted reader cycles remain zero, and publication and archival were disabled. This verifies bounded normal-path processing with the RGB image resident, not live capture-to-publication performance or physical consumption. Original configuration and profile were restored; temporary demo files were removed and absence verified. The cleanup wrapper initially hit a reset connection after reboot; fresh readback established the baseline before cleanup, and read-only reconnect handling has been added.
+
+Private evidence: `needle-training/firmware-port-tests/normal-demo-cadence-01/{result.json,timing-summary.json}` and its `-preparation/restoration.json`.
