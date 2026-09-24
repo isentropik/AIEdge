@@ -212,7 +212,11 @@ python probe_archive_storage.py '\\server\share\aiedge'
 ```
 
 This creates a new test subfolder and leaves existing files alone. Keep the
-result for troubleshooting. Windows publishes a flushed temporary file using
+result for troubleshooting. The report includes elapsed time, a failed stage and
+OS error codes when applicable. It also tests four competing synthetic writes:
+exactly one must succeed, and retries must preserve its bytes. A transient SMB
+storage error is recorded even when the conflict/retry checks pass. This is a
+compatibility check, not a throughput benchmark. Windows publishes a flushed temporary file using
 non-replacing rename; other systems use hard links. There is no copy/overwrite
 fallback. Windows rename refuses an existing destination ([Python documentation](https://docs.python.org/3/library/os.html#os.rename)). Some SMB servers report an
 access-denied error under contention; that remains a storage failure without a
@@ -223,3 +227,11 @@ retry and conflict protection. Eight competing writes produced one intact winner
 conflicts and a storage error did not overwrite it, and subsequent retries behaved
 correctly. This verifies tested file operations, not power-loss durability or a
 complete ESP32-to-share upload. Windows directory fsync is not provided here.
+
+A separate synthetic JPEG passed authenticated, certificate-verified HTTPS upload
+through a temporary loopback receiver into the SMB share. Settings and capture
+hashes, byte readback, duplicate retry and the integrity audit passed. The receiver
+used its normal 15-second request timeout; the one-second unit-test timeout was
+too short for this network-storage test. No real camera image was transferred,
+no device settings changed, and the temporary receiver was stopped. This does
+not yet verify ESP32-to-share delivery or sustained upload throughput.
