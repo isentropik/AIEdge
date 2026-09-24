@@ -44,3 +44,26 @@ source-header hashes and decoder hash. The earlier audit folder preserves a fail
 compile caused by the publication checkout lacking its stb submodule; the successful
 run used the build checkout's actual dependency. Private images remain unpublished
 and excluded from training.
+
+## Faster sampling checked against the same labels
+
+A follow-up host check uses the current firmware `warpCrop` implementation with
+an identity transform on each original reviewed JPEG crop, in both dense and
+even-grid modes. Both pass **27/27**, with no rejected crops. Maximum error is
+**0.09338973** for dense sampling and **0.09003447** for even-grid sampling.
+The dense control reproduces all prior predictions exactly and checks that
+identity resampling preserves every decoded RGB byte.
+
+The largest dense/even-grid reading difference is **0.01279187** on the 0-10 scale.
+This is a regression check, not evidence that even-grid sampling improves accuracy.
+The model, labels, split protection and original crop calibration remain unchanged.
+
+This test resamples already JPEG-compressed crops; normal firmware samples the
+original full image after marker registration. It therefore does not close the
+full-image human-label validation gap or establish ESP32 end-to-end accuracy.
+The cached full-image trial records retrieval times and unknown capture times;
+its images must not inherit labels from nearby archived crops.
+
+Private evidence: `reviewed-crop-sparse-audit-01/result.json` and
+`reviewed-crop-dense-control-01/result.json` under the existing firmware-port-tests
+directory. Both record source hashes, per-image results and unchanged label provenance.
