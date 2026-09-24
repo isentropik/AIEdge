@@ -302,3 +302,15 @@ prove retraining is needed. No automatic recalibration, model training, threshol
 adjustment or lighting-change detector was introduced. Private evidence:
 `aiedge-preparation-reasons-01/` under firmware-port-tests. Production and the
 public installer release remain unchanged.
+
+
+## September 24 — exact marker row accumulation
+
+Test-board bundle `8cb6a276ad0b28f8d83acff9b76fd3ef2e1d48b10b4bd4c7fa610152e606c87f`
+uses overflow-bounded 32-bit row sums with 64-bit marker patch totals. Model,
+calibration and rejection gates are unchanged. Three saved-JPEG runs retained
+exact tensor/output parity and reduced median processing from 13.645 to 11.662
+seconds. See [measurements and limitations](PERFORMANCE-MEASUREMENTS.md).
+85 host scripts, seven UI checks, clean build and managed OTA verification passed.
+Configuration/profile preserved; zero camera cycles and no archival. Test board
+only; live cadence, independent accuracy and public release remain outstanding.

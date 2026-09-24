@@ -30,9 +30,16 @@ inline AlignmentStatus matchMarker(const uint8_t* gray,int width,int height,
         scores[k]=-1;
         if(x>=0 && y>=0 && x+mw<=width && y+mh<=height) {
             int64_t ps=0,pq=0,dot=0;
-            for(int row=0;row<mh;++row) for(int col=0;col<mw;++col) {
-                const int p=gray[(y+row)*width+x+col];
-                ps+=p; pq+=p*p; dot+=p*marker[row*mw+col];
+            for(int row=0;row<mh;++row) {
+                // Width is bounded by 4096 above: each row's squared/dot sum
+                // is at most 4096*255*255 = 266342400, safely within int32.
+                // Retain 64-bit totals for tall patches; integer sums are exact.
+                int32_t rowSum=0,rowSquared=0,rowDot=0;
+                for(int col=0;col<mw;++col) {
+                    const int p=gray[(y+row)*width+x+col];
+                    rowSum+=p; rowSquared+=p*p; rowDot+=p*marker[row*mw+col];
+                }
+                ps+=rowSum; pq+=rowSquared; dot+=rowDot;
             }
             const double pv=std::max(0.0,pq-double(ps)*ps/n);
             scores[k]=(dot-double(ts)*ps/n)/std::max(1e-9,std::sqrt(tv*pv));

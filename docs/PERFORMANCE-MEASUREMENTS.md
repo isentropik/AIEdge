@@ -175,3 +175,39 @@ open. No images were exported and no production device was accessed.
 Private evidence: `current-sparse-15-replay-20260924/` under firmware-port-tests,
 including per-run terminal results, poll records, boot identity, configuration
 checks, timing analysis and final system snapshot.
+
+
+## Exact row accumulation in marker matching — September 24, 2026
+
+The marker search now accumulates each row in 32-bit integers, then combines rows
+into 64-bit patch totals. The existing maximum width of 4096 limits every row's
+squared/dot sum to 266,342,400. Patch totals remain 64-bit. All floating-point
+correlation calculations, search positions, thresholds and calibration are unchanged.
+No extra buffers or reduced sampling are introduced.
+
+Sixty host searches matched all 1,681 scores bit-for-bit against the previous
+per-pixel 64-bit implementation, including boundary and maximum-width cases.
+Retained full-frame preprocessing passed 120 cases with zero differing feature
+bytes and three expected rejections. These reuse existing evidence.
+
+Three paired saved-JPEG replays on the same test board measured:
+
+| Stage | Before median | After median |
+| --- | ---: | ---: |
+| Marker alignment | 3.957307 s | 2.023925 s |
+| Total processing | 13.644784 s | 11.661579 s |
+
+Median paired total saving was 1.983205 seconds, about 14.5% of the baseline
+median. All 18 dial tensors and output arrays matched their frozen references
+exactly. These are sequential before/after runs on three reused images, not a
+randomized benchmark or independent reading-accuracy evidence. Camera capture,
+publication and archival are excluded; 30-second live cadence remains unverified.
+
+Candidate `aiedge-alignment-rows-01`, bundle
+`8cb6a276ad0b28f8d83acff9b76fd3ef2e1d48b10b4bd4c7fa610152e606c87f`,
+passed 85 host scripts, seven UI checks and a clean ESP32 build. Managed OTA and
+startup verification passed on the test board; configuration and profile were
+preserved, automatic capture stayed inactive, and archiving remained disabled.
+Private evidence: `aiedge-alignment-rows-baseline-01/` and
+`aiedge-alignment-rows-01/{paired-timing.json,ota,replay-verification,RESTORE.md}`.
+Production and public installer unchanged.

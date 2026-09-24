@@ -35,3 +35,12 @@ visibility score cannot survive a new rejected attempt. Compile as above with
 `preparation_status_test.cpp` as the input. These reasons identify failed checks,
 not a proven physical cause: low contrast does not by itself mean the LEDs failed,
 and low needle visibility does not automatically mean the model needs retraining.
+
+
+`alignment_sums_test.cpp` compares every score in 60 marker searches with the
+original per-pixel 64-bit accumulator. It includes black/white frames, random
+textures, matching patches, image boundaries, and the maximum accepted width of
+4096 pixels. Compile as above with this source file. Row sums use 32-bit integers;
+whole-patch sums remain 64-bit. The maximum row squared/dot sum is 266,342,400.
+All 1,681 scores per search must match bit-for-bit. This is numerical equivalence,
+not an ESP32 timing measurement or additional independent reading accuracy.
