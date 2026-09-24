@@ -235,3 +235,27 @@ used its normal 15-second request timeout; the one-second unit-test timeout was
 too short for this network-storage test. No real camera image was transferred,
 no device settings changed, and the temporary receiver was stopped. This does
 not yet verify ESP32-to-share delivery or sustained upload throughput.
+
+
+## Check linked main-dial labels
+
+For a meter whose adjacent main dials have a 10:1 ratio, you can check a saved
+human-label record before considering any training use:
+
+```sh
+python audit_linked_labels.py labels.json --sequence main_10000k main_1000k main_100k main_10k main_1k --error 0.1 --output linked-review.json
+```
+
+Use your actual dial names, highest place value first. Select only adjacent main
+dials with that ratio. Do not include the five-cubic-foot secondary wheel in this
+sequence. Each row must describe the same full image; values must already follow
+each dial's numbering direction. Unknown values stay unknown.
+
+The error argument is your explicit per-dial assumption on the 0–10 scale, not a
+measured accuracy. The example allows 0.1 per dial and a combined 0.11 pair bound.
+A report can say **review**, **consistent with assumption**, or **unknown**. Even
+consistent labels can both be wrong. Disagreement may reflect approximate labels,
+calibration or pointer offsets; never automatically correct labels to make them
+agree. The tool preserves the labels, records their file hash and review method,
+and does not change splits or admit images to training. The output must be a new
+file. Existing split and near-duplicate protections still apply.
