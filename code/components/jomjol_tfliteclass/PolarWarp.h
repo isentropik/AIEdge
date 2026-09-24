@@ -35,14 +35,19 @@ inline bool warpCrop(const uint8_t* source,int width,int height,const double* in
         sx-=.5;sy-=.5;
         const int ix=static_cast<int>(std::floor(sx)),iy=static_cast<int>(std::floor(sy));
         const double dx=sx-ix,dy=sy-iy;
+        // All RGB channels sample the same 4x4 neighborhood. Compute clamped
+        // byte offsets once; keep interpolation arithmetic and order unchanged.
+        int columns[4],rowOffsets[4];
+        for(int t=0;t<4;++t) {
+            columns[t]=3*std::max(0,std::min(width-1,ix-1+t));
+            rowOffsets[t]=3*width*std::max(0,std::min(height-1,iy-1+t));
+        }
         for(int channel=0;channel<3;++channel) {
             double rows[4];
             for(int r=0;r<4;++r) {
-                const int yy=std::max(0,std::min(height-1,iy-1+r));
                 uint8_t taps[4];
                 for(int c=0;c<4;++c) {
-                    const int xx=std::max(0,std::min(width-1,ix-1+c));
-                    taps[c]=source[3*(yy*width+xx)+channel];
+                    taps[c]=source[rowOffsets[r]+columns[c]+channel];
                 }
                 rows[r]=cubicBytes(taps[0],taps[1],taps[2],taps[3],dx);
             }
