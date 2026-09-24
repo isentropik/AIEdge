@@ -180,5 +180,6 @@ This proves normal deployment and host recovery behavior. It does not establish
 hardware interruption recovery during index publication, flash writing, or
 physical SD power-loss durability. Those checks remain open.
 Private evidence: `aiedge-index-recovery-candidate/ota/result.json` under
-`needle-training/firmware-port-tests`; host suite:
-`needle_reader_v2/test_verify_device_bundle.py` in the development workspace.
+`needle-training/firmware-port-tests`; public regression suite:
+[`tools/bundle-tests/test_bundle_recovery.py`](../tools/bundle-tests/test_bundle_recovery.py).
+See [run instructions](../tools/bundle-tests/README.md) for dependencies and limits.
