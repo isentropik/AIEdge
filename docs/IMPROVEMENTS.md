@@ -82,3 +82,6 @@ Completed camera, analog-only, UI, download-retry and journaled-save changes are
 
 
 Meter-profile foundation: `MeterProfile.h` now defines volume/energy units, explicit confirmation, printed register multipliers, secondary-wheel quantities and a physical-scale compatibility check. Host tests cover US/imperial gallon distinction, cubic-foot conversion, Wh/kWh conversion, incompatible dimensions, invalid inputs and display-only versus physical-scale changes. This helper is not yet connected to settings, recognition/accounting, stored history or MQTT. No live units or totals changed. Setup must not advertise the feature as active until those paths are integrated and tested.
+
+
+Meter-profile persistence foundation: strict versioned JSON and journaled save/recovery are implemented locally in `MeterProfileJson.h` and `MeterProfileStore.h`. Host tests use the firmware's cJSON and cover first save, display-unit change, duplicate/unknown fields, unsupported units, unconfirmed input, numeric overflow, stale edits, physical-scale conflicts, interrupted initial/existing writes, corrupt journals and preservation of an independently valid revision. A physical-scale change is refused rather than relabeling history. These helpers are not yet registered as device endpoints or activated by setup; existing accounting and live settings remain unchanged.
