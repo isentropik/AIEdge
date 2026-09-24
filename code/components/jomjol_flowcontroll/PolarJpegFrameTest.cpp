@@ -42,7 +42,10 @@ struct DecodeMemory {
 // Saved private JPEG only. No capture, settings change, publication or training.
 // Decoder and model use the same shared PSRAM sequentially, never concurrently.
 PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame) {
-    PolarRuntimeTestResult result;result.jpegInput=true;result.replayFrame=replayFrame;
+    PolarRuntimeTestResult result;result.jpegInput=true;
+    const bool sparse=replayFrame>=PolarReplay::count;
+    if(sparse)replayFrame-=PolarReplay::count;
+    result.replayFrame=replayFrame;result.sparseSampling=sparse;
     if(replayFrame < -1 || replayFrame>=PolarReplay::count){result.status="replay_frame_rejected";return result;}
     ProcessingAccess processing;if(!processing){result.status="processing_busy";return result;}
     CameraAccess camera;if(!camera){result.status="camera_busy";return result;}
@@ -53,10 +56,10 @@ PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame) {
     std::string jpegPath="/sdcard/config/polar-runtime-frame.jpg",vectorsPath="/sdcard/config/polar-jpeg-vectors.bin";
     if(replayFrame>=0){
         const auto& frame=PolarReplay::frames[replayFrame];jpegBytes=frame.jpegBytes;
-        jpegHash=frame.jpegHash;vectorsHash=frame.vectorsHash;
+        jpegHash=frame.jpegHash;vectorsHash=sparse?frame.sparseVectorsHash:frame.vectorsHash;
         char stem[64];std::snprintf(stem,sizeof(stem),"diagnostics/replay-%02d",replayFrame);
         jpegPath=MeterBundle::bootSelection().resolve(std::string(stem)+".jpg","");
-        vectorsPath=MeterBundle::bootSelection().resolve(std::string(stem)+".bin","");
+        vectorsPath=MeterBundle::bootSelection().resolve(std::string(stem)+(sparse?"-sparse.bin":".bin"),"");
         if(jpegPath.empty()||vectorsPath.empty()){result.status="replay_assets_unavailable";return result;}
     }
     auto jpeg=buffer(jpegBytes),features=buffer(6*inputBytes);
@@ -85,7 +88,7 @@ PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame) {
         result.alignmentUs=esp_timer_get_time()-alignmentStart;
         for(int i=0;i<6;++i){
             vTaskDelay(1);const auto begin=esp_timer_get_time();
-            if(!polar::prepareDial(rgb.get(),inverse,i,*scratch,&result.preprocessingProfile[i],esp_timer_get_time)){
+            if(!polar::prepareDial(rgb.get(),inverse,i,*scratch,&result.preprocessingProfile[i],esp_timer_get_time,sparse)){
                 result.status="full_frame_preprocessing_rejected";return result;
             }
             result.preprocessingUs[i]=esp_timer_get_time()-begin;

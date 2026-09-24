@@ -495,7 +495,7 @@ esp_err_t handler_polar_test_status(httpd_req_t* req)
     portEXIT_CRITICAL(&polarTestMux);
     std::string json = "{\"active\":" + std::string(active ? "true" : "false") +
         ",\"status\":\"" + result.status + "\",\"verified_accuracy\":false,\"completed\":" +
-        std::to_string(result.completed) + ",\"replay_frame\":"+std::to_string(result.replayFrame)+",\"dials\":[";
+        std::to_string(result.completed) + ",\"replay_frame\":"+std::to_string(result.replayFrame)+",\"sparse_sampling\":"+(result.sparseSampling?"true":"false")+",\"dials\":[";
     for(int i=0;i<result.completed;++i) {
         if(i)json += ",";
         json += "{\"index\":" + std::to_string(i) +
@@ -544,7 +544,8 @@ esp_err_t handler_polar_frame_test_start(httpd_req_t* req)
         polarFrameTestResult = PolarRuntimeTestResult{};
         polarFrameTestResult.status = "queued_or_running";
         polarFrameTestResult.jpegInput = jpeg;
-        polarFrameTestResult.replayFrame=frame;
+        polarFrameTestResult.replayFrame=frame>=PolarReplay::count?frame-PolarReplay::count:frame;
+        polarFrameTestResult.sparseSampling=frame>=PolarReplay::count;
     }
     portEXIT_CRITICAL(&polarFrameTestMux);
     if(busy) {
@@ -572,7 +573,7 @@ esp_err_t handler_polar_frame_test_status(httpd_req_t* req)
     portEXIT_CRITICAL(&polarFrameTestMux);
     std::string json = "{\"active\":" + std::string(active ? "true" : "false") +
         ",\"status\":\"" + result.status + "\",\"verified_accuracy\":false,\"completed\":" +
-        std::to_string(result.completed) + ",\"replay_frame\":"+std::to_string(result.replayFrame)+",\"dials\":[";
+        std::to_string(result.completed) + ",\"replay_frame\":"+std::to_string(result.replayFrame)+",\"sparse_sampling\":"+(result.sparseSampling?"true":"false")+",\"dials\":[";
     for(int i=0;i<result.completed;++i) {
         if(i)json += ",";
         json += "{\"index\":" + std::to_string(i) +

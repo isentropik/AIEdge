@@ -20,8 +20,10 @@ Host tests cover all indexes, malformed requests, task admission, stale-result
 reset, missing assets, memory cleanup and the original diagnostic. The ESP32
 build passed. OTA installed bundle
 `4a836c0789f993ffc70fd8f058235fafa776802f7541050d27c532f91a371e05`
-with configuration and website password preserved. The 15-frame hardware
-baseline has started; results remain pending.
+with configuration and website password preserved. All 15 hardware baseline frames completed with exact feature/output parity.
+Median processing time was 22.198651 seconds (range 22.118694-22.252863).
+Boot identity and configuration remained unchanged. This excludes capture,
+publication and archival and is not a 30-second live-cadence result.
 
 These frames have retrieval timestamps, not reliable capture timestamps.
 Retrieval order must not be used to calculate actual flow or missing complete
@@ -45,3 +47,14 @@ on all 15 frames. 243 synthetic crop/transform cases passed anchor, interpolatio
 odd/even and single-pixel boundary checks. Dense-mode regressions retained exact
 parity across 16 crop cases and 108 preprocessing cases. Broader image coverage
 and hardware timing remain required before adoption.
+
+
+## Sparse diagnostic selection
+
+The next test build accepts POST `/polar_jpeg_test?frame=0&sparse=1`.
+It retains frame indexes 0-14 and returns `sparse_sampling: true` in the status.
+Sparse reference vectors have separate compiled hashes and bundle files;
+comparison with them tests execution parity, not agreement with dense outputs.
+The host dense-versus-sparse reading comparison above remains a separate check.
+Normal meter processing and requests without `sparse=1` remain dense.
+Sparse hardware timing is pending until deployment and the batch finish.
