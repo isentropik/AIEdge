@@ -63,3 +63,7 @@ Start with [troubleshooting](docs/RECOVERY.md). When reporting a problem, includ
 Thanks to jomjol and the [AI-on-the-edge-device contributors](https://github.com/jomjol/AI-on-the-edge-device/graphs/contributors), Espressif and the other component authors. Their work remains credited in the source, [credits page](CREDITS.md) and [third-party notices](third-party-notices). Upstream authors do not provide or endorse this modified firmware.
 
 The unchanged [upstream Dual Use License](Licence.md) applies. It permits private, non-commercial use under its terms; commercial use requires a separate license from the rights holder. This fork is not MIT- or GPL-licensed.
+
+## How this fork is being built
+
+AIEdge is being **vibe coded with Codex**, with user direction, image labeling and hardware testing. See the [running development-time estimate](docs/DEVELOPMENT-TIME.md), rounded to the nearest hour. This tracks work on AIEdge and its meter training; it does not include the original upstream project.

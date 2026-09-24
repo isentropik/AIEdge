@@ -1,0 +1,13 @@
+{
+  "approximate_hours": 35,
+  "as_of_utc": "2026-09-24T02:50:17.031000+00:00",
+  "included_since_utc": "2026-09-15T04:50:52.773Z",
+  "source_chat_count": 2,
+  "method": "Union of within-chat gaps between recorded activity events of at most 300 seconds. Longer gaps excluded; overlapping chats counted once. Rounded to nearest hour.",
+  "limitations": [
+    "Approximate shared project activity, not human labor hours or model compute time.",
+    "Long builds or thinking gaps can be undercounted; short waits can be counted.",
+    "Only explicitly selected project chats included; earlier unrelated Home Assistant work excluded.",
+    "No claim that all historical work is recoverable."
+  ]
+}
