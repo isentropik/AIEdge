@@ -154,3 +154,8 @@ Test-board installation and added-check timing remain pending. Automatic proposa
 
 
 The first third-marker test-board OTA attempt and one controlled retry after restart both failed during staging at the destination-object stat call (errno 5). The uploaded package was downloaded and its SHA256 verified before the retry. No firmware installation or boot selection occurred; the board remains on verified bundle `9f44b88823d269d5eb47ebe6be65ccfb9bbc71a3e3a06899157d71433a741999`. SD directory listings remain readable. This does not establish whether the cause is physical storage, driver behavior or resource pressure. No formatting or deletion of retained bundles was attempted. Third-marker hardware timing remains unmeasured.
+
+
+USB diagnostics narrowed the repeated staging failure: `sdmmc_read_blocks failed (0x101)` preceded the destination stat error. In the installed ESP-IDF, 0x101 is `ESP_ERR_NO_MEM`; the SD read path allocates a DMA-capable temporary buffer when its destination is in external RAM. This is evidence of allocation failure, not evidence that formatting is needed.
+
+The local stager now moves the parsed asset inventory and replaces its duplicate filename-to-ZIP-entry map with compact ZIP ordinals before SD operations. Manifest validation, per-file length/CRC/SHA checks, sync/close, independent full readback and boot-selection safeguards remain. The rebuilt C++ host harness passed 28 verifier, 19 boot-selection, 14 index, 8 transaction and 14 staging cases, plus readback of all 146 files in the actual candidate. Reversed archive ordering is covered. Physical-board recovery remains pending; this change is not yet a verified cure for the allocation failure.

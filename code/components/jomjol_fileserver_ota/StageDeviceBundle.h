@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <cerrno>
 #include <cstring>
+#include <vector>
 namespace MeterBundle {
 enum class StageResult { Rejected, IoError, Conflict, Existing, Staged };
 struct ArchiveReadDiagnostic {
@@ -105,15 +106,20 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
  auto sha=[](const std::string& text){Hash h;return h.update(reinterpret_cast<const unsigned char*>(text.data()),text.size())?h.finish():std::string();};
  Manifest m;
  if(!parse(body,m,sha)||m.id!=id||m.bootPolicy!="required_bundle"||m.modelHash!=model)return StageResult::Rejected;
- auto wanted=m.assets;wanted.emplace("firmware/firmware.bin",m.firmware);
+ auto wanted=std::move(m.assets);wanted.emplace("firmware/firmware.bin",m.firmware);
  File manifestFile;manifestFile.bytes=body.size();manifestFile.hash=sha(body);
  wanted.emplace("device-manifest.json",manifestFile);
  // Parsed fields own their strings. Release redundant manifest/inventory copies
  // before extraction and FAT readback need internal DMA-capable memory.
  std::string().swap(body);m=Manifest{};inventory=ArchiveInventory{};
+ // Retain only compact ZIP ordinals in manifest iteration order. Keeping the
+ // duplicate path map live coincided with an SD DMA allocation failure.
+ std::vector<mz_uint> ordinals;ordinals.reserve(wanted.size());
  for(const auto& item:wanted){auto e=entries.find(item.first);mz_zip_archive_file_stat st{};
   if(e==entries.end()||!mz_zip_reader_file_stat(&zip,e->second,&st)||st.m_uncomp_size!=item.second.bytes)return StageResult::Rejected;
+  ordinals.push_back(e->second);
  }
+ entries.clear();
  const std::string object=base+"/objects/"+id,pending=base+"/pending/"+id;
  struct stat st{};
  if(stat(object.c_str(),&st)==0){
@@ -128,6 +134,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   const int error=errno;checkpoint(trace,recovery==PendingRecovery::Conflict?"pending.conflict_failed":"pending.prepare_failed",pending,error);
   return recovery==PendingRecovery::Conflict?StageResult::Conflict:StageResult::IoError;
  }
+ size_t ordinal=0;
  for(const auto& item:wanted){
   if(!bundleParents(pending,item.first,trace))return StageResult::IoError;
   int flags=O_WRONLY|O_CREAT|O_EXCL;
@@ -138,7 +145,7 @@ template<class Hash> StageResult stageZip(const std::string& zipPath,const std::
   if(fd<0){const int error=errno;checkpoint(trace,"extract.open_failed",path,error);return StageResult::IoError;}
   checkpoint(trace,"extract.begin",path);
   BundleSink<Hash> sink(fd,item.second.bytes,trace,path);
-  bool ok=extractBounded(zip,entries.at(item.first),item.second.bytes,[&](uint64_t offset,const unsigned char* data,size_t size){
+  bool ok=extractBounded(zip,ordinals[ordinal++],item.second.bytes,[&](uint64_t offset,const unsigned char* data,size_t size){
            return BundleSink<Hash>::append(&sink,offset,data,size)==size;
           },trace,path);
   if(!ok)checkpoint(trace,"extract.failed",path,static_cast<uint64_t>(mz_zip_get_last_error(&zip)));
