@@ -41,3 +41,21 @@ failures, geometry changes, and stale results after an earlier successful frame.
 No failing case publishes partial readings or advances accounting. These checks
 use dependency fixtures and do not establish ESP32 memory capacity or timing.
 See [normal recognition tests](../tools/camera-tests/README.md#normal-recognition-failure-handling).
+
+## Short camera scheduling trial
+
+A five-cycle test on the development board used a 30-second interval, LEDs off,
+and no external publication or image archiving. The camera deliberately viewed
+a scene other than the meter. All five cycles captured and completed the legacy
+alignment stage, then failed meter-marker registration; none produced an accepted
+reading. No overlapping attempts or missed schedule slots were reported.
+
+Four capture intervals had a 30.008-second median and 30.028-second maximum.
+Across 23 timing-endpoint polls, response latency was 0.187 seconds median,
+0.266 seconds p95, and 0.406 seconds maximum. This measures only that endpoint
+under this short rejected-scene workload. It does not prove the performance of
+successful six-dial recognition, publication, image upload, or other web pages.
+
+The original configuration was restored byte-for-byte and the saved meter profile
+was preserved. Successful live-meter cadence remains unverified while the test
+camera views a different scene.
