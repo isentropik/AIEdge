@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const api=require('../../sd-card/html/alignment-spacing.js');
+const a={x:10,y:10,dx:20,dy:20},b={x:800,y:600,dx:20,dy:20};
+assert.equal(api.evaluate([a,b],0,0).state,'waiting');
+for(const invalid of [null,[],[a], [a,b,a]])assert.equal(api.evaluate(invalid,1000,800).state,'incomplete');
+for(const invalid of [null,{}, {...a,dx:0},{...a,x:''},{...a,dx:Infinity}])assert.equal(api.evaluate([invalid,b],1000,800).state,'incomplete');
+assert.equal(api.evaluate([a,{...a,x:15}],1000,800).state,'overlap');
+assert.equal(api.evaluate([a,{...a,x:30}],1000,800).state,'close');
+assert.equal(api.evaluate([a,{...b,x:990}],1000,800).state,'outside');
+assert.equal(api.evaluate([{x:30,y:30,dx:-20,dy:-20},b],1000,800).fraction,api.evaluate([a,b],1000,800).fraction);
+const result=api.evaluate(Object.freeze([Object.freeze(a),Object.freeze(b)]),1000,800);assert.equal(result.state,'separated');assert.match(result.text,/guideline, not a validation threshold/);
+const twice=r=>Object.fromEntries(Object.entries(r).map(([k,v])=>[k,v*2]));assert.equal(api.evaluate([twice(a),twice(b)],2000,1600).fraction,result.fraction);
+const html=fs.readFileSync(require.resolve('../../sd-card/html/edit_alignment.html'),'utf8');
+const source=html.slice(html.indexOf('        function loadMarkerDimensions()'),html.indexOf('        function draw()'));
+const status={dataset:{}},images=[];const refs=[{name:'/config/ref0.jpg',x:10,y:10},{name:'/config/ref1.jpg',x:800,y:600}];
+const context={window:{AIEdgeMarkerSpacing:api},AIEdgeMarkerSpacing:api,document:{getElementById:()=>status},refInfo:refs,aktindex:0,rect:{startX:10,startY:10,w:20,h:20},imageObj:{naturalWidth:1000,naturalHeight:800},domainname:'http://device',Image:function(){images.push(this);}};
+vm.createContext(context);vm.runInContext(source,context);context.loadMarkerDimensions();assert.equal(images.length,2);
+for(const img of images){img.naturalWidth=20;img.naturalHeight=20;img.onload();}
+assert.equal(status.dataset.state,'separated');assert.equal(refs[1].dx,20);assert.equal(images[1].src,'http://device/fileserver/config/ref1.jpg');
+const before=JSON.stringify(refs);context.rect.startX=800;context.rect.startY=600;context.updateMarkerSpacing();assert.equal(status.dataset.state,'overlap');assert.equal(JSON.stringify(refs),before);
+context.rect.startX=-1;context.updateMarkerSpacing();assert.equal(status.dataset.state,'outside');
+assert.match(html,/aria-live="polite"/);assert.match(html,/alignment-spacing.js/);
+console.log('Marker geometry: scaling, overlap, bounds, incomplete inputs, reverse drag and non-mutating editor feedback passed');

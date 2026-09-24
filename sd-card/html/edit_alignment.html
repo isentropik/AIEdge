@@ -205,6 +205,7 @@
 <link rel="stylesheet" href="aiedge.css?v=$COMMIT_HASH">
 
 <script src="aiedge-theme.js?v=shared-1"></script>
+<script src="alignment-spacing.js"></script>
 <link rel="stylesheet" href="aiedge-theme.css">
 
 <link rel="stylesheet" href="aiedge-ui.css">
@@ -225,6 +226,12 @@
 	
 
     <h2>Alignment markers</h2>
+    <section class="ae-panel" aria-label="Choosing alignment markers">
+      <h3>Use fixed, distinctive markings</h3>
+      <p>Choose printed labels or sharp corners that stay visible. Avoid needles, reflections and repeated marks that could be confused with each other.</p>
+      <p>Spread the markers across the meter rather than placing them close together. This editor saves two markers. A third marker, placed away from the line between the first two, can provide an independent check, but is not yet supported here.</p>
+      <p id="marker-spacing" role="status" aria-live="polite">Load the reference image to check marker placement.</p>
+    </section>
 
     <details id="desc_details" style="font-size:16px">
 
@@ -737,6 +744,7 @@
                 canvas.width = this.width;
 
                 canvas.height = this.height;
+                updateMarkerSpacing();
 
                 drawImage();
 
@@ -899,6 +907,7 @@
 
 
             refInfo = GetReferencesInfo();
+            loadMarkerDimensions();
 
 
 
@@ -1128,7 +1137,32 @@
 
 
 
+        function loadMarkerDimensions() {
+            refInfo.slice(0, 2).forEach(function(marker) {
+                var preview = new Image();
+                preview.onload = function() {
+                    if (!(Number(marker.dx) > 0 && Number(marker.dy) > 0)) {
+                        marker.dx = preview.naturalWidth;
+                        marker.dy = preview.naturalHeight;
+                    }
+                    updateMarkerSpacing();
+                };
+                preview.src = domainname + '/fileserver' + marker.name;
+            });
+        }
+
+        function updateMarkerSpacing() {
+            var status = document.getElementById('marker-spacing');
+            if (!status || !window.AIEdgeMarkerSpacing) return;
+            var markers = typeof refInfo === 'undefined' || !Array.isArray(refInfo) ? [] : refInfo.map(function(r) { return Object.assign({}, r); });
+            if (markers[aktindex] && rect) markers[aktindex] = Object.assign({}, markers[aktindex], {x:rect.startX, y:rect.startY, dx:rect.w, dy:rect.h});
+            var result = AIEdgeMarkerSpacing.evaluate(markers, imageObj.naturalWidth, imageObj.naturalHeight);
+            status.textContent = result.text;
+            status.dataset.state = result.state;
+        }
+
         function draw() {
+            updateMarkerSpacing();
 
             var canvas = document.getElementById('canvas');
 
@@ -1236,7 +1270,8 @@
 
             document.getElementById("refx").value = rect.startX;
 
-            document.getElementById("refy").value = rect.startY;    
+            document.getElementById("refy").value = rect.startY;
+            updateMarkerSpacing();    
 
         }
 
