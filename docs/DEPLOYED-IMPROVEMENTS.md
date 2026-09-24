@@ -230,3 +230,10 @@ Test bundle `9d0fdc7a4d249ed72f97f944dbd1e05cf8b93d1acabaeaae537e80b399750f37` r
 Test bundle `833ff837e10db98cdceca8013b3995de7cd05da7918e67fd9708c15e87fd185d` adds two-marker overlap/boundary checks and measured center separation to the editor. The 25% image-diagonal suggestion is advisory, not a validated matching threshold. Draft feedback neither saves nor moves existing marker coordinates. Guidance padding and dark-theme button contrast are corrected.
 
 79 host scripts, seven UI scripts and a clean ESP32 build passed. Browser review covered a 390px embedded editor, standalone light/dark rendering and numeric boundary feedback. Managed OTA/verified boot preserved configuration/profile/password, and four served files matched package bytes. Production and the public installer were unchanged. Automatic feature selection and third-marker support remain unfinished.
+
+
+## Competing alignment peaks — September 24, 2026
+
+Test bundle `31a3388e5eab85f826581187feae4b476a9726506cc17149f69dcfaa3c641339` rejects ambiguous local marker peaks rather than selecting one by scan order. Existing status numbers and rejected output state are preserved. Exact/near-duplicate host tests, 16 real-frame transform comparisons and 195 pipeline stress cases pass. Full packaging passed 80 host scripts, seven UI checks and a clean build.
+
+OTA/verified boot preserved configuration/profile/password. The installed saved-image diagnostic matched all six dial tensors and outputs exactly in 13.946137 seconds; no camera captures or configuration changes occurred. This is a single compatibility/timing observation, not sustained capture cadence or independent accuracy validation. Production and the public installer were unchanged.
