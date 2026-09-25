@@ -35,10 +35,15 @@ class CTfLiteClass
 
         long GetFileSize(std::string filename);
         bool ReadFileToModel(std::string _fn);
-        void MakeStaticResolver();
+        bool resolverAttempted = false;
+        bool resolverReady = false;
+        bool MakeStaticResolver();
+        void ResetInterpreter();
 
     public:
         CTfLiteClass();
+        CTfLiteClass(const CTfLiteClass&) = delete;
+        CTfLiteClass& operator=(const CTfLiteClass&) = delete;
         ~CTfLiteClass();        
         bool LoadModel(std::string _fn);
         bool LoadFrozenPolarModel(std::string filename);

@@ -17,19 +17,34 @@
 static const char *TAG = "TFLITE";
 
 
-void CTfLiteClass::MakeStaticResolver()
+bool CTfLiteClass::MakeStaticResolver()
 {
-  resolver.AddFullyConnected();
-  resolver.AddReshape();
-  resolver.AddSoftmax();
-  resolver.AddConv2D();
-  resolver.AddMaxPool2D();
-  resolver.AddQuantize();
-  resolver.AddMul();
-  resolver.AddAdd();
-  resolver.AddLeakyRelu();
-  resolver.AddDequantize();
+  if (resolverAttempted) return resolverReady;
+  resolverAttempted = true;
+  resolverReady = true;
+  resolverReady &= resolver.AddFullyConnected() == kTfLiteOk;
+  resolverReady &= resolver.AddReshape() == kTfLiteOk;
+  resolverReady &= resolver.AddSoftmax() == kTfLiteOk;
+  resolverReady &= resolver.AddConv2D() == kTfLiteOk;
+  resolverReady &= resolver.AddMaxPool2D() == kTfLiteOk;
+  resolverReady &= resolver.AddQuantize() == kTfLiteOk;
+  resolverReady &= resolver.AddMul() == kTfLiteOk;
+  resolverReady &= resolver.AddAdd() == kTfLiteOk;
+  resolverReady &= resolver.AddLeakyRelu() == kTfLiteOk;
+  resolverReady &= resolver.AddDequantize() == kTfLiteOk;
+  return resolverReady;
 }
+
+void CTfLiteClass::ResetInterpreter()
+{
+  // Destroy the interpreter while its model bytes are still intact. Keep the
+  // shared allocation owned by this object until destruction, not each reload.
+  delete interpreter;
+  interpreter = nullptr;
+  input = nullptr;
+  output = nullptr;
+}
+
 
 
 float CTfLiteClass::GetOutputValue(int nr)
@@ -243,8 +258,8 @@ bool CTfLiteClass::LoadInputImageBasis(CImageBasis *rs)
 
 bool CTfLiteClass::MakeAllocate()
 {
-    if (!model || !tensor_arena) return false;
-    MakeStaticResolver();
+    ResetInterpreter();
+    if (!model || !tensor_arena || !MakeStaticResolver()) return false;
 
     #ifdef DEBUG_DETAIL_ON 
         LogFile.WriteHeapInfo("CTLiteClass::Alloc start");
@@ -259,7 +274,7 @@ bool CTfLiteClass::MakeAllocate()
         TfLiteStatus allocate_status = this->interpreter->AllocateTensors();
         if (allocate_status != kTfLiteOk) {
             LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "AllocateTensors() failed");
-
+            ResetInterpreter();
             return false;
         }
     }
@@ -308,6 +323,7 @@ long CTfLiteClass::GetFileSize(std::string filename)
 
 bool CTfLiteClass::ReadFileToModel(std::string _fn)
 {
+    ResetInterpreter();
     loadedModelBytes = 0;
     verifiedPolarModel = false;
     model = nullptr;
@@ -331,7 +347,12 @@ bool CTfLiteClass::ReadFileToModel(std::string _fn)
         LogFile.WriteHeapInfo("CTLiteClass::Alloc modelfile start");
 #endif
 
-    modelfile = (unsigned char*)psram_get_shared_model_memory();
+    // The shared allocator grants the model region once per owner. Reusing its
+    // pointer preserves the workspace tail and avoids a second acquisition while
+    // the allocator is already in Digitization_Model state. A failed tensor
+    // acquisition must never borrow or release another stage's allocation.
+    if (!tensor_arena) return false;
+    if (!modelfile) modelfile = (unsigned char*)psram_get_shared_model_memory();
   
     if (modelfile != NULL)
     {
@@ -428,7 +449,7 @@ CTfLiteClass::CTfLiteClass()
 
 CTfLiteClass::~CTfLiteClass()
 {
-  delete this->interpreter;
+  ResetInterpreter();
 
-  psram_free_shared_tensor_arena_and_model_memory();
+  if (tensor_arena) psram_free_shared_tensor_arena_and_model_memory();
 }        
