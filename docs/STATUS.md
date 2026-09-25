@@ -210,3 +210,34 @@ evaluation failures motivated the design; fresh independent evaluation would be
 required before promotion. Current exclusion checks show no training/held-out
 hash intersection, including synthetic parents. Local source hashes, training
 regimen, results and decision: `needle-training/polar-lighting-candidate-20260925`.
+
+
+### Same-capture linked-target experiment
+
+An audit applied the unchanged C++ consistency rule to 22 unique retained
+full-frame desktop estimates: 3 passed and 19 failed, all at the last two main
+dials. One additional retained result was not evaluable. Unique image hashes
+include nearly stationary poses; these counts are not independent accuracy
+samples or complete sparse-firmware runs. Local evidence:
+`retained-consistency-20260925-02/result.json`.
+
+The original training capture's human labels were 0.3, 2.5, 5.6, 5.2, 3.0.
+Its archived crop manifest and hashes identify the same device capture stamp for
+all five main dials. A separate experiment preserved those original records and
+used derived training targets 0.2553, 2.553, 5.53, 5.3, 3.0 from the 10:1
+relationship. The last main dial remained the anchor; the secondary was not used
+in that calculation. These are mechanically derived targets, not new human
+labels or proof of perfect pointer phase alignment.
+
+The fixed 35-epoch candidate retained 18/18 existing development checks within
+0.1. On four protected main-dial pairs, spanning only two broad last-dial pose
+regions, all four fit the unchanged 0.11 allowance. The latest pair's residual
+fell from 0.12067 to 0.06182; the three earlier pairs fell to 0.00475–0.01070.
+Both models used identical desktop dense features and unchanged calibration.
+
+The candidate remains local and unpromoted. These development/consistency results
+do not establish independent correctness, int8 parity, glare robustness or ESP32
+performance. Evaluation labels and pixels were not used for gradients; prior
+observed mismatch informed this experiment. Fresh validation and broader
+regressions remain necessary. Exact provenance, derived targets, model and
+results: `needle-training/polar-linked-target-candidate-20260925`.
