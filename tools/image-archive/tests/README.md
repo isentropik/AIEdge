@@ -59,3 +59,24 @@ spool files, hashing and JSON parsing. HTTP and the monotonic clock are simulate
 It tests partial writes, bad receipts, HTTP errors, timeouts, invalid destinations,
 cleanup, and a single shared network budget across settings and image requests.
 The slow-request case must retain the image and allow a subsequent valid retry.
+
+
+## Capture admission while uploading
+
+```sh
+python run_worker.py --mbedtls /path/to/mbedtls
+```
+
+The same compiler options apply. This compiles `ImageArchiveWorker.cpp` itself,
+using temporary files, the real queue engine and SHA implementation, and simulated
+RTOS/heap/transport calls. Eleven scenarios cover startup allocation failures,
+capture-buffer allocation failure, queue rejection, successful upload, connection
+failure, rejected credentials, invalid receipts, HTTP 503 and HTTP 429.
+
+The concurrency case runs a second host thread while the upload callback remains
+active. All 32 capture submissions must be rejected before allocating another
+image buffer or entering storage/network work. The original image buffer must
+already be freed; its upload still completes with one verified acknowledgment.
+This checks the admission reservation across threads, not actual ESP32 task
+scheduling, TLS memory peaks or capture-to-publication cadence. Critical-section
+stubs do not model arbitrary concurrent status publication.
