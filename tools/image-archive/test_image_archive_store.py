@@ -38,6 +38,39 @@ class ArchiveTests(unittest.TestCase):
             receipts = list(pool.map(lambda _: self.put(), range(24)))
         self.assertEqual(sum(not r['duplicate'] for r in receipts), 1)
 
+    def test_readback_waits_for_concurrent_publication(self):
+        import threading
+        import image_archive_store as store
+        path=self.root/'object';data=b'complete immutable object'
+        publishing=threading.Event();release=threading.Event();reader_ready=threading.Event();opened=threading.Event()
+        operation='rename' if store.os.name=='nt' else 'link'
+        native=getattr(store.os,operation);open_real=Path.open
+        def delayed_publish(source,destination):
+            publishing.set()
+            if not release.wait(5): raise TimeoutError('test publication was not released')
+            return native(source,destination)
+        def observe_open(candidate,*args,**kwargs):
+            if candidate==path and args==('rb',):opened.set()
+            return open_real(candidate,*args,**kwargs)
+        def readback():
+            reader_ready.set()
+            return store.matches_existing(path,data)
+        with patch.object(store.os,operation,delayed_publish),patch.object(Path,'open',observe_open),ThreadPoolExecutor(max_workers=2) as pool:
+            writer=pool.submit(store.write_immutable,path,data)
+            try:
+                self.assertTrue(publishing.wait(5))
+                reader=pool.submit(readback);self.assertTrue(reader_ready.wait(5))
+                self.assertFalse(opened.wait(.05),'reader entered during publication')
+            finally:release.set()
+            self.assertTrue(writer.result(timeout=5));self.assertTrue(reader.result(timeout=5))
+        self.assertEqual(path.read_bytes(),data)
+
+    def test_permission_failure_is_not_acknowledged_or_retried(self):
+        self.put()
+        with patch.object(Path,'open',side_effect=PermissionError('storage denied')) as opened:
+            with self.assertRaises(PermissionError):self.put()
+        self.assertEqual(opened.call_count,1)
+
     def test_conflict_preserves_record(self):
         self.put()
         before = next((self.root/'captures').glob('*.json')).read_bytes()

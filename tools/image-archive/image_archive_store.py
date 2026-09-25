@@ -12,7 +12,14 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import threading
 from datetime import datetime
+
+# Windows can briefly deny readers while another thread attempts a rename,
+# even when that rename will report an existing immutable destination. Serialize
+# our short publication and readback operations. Cross-process/storage failures
+# still propagate without acknowledgement, retry, or overwrite.
+_publication_lock = threading.RLock()
 
 MAX_IMAGE_BYTES = 2 * 1024 * 1024
 FIELDS = {
@@ -95,8 +102,9 @@ def ensure_directory(path):
 
 def matches_existing(path, data):
     """Compare at most expected size plus one byte, including corrupt retries."""
-    with path.open('rb') as stream:
-        return stream.read(len(data) + 1) == data
+    with _publication_lock:
+        with path.open('rb') as stream:
+            return stream.read(len(data) + 1) == data
 
 
 def publish_no_replace(source, destination):
@@ -105,10 +113,11 @@ def publish_no_replace(source, destination):
     Windows rename rejects an existing destination, including on SMB shares.
     Both names are in the same directory. Errors propagate without copy fallback.
     """
-    if os.name == 'nt':
-        os.rename(source, destination)
-    else:
-        os.link(source, destination)
+    with _publication_lock:
+        if os.name == 'nt':
+            os.rename(source, destination)
+        else:
+            os.link(source, destination)
 
 
 def write_immutable(path, data):
