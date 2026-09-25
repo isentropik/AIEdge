@@ -256,3 +256,23 @@ image and protected inference fixture remain excluded from training.
 
 Private evidence: `camera-free-archive-overlap-03/{result,verification}.json` under
 firmware-port-tests. Tested bundle: `b00984a26744f94e0a1ee6d65d1ec312bca44f49c6e07da33626d8953b0f3151`.
+
+
+## Full-size saved-image upload — September 25
+
+The same bounded test then delivered a 55,523-byte saved meter JPEG without
+re-encoding it. Its received bytes matched the retained original SHA-256 exactly.
+A matching HTTP 201 acknowledgment cleared the pending record while six-dial
+saved-JPEG inference was active. Features and outputs matched the frozen reference;
+processing took 12.507 seconds. The slowest batch of three status requests took
+0.422 seconds in this short run.
+
+The image was already on this workstation. Capture identity, time and settings
+metadata were synthetic trial values, not claims about the original photograph.
+The received record remains excluded from training. Device settings were restored,
+archiving disabled, receiver stopped and the temporary restricted firewall rule
+removed with absence verified. No production capture or NAS write occurred.
+This verifies one full-size saved-image transfer during inference, not sustained
+live 30-second capture-to-publication performance or independent model accuracy.
+Private evidence: `camera-free-archive-overlap-04/{result,verification}.json` under
+firmware-port-tests; the test used the same bundle as the preceding small-image trial.

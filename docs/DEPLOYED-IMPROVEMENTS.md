@@ -576,3 +576,25 @@ Bundle: `b00984a26744f94e0a1ee6d65d1ec312bca44f49c6e07da33626d8953b0f3151`.
 Private evidence: `aiedge-recognition-empty-readings-01/{ota,served-verification}`
 under firmware-port-tests. This package includes private diagnostic fixtures and
 is not a public installer release.
+
+
+## Empty reading HTTP responses — September 25
+
+The all-readings endpoint now completes an HTTP response even with no rows.
+Previously it returned success without sending a response, leaving clients waiting.
+It also propagates send failures. A test compiled from the actual response branch
+reproduced both faults and now passes all 16 empty/nonempty, reading-type and
+transport-result cases.
+
+The managed test-board update passed 93 host checks, 11 UI checks, a clean build,
+package integrity checks and OTA/boot verification. Configuration, meter profile
+and password protection were preserved. All four reading types return the expected
+403 flow-not-started response on fresh connections in the current setup state;
+that does not exercise the repaired empty-row branch on hardware. Reusing an HTTP
+connection after that error response caused a disconnect, retained for follow-up.
+Captures and archiving remain disabled. Production was untouched.
+
+Bundle: `c090e79cc66e420a25e29ca826896b82fd9538949540821b135cf166e561b015`.
+Private evidence: `aiedge-empty-readings-response-02/{ota,post-install.json}` under
+firmware-port-tests. The interrupted `-01` build was retained and never deployed.
+This private diagnostic package is not a public installer release.

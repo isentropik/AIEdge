@@ -1098,12 +1098,9 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
             zw = flowctrl.getReadoutAll(_intype);
             ESP_LOGD(TAG, "ZW: %s", zw.c_str());
 
-            if (zw.length() > 0)
-            {
-                httpd_resp_send(req, zw.c_str(), zw.length());
-            }
-
-            return ESP_OK;
+            // Empty output still requires a completed HTTP response. Propagate
+            // transport failure so the server does not treat it as success.
+            return httpd_resp_send(req, zw.c_str(), zw.length());
         }
 
         std::string *status = flowctrl.getActStatus();
