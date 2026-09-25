@@ -82,3 +82,20 @@ runtime. It is not a new device update and cannot fix bugs in that runtime.
 Review retained content (including firmware, HTML and models) for private data,
 licensing and suitability before publishing. Export does not upload anything,
 update the installer pin, or establish accuracy for other meters.
+
+
+## Portable firmware diagnostic paths
+
+The PlatformIO pre-build hook in `code/tools/source_paths.py` maps the physical
+source directory to a relative path for compiler-generated diagnostics. It uses
+a quoted GCC response file to handle spaces and Windows mapped drives. The hook
+must run before ESP-IDF creates component environments; CMake-imported response
+options and late changes to the parent environment do not reach those compilers.
+
+A local managed ESP32 build passed, and its final firmware had zero matches for
+Windows user directories, Unix home directories or private training-directory
+paths (17 workstation-path matches were present before the change). The unused
+packaged `watermeter.svg`, which contained inherited editor export paths, was
+removed. These pattern checks are not a complete secret or licensing audit.
+This build-only change still needs a matching verified package and test-board
+update; the public installer has not changed.
