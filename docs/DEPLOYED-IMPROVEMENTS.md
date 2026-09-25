@@ -556,3 +556,23 @@ restored disabled archiving. Successful concurrent delivery remains open; this
 entry records the diagnostic improvement, not a storage-connectivity fix.
 Public installer and production meter are unchanged. Evidence and limitations:
 [image-delivery failures](IMAGE-ARCHIVE-FAILURES.md).
+
+
+## Recognition output with empty readings — September 25
+
+Empty readings now show Unavailable under the correct sequence name. Previously,
+trimming the API response removed its trailing tab, turning an empty Main row
+into a Meter row with value Main. Leading zeros and numeric zero are preserved;
+malformed rows are rejected and refresh displays a loading state.
+
+The managed test-board update passed 92 host checks, 11 UI checks and a clean
+ESP32 build. OTA and boot verification preserved configuration, meter profile and
+password protection. Served HTML and script bytes match the package, and the
+regression passed against the served script. Mobile browser layout remains
+unverified because the browser client blocked access. Captures and archiving
+remain disabled; the production meter was untouched.
+
+Bundle: `b00984a26744f94e0a1ee6d65d1ec312bca44f49c6e07da33626d8953b0f3151`.
+Private evidence: `aiedge-recognition-empty-readings-01/{ota,served-verification}`
+under firmware-port-tests. This package includes private diagnostic fixtures and
+is not a public installer release.

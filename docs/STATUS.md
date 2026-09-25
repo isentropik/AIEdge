@@ -14,7 +14,7 @@ migration remains deferred while saved-image and test-board testing continues.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `edda76191e325a8f616c17e9e05ccd5021f4e83b60bd06fbedfd61e0f8fd6096`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `b00984a26744f94e0a1ee6d65d1ec312bca44f49c6e07da33626d8953b0f3151`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
 | Camera | An earlier single-image, no-flash preview succeeded. The latest test boot reports camera unavailable; the website and saved display profile remain usable. | Resolve the latest 0x105 camera address-probe failure first; its physical cause is unresolved. Then place the camera at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
