@@ -233,3 +233,26 @@ archive configuration and synthetic queue files were removed, disabled archiving
 and unchanged configuration/profile were verified, and camera captures remained
 zero. Private evidence: `camera-free-archive-overlap-02/verification.json` and
 `served-ui-failure.json`; bundle evidence: `aiedge-archive-failure-diagnostics-01`.
+
+
+## Test-board upload during inference — September 25
+
+A bounded trial passed after adding a temporary Windows inbound rule restricted
+to the test board and HTTPS receiver port. The board delivered a synthetic 32x32
+JPEG and its settings descriptor, received a matching HTTP 201 acknowledgment,
+and cleared the pending record. Receiver-side bytes and metadata matched exactly.
+One deliberate HTTP 503 delayed delivery until inference began; automatic retry
+then succeeded. The receiver observed image delivery while saved-JPEG inference
+was active. All six dial features and outputs matched the reference, completing
+in 12.272 seconds.
+
+The test restored the original device configuration/profile, disabled archiving,
+removed its temporary queue files and stopped the receiver. The temporary firewall
+rule was removed and its absence checked. No production device or NAS was changed.
+This supports a firewall cause for the prior failed local trials. It does not
+establish full-size photo throughput, sustained 30-second live cadence, physical
+camera capture, real-image accuracy, or NAS delivery from the ESP32. The synthetic
+image and protected inference fixture remain excluded from training.
+
+Private evidence: `camera-free-archive-overlap-03/{result,verification}.json` under
+firmware-port-tests. Tested bundle: `b00984a26744f94e0a1ee6d65d1ec312bca44f49c6e07da33626d8953b0f3151`.
