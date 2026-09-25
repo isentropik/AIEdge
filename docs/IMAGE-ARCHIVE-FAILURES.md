@@ -164,3 +164,53 @@ All 109 image-archive tests pass, including 15 HTTP receiver tests. These are lo
 fault-injection checks; no device, user archive, NAS configuration or production
 meter changed. They do not establish physical power-loss durability. Confirmed
 receipts continue to leave images unreviewed and ineligible for training.
+
+
+## Last-upload diagnostics — test-board deployment September 25
+
+A camera-independent test on the ESP32 completed three saved-JPEG inference runs
+with exact reference parity in 11.90–12.04 seconds while a synthetic archive item
+was pending. No upload receipt arrived; two failures were counted. The receiver
+had no committed capture record. The test restored disabled archiving, verified
+unchanged configuration/profile and zero camera captures, and stopped its local
+receiver. It did not establish successful inference/upload overlap or live
+capture cadence. The transport failure's cause remains unresolved.
+
+The status API previously exposed only a failure count. The deployed change adds
+`last_http_status` (zero when unavailable), `last_attempt_ms` (completion time in
+milliseconds since boot), and `last_upload_error` (a fixed internal code).
+Unknown error text becomes `upload_failed`; credentials, destinations and response
+bodies are never copied into this field. A verified success clears the last error
+to `none`; historical failure counters remain. These fields describe the last
+attempt, not every queued image or a wall-clock timestamp.
+
+The archive page translates these codes into connection, credential, receipt or
+saved-file guidance and shows **Retrying upload** for retained pending items.
+Older firmware without the additional fields remains supported. Actual-worker,
+queue, serializer and browser-state checks pass. The managed firmware build passed 91 host and 10 UI checks. OTA, boot, preserved
+configuration/profile/password, new API fields and exact served-script bytes were
+verified on the test board in bundle
+`edda76191e325a8f616c17e9e05ccd5021f4e83b60bd06fbedfd61e0f8fd6096`.
+
+Private evidence: `camera-free-archive-overlap-01/verification.json` under
+firmware-port-tests. The image and metadata used for the upload were synthetic;
+no production-meter request or NAS write was part of this trial.
+
+
+The instrumented repeat reported `settings_connection_failed` with HTTP status
+zero. The receiver recorded no TCP connection from the ESP32, although its TLS
+listener passed a local check with the configured trust anchor. This narrows the
+failure to establishing the connection; it does not prove a firewall, routing or
+firmware root cause. Detailed Windows firewall inspection was denied. No firewall
+rule was changed and the NAS was not contacted.
+
+Three saved-JPEG runs still matched reference output exactly, taking
+12.05–12.11 seconds. The maximum observed time for three sequential status requests
+was 0.516 seconds. No upload was acknowledged, so successful concurrent delivery
+and live capture cadence remain unverified. The actual served script maps the
+recorded failure to **Retrying upload** and connection guidance. This is a script
+check with recorded hardware status, not a rendered-browser check. Temporary
+archive configuration and synthetic queue files were removed, disabled archiving
+and unchanged configuration/profile were verified, and camera captures remained
+zero. Private evidence: `camera-free-archive-overlap-02/verification.json` and
+`served-ui-failure.json`; bundle evidence: `aiedge-archive-failure-diagnostics-01`.

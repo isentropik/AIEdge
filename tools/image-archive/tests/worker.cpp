@@ -1,5 +1,5 @@
 
-#include "ImageArchiveWorker.h"
+#include "ImageArchiveStatus.h"
 #include "ImageArchiveSha.h"
 #include <cassert>
 #include <cstdlib>
@@ -68,6 +68,14 @@ int main(int argc,char** argv){
     assert(started);assert(!startArchiveWorker(argv[1],d));
     try{task(taskArg);assert(false);}catch(Stop&){}
     auto status=archiveWorkerStatus();assert(status.engine.ready);
+    const char* reasons[]={"none","not_started","not_started","not_started","not_started","connection_failed","server_rejected","receipt_invalid","server_rejected","server_rejected","none"};
+    const unsigned codes[]={201,0,0,0,0,0,401,201,503,429,201};
+    assert(std::string(status.engine.lastUploadError)==reasons[mode]);
+    assert(status.engine.lastHttpStatus==codes[mode]);
+    assert(status.engine.lastAttemptMs==(mode==3||mode==4?0:1000));
+    auto redacted=status;redacted.engine.lastUploadError="secret token with \"quotes\"";
+    const auto json=archiveStatusJson(redacted,false,0);
+    assert(json.find("secret")==std::string::npos && json.find("upload_failed")!=std::string::npos);
     assert(status.resources.sampledUs==1000000&&status.resources.stackMinimumBytes==1024);
     assert(status.resources.internalFree==600&&status.resources.psramLargest==240&&status.resources.psramMinimum==180);
     if(mode==0||mode==10){assert(status.handedOff==1&&status.engine.uploaded==1&&status.engine.pending==0);assert(allocations==1&&frees==1);}

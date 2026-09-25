@@ -11,6 +11,9 @@ struct EngineStatus {
     uint64_t stored=0, uploaded=0, rejected=0, failures=0, cleanupFailures=0, settingsCleanupDeferred=0;
     uint32_t pending=0, blocked=0, acknowledged=0;
     Recovery recovery;
+    unsigned lastHttpStatus=0;
+    uint64_t lastAttemptMs=0;
+    const char* lastUploadError="not_started";
 };
 // All methods belong to one worker. Capture callbacks must hand off owned bytes
 // to that worker, never call this concurrently with network/disk operations.
@@ -95,11 +98,21 @@ public:
         recount();
         Ticket ticket;if(!queue.begin(now(),ticket))return cleaned;
         const auto attempt=upload(root,ticket);
-        if(!queue.finish(ticket,now(),attempt.status,attempt.receipt)){state.ready=false;++state.failures;return false;}
+        const auto finished=now();
+        state.lastAttemptMs=finished;
+        state.lastHttpStatus=attempt.status>=100 && attempt.status<=599?static_cast<unsigned>(attempt.status):0;
+        state.lastUploadError=uploadErrorCode(attempt.error);
+        if(!queue.finish(ticket,finished,attempt.status,attempt.receipt)){
+            state.lastUploadError="queue_transition_failed";state.ready=false;++state.failures;return false;
+        }
         if(queue.acknowledged(ticket)) {
+            state.lastUploadError="none";
             ++state.uploaded;
             cleanup(ticket);
-        } else ++state.failures;
+        } else {
+            if(!attempt.error)state.lastUploadError=(attempt.status==200 || attempt.status==201)?"receipt_invalid":"server_rejected";
+            ++state.failures;
+        }
         recount();return true;
     }
     EngineStatus status() const {return state;}

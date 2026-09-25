@@ -12,6 +12,8 @@ inline std::string archiveStatusJson(const WorkerStatus& status,bool captureEnab
     number("stored",e.stored);number("upload_acknowledgments",e.uploaded);number("enqueue_rejected",e.rejected);
     number("upload_failures",e.failures);number("cleanup_failures",e.cleanupFailures);number("settings_cleanup_deferred",e.settingsCleanupDeferred);
     number("pending",e.pending);number("blocked",e.blocked);number("acknowledged_awaiting_cleanup",e.acknowledged);
+    number("last_http_status",e.lastHttpStatus);number("last_attempt_ms",e.lastAttemptMs);
+    result+=",\"last_upload_error\":\""+std::string(uploadErrorCode(e.lastUploadError))+"\"";
     const auto& m=status.resources;
     result+=",\"resources\":{\"sampled_us\":"+std::to_string(m.sampledUs);
     number("internal_free_bytes",m.internalFree);number("internal_largest_block_bytes",m.internalLargest);

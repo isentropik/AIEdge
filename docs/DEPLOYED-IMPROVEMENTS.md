@@ -537,3 +537,22 @@ were not changed. The prior rollback bundle remains
 `8cf81054ac5c39fc4b6f01b1a8e6e41d11a28409b0a12287d31636e03e341d50`.
 Local evidence: `needle-training/firmware-port-tests/aiedge-relative-source-paths-04/`
 (package result, path audit, OTA, missing diagnostic, served metadata and export).
+
+
+## September 25 — specific archive upload failures
+
+Installed and verified on the test ESP32 in bundle
+`edda76191e325a8f616c17e9e05ccd5021f4e83b60bd06fbedfd61e0f8fd6096`.
+The status API includes a safe last-error code, HTTP status and attempt completion
+time since boot. The archive page explains connection, credential, receipt and
+saved-file failures; pending failures display **Retrying upload**. Unknown text
+is redacted and successful acknowledgments clear the last error without erasing
+historical counters. Existing retry and retention policy is unchanged.
+
+The build passed 91 host and 10 UI checks; OTA/boot, baseline configuration,
+profile/password, served script and real error-field behavior were verified.
+The diagnostic trial identified failure to connect to the local receiver and
+restored disabled archiving. Successful concurrent delivery remains open; this
+entry records the diagnostic improvement, not a storage-connectivity fix.
+Public installer and production meter are unchanged. Evidence and limitations:
+[image-delivery failures](IMAGE-ARCHIVE-FAILURES.md).
