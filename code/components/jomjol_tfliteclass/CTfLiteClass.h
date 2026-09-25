@@ -11,6 +11,7 @@
 #include "esp_log.h"
 
 #include "CImageBasis.h"
+#include "PolarModelRoles.h"
 
 
 class CTfLiteClass
@@ -26,6 +27,7 @@ class CTfLiteClass
 
         unsigned char *modelfile = NULL;
         size_t loadedModelBytes = 0;
+        size_t polarWorkspaceOffset = 0;
         bool verifiedPolarModel = false;
 
 
@@ -47,7 +49,9 @@ class CTfLiteClass
         ~CTfLiteClass();        
         bool LoadModel(std::string _fn);
         bool LoadFrozenPolarModel(std::string filename);
-        // Workspace shares the reserved model region and expires with this object.
+        bool LoadPolarModel(std::string filename, polar::ModelRole role);
+        // Workspace has a fixed boundary once borrowed and expires with this object.
+        // Subsequent model reads may not cross that boundary, even on failure.
         void* GetPolarWorkspace(size_t bytes);
         bool MakeAllocate();
         void GetInputTensorSize();

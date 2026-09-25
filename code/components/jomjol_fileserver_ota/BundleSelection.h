@@ -14,13 +14,21 @@ public:
  SelectionState state() const {return state_;}
  const std::string& id() const{return manifest_.id;}
  template<class Hash> bool load(const std::string& root,const std::string& bundleId,
-                               const std::string& runningAppHash,const std::string& frozenModelHash){
+                               const std::string& runningAppHash,const std::string& frozenModelHash,
+                               const std::map<std::string,File>& requiredAssets={}){
   if(attempted_)return false;
   attempted_=true;state_=SelectionState::Rejected;
   if(!hashValid(runningAppHash)||!hashValid(frozenModelHash))return false;
   Manifest candidate;
   const auto checked=verify<Hash>(root,bundleId,candidate);
   if(!checked.verified||candidate.appHash!=runningAppHash||candidate.modelHash!=frozenModelHash)return false;
+  // Requirements belong to the running application, not the supplied manifest.
+  // Verify all role identities before making any bundle asset visible.
+  for(const auto& item:requiredAssets){
+   const auto found=candidate.assets.find(item.first);
+   if(!item.second.bytes||!hashValid(item.second.hash)||found==candidate.assets.end()||
+      found->second.bytes!=item.second.bytes||found->second.hash!=item.second.hash)return false;
+  }
   root_=root;manifest_=candidate;state_=SelectionState::Selected;return true;
  }
  // Only immutable application assets are redirected. Config, images and logs
@@ -46,14 +54,15 @@ public:
  // Caller chooses required=true for managed installs; only an explicitly
  // optional, missing index permits legacy assets. No directory is created.
  template<class Hash> bool loadForApp(const std::string& base,
-       const std::string& appHash,const std::string& modelHash,bool required) {
+       const std::string& appHash,const std::string& modelHash,bool required,
+       const std::map<std::string,File>& requiredAssets={}) {
   if(attempted_)return false;
   auto rejected=[this](){attempted_=true;state_=SelectionState::Rejected;return false;};
   if(!hashValid(appHash)||!hashValid(modelHash))return rejected();
   const std::string index=base+"/apps/"+appHash+".id";
   struct stat st{};
   if(stat(index.c_str(),&st)!=0){
-   if(errno==ENOENT&&!required){attempted_=true;return true;}
+   if(errno==ENOENT&&!required&&requiredAssets.empty()){attempted_=true;return true;}
    return rejected();
   }
   if(!S_ISREG(st.st_mode)||(st.st_size!=64&&st.st_size!=65))return rejected();
@@ -65,7 +74,7 @@ public:
   if(!ok||(n==65&&bytes[64]!='\n'))return rejected();
   const std::string id(bytes,64);
   if(!hashValid(id))return rejected();
-  return load<Hash>(base+"/objects/"+id,id,appHash,modelHash);
+  return load<Hash>(base+"/objects/"+id,id,appHash,modelHash,requiredAssets);
  }
  std::string resolve(const std::string& asset,const std::string& legacy) const {
   if(state_==SelectionState::Legacy)return legacy;

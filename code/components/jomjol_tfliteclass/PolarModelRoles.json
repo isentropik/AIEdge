@@ -1,0 +1,1 @@
+{"format":"aiedge-polar-roles-v1","roles":[{"asset":"model/polar-main-int8.tflite","bytes":12720,"dial_indices":[0,1,2,3,4],"role":"Main","sha256":"9c145e67e9008bf1e17567cd69baa48ce54af3b1d6b7fa0e1aeeb6b5ce9ec6a5"},{"asset":"model/polar-int8.tflite","bytes":12720,"dial_indices":[5],"role":"Secondary","sha256":"b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0"}]}

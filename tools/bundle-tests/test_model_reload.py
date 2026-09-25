@@ -51,7 +51,7 @@ class CTfLiteClass {
 public:
  Resolver resolver;const tflite::Model* model=nullptr;tflite::MicroInterpreter* interpreter=nullptr;
  int kTensorArenaSize;uint8_t* tensor_arena=nullptr;unsigned char* modelfile=nullptr;
- size_t loadedModelBytes=0;bool verifiedPolarModel=false,resolverAttempted=false,resolverReady=false;
+ size_t loadedModelBytes=0,polarWorkspaceOffset=0;bool verifiedPolarModel=false,resolverAttempted=false,resolverReady=false;
  float* input=nullptr;void* output=nullptr;
  CTfLiteClass();~CTfLiteClass();bool MakeStaticResolver();void ResetInterpreter();bool MakeAllocate();
  long GetFileSize(std::string);bool ReadFileToModel(std::string);bool LoadModel(std::string);

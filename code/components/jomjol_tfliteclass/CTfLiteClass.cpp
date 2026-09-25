@@ -336,8 +336,9 @@ bool CTfLiteClass::ReadFileToModel(std::string _fn)
         LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Model file doesn't exist: " + _fn + "!");
         return false;
     }
-    else if(size > MAX_MODEL_SIZE) {
-        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unable to load model '" + _fn + "'! It does not fit in the reserved shared memory in PSRAM!");
+    else if(size <= 0 || size > MAX_MODEL_SIZE ||
+            (polarWorkspaceOffset && static_cast<size_t>(size) > polarWorkspaceOffset)) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Unable to load model '" + _fn + "'! Invalid size or overlaps reserved workspace in PSRAM!");
         return false;
     }
 
@@ -361,7 +362,8 @@ bool CTfLiteClass::ReadFileToModel(std::string _fn)
         if (pFile != NULL)
         {
           const size_t received = fread(modelfile, 1, size, pFile);
-          const bool complete = received == static_cast<size_t>(size) && !ferror(pFile);
+          const bool complete = received == static_cast<size_t>(size) &&
+              fgetc(pFile) == EOF && !ferror(pFile);
           fclose(pFile);
           if (!complete) {
               LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "Incomplete model read");
@@ -409,16 +411,24 @@ bool CTfLiteClass::LoadModel(std::string _fn)
 
 bool CTfLiteClass::LoadFrozenPolarModel(std::string filename)
 {
-    // Hash the exact loaded bytes before FlatBuffer interpretation; no separate
-    // precheck/open race and no fallback to another model with similar tensors.
-    if (!ReadFileToModel(filename) || loadedModelBytes != 12720) return false;
-    static const uint8_t expected[32] = {
-        0xb0,0x39,0xdd,0x72,0xfa,0x6c,0xb2,0xc8,0x21,0xf9,0xde,0x21,0x54,0xa4,0x48,0x79,
-        0xd5,0xce,0x96,0x20,0xc8,0x62,0xa2,0x12,0x91,0x76,0xe2,0xe1,0x8d,0xb0,0x5e,0xd0
-    };
+    // Preserve the original model contract until all routing consumers migrate.
+    return LoadPolarModel(filename, polar::ModelRole::Secondary);
+}
+
+bool CTfLiteClass::LoadPolarModel(std::string filename, polar::ModelRole role)
+{
+    const auto* spec = polar::modelSpec(role);
+    if (!spec) {
+        ResetInterpreter(); model = nullptr; loadedModelBytes = 0;
+        verifiedPolarModel = false;
+        return false;
+    }
+    // Verify exact loaded bytes before interpreting the FlatBuffer. No fallback
+    // to another role, similarly shaped model, or previously loaded interpreter.
+    if (!ReadFileToModel(filename) || loadedModelBytes != spec->bytes) return false;
     uint8_t actual[32];
     if (mbedtls_sha256(modelfile, loadedModelBytes, actual, 0) != 0 ||
-        std::memcmp(actual, expected, sizeof(expected)) != 0) return false;
+        std::memcmp(actual, spec->digest, sizeof(actual)) != 0) return false;
     model = tflite::GetModel(modelfile);
     verifiedPolarModel = model != nullptr;
     return verifiedPolarModel;
@@ -426,12 +436,13 @@ bool CTfLiteClass::LoadFrozenPolarModel(std::string filename)
 
 void* CTfLiteClass::GetPolarWorkspace(size_t bytes)
 {
-    if (!verifiedPolarModel || !modelfile) return nullptr;
+    if (!verifiedPolarModel || !modelfile || !bytes) return nullptr;
     const uintptr_t base = reinterpret_cast<uintptr_t>(modelfile);
     const uintptr_t start = (base + loadedModelBytes + 7u) & ~uintptr_t(7u);
-    const size_t offset = start - base;
+    const size_t offset = polarWorkspaceOffset ? polarWorkspaceOffset : start - base;
     if (offset > MAX_MODEL_SIZE || bytes > MAX_MODEL_SIZE - offset) return nullptr;
-    return reinterpret_cast<void*>(start);
+    polarWorkspaceOffset = offset;
+    return reinterpret_cast<void*>(base + offset);
 }
 
 
