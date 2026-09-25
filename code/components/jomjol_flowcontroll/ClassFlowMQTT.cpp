@@ -362,16 +362,7 @@ bool ClassFlowMQTT::doFlow(string zwtime)
     //     success &= MQTTPublish(topic, result, qos, SetRetainFlag);
     // }
     
-    // Separate diagnostic snapshot. Never reinterpret legacy totals or retain an
-    // old accounting estimate as the current state after reconnect/restart.
-    if (PublishAccountingStatus && getMQTTisConnected()) {
-        const auto accounting=PolarAccounting::snapshot();
-        const std::string payload="{\"schema\":\"meter-accounting-v1\",\"published_at_uptime_us\":"+
-            std::to_string(esp_timer_get_time())+",\"current_boot_identity\":\""+
-            std::to_string(PolarAccounting::bootIdentity())+"\",\"snapshot\":"+
-            meter::statusWithDisplayJson(accounting,meter::activeDisplayUnit())+"}";
-        success &= MQTTPublish(maintopic+"/accounting/status",payload,qos,false);
-    }
+    success &= publishAccountingSnapshot();
 
     OldValue = result;
 
@@ -381,6 +372,19 @@ bool ClassFlowMQTT::doFlow(string zwtime)
     
     return success;
 }
+bool ClassFlowMQTT::publishAccountingSnapshot() {
+    if (disabled || !PublishAccountingStatus) return true;
+    if (!getMQTTisConnected()) return false;
+    // Reused by successful cycles and rejected analog frames. Non-retained,
+    // boot-scoped diagnostics must not republish previous legacy values.
+    const auto accounting=PolarAccounting::snapshot();
+    const std::string payload="{\"schema\":\"meter-accounting-v1\",\"published_at_uptime_us\":"+
+        std::to_string(esp_timer_get_time())+",\"current_boot_identity\":\""+
+        std::to_string(PolarAccounting::bootIdentity())+"\",\"snapshot\":"+
+        meter::statusWithDisplayJson(accounting,meter::activeDisplayUnit())+"}";
+    return MQTTPublish(maintopic+"/accounting/status",payload,1,false);
+}
+
 void ClassFlowMQTT::handleIdx(string _decsep, string _value)
 {
     string _digit, _decpos;

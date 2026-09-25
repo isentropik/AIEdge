@@ -38,6 +38,8 @@ public:
 
     bool ReadParameter(FILE* pfile, string& aktparamgraph);
     bool doFlow(string time);
+    // Diagnostic only: never reads or publishes legacy postprocessing values.
+    bool publishAccountingSnapshot();
     string name(){return "ClassFlowMQTT";};
 };
 #endif //CLASSFFLOWMQTT_H

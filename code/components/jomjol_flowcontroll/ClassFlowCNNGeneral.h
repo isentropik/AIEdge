@@ -73,6 +73,7 @@ public:
 
     void UpdateNameNumbers(std::vector<std::string> *_name_numbers);
 
+    bool usesPolarReader() const {return usePolarReader;}
     bool hasFrozenArchiveProfile(){return usePolarReader && validatePolarGeometry();}
 
     t_CNNType getCNNType(){return CNNType;};

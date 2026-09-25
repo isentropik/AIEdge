@@ -506,6 +506,14 @@ bool ClassFlowControll::doFlow(string time)
                 LogFile.WriteToFile(ESP_LOG_ERROR, TAG, aktstatusWithTime);
                 #ifdef ENABLE_MQTT
                     MQTTPublish(mqttServer_getMainTopic() + "/status", aktstatus, qos, false);
+                    if (FlowControll[i] == flowanalog && flowanalog->usesPolarReader()) {
+                        for (auto* stage : FlowControll) {
+                            if (stage->name() == "ClassFlowMQTT" &&
+                                !static_cast<ClassFlowMQTT*>(stage)->publishAccountingSnapshot())
+                                LogFile.WriteToFile(ESP_LOG_WARN, TAG,
+                                    "Accounting rejection status could not be published");
+                        }
+                    }
                 #endif
                 return false;
             }

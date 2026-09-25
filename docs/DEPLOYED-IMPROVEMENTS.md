@@ -422,3 +422,28 @@ browser-rendering, touch-coordinate or marker save/reload verification. Existing
 calibration and model files were not changed. Private evidence is retained in
 `aiedge-marker-dimensions-01/{ota,served-verification,saved-jpeg-smoke,RESTORE.md}`
 under firmware-port-tests. Rollback is the retained flow-assumptions-05 package.
+
+
+## Test-board rejected-reading accounting diagnostics — September 24, 2026
+
+Bundle `cdd03e4a92bdeef837144695555343af3d6b69769e216eecf39c72b5d1b924f3`
+is installed and verified. A rejected polar recognition now attempts the existing
+optional `/accounting/status` diagnostic before stopping the pipeline. The
+snapshot preserves the rejection reason and raw observations; normal reading
+publication remains skipped. The message uses the existing schema, boot identity,
+uptime, QoS 1 and non-retained behavior. Disabled accounting diagnostics or MQTT
+stay silent. A failed diagnostic send is logged without another capture, retry,
+reboot or replacement of the original recognition failure.
+
+The actual MQTT-source host harness covers an isolated diagnostic with no
+postprocessor, disabled publication, disconnected transport, send failure and
+recovery. The actual controller harness passes 31 cases, including polar versus
+other-reader failures, skipped normal publishing and next-cycle recovery. The
+clean ESP32 build passed all 86 host and 9 interface scripts. Recorded OTA and
+restart verified the running bundle, unchanged configuration/display profile and
+preserved website password. No MQTT setting or production device was changed.
+Actual rejection-message delivery through a broker remains unverified; the host
+transport assertions are not a broker-delivery test.
+
+Local package, installation, regression logs and rollback instructions are in
+`needle-training/firmware-port-tests/aiedge-rejection-status-01`.

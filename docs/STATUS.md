@@ -14,7 +14,7 @@ migration remains deferred while saved-image and test-board testing continues.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `bcb755e540fdf1156da1f17549c9c4b17f310b8680234f1af7cf14554537e506`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `cdd03e4a92bdeef837144695555343af3d6b69769e216eecf39c72b5d1b924f3`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
 | Camera | An earlier single-image, no-flash preview succeeded. The latest test boot reports camera unavailable; the website and saved display profile remain usable. | Resolve the latest 0x105 camera address-probe failure first; its physical cause is unresolved. Then place the camera at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
@@ -178,3 +178,13 @@ adjacent numbers agree would hide rather than resolve the uncertainty.
 Local evidence: `pivot-sensitivity-20260925/result.json`, with source/crop,
 calibration, model and script hashes. All source frames and crops retain their
 held-out exclusions.
+
+
+### Accounting diagnostic freshness after rejection
+
+The later test-board bundle `cdd03e4a92bdeef837144695555343af3d6b69769e216eecf39c72b5d1b924f3`
+also publishes the optional accounting snapshot when polar recognition rejects a
+frame. It does not resume normal reading publication or retry capture. The
+[deployment record](DEPLOYED-IMPROVEMENTS.md#test-board-rejected-reading-accounting-diagnostics--september-24-2026)
+distinguishes passing source-level transport tests and verified OTA from the
+still-unverified physical broker-delivery test.
