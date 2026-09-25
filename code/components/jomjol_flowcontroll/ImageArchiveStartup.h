@@ -1,3 +1,4 @@
+#include "PolarModelRoles.h"
 #pragma once
 #include "ImageArchiveConfigFile.h"
 #include "ImageArchiveDestination.h"
@@ -48,7 +49,7 @@ inline const char* startConfiguredArchive(bool frozenProfile,bool recoveryOnly=f
     if(!partition||esp_partition_get_sha256(partition,digest)!=ESP_OK)return "Image archive firmware identity unavailable";
     CaptureProfile profile;profile.device=config.device;profile.firmwareHash=archiveHex(digest,32);
     unsigned char nonce[16];esp_fill_random(nonce,sizeof(nonce));profile.boot=archiveHex(nonce,sizeof(nonce));
-    profile.modelHash=polar::modelIdentity;profile.calibrationHash=polar::geometryIdentity;
+    profile.modelHash=polar::routedReaderIdentity;profile.calibrationHash=polar::geometryIdentity;
     profile.width=640;profile.height=480;
     const auto key=archiveQueueKey<Sha256>(destination,config.device);
     if(key.size()!=64)return "Image archive destination identity unavailable";

@@ -1,3 +1,4 @@
+#include "PolarModelRoles.h"
 #pragma once
 #include "MeterAccountingController.h"
 #include "FileConfigStorage.h"
@@ -8,7 +9,7 @@
 namespace PolarAccounting {
 // Called only by the processing owner; readers receive a locked value copy.
 inline meter::AccountingController& controller() {
-    static meter::AccountingController value("/sdcard/config",polar::modelIdentity,polar::geometryIdentity);
+    static meter::AccountingController value("/sdcard/config",polar::routedReaderIdentity,polar::geometryIdentity);
     return value;
 }
 inline meter::SessionResult& published() {static meter::SessionResult value;return value;}

@@ -18,6 +18,8 @@ source=(comp/'CTfLiteClass.cpp').read_text(encoding='utf-8')
 def part(start,end):return source[source.index(start):source.index(end,source.index(start))]
 methods=part('void CTfLiteClass::ResetInterpreter()', 'float CTfLiteClass::GetOutputValue')
 methods+=source[source.index('long CTfLiteClass::GetFileSize('):]
+routing=(comp/'PolarModelRouting.h').read_text(encoding='utf-8')
+routing=routing[routing.index('namespace polar {'):]
 allocator=(root/'code/components/jomjol_helper/psram.cpp').read_text(encoding='utf-8')
 allocator=allocator[allocator.index('void *psram_get_shared_tensor_arena_memory(void)'):allocator.index('void *malloc_psram_heap(')]
 harness=r"""
@@ -29,6 +31,7 @@ harness=r"""
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
+#include <map>
 const int ESP_LOG_DEBUG=0,ESP_LOG_ERROR=1,TENSOR_ARENA_SIZE=256,MAX_MODEL_SIZE=65536;
 const char* TAG="test";unsigned char region[TENSOR_ARENA_SIZE+MAX_MODEL_SIZE];
 void* shared_region=region;std::string sharedMemoryInUseFor;int interpreted=0,live=0,destroyed=0;
@@ -45,6 +48,8 @@ struct MicroInterpreter{
 };}
 class CTfLiteClass {
 public:
+ bool allocateOk=true,contractOk=true;
+ bool MakeAllocate(){return model && allocateOk;}bool HasPolarTensorContract(){return contractOk;}
  const tflite::Model* model=nullptr;tflite::MicroInterpreter* interpreter=nullptr;
  int kTensorArenaSize;uint8_t* tensor_arena=nullptr;unsigned char* modelfile=nullptr;
  size_t loadedModelBytes=0,polarWorkspaceOffset=0;bool verifiedPolarModel=false;
@@ -54,6 +59,14 @@ public:
  bool LoadPolarModel(std::string,polar::ModelRole);void* GetPolarWorkspace(size_t);
 };
 """+methods+r"""
+namespace MeterBundle {
+struct Selection {
+ std::map<std::string,std::string> assets;
+ std::string resolve(const std::string& asset,const std::string& legacy){assert(legacy.empty());return assets.count(asset)?assets[asset]:legacy;}
+};
+Selection& bootSelection(){static Selection s;return s;}
+}
+"""+routing+r"""
 int main(int argc,char**argv){
  assert(argc==8);std::string main=argv[1],secondary=argv[2],bad=argv[3],shortFile=argv[4],longFile=argv[5],empty=argv[6],large=argv[7];
  assert(std::string(polar::mainModel.hex)!=polar::secondaryModel.hex);
@@ -91,6 +104,17 @@ int main(int argc,char**argv){
  // A generic small load must not move a previously borrowed workspace boundary.
  assert(net.LoadModel(empty+".small"));assert(!net.GetPolarWorkspace(512));intact();
  assert(net.LoadPolarModel(main,polar::ModelRole::Main));assert(net.GetPolarWorkspace(512)==workspace);intact();
+ auto& selected=MeterBundle::bootSelection();
+ assert(!polar::loadRole(net,polar::ModelRole::Main));
+ selected.assets[polar::mainModel.asset]=main;selected.assets[polar::secondaryModel.asset]=secondary;
+ assert(polar::validateBothRoles(net));intact();
+ selected.assets[polar::mainModel.asset]=secondary;assert(!polar::validateBothRoles(net));
+ selected.assets[polar::mainModel.asset]=main;selected.assets[polar::secondaryModel.asset]=main;assert(!polar::validateBothRoles(net));
+ selected.assets[polar::secondaryModel.asset]=secondary;
+ net.allocateOk=false;assert(!polar::loadRole(net,polar::ModelRole::Main));net.allocateOk=true;
+ net.contractOk=false;assert(!polar::loadRole(net,polar::ModelRole::Main));net.contractOk=true;
+ assert(!polar::loadRole(net,static_cast<polar::ModelRole>(99)));
+ assert(polar::validateBothRoles(net));intact();
 }
 """
 with tempfile.TemporaryDirectory(prefix='aiedge-model-roles-') as temp:

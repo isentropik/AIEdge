@@ -2,6 +2,7 @@
 #include "RuntimeBundle.h"
 #include "../jomjol_flowcontroll/ImageArchiveSha.h"
 #include "PolarIdentity.h"
+#include "PolarModelRoles.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
 namespace MeterBundle {
@@ -14,7 +15,11 @@ inline bool initializeBootBundle(bool required) {
   const char* hex="0123456789abcdef";
   for(unsigned char value:digest){identity+=hex[value>>4];identity+=hex[value&15];}
  }
+ std::map<std::string,File> roles;
+ for(const auto* spec : {&polar::mainModel,&polar::secondaryModel}){
+  File expected;expected.bytes=spec->bytes;expected.hash=spec->hex;roles[spec->asset]=expected;
+ }
  return bootSelection().loadForApp<ImageArchive::Sha256>(
-  "/sdcard/bundles",identity,polar::modelIdentity,required);
+  "/sdcard/bundles",identity,polar::modelIdentity,required,roles);
 }
 }

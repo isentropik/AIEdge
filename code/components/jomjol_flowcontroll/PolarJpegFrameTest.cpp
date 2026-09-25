@@ -1,3 +1,4 @@
+#include "PolarModelRouting.h"
 #include "PolarRuntimeTest.h"
 #include "PolarReplayCatalog.h"
 #include "ProcessingAccess.h"
@@ -52,7 +53,7 @@ PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame) {
     constexpr size_t inputBytes=15360,outputBytes=360;
     size_t jpegBytes=57573;
     const char* jpegHash="b6c9a9a0bd291c053535c57fd4f9bf979c12f90ca00a6051a6d9d0de0d6d667b";
-    const char* vectorsHash="a5bd8e61d2be7c94a40c9d9eaec9bab26f782cb931849aa9a50186db9122f919";
+    const char* vectorsHash="65aed3502cb5a7122ff6c10a8d66ab5fdde0a727a6931250aef8e5249771a193";
     std::string jpegPath="/sdcard/config/polar-runtime-frame.jpg",vectorsPath="/sdcard/config/polar-jpeg-vectors.bin";
     if(replayFrame>=0){
         const auto& frame=PolarReplay::frames[replayFrame];jpegBytes=frame.jpegBytes;
@@ -101,8 +102,7 @@ PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame) {
         result.status="jpeg_fixture_rejected";return result;
     }
     CTfLiteClass network;
-    if(!network.LoadFrozenPolarModel(MeterBundle::frozenModelPath("/sdcard/config/polar-int8.tflite")) ||
-       !network.MakeAllocate() || !network.HasPolarTensorContract()){
+    if(!polar::loadRole(network,polar::ModelRole::Main)){
         result.status="model_or_allocation_rejected";return result;
     }
     bool same=true;int8_t output[outputBytes];
@@ -112,6 +112,9 @@ PolarRuntimeTestResult runPolarJpegFrameTest(int replayFrame) {
         for(size_t j=0;j<inputBytes;++j)
             if(features.get()[i*inputBytes+j]!=expectedFeatures[j])++result.featureDifferences[i];
         const auto begin=esp_timer_get_time();
+        if(i==5 && !polar::loadRole(network,polar::ModelRole::Secondary)){
+            result.status="secondary_model_rejected";return result;
+        }
         if(!network.InferPolarScores(reinterpret_cast<int8_t*>(features.get()+i*inputBytes),inputBytes,output,outputBytes)){
             result.status="inference_failed";return result;
         }

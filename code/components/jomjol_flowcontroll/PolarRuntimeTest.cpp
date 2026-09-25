@@ -1,3 +1,4 @@
+#include "PolarModelRouting.h"
 #include "../jomjol_controlcamera/CameraAccess.h"
 #include "../jomjol_fileserver_ota/RuntimeBundle.h"
 #include "PolarRuntimeTest.h"
@@ -20,8 +21,7 @@ PolarRuntimeTestResult runPolarRuntimeTest() {
     CameraAccess camera;
     if(!camera){result.status="camera_busy";return result;}
     CTfLiteClass network;
-    if(!network.LoadFrozenPolarModel(MeterBundle::frozenModelPath("/sdcard/config/polar-int8.tflite")) ||
-       !network.MakeAllocate() || !network.HasPolarTensorContract()) {
+    if(!polar::loadRole(network,polar::ModelRole::Main)) {
         result.status="model_or_allocation_rejected";return result;
     }
     constexpr size_t inputBytes=384*40,outputBytes=360;
@@ -36,9 +36,7 @@ PolarRuntimeTestResult runPolarRuntimeTest() {
     if(!readOk){result.status="fixture_length_or_read_error";return result;}
     // Fixed vectors exported from the held-out frame; expected outputs are
     // desktop runtime results, not labels or proof of meter reading accuracy.
-    const unsigned char expectedHash[32]={
-        0xf3,0xc7,0xee,0x01,0xdf,0x83,0x3f,0x25,0x81,0x79,0x53,0x9e,0xb7,0x63,0xaa,0xcb,
-        0x7e,0x2f,0x5c,0xe1,0x52,0x8e,0x1d,0xf4,0x01,0xa7,0x9e,0x83,0x69,0xbc,0x18,0x8d};
+    const unsigned char expectedHash[32]={0x76,0x59,0x2a,0x50,0x85,0x1b,0xe4,0xc2,0x37,0x85,0x2a,0xe5,0xd6,0xeb,0x2e,0x3d,0x85,0xf4,0xa2,0x90,0xfa,0x94,0x95,0xcc,0xca,0x9c,0x4c,0x5c,0x19,0x5a,0xc1,0x75};
     unsigned char hash[32];
     if(mbedtls_sha256(fixture,fixtureBytes,hash,0)!=0 ||
        std::memcmp(hash,expectedHash,32) || std::memcmp(fixture,"PLRTEST1",8)) {
@@ -50,6 +48,9 @@ PolarRuntimeTestResult runPolarRuntimeTest() {
         const auto* input=reinterpret_cast<const int8_t*>(fixture+8+i*(inputBytes+outputBytes));
         const auto* expected=input+inputBytes;
         const int64_t start=esp_timer_get_time();
+        if(i==5 && !polar::loadRole(network,polar::ModelRole::Secondary)){
+            result.status="secondary_model_rejected";return result;
+        }
         if(!network.InferPolarScores(input,inputBytes,output,outputBytes)) {
             result.status="inference_failed";return result;
         }

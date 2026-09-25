@@ -1,3 +1,4 @@
+#include "PolarModelRouting.h"
 #include "../jomjol_controlcamera/CameraAccess.h"
 #include "PolarRuntimeTest.h"
 #include "ProcessingAccess.h"
@@ -49,12 +50,11 @@ PolarRuntimeTestResult runPolarFullFrameTest() {
     File vectors(std::fopen(MeterBundle::runtimePath("/sdcard/config/polar-runtime-vectors.bin").c_str(),"rb"),std::fclose);
     constexpr size_t rgbBytes=640*480*3,inputBytes=384*40,outputBytes=360;
     if(!verify(frame.get(),rgbBytes,"a8ae2891563daff59ef44e02e87921f8b868c4e3f5c04fe283882989bbd55270") ||
-       !verify(vectors.get(),8+6*(inputBytes+outputBytes),"f3c7ee01df833f258179539eb763aacb7e2f5ce1528e1df401a79e8369bc188d")) {
+       !verify(vectors.get(),8+6*(inputBytes+outputBytes),"76592a50851be4c237852ae5d6eb2e3d85f4a290fa9495ccca9c4c5c195ac175")) {
         result.status="full_frame_fixture_rejected";return result;
     }
     CTfLiteClass network;
-    if(!network.LoadFrozenPolarModel(MeterBundle::frozenModelPath("/sdcard/config/polar-int8.tflite")) ||
-       !network.MakeAllocate() || !network.HasPolarTensorContract()) {
+    if(!polar::loadRole(network,polar::ModelRole::Main)) {
         result.status="model_or_allocation_rejected";return result;
     }
     // Reuse the reserved model workspace for RGB; the connected camera leaves
@@ -84,6 +84,9 @@ PolarRuntimeTestResult runPolarFullFrameTest() {
         }
         if(std::fread(expected,1,outputBytes,vectors.get())!=outputBytes){result.status="fixture_read_failed";return result;}
         begin=esp_timer_get_time();
+        if(i==5 && !polar::loadRole(network,polar::ModelRole::Secondary)){
+            result.status="secondary_model_rejected";return result;
+        }
         if(!network.InferPolarScores(scratch->features,inputBytes,output,outputBytes)){result.status="inference_failed";return result;}
         result.inferenceUs[i]=esp_timer_get_time()-begin;
         for(size_t j=0;j<outputBytes;++j) {

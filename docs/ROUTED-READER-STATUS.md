@@ -1,64 +1,81 @@
-# Two-model reader integration
+# Two-model reader: verified on the test board
 
-Status: local integration in progress. The test board still runs the original
-frozen model under bundle
+The five main dials now use the linked-target candidate. The secondary wheel keeps
+the original model. The test-board update passed boot, configuration, profile and
+password checks. The production meter has not been modified.
+
+Current test bundle:
+`516a2c5807a66807e9a14c3db964b1b02bd7b65e808564f409eb7b81013d2876`.
+Package SHA256:
+`bce0b4bc5a97930b29aa0333fbdaa4d804107c2cf3f9ad67c4e6efe6e3eb1da6`.
+Previous bundle retained for rollback:
 `2be8e759f4275bfe7fe9ca9507111166655f5adadd2263035ad3f137e1bbd685`.
-No production configuration or models were changed.
 
-The candidate assigns five main dials to the linked-target model and keeps the
-original model for the secondary wheel. The compiled contract is generated from
-actual model artifacts in `PolarModelRoles.h` and `PolarModelRoles.json`:
+| Check | Result |
+| --- | --- |
+| Clean build | 90 host scripts and 9 UI scripts passed |
+| Raw-vector hardware inference | All six output tensors matched exactly |
+| Full RGB frame | All features and outputs matched; 19.356447 seconds |
+| Fifteen JPEG replays, 30-second start slots | All features and outputs matched |
+| JPEG time | 11.57-11.90 seconds; median 11.75 seconds |
+| Missed replay slots / restarts | Zero / zero |
+| Camera captures | Zero |
+
+Saved-image tests bypass camera capture and normal publication. They demonstrate
+on-board preprocessing, model switching and reference-runtime parity, not live
+capture cadence or independent reading accuracy. Free heap was 2,015,219 bytes
+before the replay series and 2,015,227 afterward; these two observations are not
+a general memory-leak proof. Camera initialization still reports error 0x105.
+
+## Model and update integrity
 
 | Role | SHA256 |
 | --- | --- |
 | Main | `9c145e67e9008bf1e17567cd69baa48ce54af3b1d6b7fa0e1aeeb6b5ce9ec6a5` |
 | Secondary | `b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0` |
 
-Both files contain 12,720 bytes. The complete routing identity is
+Both models are 12,720 bytes. The complete reader identity is
 `deb371204699a147e4fed745dc06cb1acbd45b2abf01353a4b81cdc1bd5858d4`.
-It is not yet the active accounting identity.
+Accounting, history and archived image metadata use this identity. Incompatible
+older checkpoints are rejected and retained; they are not erased or reinterpreted.
+A retained incompatible checkpoint prevents accounting activation until resolved.
 
-## Implemented and checked locally
+Boot requires both compiled model identities before exposing bundle assets. Each
+load checks the exact bytes again before interpreting them. Model switching uses
+one interpreter owner; its borrowed workspace retains a fixed boundary. A failed
+late switch leaves all six readings rejected. Calibration and tolerances did not
+change. The v2 primary model identity remains compatible with earlier installers,
+while required extra assets are enforced by the new application's boot contract.
 
-- Role loading hashes the exact bytes before interpreting the model. It rejects
-  incorrect roles, corruption, missing files, invalid lengths and invalid enums.
-- Once borrowed, the workspace boundary remains fixed. A later read cannot
-  overwrite the workspace, and a smaller model cannot move its address.
-- Actual-method tests with real SHA256 and file I/O pass six model switches and
-  nine rejected loads, preserving the workspace. The interpreter is stubbed;
-  this does not prove hardware switching or tensor-arena allocation behavior.
-- Bundle selection accepts application-supplied required asset identities and
-  checks them before exposing any asset. Required roles cannot use legacy
-  fallback, even in optional mode. Old callers retain their existing contract.
-- Existing v2 staging verifies an extra main-model asset. The old primary hash
-  remains unchanged. The required-role checks pass valid selection and seven
-  rejection cases alongside the existing bundle and transaction regressions.
-- 32 diagnostic vector files (192 dial vectors, including repeated dense/sparse
-  inputs) were regenerated locally. Every original output matched reference
-  inference first; input tensors and secondary outputs remain byte-identical.
-  These are parity fixtures, not new labels, training data, or independent poses.
-
-Reproduce the loader check with Python, ziglang, ESP-IDF sources and the two
-model artifacts:
+The role loader's host regression uses actual file I/O, SHA256 and allocator code
+with a stub interpreter. It covers six switches, nine rejected loads, workspace
+preservation, missing/swapped assets and allocation/tensor-contract failures:
 
 ```
 python tools/bundle-tests/test_model_roles.py --idf PATH_TO_ESP_IDF --main-model PATH_TO_MAIN_MODEL --secondary-model PATH_TO_SECONDARY_MODEL
 ```
 
-The role APIs also compile successfully in the ESP32 managed build. This was
-an incremental compile check, not a packaged clean release or deployment.
+The full suite also caught a receiver concurrency failure on Windows. Short
+publication and readback operations are now serialized within the receiver
+process. All 106 public receiver tests pass. Cross-process and genuine storage
+errors still propagate without acknowledgement or blind retry.
 
-## Still required before activation
+## Remaining validation
 
-Connect boot selection to both compiled role requirements; update production
-recognition, initialization and every diagnostic to switch roles consistently;
-regenerate diagnostic catalog hashes; package both models; and apply the new
-complete reader identity to accounting, history and image metadata. Verify that
-old checkpoints are rejected without being silently reinterpreted or erased.
-Then run the full clean build, test-board OTA, exact replay comparisons and
-model-switch timing/memory tests. Do not infer this work is deployed from the
-presence of the role API or generated contract.
+The selected combination passed 27 reused reviewed crops; these informed model
+selection and do not establish independent accuracy. One fresh protected cached
+frame passed alignment, visibility and main-dial consistency in both dense and
+sparse preprocessing, but remains unlabeled and excluded from training. Thirty-two
+parity fixture files contain 192 dial vectors, including repeated dense/sparse
+inputs; they are not 192 independent examples.
 
-The selected combination passed 27 reused reviewed crops; that influenced model
-selection and does not establish independent real-world accuracy. Fresh validation
-and live-camera evidence remain required.
+Fresh labeled coverage, live capture and publication timing, physical LED checks,
+and end-to-end remote-storage validation remain separate requirements. Test-board
+replays do not establish those outcomes.
+
+Local evidence is under
+`needle-training/firmware-port-tests/aiedge-routed-reader-02/`: build/source hashes,
+packaged tests, OTA backup/readback, `role-diagnostics/`, `replay-30s/` and
+`verified-summary.json`. The earlier failed build is preserved in
+`aiedge-routed-reader-01/`. The fresh protected image was retrieved at
+2026-09-25T02:59:44Z; retrieval time is not its capture time.

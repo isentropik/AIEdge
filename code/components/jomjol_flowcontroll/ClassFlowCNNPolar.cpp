@@ -1,3 +1,4 @@
+#include "PolarModelRouting.h"
 #include "../jomjol_fileserver_ota/RuntimeBundle.h"
 #include "ClassFlowCNNGeneral.h"
 #include "CTfLiteClass.h"
@@ -53,10 +54,8 @@ bool ClassFlowCNNGeneral::doPolarNetwork(string time) {
         return fail("PolarV1 requires a 640x480 RGB aligned-stage image");
 
     CTfLiteClass network;
-    if (!network.LoadFrozenPolarModel(MeterBundle::frozenModelPath(FormatFileName("/sdcard" + cnnmodelfile))))
-        return fail("Frozen model hash/length/read rejected");
-    if (!network.MakeAllocate() || !network.HasPolarTensorContract())
-        return fail("PolarV1 tensor allocation/contract rejected");
+    if (!polar::loadRole(network,polar::ModelRole::Main))
+        return fail("Main model hash/allocation/contract rejected");
     void* storage = network.GetPolarWorkspace(sizeof(polar::PipelineScratch));
     if (!storage) return fail("No reserved polar workspace available");
     // POD scratch has no resources/destructor. Its lifetime ends with the model
@@ -82,6 +81,8 @@ bool ClassFlowCNNGeneral::doPolarNetwork(string time) {
             if (!polar::prepareDial(image->rgb_image,inverse,index,*scratch,nullptr,nullptr,true))
                 return fail(string(polar::dials[index].name) + ": " + polar::preparationStatusName(scratch->preparationStatus));
             const int64_t prepared = esp_timer_get_time();
+            if (index==5 && !polar::loadRole(network,polar::ModelRole::Secondary))
+                return fail("Secondary model hash/allocation/contract rejected");
             if (!network.InferPolar(scratch->features,384*40,item->CCW,readings[index]))
                 return fail(string(polar::dials[index].name) + ": inference rejected");
             const int64_t inferred = esp_timer_get_time();

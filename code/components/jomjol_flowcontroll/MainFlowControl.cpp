@@ -1,3 +1,4 @@
+#include "PolarModelRoles.h"
 #include "TelemetryBootIdentity.h"
 #include "ImageArchiveStatus.h"
 #include "ImageArchiveStartup.h"
@@ -408,7 +409,7 @@ static void historyWorker(void*) {
             if(!update)result.reason="storage_busy";
             else if(!PolarAccounting::controller().active())result.reason="accounting_not_initialized";
             else result=meter::readSegmentHistory("/sdcard/config",PolarAccounting::controller().activeNamespace(),
-                polar::modelIdentity,polar::geometryIdentity,PolarAccounting::snapshot().assumptions);
+                polar::routedReaderIdentity,polar::geometryIdentity,PolarAccounting::snapshot().assumptions);
         }
     }
     const auto finished=esp_timer_get_time();

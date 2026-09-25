@@ -1,3 +1,4 @@
+#include "PolarModelRouting.h"
 #include "../jomjol_fileserver_ota/RuntimeBundle.h"
 #include "ClassFlowCNNGeneral.h"
 
@@ -600,8 +601,7 @@ bool ClassFlowCNNGeneral::getNetworkParameter() {
     ESP_LOGD(TAG, "%s", zwcnn.c_str());
 
     if (usePolarReader) {
-        const bool valid = validatePolarGeometry() && tflite->LoadFrozenPolarModel(MeterBundle::frozenModelPath(zwcnn)) &&
-                           tflite->MakeAllocate() && tflite->HasPolarTensorContract();
+        const bool valid = validatePolarGeometry() && polar::validateBothRoles(*tflite);
         delete tflite;
         if (!valid) {
             LogFile.WriteToFile(ESP_LOG_ERROR, TAG, "PolarV1 model or geometry contract rejected");
