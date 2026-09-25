@@ -620,3 +620,32 @@ Bundle: `b970f9faf8dc904120623b0f680eef2e18ae32e1e4bd8e3069f39ad9643a3f2d`.
 Private evidence: `aiedge-value-keepalive-01/{ota,same-socket-after.json}` and
 `value-connection-reuse-20260925/same-socket-before.json` under firmware-port-tests.
 This private diagnostic package is not a public installer release.
+
+
+## Confirmed full-frame ESP32 replay and installation candidate — September 25
+
+An additional protected full JPEG now has an immutable diagnostic catalog entry.
+Both dense and reduced sampling passed exact six-dial feature and output-score
+parity on the ESP32: 20.440154 and 11.810084 seconds respectively. Three existing
+human confirmations from that image remain within 0.1 on the host-decoded output.
+These are confirmations of displayed estimates, not blind labels; two modes are
+not independent images. The endpoint does not run the normal controller decoder,
+capture a camera image, publish readings, or establish sustained capture cadence.
+No model training or calibration changed.
+
+Replay bundle: `bcccf13b0714ddd9b86a300aaab0c14108e518333bc7370a0803d510ba427271`.
+Private evidence: `aiedge-confirmed-frame-replay-01/confirmed-hardware-validation.json`.
+
+A separate installation candidate excludes all private replay photos and vectors.
+It passed 93 host checks, 11 UI checks, a clean build, package integrity checks and
+a test-board OTA/reboot verification with configuration and website password
+preserved. Matched USB application/bootloader images and the partition table were
+validated, and a private SD tree was prepared with analog recognition, setup mode
+on and MQTT inactive. This is a prepared production migration, not a completed
+production deployment or a tested clean production boot. Full flash/SD recovery
+copies and physical device identification still precede overwriting production.
+
+Current test-board bundle: `429745cc773b3f137e2fabd4c5857da68f36d3e38599a793c93a75fcdf2fee0a`.
+Private evidence: `aiedge-production-install-20260925-01/ota/result.json` and
+`production-install-kit-20260925-01/inventory.json`. The older public installer
+remains unchanged. Production has not been modified.
