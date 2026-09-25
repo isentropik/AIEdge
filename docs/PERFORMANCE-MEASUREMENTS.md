@@ -245,3 +245,47 @@ still unverified. No production device or public installer was changed.
 Private evidence: `alignment-rows-full-replay-20260924/` under firmware-port-tests,
 including preflight, every terminal result, status polls, unchanged-configuration
 checks, and reproducible `analyze.py` / `analysis.json`.
+
+
+## Saved-image jobs at 30-second start slots — September 24, 2026
+
+Test-board bundle
+`4b98fa31bf27aa1168df6ff58963172ae49c686a84b2098946ed68e9ec2d217a`
+completed ten saved-JPEG sparse diagnostic jobs, submitted by the host at
+30-second start slots. All 60 dial input tensors and output arrays matched the
+frozen references byte-for-byte. No host slots were skipped, no reboot occurred,
+and the final configuration was byte-identical. Camera attempts remained zero
+and the archive worker stayed disabled.
+
+| Measurement | Result |
+| --- | --- |
+| Total processing, median | 11.710 s |
+| Total processing, range | 11.564–11.759 s |
+| JPEG decode, median | 0.736 s |
+| Marker alignment, median | 2.007 s |
+| Six-dial preprocessing, median | 6.815 s |
+| Six-dial inference, median | 1.803 s |
+| Host submission intervals | 29.922–30.062 s |
+| Diagnostic-status HTTP requests | 30 successful, zero failed |
+| Status HTTP latency, median / empirical p95 / maximum | 250 / 391 / 437 ms |
+
+Stage medians do not necessarily sum to the total median; the diagnostic also
+has comparison/setup overhead. Submission intervals are measured on the host,
+not camera capture times or precise ESP32 job-start times. The observed host
+submission lateness relative to its slots was 172–266 ms. The firmware automatic
+scheduler was not exercised by this test.
+
+Reported free heap was 2,013,791 bytes before and 2,013,707 after; reported CPU
+temperature was 63 C before and 65 C after. These two snapshots cannot establish
+peak memory use, absence of leaks or sustained thermal safety.
+
+This is a short periodic-load regression using retained images and reference
+outputs. It adds no independent reading-accuracy evidence and excludes physical
+capture, normal result publication and archive traffic. Complete live 30-second
+capture-to-publication cadence remains unverified. Production and the public
+installer were unchanged.
+
+Private evidence: `scheduled-replay-20260925/` under firmware-port-tests, including
+preflight, all ten terminal results, status polls, boot checks, the monotonic
+host schedule, final invariants and reproducible `analyze.py` / `analysis.json`.
+The folder uses the UTC date; this trial ran September 24 in Pacific time.
