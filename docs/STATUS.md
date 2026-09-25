@@ -14,11 +14,11 @@ migration remains deferred while saved-image and test-board testing continues.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `cdd03e4a92bdeef837144695555343af3d6b69769e216eecf39c72b5d1b924f3`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `8cf81054ac5c39fc4b6f01b1a8e6e41d11a28409b0a12287d31636e03e341d50`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
 | Camera | An earlier single-image, no-flash preview succeeded. The latest test boot reports camera unavailable; the website and saved display profile remain usable. | Resolve the latest 0x105 camera address-probe failure first; its physical cause is unresolved. Then place the camera at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
-| Processing time | Latest three-image saved-JPEG comparison: 13.60-second median with exact reference parity (previous bundle: 13.97 seconds). Five normal-path SD surrogate cycles took 21.21–21.36 seconds at approximately 30-second start intervals; demo timestamps correctly remained invalid. | Sustained valid capture-to-publication cadence toward 30 seconds, including image storage and web use. |
+| Processing time | Latest routed-reader saved-JPEG trial: 15 files, 11.75-second median and 11.90-second maximum, with exact reference parity and no missed requested 30-second replay slots. Five normal-path SD surrogate cycles took 21.21–21.36 seconds at approximately 30-second start intervals; demo timestamps correctly remained invalid. | Sustained valid capture-to-publication cadence toward 30 seconds, including image storage and web use. |
 | Remote image storage | Optional queue and HTTPS receiver implemented; a recorded image delivery passed. Host tests cover failed connections, rejected credentials, receipts and receiver interruption. | Physical outage/retry and SD power-loss tests, storage limits, and sustained operation. |
 | Website access | Whole-device password protection deployed. Thirty read-only route checks passed across protected and authorized requests. | Broader interaction and browser behavior review. |
 | Interface and lighting | Shared interface and RGBW support implemented; several pages and assets verified on the test board. | Every page on mobile, all 19 RGBW pixels, and live brightness behavior on the installed strip. |
@@ -182,7 +182,7 @@ held-out exclusions.
 
 ### Accounting diagnostic freshness after rejection
 
-The later test-board bundle `cdd03e4a92bdeef837144695555343af3d6b69769e216eecf39c72b5d1b924f3`
+The later test-board bundle `8cf81054ac5c39fc4b6f01b1a8e6e41d11a28409b0a12287d31636e03e341d50`
 also publishes the optional accounting snapshot when polar recognition rejects a
 frame. It does not resume normal reading publication or retry capture. The
 [deployment record](DEPLOYED-IMPROVEMENTS.md#test-board-rejected-reading-accounting-diagnostics--september-24-2026)
@@ -263,9 +263,28 @@ are rejected, including the severe second-main bright patch. The unchanged
 baseline's last-pair residual is 0.06698. Mechanical consistency is not accuracy,
 and these cases informed development; no robustness guarantee is established.
 
-Neither candidate model nor routing has been deployed. Shared-memory model
-switching, whole-bundle identity/recovery, hardware parity, memory, timing and
-fresh accuracy evidence remain required before promotion. Quantization used
+The five-main-dial candidate and original secondary model are now deployed on
+the test board with fixed role routing. Six-dial vector/RGB diagnostics matched
+reference outputs, and 15 saved JPEG replays matched at a median of 11.75 seconds.
+Both model hashes are required by the application before bundle selection.
+Fresh independent accuracy evidence and live capture-to-publication testing
+remain required before production promotion. Quantization used
 only eligible training representatives. Local evidence: candidate `export/`,
 `int8-all-confirmed-verification.json`, `routed-int8-reviewed-verification.json`
 and `routed-stress.json`.
+
+
+## Packages without private diagnostic images
+
+The test board now boots a verified bundle without diagnostic images or vectors.
+Both recognition models remain hash-verified and unchanged. The clean build
+passed 91 host checks and 10 UI checks; managed OTA preserved configuration,
+meter profile and website password. Requesting the omitted vector diagnostic
+returned `fixture_unavailable`, completed zero dials and caused no capture,
+restart or configuration change. It did not borrow the previous bundle's fixture.
+Older bundles remain available for rollback.
+
+This is a packaging and startup check, not a new recognition-accuracy result.
+The public web installer remains on its September 22 development release.
+This private development ZIP has not been published; its development metadata
+needs a separate public-release review.

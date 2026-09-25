@@ -495,3 +495,20 @@ Evidence: `needle-training/firmware-port-tests/aiedge-accounting-status-01/`.
 Rollback candidate: `aiedge-archive-status-01`, bundle
 `edcd2b2cd6f4d681e9cc47c1a132121fcaa85d6c01df2c0411270d55565c4f77`.
 See [accounting recovery](ACCOUNTING-RECOVERY.md).
+
+
+## Optional private diagnostics - September 25 UTC
+
+Test-board bundle `8cf81054ac5c39fc4b6f01b1a8e6e41d11a28409b0a12287d31636e03e341d50`
+contains no diagnostic images or vectors. Both model assets are unchanged.
+All 91 host and 10 UI checks passed, followed by a clean ESP32 build, verified
+managed OTA and unchanged configuration/profile/password checks. The real vector
+diagnostic returned `fixture_unavailable` with zero completed dials; capture
+attempts stayed zero, uptime was continuous and archiving remained disabled.
+This verifies omission handling, not new accuracy or live cadence.
+
+Local evidence: `needle-training/firmware-port-tests/aiedge-no-private-fixtures-01/`
+(package result, `ota/result.json`, `missing-diagnostic/result.json`).
+The transitional rollback bundle is
+`fbd135517ffab305a9a8a18fee2489073571f15df20ff62b41cdf6018ad3f5d7`.
+No production-meter change or public installer promotion occurred.
