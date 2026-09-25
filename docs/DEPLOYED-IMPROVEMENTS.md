@@ -447,3 +447,28 @@ transport assertions are not a broker-delivery test.
 
 Local package, installation, regression logs and rollback instructions are in
 `needle-training/firmware-port-tests/aiedge-rejection-status-01`.
+
+
+## Archive status failures and rejected captures — September 25 UTC
+
+Deployed to the authorized test board in bundle
+`edcd2b2cd6f4d681e9cc47c1a132121fcaa85d6c01df2c0411270d55565c4f77`.
+A worker whose queue initialization or later storage operation failed now shows
+“Storage unavailable” instead of remaining “Starting”. The distinction uses the
+worker's existing first resource sample, published after queue initialization.
+“Captures not queued” now uses the capture-binding rejection count, which includes
+invalid image/metadata and worker admission failures. It does not add overlapping
+binding and worker counters together.
+
+The package passed 90 host checks and 10 UI checks, including the now-required
+archive status regression. OTA verified the bundle, unchanged configuration and
+profile, and preserved password protection. Readback matched both served archive
+assets exactly and evaluated the actual disabled status using the served script.
+Archiving stayed disabled; zero captures occurred. Failure states were simulated
+in host tests, not induced through physical SD faults. No visual browser check or
+new server-delivery claim is implied.
+
+Local evidence: `needle-training/firmware-port-tests/aiedge-archive-status-01/`,
+including `ota/result.json` and `asset-readback/result.json`. Previous routed-reader
+bundle `516a2c5807a66807e9a14c3db964b1b02bd7b65e808564f409eb7b81013d2876`
+remains the rollback candidate. The production meter was not changed.
