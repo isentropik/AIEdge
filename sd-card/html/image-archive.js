@@ -1,12 +1,15 @@
 (function(root){
 'use strict';
-const fields={pending:'pending',blocked:'blocked',cleanup:'acknowledged_awaiting_cleanup',stored:'stored',uploaded:'upload_acknowledgments',failures:'upload_failures',notqueued:'handoff_rejected',notsaved:'enqueue_rejected'};
+const fields={pending:'pending',blocked:'blocked',cleanup:'acknowledged_awaiting_cleanup',stored:'stored',uploaded:'upload_acknowledgments',failures:'upload_failures',notqueued:'binding_rejected',notsaved:'enqueue_rejected'};
 function describe(s){
- if(!s||s.version!==1||['worker_started','engine_ready','capture_enabled'].some(k=>typeof s[k]!=='boolean')||Object.values(fields).some(k=>!Number.isSafeInteger(s[k])||s[k]<0))throw Error('Invalid archive status');
+ if(!s||s.version!==1||['worker_started','engine_ready','capture_enabled'].some(k=>typeof s[k]!=='boolean')||[...Object.values(fields),'handoff_rejected'].some(k=>!Number.isSafeInteger(s[k])||s[k]<0)||!s.resources||!Number.isSafeInteger(s.resources.sampled_us)||s.resources.sampled_us<0)throw Error('Invalid archive status');
  if(!s.worker_started)return ['Not running','Archiving may be disabled or still initializing. Check logs if you expected it to start.'];
- if(!s.engine_ready)return ['Starting','The saved queue is not ready. No delivery is confirmed by this state.'];
+ // The worker publishes its first resource sample after queue initialization.
+ if(!s.engine_ready)return s.resources.sampled_us>0
+  ? ['Storage unavailable','The saved image queue could not be opened or updated. New images cannot be saved or uploaded. Check the SD card and device logs.']
+  : ['Starting','The saved queue is not ready. No delivery is confirmed by this state.'];
  if(s.blocked)return ['Needs attention','Some queued images require attention. Check the device logs.'];
- if(s.handoff_rejected||s.enqueue_rejected)return [s.capture_enabled?'Some captures were not archived':'Finishing queued uploads','Some captures could not be queued or saved during this restart. Check the counts below and device logs; these counts do not confirm a saved copy.'];
+ if(s.binding_rejected||s.handoff_rejected||s.enqueue_rejected)return [s.capture_enabled?'Some captures were not archived':'Finishing queued uploads','Some captures could not be queued or saved during this restart. Check the counts below and device logs; these counts do not confirm a saved copy.'];
  return [s.capture_enabled?'Running':'Finishing queued uploads',s.capture_enabled?'New images can be queued when a reading captures a photo.':'New captures are not being queued. Existing uploads may continue.'];
 }
 function mount(doc,fetcher){let busy=false;
