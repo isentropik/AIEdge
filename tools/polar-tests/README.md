@@ -44,3 +44,25 @@ textures, matching patches, image boundaries, and the maximum accepted width of
 whole-patch sums remain 64-bit. The maximum row squared/dot sum is 266,342,400.
 All 1,681 scores per search must match bit-for-bit. This is numerical equivalence,
 not an ESP32 timing measurement or additional independent reading accuracy.
+
+## Physical-volume accounting
+
+`accounting_bounds_test.cpp` starts with known cubic-foot volumes, generates the
+five main dial positions and the secondary wheel independently, and adds bounded
+position error. It checks that the actual firmware interval and cumulative bounds
+contain the known consumption: 20,000 randomized intervals and 100 streams of 200
+frames, including stationary jitter, small increments and missing-frame gaps.
+The seed is fixed for reproducibility. Secondary phase offsets vary by stream.
+
+It also checks exact carries across four main-register boundaries, unresolved
+whole turns with default uncertainty, and review instead of invented consumption
+for a backward register or complete register rollover. Rate-limited scenarios
+use explicit synthetic bounds, not a proposed maximum rate for a real meter.
+
+```
+c++ -std=c++11 -O2 -UNDEBUG -Icode/components/jomjol_tfliteclass tools/polar-tests/accounting_bounds_test.cpp -o accounting_bounds_test
+./accounting_bounds_test
+```
+
+These are accounting checks under declared error bounds. They do not verify the
+model's real-image error bounds, image alignment, capture timing or live flow.
