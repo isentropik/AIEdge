@@ -241,3 +241,31 @@ performance. Evaluation labels and pixels were not used for gradients; prior
 observed mismatch informed this experiment. Fresh validation and broader
 regressions remain necessary. Exact provenance, derived targets, model and
 results: `needle-training/polar-linked-target-candidate-20260925`.
+
+
+### Linked-target int8 export and fixed routing
+
+The candidate exports to 12,720-byte int8 TFLite with the same input/output
+quantization, tensor shapes and operation set as the deployed model. Its 18-example
+development check is unchanged; the largest float/int8 reading difference across
+the export checks is 0.001656 dial units. This is desktop parity, not ESP32 proof.
+
+The wider existing reviewed set gives 26/27 for the new model alone. A secondary
+label of 8.1 predicts 8.20097 (original model: 8.11257), failing the unchanged 0.1
+tolerance. Fixed routing by dial identity—candidate for all five main dials,
+original model for the secondary—passes 27/27 reused reviewed crops. This routing
+was chosen after observing that regression and is not independent validation.
+
+On the retained 15-case synthetic lighting set, four cases remain rejected by
+input checks. Of the eleven evaluated through reference int8 inference and the
+existing C++ decoder/consistency rule, seven are mechanically consistent and four
+are rejected, including the severe second-main bright patch. The unchanged
+baseline's last-pair residual is 0.06698. Mechanical consistency is not accuracy,
+and these cases informed development; no robustness guarantee is established.
+
+Neither candidate model nor routing has been deployed. Shared-memory model
+switching, whole-bundle identity/recovery, hardware parity, memory, timing and
+fresh accuracy evidence remain required before promotion. Quantization used
+only eligible training representatives. Local evidence: candidate `export/`,
+`int8-all-confirmed-verification.json`, `routed-int8-reviewed-verification.json`
+and `routed-stress.json`.
