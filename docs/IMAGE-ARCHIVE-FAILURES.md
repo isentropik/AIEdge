@@ -122,3 +122,24 @@ preflight request disconnected. No archive settings were changed and no receiver
 was started. Camera-independent recovery is compiled and deployed but its physical
 upload behavior remains unverified. Host-to-SMB synthetic HTTPS checks remain the
 only completed network-share delivery test. Production was not changed.
+
+
+## Receiver process interruption on SMB — September 24
+
+The three abrupt receiver-process termination cases now also pass when the
+Windows receiver writes to an SMB storage share: after publishing the image
+blob, immediately before publishing its capture record, and immediately after
+publishing that record. Each interrupted process exited without returning a
+receipt. Retrying preserved the original bytes and produced exactly one capture
+record and one image blob. Another identical retry was a verified duplicate;
+conflicting metadata was rejected without changing either object. Incomplete
+pending files were retained unchanged, and all three archives passed the
+read-only integrity audit, including the referenced settings descriptor.
+
+This trial used synthetic bytes and fabricated metadata in a new isolated folder.
+No camera data, labels, credentials, device configuration or training inputs were
+changed. Evidence is retained privately under
+`synthetic-smb-interruption-bd3ce3503ee2478bb89a10d8191185b8` in firmware-port-tests.
+It verifies Windows receiver retry behavior on that SMB path, not ESP32 delivery,
+HTTP/TLS recovery, a disconnected share, physical power loss or server-side
+write durability. Those remain separate checks.
