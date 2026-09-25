@@ -58,3 +58,27 @@ model identities, the configured camera geometry and the matching calibration.
 
 Run `python tools/aiedge/test_package_from_release.py` for six synthetic package
 checks. No real meter pictures or credentials are used by those tests.
+
+
+## Export the tested runtime for release review
+
+Once a diagnostic-free development package has passed device checks, export its
+runtime without rebuilding or changing its bundle identity:
+
+```sh
+python tools/aiedge/export_runtime_package.py --seed tested-development.zip --seed-sha256 EXPECTED_SHA256 --output release-review.zip
+python tools/aiedge/test_export_runtime_package.py
+```
+
+The exporter verifies the firmware digest, every runtime asset, and the complete
+manifest. It copies only firmware, declared HTML/model assets, the unchanged
+manifest and `docs/Licence.md`. Local validation reports, source inventories,
+configuration and development README files are omitted. It refuses diagnostic
+assets, duplicate ZIP entries, invalid asset paths, changed runtime bytes and
+existing output files. Eight offline synthetic cases cover these boundaries.
+
+The resulting ZIP has a new archive hash but the same bundle ID as the tested
+runtime. It is not a new device update and cannot fix bugs in that runtime.
+Review retained content (including firmware, HTML and models) for private data,
+licensing and suitability before publishing. Export does not upload anything,
+update the installer pin, or establish accuracy for other meters.
