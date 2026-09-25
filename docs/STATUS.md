@@ -157,3 +157,24 @@ The model and calibration remain frozen. A recent unmodified image still exceeds
 the adjacent-dial consistency allowance; the guard exposes that issue rather than
 silently accepting it. Recognition/calibration work and real-image validation
 remain necessary before replacing the operating meter reader.
+
+
+### Fixed-pivot sensitivity diagnostic
+
+On four protected full-image captures (only two broad last-main-dial pose regions),
+the frozen desktop int8 reader was evaluated with temporary +/-1 and +/-2 pixel
+needle-pivot offsets in each cardinal direction. The dial-face homography and
+image pixels stayed fixed. The eight dial crops showed maximum changes of
+0.0352–0.0432 dial units for one pixel and 0.0691–0.0879 for two pixels.
+These are sensitivity measurements, not evidence that any offset is correct.
+
+No offset was selected, no calibration or model was saved, and no evaluation
+image entered training. The diagnostic used desktop dense features; it is not
+an ESP32 sparse-path benchmark. Limited main-dial movement and the disagreement
+between fixed/free edge fits prevent a reliable new pivot fit from these frames.
+A correction must be supported by independent geometric evidence; merely making
+adjacent numbers agree would hide rather than resolve the uncertainty.
+
+Local evidence: `pivot-sensitivity-20260925/result.json`, with source/crop,
+calibration, model and script hashes. All source frames and crops retain their
+held-out exclusions.
