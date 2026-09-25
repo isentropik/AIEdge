@@ -41,6 +41,25 @@ establish these failure scenarios on hardware.
 Private deployment evidence is in `aiedge-archive-counters-candidate/ota` and
 `aiedge-archive-counters-candidate/asset-verification` under firmware-port-tests.
 
+## Cannot connect to the storage server
+
+If the page reports a secure connection failure and HTTP status is zero, the
+receiver has not returned an HTTP response. This does not identify the cause:
+the address, network route, firewall, certificate, or receiver may need attention.
+
+1. Confirm the receiver is running and listening on its LAN address, rather than
+   only `localhost`. Use that same address or name in AIEdge.
+2. Check whether the receiver records a connection from the device. A successful
+   upload from the receiver computer itself does not prove the ESP32 can reach it.
+3. If no connection arrives, check the network route and inbound firewall policy.
+   Any necessary allow rule should be limited to the receiver port and the device
+   address or trusted network. Keep the firewall enabled.
+4. If a connection arrives but HTTPS fails, check the configured CA, certificate
+   validity, device clock and certificate name against the configured server name.
+   Keep certificate verification enabled.
+5. After correcting the cause, verify a matching upload acknowledgment and the
+   stored image. A reachable status page alone does not prove image delivery.
+
 ## Interrupted receiver process
 
 `tools/image-archive/test_process_interruption.py` terminates a child receiver
