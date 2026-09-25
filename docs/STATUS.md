@@ -112,3 +112,25 @@ merely to make them pass. No training or device change was made by this audit.
 Private evidence: `cross-dial-retrospective-20260924/result.json` under
 firmware-port-tests, including source-result hashes, per-pair signed residuals,
 position ranges and limitations.
+
+
+## Main-dial edge diagnostic — September 24
+
+A retained-frame diagnostic compared the unchanged model with an existing
+model-free, two-edge estimator, using the same frozen marker alignment and dial
+calibration. Four images cover only two broad last-main-dial pose regions: three
+nearly stationary estimates around 3.24–3.25, and one around 4.94. They do not
+provide four independent positions or new accuracy labels.
+
+For the fourth main dial, fixed-pivot and free-edge estimates differed by
+0.158–0.202 dial units. On the latest last-main image, they differed by 0.438:
+fixed-pivot edge estimate 4.968 versus free-edge estimate 4.530, in that dial's
+numbering direction. The existing edge-agreement gate rejected that result.
+The model estimate was 4.938. Shared calibration and uncertain edge geometry
+mean these comparisons cannot identify which calibration or reading is correct.
+
+Free-edge fitting is therefore not used to correct the recurring cross-dial
+mismatch. The model, pivot, labels, consistency tolerance and firmware remain
+unchanged. All source frames and derived crops are protected from training.
+Private evidence: `main-pair-edge-audit-20260925/result.json` under
+firmware-port-tests. Independent geometry/reading validation remains open.
