@@ -60,6 +60,20 @@ publication and readback operations are now serialized within the receiver
 process. All 106 public receiver tests pass. Cross-process and genuine storage
 errors still propagate without acknowledgement or blind retry.
 
+## Normal-controller replay check
+
+A separate host regression now passes the recorded routed-model output tensors
+through the actual decoder and normal polar controller, using the matching saved
+JPEG and exact input-tensor checks. Three added cases verify baseline acceptance,
+a persisted repeated-frame interval that remains ambiguous, and a later secondary
+model-load failure that invalidates every ROI without advancing the saved
+reference. Seventeen input tensors were compared across these runs.
+
+This extends the existing 20 controller checks. Inference outputs are replayed;
+this is not another hardware inference test, live MQTT delivery test, or accuracy
+sample. Evidence: `needle-training/firmware-port-tests/polar-flow-results.json`;
+runner: `needle_reader_v2/test_firmware_polar_flow.py` in the local workspace.
+
 ## Remaining validation
 
 The selected combination passed 27 reused reviewed crops; these informed model
