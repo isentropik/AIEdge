@@ -27,5 +27,14 @@ a damaged or incompatible checkpoint.
 Host regression checks cover changed model/calibration identities, corrupt
 checkpoint bytes, unreadable settings, serialized rejection reasons, and exact
 preservation of stored bytes. They do not establish physical SD recovery or live
-MQTT delivery. The diagnostic correction is source-tested; its next device
-candidate is `aiedge-accounting-status-01`.
+MQTT delivery. The diagnostic correction is deployed on the test board in bundle
+`dd4b0cead5fa34e0bc121c92a935ba97eb9e85742246500caee3ba7df2e53f39`.
+An on-board HTTP trial used a locally verified synthetic checkpoint with an
+incompatible reader identity. The board returned `accounting_unavailable` with
+`persistence_state: incompatible`, retained the file byte-for-byte, and exposed no
+consumption estimate or observation. The fixture was removed, original settings
+verified byte-for-byte, and the board restarted to its prior idle state with both
+checkpoint slots absent, zero captures, and archiving disabled. Evidence is in
+`needle-training/firmware-port-tests/aiedge-accounting-status-01/checkpoint-trial/`.
+This validates the incompatible-checkpoint path on hardware; other storage faults
+remain host-simulated.

@@ -472,3 +472,26 @@ Local evidence: `needle-training/firmware-port-tests/aiedge-archive-status-01/`,
 including `ota/result.json` and `asset-readback/result.json`. Previous routed-reader
 bundle `516a2c5807a66807e9a14c3db964b1b02bd7b65e808564f409eb7b81013d2876`
 remains the rollback candidate. The production meter was not changed.
+
+
+## Accounting startup diagnostics — September 25 UTC
+
+Test-board bundle
+`dd4b0cead5fa34e0bc121c92a935ba97eb9e85742246500caee3ba7df2e53f39`
+reports unavailable accounting state separately from invalid physical bounds.
+Detailed persistence causes remain available. No history migration, deletion,
+conversion or calculation behavior changed.
+
+All 90 host and 10 UI checks passed, followed by a clean ESP32 build, verified OTA,
+configuration/profile preservation and password verification. A reversible
+on-board synthetic incompatible-checkpoint test passed through the actual HTTP
+API: rejected with the correct reason, no estimate, exact fixture preservation,
+then fixture removal, settings readback and restart restoration. Both slots are
+empty again; capture count is zero and archiving remains disabled. The production
+meter was not changed. Physical SD corruption and live MQTT delivery are not
+claimed by this test.
+
+Evidence: `needle-training/firmware-port-tests/aiedge-accounting-status-01/`.
+Rollback candidate: `aiedge-archive-status-01`, bundle
+`edcd2b2cd6f4d681e9cc47c1a132121fcaa85d6c01df2c0411270d55565c4f77`.
+See [accounting recovery](ACCOUNTING-RECOVERY.md).
