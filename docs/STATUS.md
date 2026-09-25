@@ -188,3 +188,25 @@ frame. It does not resume normal reading publication or retry capture. The
 [deployment record](DEPLOYED-IMPROVEMENTS.md#test-board-rejected-reading-accounting-diagnostics--september-24-2026)
 distinguishes passing source-level transport tests and verified OTA from the
 still-unverified physical broker-delivery test.
+
+
+### Lighting-augmentation candidate not promoted
+
+A separate fixed-schedule experiment reused only the original eight eligible
+training images and 300 training-only synthetic derivatives. Half of sampled
+profiles received randomized gain, gamma and a mild localized white overlay;
+radial normalization was recomputed. The final checkpoint was selected by the
+predeclared 35-epoch schedule, without evaluation checkpoint selection.
+
+It passed 17/18 existing development examples within 0.1 versus the original
+18/18. One secondary label of 4.3 produced 4.402356. Several moderate synthetic
+lighting cases became more stable, but the severe second-main bright-patch
+failure remained approximately 4.58 circular dial units. The candidate was not
+exported or deployed. No label, tolerance, calibration or frozen model changed.
+
+The robustness comparison used both float models on identical dequantized C++
+sparse feature tensors. It is not candidate int8 or hardware validation. Prior
+evaluation failures motivated the design; fresh independent evaluation would be
+required before promotion. Current exclusion checks show no training/held-out
+hash intersection, including synthetic parents. Local source hashes, training
+regimen, results and decision: `needle-training/polar-lighting-candidate-20260925`.
