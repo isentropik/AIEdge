@@ -29,7 +29,7 @@ def make_device_manifest(files,expected_model,boot_policy="optional_bundle"):
  if digest(files['model/polar-int8.tflite'])!=expected_model:raise ValueError('Model identity mismatch')
  assets={name:{'bytes':len(data),'sha256':digest(data)} for name,data in sorted(files.items())
          if name.startswith(('html/','model/','diagnostics/'))}
- if 'html/index.html' not in assets or 'diagnostics/polar-runtime-vectors.bin' not in assets:raise ValueError('Missing required runtime asset')
+ if 'html/index.html' not in assets:raise ValueError('Missing required runtime asset')
  result={'format':'meter-bundle-v2','boot_policy':boot_policy,'chip':'esp32','firmware':{'path':'firmware/firmware.bin',
    'bytes':len(image),'sha256':digest(image),'app_image_sha256':esp32_app_digest(image)},
    'model_sha256':expected_model,'assets':assets}

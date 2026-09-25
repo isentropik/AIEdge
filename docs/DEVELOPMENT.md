@@ -28,10 +28,31 @@ The managed app requires its matching SD bundle. Bootstrap `package_pin.h` binds
 python tools/aiedge/package_from_release.py --seed aiedge-package.zip --seed-sha256 EXPECTED_SHA256 --firmware code/.pio/build/esp32cam-managed/firmware.bin --output my-development-package.zip
 ```
 
-An old seed retains its old HTML. For web changes, regenerate assets and deliberately update their package inventory. Include model and diagnostics as well as firmware and HTML. Runtime vectors are consistency checks, not independent real-world accuracy labels.
+An old seed retains its old HTML. For web changes, regenerate assets and deliberately update their package inventory. Include both required models, firmware and HTML. Runtime vectors are optional development consistency checks, not independent real-world accuracy labels.
 
 ## Validate
 
 Compile both projects, check setup JavaScript and verify packages with the production stager. On hardware test AP, mDNS, scan/rescan/manual entry, bad passwords, interrupted downloads, certificate/SD failures, readback, first boot and recovery. Record source commit, tools and hashes.
 
 The original local test harness depends partly on private labelled images and workspace tooling; it is not a complete public one-command suite. Public reproducible tests and broader hardware coverage remain work to do. Do not publish credentials, private images or complete board backups. Preserve upstream licensing and publish a new version rather than silently replacing release assets.
+
+
+## Packages without private replay images
+
+Add `--without-diagnostics` to `package_from_release.py` to exclude every asset
+under `diagnostics/`, including replay photos and feature/output vectors. Firmware,
+HTML, both models and their hashes are retained. The tool rebuilds the manifest
+and bundle identity; it never edits the source ZIP. Configuration and validation
+folders are not copied. Review the retained HTML, models and documentation before
+publication; this option is not a general secret scanner.
+
+The updated application accepts a bundle without diagnostic fixtures. Older
+applications may require them: install a compatible transitional application with
+its existing diagnostics first, then install the package without diagnostics.
+Do not publish or flash an untested stripped package just because packaging passed.
+The raw/RGB/JPEG diagnostic endpoints will lack their fixtures; this does not
+provide a new accuracy result. Normal recognition still requires both compiled
+model identities, the configured camera geometry and the matching calibration.
+
+Run `python tools/aiedge/test_package_from_release.py` for five synthetic package
+checks. No real meter pictures or credentials are used by those tests.

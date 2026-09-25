@@ -51,7 +51,7 @@ template<class Sha> bool parse(const std::string& body,Manifest& out,Sha sha){
   if(!next.assets.emplace(name,f).second)return false;
  }
  const auto model=next.assets.find("model/polar-int8.tflite");
- if(model==next.assets.end()||model->second.hash!=next.modelHash||!model->second.bytes||!next.assets.count("html/index.html")||!next.assets.count("diagnostics/polar-runtime-vectors.bin"))return false;
+ if(model==next.assets.end()||model->second.hash!=next.modelHash||!model->second.bytes||!next.assets.count("html/index.html"))return false;
  std::string canonical="{\"assets\":{";bool first=true;
  for(const auto& a:next.assets){if(!first)canonical+=",";first=false;canonical+="\""+a.first+"\":"+fileJson(a.second);}
  canonical+="},\"boot_policy\":\""+next.bootPolicy+"\",\"chip\":\"esp32\",\"firmware\":{\"app_image_sha256\":\""+next.appHash+"\",\"bytes\":"+std::to_string(next.firmware.bytes)+",\"path\":\"firmware/firmware.bin\",\"sha256\":\""+next.firmware.hash+"\"},\"format\":\"meter-bundle-v2\",\"model_sha256\":\""+next.modelHash+"\"}";

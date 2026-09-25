@@ -6,6 +6,8 @@ This is the recommended method. The installer page contains the requirements and
 
 After installation, continue to [first-time configuration](CONFIGURATION.md).
 
+The public installer currently delivers development release `0.1.10-dev.20260922`. Newer changes on the development branch are being tested separately and are not included in that installer yet. See [testing status](STATUS.md).
+
 ## Need help?
 
 See [troubleshooting](RECOVERY.md), the [glossary](GLOSSARY.md), or [current testing status](STATUS.md).
