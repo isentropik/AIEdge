@@ -14,7 +14,7 @@ migration remains deferred while saved-image and test-board testing continues.
 
 | Feature | Current evidence | Still needed |
 | --- | --- | --- |
-| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `4b32be5d916be370211fb3a6d82cba5452819156772223764bbd25afe22dc4e9`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
+| Installation and OTA | Recorded loader installation, authenticated application updates, reboot verification, and preserved configuration and website password. Latest test bundle: `bcb755e540fdf1156da1f17549c9c4b17f310b8680234f1af7cf14554537e506`. | Repeated cold boots, power loss during flash writes, and physical missing/full-SD cases. |
 | Interrupted updates | Restart during staging followed by successful retry on hardware, with interrupted files preserved. Index retry repair is deployed; 14 host index cases pass. | Hardware interruption during index publication and sudden-power-loss recovery. |
 | Camera | An earlier single-image, no-flash preview succeeded. The latest test boot reports camera unavailable; the website and saved display profile remain usable. | Resolve the latest 0x105 camera address-probe failure first; its physical cause is unresolved. Then place the camera at the meter and verify calibration before live recognition. |
 | Trained analog reader | Six-dial saved-image processing on ESP32 matches reference features and outputs. The separate reviewed-crop check passed 27/27 within 0.1 dial units. | Labeled full-frame camera validation across useful positions; the crop check reuses existing labels and has limited coverage. |
@@ -134,3 +134,26 @@ mismatch. The model, pivot, labels, consistency tolerance and firmware remain
 unchanged. All source frames and derived crops are protected from training.
 Private evidence: `main-pair-edge-audit-20260925/result.json` under
 firmware-port-tests. Independent geometry/reading validation remains open.
+
+
+## Rejected-observation publication fix (September 24)
+
+The test board now runs bundle
+`bcb755e540fdf1156da1f17549c9c4b17f310b8680234f1af7cf14554537e506`.
+Accounting-rejected observations no longer become accepted analog ROI results;
+the raw estimates and exact accounting reason remain available for diagnosis.
+See the [bright-patch finding](IMAGE-PERTURBATION-VALIDATION.md#local-bright-patch-failure-and-publication-guard-september-24).
+
+The clean build passed 86 host scripts and 9 interface scripts. The analog-source
+harness covers 19 cases with 40 exact tensor comparisons; the controller harness
+covers 27 cases. Authenticated OTA and restart verified the running bundle and
+preserved configuration, display profile and website password. One post-update
+saved-JPEG diagnostic took 11.708 seconds with six exact reference outputs and
+zero camera captures. That diagnostic bypasses normal capture/accounting: it
+checks installed inference compatibility, not a physical rejection test or live
+capture cadence. The test camera still reports unavailable (0x105).
+
+The model and calibration remain frozen. A recent unmodified image still exceeds
+the adjacent-dial consistency allowance; the guard exposes that issue rather than
+silently accepting it. Recognition/calibration work and real-image validation
+remain necessary before replacing the operating meter reader.

@@ -102,6 +102,15 @@ bool ClassFlowCNNGeneral::doPolarNetwork(string time) {
     LogFile.WriteToFile(ESP_LOG_DEBUG, TAG, string("accounting_state=") +
         meter::sessionStateName(accounting.state) + " interval_status=" +
         meter::intervalStatusName(accounting.interval.status));
+    // Accounting retains the raw observation and exact rejection reason for
+    // diagnostics. Never expose a rejected frame as successful ROI readings.
+    // Ambiguous turn counts are still valid observations (SessionState::Interval).
+    // Do not call fail(): that would overwrite the reason and count it twice.
+    if (accounting.state == meter::SessionState::Rejected) {
+        LogFile.WriteToFile(ESP_LOG_ERROR, TAG,
+            "PolarV1 accounting rejected frame; raw positions retained in accounting status");
+        return false;
+    }
     for (auto* group : GENERAL) for (auto* item : group->ROI) {
         item->result_float = readings[index++];
         item->isReject = false;
