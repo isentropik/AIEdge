@@ -48,11 +48,13 @@ publication; this option is not a general secret scanner.
 
 The updated application accepts a bundle without diagnostic fixtures. Older
 applications may require them: install a compatible transitional application with
-its existing diagnostics first, then install the package without diagnostics.
+its existing diagnostics first, then install the package without diagnostics using a distinct application build.
+The packager rejects reusing the seed application for the diagnostic-free update;
+application-to-bundle mappings remain immutable.
 Do not publish or flash an untested stripped package just because packaging passed.
 The raw/RGB/JPEG diagnostic endpoints will lack their fixtures; this does not
 provide a new accuracy result. Normal recognition still requires both compiled
 model identities, the configured camera geometry and the matching calibration.
 
-Run `python tools/aiedge/test_package_from_release.py` for five synthetic package
+Run `python tools/aiedge/test_package_from_release.py` for six synthetic package
 checks. No real meter pictures or credentials are used by those tests.

@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import zipfile
-from device_bundle_manifest import make_device_manifest
+from device_bundle_manifest import make_device_manifest, esp32_app_digest
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -31,6 +31,8 @@ def main():
         for name in ['docs/Licence.md','README.txt']:
             if name in z.namelist():files[name]=z.read(name)
     files['firmware/firmware.bin']=a.firmware.read_bytes()
+    if a.without_diagnostics and esp32_app_digest(files['firmware/firmware.bin'])==manifest['firmware']['app_image_sha256']:
+        p.error('Diagnostic-free updates require a new application build; an existing app cannot be remapped to different assets')
     files['device-manifest.json']=make_device_manifest(files,manifest['model_sha256'],'required_bundle')
     with zipfile.ZipFile(a.output,'x',compression=zipfile.ZIP_DEFLATED) as z:
         for name,data in sorted(files.items()):z.writestr(name,data)

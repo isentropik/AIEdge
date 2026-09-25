@@ -4,9 +4,9 @@ from pathlib import Path
 from device_bundle_manifest import digest,make_device_manifest
 HERE=Path(__file__).resolve().parent
 
-def image():
+def image(data=b'synthetic'):
  h=bytearray(24);h[0]=0xe9;h[1]=1;h[23]=1
- data=b'synthetic';raw=bytes(h)+struct.pack('<II',0x3ffb0000,len(data))+data
+ raw=bytes(h)+struct.pack('<II',0x3ffb0000,len(data))+data
  checksum=0xef
  for b in data:checksum^=b
  raw+=bytes((16-(len(raw)+1)%16)%16)+bytes([checksum])
@@ -21,7 +21,7 @@ class PackageTests(unittest.TestCase):
   self.seed=self.root/'seed.zip'
   with zipfile.ZipFile(self.seed,'w') as z:
    for name,data in self.files.items():z.writestr(name,data)
-  self.firmware=self.root/'firmware.bin';self.firmware.write_bytes(image());self.output=self.root/'out.zip'
+  self.firmware=self.root/'firmware.bin';self.firmware.write_bytes(image(b'new-build'));self.output=self.root/'out.zip'
  def run_package(self,*extra,sha=None):
   return subprocess.run([sys.executable,str(HERE/'package_from_release.py'),'--seed',str(self.seed),'--seed-sha256',sha or digest(self.seed.read_bytes()),'--firmware',str(self.firmware),'--output',str(self.output),*extra],capture_output=True,text=True)
  def test_without_diagnostics(self):
@@ -38,6 +38,10 @@ class PackageTests(unittest.TestCase):
  def test_default_preserves_diagnostics(self):
   result=self.run_package();self.assertEqual(result.returncode,0,result.stderr)
   with zipfile.ZipFile(self.output) as z:self.assertEqual(z.read('diagnostics/replay-0.jpg'),b'synthetic-image')
+ def test_refuses_same_app_asset_remap(self):
+  self.firmware.write_bytes(self.files['firmware/firmware.bin'])
+  result=self.run_package('--without-diagnostics')
+  self.assertNotEqual(result.returncode,0);self.assertIn('require a new application build',result.stderr);self.assertFalse(self.output.exists())
  def test_wrong_seed_has_no_output(self):
   self.assertNotEqual(self.run_package('--without-diagnostics',sha='0'*64).returncode,0);self.assertFalse(self.output.exists())
  def test_refuses_overwrite(self):
