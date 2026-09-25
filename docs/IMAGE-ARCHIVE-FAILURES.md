@@ -143,3 +143,24 @@ changed. Evidence is retained privately under
 It verifies Windows receiver retry behavior on that SMB path, not ESP32 delivery,
 HTTP/TLS recovery, a disconnected share, physical power loss or server-side
 write durability. Those remain separate checks.
+
+
+## Corrupt archived files and early full-disk failure — September 25
+
+Three additional loopback HTTP regressions verify that a retry cannot acknowledge
+or overwrite a corrupt existing image blob or capture record. Both return HTTP
+409 without a verified-readback receipt, preserving the damaged evidence and the
+other unchanged object. After an explicit external repair of the blob, the same
+capture receives a verified duplicate receipt; the receiver does not repair or
+replace files automatically.
+
+A third test injects ENOSPC while flushing the temporary image file, before its
+publication. It returns HTTP 503 without a receipt, removes its temporary file,
+and leaves no committed image or capture record. A complete retry after removing
+the fault succeeds once, then becomes an acknowledged duplicate. The injection
+targets regular files, leaving POSIX directory synchronization intact.
+
+All 109 image-archive tests pass, including 15 HTTP receiver tests. These are local
+fault-injection checks; no device, user archive, NAS configuration or production
+meter changed. They do not establish physical power-loss durability. Confirmed
+receipts continue to leave images unreviewed and ineligible for training.

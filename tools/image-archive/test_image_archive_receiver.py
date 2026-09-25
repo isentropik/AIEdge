@@ -115,6 +115,65 @@ class ReceiverTests(unittest.TestCase):
         self.assertEqual(len(list((self.root/'captures').glob('*.json'))),1)
         self.assertEqual(self.post()[0],200)
 
+    def test_corrupt_blob_retry_is_not_acknowledged_or_overwritten(self):
+        status, first = self.post()
+        self.assertEqual(status, 201)
+        blob = self.root/'blobs'/f"{digest(self.image)}.image"
+        record = self.root/'captures'/f"{first['capture_id']}.json"
+        original_record = record.read_bytes()
+        damaged = b'corrupt archived image'
+        blob.write_bytes(damaged)
+        status, receipt = self.post()
+        self.assertEqual(status, 409)
+        self.assertNotIn('verified_readback', receipt)
+        self.assertEqual(blob.read_bytes(), damaged)
+        self.assertEqual(record.read_bytes(), original_record)
+        self.assertFalse(list(self.root.rglob('.pending-*')))
+        # Only explicit external repair restores a successful duplicate receipt.
+        blob.write_bytes(self.image)
+        status, receipt = self.post()
+        self.assertEqual(status, 200)
+        self.assertTrue(receipt['duplicate'])
+        self.assertTrue(receipt['verified_readback'])
+        self.assertFalse(receipt['training_eligible'])
+
+    def test_corrupt_capture_record_retry_preserves_evidence(self):
+        status, first = self.post()
+        self.assertEqual(status, 201)
+        record = self.root/'captures'/f"{first['capture_id']}.json"
+        damaged = b'{"incomplete":'
+        record.write_bytes(damaged)
+        status, receipt = self.post()
+        self.assertEqual(status, 409)
+        self.assertNotIn('verified_readback', receipt)
+        self.assertEqual(record.read_bytes(), damaged)
+        blob = self.root/'blobs'/f"{digest(self.image)}.image"
+        self.assertEqual(blob.read_bytes(), self.image)
+        self.assertEqual(len(list((self.root/'captures').glob('*.json'))), 1)
+        self.assertFalse(list(self.root.rglob('.pending-*')))
+
+    def test_disk_full_before_blob_commit_then_retry(self):
+        import errno, os, stat
+        real_fsync = os.fsync
+        def full_for_file(fd):
+            if stat.S_ISREG(os.fstat(fd).st_mode):
+                raise OSError(errno.ENOSPC, 'No space left on device')
+            return real_fsync(fd)
+        # Fail the temporary image flush, not an ancestor-directory sync.
+        with patch('image_archive_store.os.fsync', side_effect=full_for_file):
+            status, receipt = self.post()
+        self.assertEqual(status, 503)
+        self.assertNotIn('verified_readback', receipt)
+        self.assertFalse(list(self.root.rglob('*.image')))
+        self.assertFalse(list((self.root/'captures').glob('*.json')))
+        self.assertFalse(list(self.root.rglob('.pending-*')))
+        status, receipt = self.post()
+        self.assertEqual(status, 201)
+        self.assertTrue(receipt['verified_readback'])
+        self.assertFalse(receipt['duplicate'])
+        self.assertFalse(receipt['training_eligible'])
+        self.assertEqual(self.post()[0], 200)
+
     def test_settings_required_and_retry(self):
         path = self.root/'settings'/f'{digest(self.settings)}.txt'
         path.unlink()
