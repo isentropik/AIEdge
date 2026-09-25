@@ -34,7 +34,7 @@ public:
         SessionResult value=session?session->current():SessionResult();
         const auto saved=runtime.persistence();
         value.persistenceState=settingsError?"settings_unavailable":storeStatusName(saved);
-        if(attempted&&!session){value.state=SessionState::Rejected;value.interval.reason=Reason::InvalidBounds;}
+        if(attempted&&!session){value.state=SessionState::Rejected;value.interval.reason=Reason::AccountingUnavailable;}
         value.referencePersisted=value.hasReference&&(saved==StoreStatus::Ready||saved==StoreStatus::RecoveredOlder||saved==StoreStatus::Saved);
         value.cumulativePersisted=value.cumulative.available&&value.referencePersisted;
         return value;

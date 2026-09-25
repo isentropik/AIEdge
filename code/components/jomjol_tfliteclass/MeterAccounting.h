@@ -17,7 +17,7 @@ enum class Reason {
     InvalidBounds, CaptureTimeRequired, MainUnknown, MainInconsistent, SecondaryUnknown,
     RegisterRolloverOrReset, BackwardMain, MainRateContradiction, SecondaryMainContradiction,
     TurnCountUnresolved, SecondaryNoise, UncertaintyTailsOnly, UniqueUnderBounds, ClockDomainMismatch,
-    CumulativeContradiction
+    CumulativeContradiction, AccountingUnavailable
 };
 struct Frame {
     double main[5];

@@ -7,6 +7,7 @@ namespace meter {
 inline const char* reasonName(Reason reason) {
     switch(reason) {
         case Reason::InvalidBounds:return "invalid_bounds";
+        case Reason::AccountingUnavailable:return "accounting_unavailable";
         case Reason::CaptureTimeRequired:return "increasing_capture_time_required";
         case Reason::MainUnknown:return "main_reading_unavailable";
         case Reason::MainInconsistent:return "main_dials_inconsistent";
