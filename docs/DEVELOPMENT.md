@@ -97,5 +97,7 @@ Windows user directories, Unix home directories or private training-directory
 paths (17 workstation-path matches were present before the change). The unused
 packaged `watermeter.svg`, which contained inherited editor export paths, was
 removed. These pattern checks are not a complete secret or licensing audit.
-This build-only change still needs a matching verified package and test-board
-update; the public installer has not changed.
+A matching package has now passed 91 host checks, 10 UI checks, a clean build,
+and a verified test-board OTA. Configuration, profile and website password were
+preserved; served build metadata matches the package. The public installer has
+not changed. See [deployment evidence](DEPLOYED-IMPROVEMENTS.md).

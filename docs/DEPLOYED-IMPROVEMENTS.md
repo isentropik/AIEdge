@@ -512,3 +512,28 @@ Local evidence: `needle-training/firmware-port-tests/aiedge-no-private-fixtures-
 The transitional rollback bundle is
 `fbd135517ffab305a9a8a18fee2489073571f15df20ff62b41cdf6018ad3f5d7`.
 No production-meter change or public installer promotion occurred.
+
+
+## Portable source paths and runtime export - September 25 UTC
+
+Test-board bundle `7fe69f996ff2a14ee338fc5702fcf55ddbba2321ae6937033b2474737fb1ae6a`
+uses the PlatformIO pre-build source mapping and omits the unused packaged SVG.
+The complete package passed 91 host checks, 10 UI checks, a clean ESP32 build,
+and manifest-integrity verification. Scanning the actual packaged firmware and
+runtime assets found no Windows user-directory, Unix home-directory or private
+training-directory path patterns. This is a bounded pattern audit, not proof
+that all possible private content has been excluded.
+
+Managed OTA and restart checks passed, with configuration, meter profile and
+website password preserved. Served build metadata matches the packaged bytes.
+The omitted diagnostic returned `fixture_unavailable`; zero dials completed,
+no captures occurred, and archiving remained disabled. No new accuracy, physical
+camera, storage-server or live-cadence result is claimed.
+
+The runtime-only export preserves the tested bundle identity and is 2,209,824
+bytes, SHA-256 `aaf2a345f8bd07a40872f1944bf2feb7680b3182403c69f66b354b441da6c069`.
+It remains local for release review. The public installer and production meter
+were not changed. The prior rollback bundle remains
+`8cf81054ac5c39fc4b6f01b1a8e6e41d11a28409b0a12287d31636e03e341d50`.
+Local evidence: `needle-training/firmware-port-tests/aiedge-relative-source-paths-04/`
+(package result, path audit, OTA, missing diagnostic, served metadata and export).
