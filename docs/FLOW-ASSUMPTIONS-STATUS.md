@@ -50,10 +50,17 @@ source bytes, including correct UTF-8 symbols. A saved JPEG completed in
 11.817055 seconds with six tensors and six output arrays matching exactly.
 Automatic captures stayed at zero and image archiving remained disabled.
 
-Still open: rendered mobile layout verification, nonzero-bound transitions on
-physical hardware, and validation against real captured consumption sequences.
-Host tests cover nonzero limits and history isolation; no household maximum rate
-has been selected. Replay parity is not independent accuracy or capture cadence.
+Additional test-board trial: temporary 360 and 720 ft³/hour limits activated
+without reboot. The 360 setting survived one restart; the original disabled
+setting was restored byte-for-byte (SHA256
+`e17891f09ce26831cb12de639ca0318000903b9b9f74cbdfda3738e203022508`).
+No recognition observations, automatic captures or archiving occurred. These
+were test constants, not selected household limits. Evidence: `nonzero-settings-trial/`
+in the same private candidate folder.
+
+Still open: rendered mobile layout verification and validation against real
+captured consumption sequences. Hardware settings persistence is verified;
+checkpoint/history isolation with observations remains host-tested. Replay parity is not independent accuracy or capture cadence.
 Private evidence: `aiedge-flow-assumptions-05/{ota,runtime-verification,saved-jpeg-smoke,RESTORE.md}`
 under `needle-training/firmware-port-tests`. Earlier candidates preserve failed
 host-harness/compile checks and the superseded text-encoding issue.

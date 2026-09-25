@@ -387,7 +387,10 @@ password/profile/config.ini preservation, live endpoint access control, invalid
 and stale requests, disabled-default activation and served-asset hashes passed.
 One saved-image replay took 11.817055 seconds with exact tensors/output parity.
 No production changes, automatic captures, model changes or selected household
-rate. Physical nonzero-rate transitions and rendered layout remain unverified.
+rate. A later reversible hardware trial activated 360 and 720 ft³/hour test limits,
+verified one persisted across restart, and restored the disabled setting byte-for-byte.
+No observations were produced; physical consumption/history validation and rendered
+layout remain open.
 
 An intermediate installed build exposed a text-encoding defect during final
 diff review. Original UTF-8 text was restored, a regression check was added, and
