@@ -3,6 +3,7 @@
 #include "ImageArchiveStartup.h"
 #include "ImageArchiveSettingsHttp.h"
 #include "MeterProfileSettingsHttp.h"
+#include "MeterAssumptionsSettingsHttp.h"
 #include "ProcessingAccess.h"
 #include "FileConfigStorage.h"
 #include "MainFlowControl.h"
@@ -393,9 +394,11 @@ esp_err_t handler_meter_accounting(httpd_req_t* req)
 // in the worker; the server can serve status while the model is running.
 static portMUX_TYPE historyMux=portMUX_INITIALIZER_UNLOCKED;
 static bool historyActive=false;
+static uint64_t historySettingsGeneration=0;
 static meter::HistorySummary historySummary;
 static int64_t historyScannedUs=0;
 static void historyWorker(void*) {
+    portENTER_CRITICAL(&historyMux);const auto generation=historySettingsGeneration;portEXIT_CRITICAL(&historyMux);
     meter::HistorySummary result;
     {
         ProcessingAccess processing;
@@ -403,13 +406,15 @@ static void historyWorker(void*) {
         else {
             UpdateAccess update;
             if(!update)result.reason="storage_busy";
-            else result=meter::readSegmentHistory("/sdcard/config","polar-meter-reference",
+            else if(!PolarAccounting::controller().active())result.reason="accounting_not_initialized";
+            else result=meter::readSegmentHistory("/sdcard/config",PolarAccounting::controller().activeNamespace(),
                 polar::modelIdentity,polar::geometryIdentity,PolarAccounting::snapshot().assumptions);
         }
     }
     const auto finished=esp_timer_get_time();
     portENTER_CRITICAL(&historyMux);
-    historySummary=result;historyScannedUs=finished;historyActive=false;
+    if(generation==historySettingsGeneration){historySummary=result;historyScannedUs=finished;}
+    historyActive=false;
     portEXIT_CRITICAL(&historyMux);
     vTaskDelete(nullptr);
 }
@@ -2249,6 +2254,16 @@ void InitializeFlowTask(void)
     ESP_LOGD(TAG, "getESPHeapInfo: %s", getESPHeapInfo().c_str());
 }
 
+static esp_err_t assumptionsSettingsHttp(httpd_req_t* req){
+    return meter::handleAssumptionsSettings(req,"/sdcard/config",PolarAccounting::controller(),[](){
+        PolarAccounting::publish();
+        portENTER_CRITICAL(&historyMux);
+        ++historySettingsGeneration;
+        historySummary=meter::HistorySummary{};historySummary.reason="settings_changed_rescan_required";historyScannedUs=0;
+        portEXIT_CRITICAL(&historyMux);
+    });
+}
+
 void register_server_main_flow_task_uri(httpd_handle_t server)
 {
     ESP_LOGI(TAG, "server_main_flow_task - Registering URI handlers");
@@ -2372,6 +2387,15 @@ void register_server_main_flow_task_uri(httpd_handle_t server)
     if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register meter profile read");
     camuri.method = HTTP_POST;
     if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register meter profile save");
+    camuri.method = HTTP_GET;
+
+    camuri.uri = "/meter_assumptions";
+    camuri.method = HTTP_GET;
+    camuri.handler = APPLY_BASIC_AUTH_FILTER(assumptionsSettingsHttp);
+    camuri.user_ctx = NULL;
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register flow settings read");
+    camuri.method = HTTP_POST;
+    if(httpd_register_uri_handler(server,&camuri)!=ESP_OK)LogFile.WriteToFile(ESP_LOG_ERROR,TAG,"Could not register flow settings save");
     camuri.method = HTTP_GET;
 
     camuri.uri = "/image_archive_status";

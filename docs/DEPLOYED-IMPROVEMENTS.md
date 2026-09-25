@@ -370,3 +370,26 @@ Private evidence: `camera-readonly-diagnosis-20260924/`, failed
 `aiedge-camera-diagnostic-01/` and `aiedge-camera-diagnostic-02/` records, and
 `aiedge-camera-diagnostic-03/{ota,runtime-verification,saved-jpeg-smoke,RESTORE.md}`
 under firmware-port-tests. The last directory contains the accepted deployment.
+
+
+## Optional flow limit and isolated accounting history — September 24, 2026
+
+Test-board bundle `4b98fa31bf27aa1168df6ff58963172ae49c686a84b2098946ed68e9ec2d217a`
+adds the optional flow-limit form under Meter and units. It stays disabled by
+default. Strict versioned settings, journaled saves, revision conflicts and
+processing/storage guards distinguish saved settings from active accounting.
+Changing the effective limit selects separate history and a new baseline;
+returning to previous settings retains the prior segment with an explicit gap.
+Late history scans cannot replace results after a setting change.
+
+All 86 host checks, nine UI checks and the clean ESP32 build passed. OTA boot,
+password/profile/config.ini preservation, live endpoint access control, invalid
+and stale requests, disabled-default activation and served-asset hashes passed.
+One saved-image replay took 11.817055 seconds with exact tensors/output parity.
+No production changes, automatic captures, model changes or selected household
+rate. Physical nonzero-rate transitions and rendered layout remain unverified.
+
+An intermediate installed build exposed a text-encoding defect during final
+diff review. Original UTF-8 text was restored, a regression check was added, and
+the corrected package was rebuilt, installed and read back. Earlier evidence is
+retained. See [flow settings and validation limits](FLOW-ASSUMPTIONS-STATUS.md).

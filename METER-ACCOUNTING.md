@@ -354,3 +354,18 @@ The section loop now handles end-of-file and reordered known sections instead of
 skipping headings or reading past the final line. Short and reordered input fixtures
 pass. Tooltips/configuration HTML were regenerated locally. Browser rendering and
 live save remain unverified; no actual configuration file was changed.
+
+
+### Optional maximum flow setting
+
+On the test build, Meter and units offers an optional maximum in ft³/hour.
+Leave it disabled unless a reliable physical maximum is known. An observed
+average is not an upper bound. Setting the limit too low can reject readings or
+select an incorrect turn count. Display-unit selection does not change this field.
+
+Saving requires the current revision and an idle processing/storage boundary.
+The response distinguishes saved-and-active from saved-but-not-active. Reload
+after an uncertain save rather than retrying automatically. Each effective limit
+has separate checkpoint/history files. Switching starts a new baseline; switching
+back retains old records but cannot infer consumption during the gap.
+See [validation and remaining limits](docs/FLOW-ASSUMPTIONS-STATUS.md).

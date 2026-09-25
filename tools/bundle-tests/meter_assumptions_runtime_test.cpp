@@ -1,4 +1,4 @@
-#include "MeterAssumptionsRuntime.h"
+#include "MeterAccountingController.h"
 #include <map>
 #include <cassert>
 struct Disk:ConfigJournal::Storage {
@@ -53,4 +53,27 @@ int main(){using namespace meter;
  assert(!runtime.activate(disk,off)&&runtime.session()==old);
  disk.failWrites=false;const auto afterFailure=disk.files;
  assert(!runtime.activate(disk,off)&&runtime.session()==old&&disk.files==afterFailure);
+ // Real processing controller: missing settings stay disabled, saved settings
+ // activate on startup, and damage must not fall back to unrestricted tracking.
+ Disk empty;AccountingController defaults("d",std::string(64,'a'),std::string(64,'b'));
+ defaults.observe(empty,frame(1000,1000000));
+ assert(defaults.active()&&!defaults.current().assumptions.hasMaximumRate);
+ assert(defaults.current().referencePersisted);
+ Disk configured;configured.files["d/meter-assumptions.json"]=R"({"version":1,"maximum_flow_ft3_hour":360})";
+ AccountingController controlled("d",std::string(64,'a'),std::string(64,'b'));
+ controlled.observe(configured,frame(1000,1000000));controlled.observe(configured,frame(1002,31000000));
+ assert(controlled.current().cumulative.estimatedFt3==2&&controlled.current().cumulativePersisted);
+ controlled.beginIfUsed();assert(controlled.current().state==SessionState::Pending&&!controlled.current().cumulative.current);
+ AccountingController reboot("d",std::string(64,'a'),std::string(64,'b'));
+ reboot.observe(configured,frame(1004,61000000));assert(reboot.current().hasRestartGap);
+ Disk damaged;damaged.files["d/meter-assumptions.json"]="broken";
+ AccountingController blocked("d",std::string(64,'a'),std::string(64,'b'));
+ blocked.observe(damaged,frame(1000,1000000));assert(!blocked.active());
+ assert(blocked.current().state==SessionState::Rejected&&blocked.current().interval.reason==Reason::InvalidBounds);
+ assert(std::string(blocked.current().persistenceState)=="settings_unavailable");
+ damaged.files["d/meter-assumptions.json"]=R"({"version":1,"maximum_flow_ft3_hour":360})";
+ blocked.observe(damaged,frame(1002,31000000));assert(!blocked.active()); // no blind retry
+ assert(blocked.apply(damaged,on));blocked.observe(damaged,frame(1004,61000000));
+ assert(blocked.current().state==SessionState::Baseline);
+
 }

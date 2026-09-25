@@ -9,6 +9,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mbedtls',type=Path,required=True,help='mbedTLS source directory containing include/ and library/')
     parser.add_argument('--cjson',type=Path,required=True,help='cJSON source directory containing cJSON.c and cJSON.h')
+    parser.add_argument('--source',type=Path,help='Optional focused HTTP regression source')
     parser.add_argument('--cc',default='cc')
     parser.add_argument('--cxx',default='c++')
     parser.add_argument('--zig-python',help='Optional Python executable with the ziglang module installed')
@@ -16,7 +17,7 @@ def main():
     tls=args.mbedtls.resolve()
     if not (tls/'library/sha256.c').is_file():parser.error('Expected an mbedTLS source tree')
     repo=Path(__file__).resolve().parents[3]
-    source=Path(__file__).with_name('settings_http.cpp')
+    source=args.source.resolve() if args.source else Path(__file__).with_name('settings_http.cpp')
     fixture=Path(__file__).with_name('settings-fixtures')
     cjson=args.cjson.resolve()
     cc=[args.zig_python,'-m','ziglang','cc'] if args.zig_python else [args.cc]
@@ -24,7 +25,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='aiedge-destination-queues-') as folder:
         out=Path(folder)
         (out/'archive_sha_config.h').write_text('#define MBEDTLS_SHA256_C\n#define MBEDTLS_PLATFORM_C\n',encoding='ascii')
-        flags=['-O2','-UNDEBUG','-I'+str(tls/'include'),'-I'+str(out),'-I'+str(fixture),'-I'+str(cjson),'-DMBEDTLS_CONFIG_FILE="archive_sha_config.h"']
+        flags=['-O2','-UNDEBUG','-I'+str(tls/'include'),'-I'+str(out),'-I'+str(fixture),'-I'+str(cjson),'-I'+str(repo/'code/components/jomjol_tfliteclass'),'-I'+str(repo/'code/components/jomjol_controlcamera'),'-DMBEDTLS_CONFIG_FILE="archive_sha_config.h"']
         env=dict(os.environ,ZIG_GLOBAL_CACHE_DIR=str(out/'zig-global'),ZIG_LOCAL_CACHE_DIR=str(out/'zig-local'))
         objects=[]
         for name in ['sha256','platform_util','platform']:
@@ -36,6 +37,7 @@ def main():
         subprocess.run(cxx+['-std=c++11']+flags+['-I'+str(repo/'code/components/jomjol_flowcontroll'),str(source)]+objects+['-o',str(exe)],check=True,env=env)
         evidence=out/'spool';evidence.mkdir()
         subprocess.run([str(exe),str(evidence)],check=True)
+        if args.source:return
         store=out/('settings-store.exe' if os.name=='nt' else 'settings-store')
         subprocess.run(cxx+['-std=c++11']+flags+['-I'+str(repo/'code/components/jomjol_flowcontroll'),str(source.with_name('settings_store.cpp'))]+objects+['-o',str(store)],check=True,env=env)
         subprocess.run([str(store)],check=True)

@@ -1,6 +1,6 @@
 # Optional maximum flow setting
 
-Local implementation in progress; not connected to firmware or deployed.
+Installed and verified on the test board on September 24, 2026. Production and the public installer are unchanged.
 
 `MeterAssumptions.h` accepts a strict version-1 JSON document with
 `maximum_flow_ft3_hour`: null disables the bound; a positive finite number
@@ -27,14 +27,36 @@ fault-injection tests, not physical power-cut tests.
 Host tests verify idempotent activation, switching enabled/disabled bounds,
 restoring an earlier namespace with an explicit gap, retaining the prior segment,
 and keeping the current session intact after corrupt target history or an
-uncertain outgoing save. It is not yet wired into `PolarAccounting`.
+uncertain outgoing save. `PolarAccounting` now uses `MeterAccountingController` to restore settings once,
+apply them before observations, publish actual persistence status and refuse
+accounting when configuration recovery fails. History reads select the active
+namespace. Controller tests cover missing settings, configured limits, restart
+gaps, damaged settings, no blind retry, and explicit recovery activation.
 
-Still required: revision-checked authenticated API,
-processing-owner activation wiring at a safe cycle boundary,
-history enumeration and assumption labels,
-UI explaining ambiguity and the risk of an incorrect upper bound, firmware integration
-tests for switching bounds and restoring previous namespaces, then test-board
-build and readback. Naming alone does not implement runtime isolation.
+The authenticated `/meter_assumptions` GET/POST endpoint is implemented with
+strict bodies, revision hashes, processing/storage guards, verified saves and
+separate saved/active status. GET is read-only. The form on Meter and units
+leaves the limit disabled by default and never retries a save automatically.
+HTTP host tests and both form tests pass. History scan results are invalidated
+on saves, including scans that finish after a setting changes.
+
+Test-board bundle:
+`4b98fa31bf27aa1168df6ff58963172ae49c686a84b2098946ed68e9ec2d217a`.
+All 86 host checks, nine UI checks and the ESP32 build passed. Managed OTA,
+verified boot and configuration/profile/password preservation passed. The live
+endpoint rejected unauthenticated, invalid and stale requests; saving the disabled
+default reported saved-and-active and read back correctly. Served HTML/JS matched
+source bytes, including correct UTF-8 symbols. A saved JPEG completed in
+11.817055 seconds with six tensors and six output arrays matching exactly.
+Automatic captures stayed at zero and image archiving remained disabled.
+
+Still open: rendered mobile layout verification, nonzero-bound transitions on
+physical hardware, and validation against real captured consumption sequences.
+Host tests cover nonzero limits and history isolation; no household maximum rate
+has been selected. Replay parity is not independent accuracy or capture cadence.
+Private evidence: `aiedge-flow-assumptions-05/{ota,runtime-verification,saved-jpeg-smoke,RESTORE.md}`
+under `needle-training/firmware-port-tests`. Earlier candidates preserve failed
+host-harness/compile checks and the superseded text-encoding issue.
 
 Keep production unchanged. Do not infer turns from retrieval timestamps or use
 this setting to conceal contradictory main-dial readings. Unlabeled readings
