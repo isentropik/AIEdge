@@ -25,6 +25,13 @@ def record(archive,review_file,answers_file,protected_file,output):
  dials=answers['dials']
  if not isinstance(dials,list) or not 1<=len(dials)<=16 or any(not isinstance(d,str) or not re.fullmatch('[a-zA-Z0-9_]{1,64}',d) for d in dials) or len(set(dials))!=len(dials):raise ValueError('Declare distinct dial names')
  if not isinstance(review,dict) or type(review.get('version')) is not int or review.get('version')!=1 or review.get('training_eligible') is not False:raise ValueError('Expected an unassigned gallery review')
+ # A form's dial names and order are part of the hashed review contract.
+ # View-only galleries have no form and retain explicit reviewer declarations.
+ if 'label_form_dials' in review:
+  form_dials=review['label_form_dials']
+  if not isinstance(form_dials,list) or form_dials!=dials:
+   raise ValueError('Submission dial names and order must match the gallery form')
+ dial_name_source='gallery_form' if 'label_form_dials' in review else 'reviewer_declaration'
  window=review.get('protect_window_seconds')
  current=prepare(archive,protected_file,window)
  groups=[g for g in current['groups'] if g['group_id']==review.get('group_id') and g['identity']==review.get('identity')]
@@ -48,7 +55,7 @@ def record(archive,review_file,answers_file,protected_file,output):
   for v in values.values():
    if v is not None and (type(v) not in (int,float) or not math.isfinite(v) or not 0<=v<10):raise ValueError('Use finite 0–10 positions, below 10, or null')
   rows.append(dict(image_sha256=key,captures=gallery[key]['captures'],readings=values,split='unassigned',training_eligible=False))
- result=dict(version=1,recorded_at_utc=datetime.now(timezone.utc).isoformat(),review_sha256=digest(raw),submission_sha256=digest(answer_raw),protected_manifest_sha256=current['protected_manifest_sha256'],protect_window_seconds=window,identity=review['identity'],reviewer=answers['reviewer'],method=answers['method'],position_scale='0_to_10_in_each_dials_numbering',dials=dials,images=rows,training_eligible=False,limits=['Human statements are recorded, not automatically verified.','Unknown stays null. No split assignment or training admission.','Dial names and directions must be checked against calibration before any later use.','Recheck held-out and near-duplicate protections before training.'])
+ result=dict(version=1,recorded_at_utc=datetime.now(timezone.utc).isoformat(),review_sha256=digest(raw),submission_sha256=digest(answer_raw),protected_manifest_sha256=current['protected_manifest_sha256'],protect_window_seconds=window,identity=review['identity'],reviewer=answers['reviewer'],method=answers['method'],position_scale='0_to_10_in_each_dials_numbering',dial_name_source=dial_name_source,dials=dials,images=rows,training_eligible=False,limits=['Human statements are recorded, not automatically verified.','Unknown stays null. No split assignment or training admission.','Dial names and directions must be checked against calibration before any later use.','Recheck held-out and near-duplicate protections before training.'])
  with output.open('x',encoding='utf-8') as stream:json.dump(result,stream,indent=2,allow_nan=False)
  return result
 

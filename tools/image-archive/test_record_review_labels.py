@@ -50,4 +50,32 @@ class LabelTests(unittest.TestCase):
  def test_assisted_confirmation_is_explicit(self):
   self.submission['method']='confirmation_of_shown_estimate'
   self.assertEqual(self.run_record()['method'],'confirmation_of_shown_estimate')
+ def bind_form(self,dials):
+  review=json.loads(self.review.read_text(encoding='utf-8'));review['label_form_dials']=dials
+  self.review.write_text(json.dumps(review),encoding='utf-8')
+  self.submission['review_sha256']=digest(self.review.read_bytes())
+ def test_form_dials_must_match_names_and_order(self):
+  original=copy.deepcopy(self.submission)
+  for n,form in enumerate([['secondary','main'],['main','other'],['main'],['main','secondary','other']]):
+   with self.subTest(form=form):
+    self.output=self.f.base/f'mismatch-{n}.json'
+    self.submission=copy.deepcopy(original);self.bind_form(form)
+    with self.assertRaisesRegex(ValueError,'dial'):self.run_record()
+    self.assertFalse(self.output.exists())
+ def test_invalid_declared_form_dials_do_not_fall_back_to_unbound(self):
+  for n,form in enumerate([None,[],{},'main',True,['main','main'],['main',3]]):
+   with self.subTest(form=form):
+    self.output=self.f.base/f'invalid-form-{n}.json'
+    self.bind_form(form)
+    with self.assertRaisesRegex(ValueError,'dial'):self.run_record()
+    self.assertFalse(self.output.exists())
+ def test_matching_form_dials_record_provenance(self):
+  self.bind_form(['main','secondary'])
+  r=self.run_record()
+  self.assertEqual(r['dial_name_source'],'gallery_form')
+  self.assertEqual(r['dials'],['main','secondary'])
+  self.assertIsNone(r['images'][0]['readings']['secondary'])
+ def test_view_only_gallery_keeps_explicit_user_dial_declaration(self):
+  r=self.run_record()
+  self.assertEqual(r['dial_name_source'],'reviewer_declaration')
 if __name__=='__main__':unittest.main()

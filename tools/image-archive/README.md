@@ -126,6 +126,14 @@ Download your answers before closing the page; unfinished entries are not saved.
 The file contains readings and image hashes, not the images themselves. Nothing
 is uploaded or admitted to training. Blank fields are not treated as zero or unknown.
 
+When the gallery includes a reading form, the importer requires exactly the dial
+names and order shown in that form. Renaming, adding, removing or reordering dials
+in a downloaded answer file is rejected before any label record is written. Export
+a new gallery if you need different fields. View-only galleries still allow
+explicit dial names in a manually prepared answer file. Saved label records state
+whether dial names came from the gallery form or the reviewer's declaration;
+neither path verifies the physical dial mapping or numbering direction for you.
+
 Use the downloaded file as `--answers` with the recorder below. The gallery embeds
 the exact review-file hash, so no manual hash copying is needed. The recorder still
 rechecks the archive and current held-out protections. This gallery has no needle
