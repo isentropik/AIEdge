@@ -1240,8 +1240,9 @@ esp_err_t handler_wasserzaehler(httpd_req_t *req)
     }
     else
     {
-        httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Flow not (yet) started: REST API /value not available!");
-        return ESP_ERR_NOT_FOUND;
+        // The HTTP error is a completed application response, not a failed
+        // transport. Keep the connection usable when sending succeeds.
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Flow not (yet) started: REST API /value not available!");
     }
 
 #ifdef DEBUG_DETAIL_ON

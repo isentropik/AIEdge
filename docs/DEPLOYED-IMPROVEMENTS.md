@@ -598,3 +598,25 @@ Bundle: `c090e79cc66e420a25e29ca826896b82fd9538949540821b135cf166e561b015`.
 Private evidence: `aiedge-empty-readings-response-02/{ota,post-install.json}` under
 firmware-port-tests. The interrupted `-01` build was retained and never deployed.
 This private diagnostic package is not a public installer release.
+
+
+## Connection reuse after setup-state responses — September 25
+
+The readings endpoint now returns the HTTP send result when processing has not
+started. Previously it sent a valid 403 response but returned a handler failure,
+causing the HTTP server to close the connection without telling the client.
+The status and message are unchanged.
+
+The actual-branch test now passes 18 cases, including setup-state send success
+and failure. A hardware regression failed before the change with a disconnected
+connection. After deployment, all four reading types and their following system
+information requests completed on the same socket (nine requests total).
+
+The managed package passed 93 host checks, 11 UI checks, a clean build, package
+integrity checks and OTA/boot verification. Configuration and password protection
+were preserved. This is test-board validation; production was untouched.
+
+Bundle: `b970f9faf8dc904120623b0f680eef2e18ae32e1e4bd8e3069f39ad9643a3f2d`.
+Private evidence: `aiedge-value-keepalive-01/{ota,same-socket-after.json}` and
+`value-connection-reuse-20260925/same-socket-before.json` under firmware-port-tests.
+This private diagnostic package is not a public installer release.
