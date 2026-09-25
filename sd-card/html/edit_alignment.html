@@ -682,13 +682,13 @@
 
             document.getElementById("img_ref").onload = function () {
 
-                document.getElementById("refdx").value = this.width;
+                document.getElementById("refdx").value = this.naturalWidth;
 
-                document.getElementById("refdy").value = this.height;   
+                document.getElementById("refdy").value = this.naturalHeight;
 
-                refInfo[aktindex]["dx"] = this.width;
+                refInfo[aktindex]["dx"] = this.naturalWidth;
 
-                refInfo[aktindex]["dy"] = this.height;
+                refInfo[aktindex]["dy"] = this.naturalHeight;
 
                 rect.w = document.getElementById("refdx").value;
 
@@ -809,13 +809,13 @@
 
             document.getElementById("img_ref").onload = function () {
 
-                document.getElementById("refdx").value = this.width;
+                document.getElementById("refdx").value = this.naturalWidth;
 
-                document.getElementById("refdy").value = this.height;
+                document.getElementById("refdy").value = this.naturalHeight;
 
-                refInfo[aktindex]["dx"] = this.width;
+                refInfo[aktindex]["dx"] = this.naturalWidth;
 
-                refInfo[aktindex]["dy"] = this.height;
+                refInfo[aktindex]["dy"] = this.naturalHeight;
 
                 rect.w = document.getElementById("refdx").value;
 

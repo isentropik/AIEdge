@@ -21,3 +21,22 @@ const before=JSON.stringify(refs);context.rect.startX=800;context.rect.startY=60
 context.rect.startX=-1;context.updateMarkerSpacing();assert.equal(status.dataset.state,'outside');
 assert.match(html,/aria-live="polite"/);assert.match(html,/alignment-spacing.js/);
 console.log('Marker geometry: scaling, overlap, bounds, incomplete inputs, reverse drag and non-mutating editor feedback passed');
+// Rendered preview dimensions must never alter intrinsic marker geometry.
+for (const name of ['LoadReference','UpdateReference']) {
+  const begin=html.indexOf('        function '+name+'(');
+  const end=html.indexOf('\n        function ',begin+1);
+  assert.ok(begin>=0 && end>begin);
+  const elements={};
+  for(const key of ['img_ref','img_ref_org','refdx','refdy','name','refx','refy'])elements[key]={};
+  const markers=[{name:'/config/ref0.jpg',x:11,y:13}];
+  const env={document:{getElementById:key=>elements[key]},refInfo:markers,aktindex:0,rect:{},domainname:'http://device',Date,draw:()=>{}};
+  vm.createContext(env);vm.runInContext(html.slice(begin,end),env);
+  env[name]();
+  Object.assign(elements.img_ref,{width:9,height:7,naturalWidth:90,naturalHeight:70});
+  elements.img_ref.onload();
+  assert.equal(elements.refdx.value,90,name+' must use intrinsic width');
+  assert.equal(elements.refdy.value,70,name+' must use intrinsic height');
+  assert.equal(markers[0].dx,90);assert.equal(markers[0].dy,70);
+  assert.equal(env.rect.w,90);assert.equal(env.rect.h,70);
+}
+console.log('Resized marker previews preserve intrinsic dimensions in load and update paths');

@@ -396,3 +396,29 @@ An intermediate installed build exposed a text-encoding defect during final
 diff review. Original UTF-8 text was restored, a regression check was added, and
 the corrected package was rebuilt, installed and read back. Earlier evidence is
 retained. See [flow settings and validation limits](FLOW-ASSUMPTIONS-STATUS.md).
+
+
+## Alignment marker preview dimensions — September 24, 2026
+
+The alignment editor now uses each preview image's intrinsic pixel width and
+height when loading or refreshing a marker. Previously both callbacks copied
+its displayed dimensions into editable marker geometry. A resized preview could
+therefore change those dimensions even though the source marker was unchanged.
+The regression executes both actual editor callbacks with a 90×70 source rendered
+at 9×7 and verifies that the input fields, marker record and selection rectangle
+all retain 90×70. Spacing and overlap guidance remain unchanged.
+
+Candidate `aiedge-marker-dimensions-01`, bundle
+`795c2060fb6eb7ea15d65a64e54a14b631d3e2eab024498766856ab208061ed1`,
+passed 86 host checks, nine UI checks and a clean managed ESP32 build. Managed
+OTA and verified boot passed on the test board; configuration, meter profile
+and password protection were preserved. The served editor bytes match the
+corrected source exactly. A saved-JPEG smoke test matched all six input tensors
+and output arrays in 11.705951 seconds. Camera attempts stayed zero and archiving
+remained inactive. No production or public-installer update was performed.
+
+This fixes the dimension callbacks; it does not complete physical camera,
+browser-rendering, touch-coordinate or marker save/reload verification. Existing
+calibration and model files were not changed. Private evidence is retained in
+`aiedge-marker-dimensions-01/{ota,served-verification,saved-jpeg-smoke,RESTORE.md}`
+under firmware-port-tests. Rollback is the retained flow-assumptions-05 package.

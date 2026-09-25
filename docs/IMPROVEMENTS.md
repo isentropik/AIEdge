@@ -26,7 +26,7 @@ Updated September 24, 2026 (Pacific time). This is the running list of open work
 | Matching GUI on every page | Shared styling installed on the test board; normal camera-absent homepage verified. Remaining pages and mobile interactions need review; public release pending. | Overview, camera/ROI tools, settings, logs, updates, setup and recovery share navigation, typography, spacing, controls and mobile layouts. Check real data and all interaction states. |
 | User-selectable theme everywhere | Main pages support system/light/dark; self-contained error-page theme added locally. | Theme choice persists and matches across top-level pages, iframes, loader and recovery, including unavailable-SD state. |
 | Original visual assets and beginner-friendly instructions | Setup introduction rewritten and inherited promotional images removed locally. Broader audit pending. | No copied promotional visuals; original assets and clear steps, with upstream technical attribution retained. |
-| Preserve ROI geometry while restyling | Shared style deliberately leaves intrinsic canvas coordinates unchanged. | Verify marker placement, pointer mapping, scaling and saved coordinates on desktop and mobile. |
+| Preserve ROI geometry while restyling | Shared style deliberately leaves intrinsic canvas coordinates unchanged. Marker preview load/update now retain intrinsic image dimensions on the test board; the deployed fix is recorded in the archive. | Verify marker placement, pointer mapping, scaling and saved coordinates on desktop and mobile. |
 
 ## Meter recognition and physical calculations
 
