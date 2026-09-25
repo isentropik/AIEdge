@@ -52,6 +52,7 @@ The cumulative turn-tracking correction is installed on the test board and recor
 - [ ] Broaden optional image-archive coverage for receiver compatibility, rejected credentials, storage limits, sustained retries and physical power interruption. Three synthetic receiver process-interruption/retry cases now pass on a Windows-to-SMB storage path; this does not establish ESP32 delivery or physical power-loss durability. The settings UI/API, stale-save rejection and recovery from simulated torn files now pass on the test board. Queued-image HTTPS delivery already passed. A real user storage server is not required to configure this optional feature; the receiver controls its destination folder.
 - [ ] Apply routine settings immediately or at a safe cycle boundary; distinguish saved, active, pending and failed states. Validate rollback on rejected changes.
 - [ ] Verify MQTT/HA reporting, units and freshness separately; no silent entity-ID or historical-total migration.
+- [ ] Publish the current accounting rejection snapshot when recognition stops the normal pipeline. Source inspection shows the controller sends `Recognition failed` on `/status`, but skips `ClassFlowMQTT`, where the optional `/accounting/status` snapshot is currently published. A connected consumer may therefore retain its preceding accounting snapshot. Preserve the opt-in setting, avoid publishing legacy values or retrying capture, and test failure, disconnect and next-cycle recovery before deployment.
 
 ## Evidence and update rules
 
