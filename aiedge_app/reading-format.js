@@ -51,6 +51,7 @@ async function load(force=false){
   }
   dirty=false;loaded=true;
   if(!pipeline||!dials.length)status('Save the dial calibration before setting the number format.');
+  else if(saved.recovery)status('The saved number format could not be loaded. Enter replacement values; the original file will be kept.',true);
   else if(stale)status('Calibration or the model changed. Enter the values for the current dials.',true);
   else status('');
   if(setup.calibration?.reference_sha256){
@@ -68,7 +69,7 @@ form.onsubmit=async event=>{
  const values=dials.map(d=>({index:d.index,value_per_revolution:Number($('format-value-'+d.index).value),position_error:Number($('format-error-'+d.index).value)})).sort((a,b)=>b.value_per_revolution-a.value_per_revolution);
  if(values.some(d=>!Number.isFinite(d.value_per_revolution)||d.value_per_revolution<=0||!Number.isFinite(d.position_error)||d.position_error<0||d.position_error>=.5)){status(messages.invalid_reading_scale_or_error,true);return;}
  busy=true;controls();status('Saving…');
- try{const saved=await request('api/reading-format',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':token},body:JSON.stringify({revision,format:{version:1,pipeline_id:pipeline,unit:$('format-unit').value,dials:values}})});revision=saved.revision;dirty=false;status('Format saved');await refresh();}
+ try{const saved=await request('api/reading-format',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':token},body:JSON.stringify({revision,format:{version:1,pipeline_id:pipeline,unit:$('format-unit').value,dials:values}})});revision=saved.revision;dirty=false;status('Format saved');window.dispatchEvent(new Event('aiedge-reading-format-saved'));}
  catch(e){status(e.message,true);}
  finally{busy=false;controls();}
 };

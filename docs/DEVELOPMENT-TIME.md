@@ -1,10 +1,10 @@
 # Development time
 
-AIEdge is being **vibe coded with Codex**, with user direction, image labeling and hardware testing. Approximately **36 hours** of recorded project activity so far, as of September 23, 2026 (Pacific time).
+AIEdge is being **vibe coded with Codex**, with user direction, image labeling and hardware testing. Approximately **91 hours** of recorded project activity so far, as of September 29, 2026 (Pacific time).
 
 This is an evolving estimate of work on this fork and its meter-training work, not the time spent creating the upstream project. AIEdge builds on [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device) by jomjol and its contributors; their work remains credited separately.
 
-The total is reconstructed from two project chats, rounded to the nearest hour. Overlapping chat activity counts once. Gaps longer than five minutes are excluded, so long builds can be undercounted and short waits can be included. This is neither human labor hours nor model compute time.
+The total is reconstructed from the selected project transcripts, rounded to the nearest hour. Rotated files from the same chat are counted as one chat. Overlapping chat activity counts once. Gaps longer than five minutes are excluded, so long builds can be undercounted and short waits can be included. This is neither human labor hours nor model compute time.
 
 ## Updating the total
 

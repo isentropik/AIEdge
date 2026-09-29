@@ -1,7 +1,8 @@
 """Local setup persistence. Validate a complete candidate before atomic activation."""
 import hashlib,json,os,re,threading,uuid
 from pathlib import Path
-from calibration import load
+from calibration import validate
+from saved_file import SavedFile
 from calibration_builder import build,image_rgb
 
 class Setup:
@@ -9,14 +10,28 @@ class Setup:
         self.root=Path(directory);self.references=self.root/'references';self.references.mkdir(parents=True,exist_ok=True)
         self.factory=reader_factory;self.recognition=recognition;self.lock=threading.Lock();self.active=None
         self.path=self.root/'calibration.json'
-        if self.path.exists():
-            document,digest=load(self.path);self.reference(document['reference_sha256'])
-            reader=self.factory(document)
-            self.recognition.activate(reader,lambda:None)
-            self.active=(document,digest)
+        self.saved=SavedFile(self.path);self.draft=None
+        try:
+            raw=self.saved.read()
+            if raw is None:return
+            document,digest=validate(json.loads(raw))
+        except (ValueError,KeyError,TypeError,UnicodeError):
+            self.saved.failed('saved_calibration_invalid');return
+        except OSError:
+            self.saved.failed('calibration_file_unavailable');return
+        self.draft=document
+        try:self.reference(document['reference_sha256'])
+        except (ValueError,OSError):
+            self.saved.failed('saved_reference_unavailable');return
+        try:reader=self.factory(document)
+        except (ValueError,OSError,RuntimeError):
+            self.saved.failed('recognition_runtime_unavailable');return
+        self.recognition.activate(reader,lambda:None)
+        self.active=(document,digest)
     def reference(self,digest):
         if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):raise ValueError('invalid_reference_id')
-        blob=(self.references/(digest+'.image')).read_bytes()
+        try:blob=(self.references/(digest+'.image')).read_bytes()
+        except FileNotFoundError:raise ValueError('reference_image_not_found') from None
         if hashlib.sha256(blob).hexdigest()!=digest:raise ValueError('reference_corrupt')
         return blob
     def add_reference(self,blob):
@@ -36,7 +51,7 @@ class Setup:
             if temp.exists():temp.unlink()
     def status(self):
         with self.lock:
-            if self.active is None:return {'revision':None,'calibration':None}
+            if self.active is None:return {'revision':self.saved.revision,'calibration':json.loads(json.dumps(self.draft)),**self.saved.recovery()}
             document,revision=self.active
             # Return a copy: callers cannot modify the active profile in place.
             return {'revision':revision,'calibration':json.loads(json.dumps(document))}
@@ -49,8 +64,8 @@ class Setup:
         if preview.get('state')!='estimated':raise ValueError('reference_recognition_rejected:'+preview.get('error','unknown'))
         blob=json.dumps(document,sort_keys=True,indent=2,allow_nan=False).encode('utf-8')
         with self.lock:
-            current=self.active[1] if self.active else None
+            current=self.active[1] if self.active else self.saved.revision
             if current!=expected_revision:raise ValueError('setup_changed_reload_before_saving')
-            self.recognition.activate(candidate,lambda:self._atomic(self.path,blob))
+            self.recognition.activate(candidate,lambda:self.saved.replace(blob,self._atomic,'setup_changed_reload_before_saving'))
             self.active=(document,revision)
         return self.status()

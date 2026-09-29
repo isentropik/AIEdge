@@ -1,8 +1,9 @@
 {
-  "approximate_hours": 36,
-  "as_of_utc": "2026-09-24T03:53:51.008000+00:00",
+  "approximate_hours": 91,
+  "as_of_utc": "2026-09-29T16:56:50.489000+00:00",
   "included_since_utc": "2026-09-15T04:50:52.773Z",
-  "source_chat_count": 2,
+  "source_chat_count": 1,
+  "source_file_count": 2,
   "method": "Union of within-chat gaps between recorded activity events of at most 300 seconds. Longer gaps excluded; overlapping chats counted once. Rounded to nearest hour.",
   "limitations": [
     "Approximate shared project activity, not human labor hours or model compute time.",

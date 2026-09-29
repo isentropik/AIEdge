@@ -1,5 +1,5 @@
 """Remote camera transport and capture provenance. Never infers training labels."""
-import base64,hashlib,json,os,re,shutil,sqlite3,threading,time,urllib.request,urllib.parse
+import base64,hashlib,json,os,re,shutil,sqlite3,threading,time,urllib.request,urllib.parse,urllib.error,uuid,socket,ssl
 from datetime import datetime,timezone
 from contextlib import contextmanager
 from pathlib import Path
@@ -43,18 +43,24 @@ class Store:
     def add(self,camera,blob,headers):
         frame,stamp,digest=validate(blob,headers)
         with self.lock,self.connect() as db:
+            # Serialize file+ledger admission even if another process opened this store.
+            db.execute('BEGIN IMMEDIATE')
+            target=self.root/'images'/(digest+'.jpg')
+            if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest()!=digest:
+                raise ValueError('stored_image_corrupt')
             prior=db.execute('SELECT captured_at,sha256 FROM frames WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
             if prior:
                 if prior!=(stamp,digest):raise ValueError('frame_identity_conflict')
+                if not target.exists():raise ValueError('stored_image_missing')
                 return False
-            target=self.root/'images'/(digest+'.jpg')
             self.require_space(0 if target.exists() else len(blob))
-            if target.exists():
-                if hashlib.sha256(target.read_bytes()).hexdigest()!=digest:raise ValueError('stored_image_corrupt')
-            else:
-                temp=target.with_suffix('.tmp')
-                with temp.open('wb') as f:f.write(blob);f.flush();os.fsync(f.fileno())
-                os.replace(temp,target)
+            if not target.exists():
+                temp=target.with_name(uuid.uuid4().hex+'.tmp')
+                try:
+                    with temp.open('xb') as f:f.write(blob);f.flush();os.fsync(f.fileno())
+                    os.replace(temp,target)
+                finally:
+                    if temp.exists():temp.unlink()
             db.execute('INSERT INTO frames VALUES(?,?,?,?,?,?,0)',(camera,frame,stamp,now(),digest,len(blob)))
         return True
     def fail(self,error):
@@ -81,6 +87,21 @@ class Store:
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):raise ValueError('camera_redirect_rejected')
 
+# Only recognized firmware messages leave this boundary. Never expose response
+# bodies, authentication headers, URLs containing secrets, or arbitrary exceptions.
+CAMERA_FAILURES={
+    'Camera busy; retry shortly':'camera_busy',
+    'Camera unavailable; connect it with power off, then restart':'camera_unavailable',
+    'Camera clock is not synchronized':'camera_clock_unsynchronized',
+    'Frame is stale or clock changed during capture':'camera_clock_changed',
+    'Camera settings are not ready':'camera_settings_unavailable',
+    'Saved camera settings could not be applied':'camera_settings_unavailable',
+    'Illumination failed':'camera_lighting_failed',
+    'Light off failed; image rejected':'camera_lighting_failed',
+    'Live capture unavailable in demo mode':'camera_demo_mode',
+    'Capture worker unavailable':'camera_worker_unavailable',
+}
+
 class Camera:
     def __init__(self,url,token='',username='',password=''):
         p=urllib.parse.urlsplit(url)
@@ -96,17 +117,36 @@ class Camera:
         if self.token:headers['Authorization']='Bearer '+self.token
         elif self.basic:headers['Authorization']='Basic '+self.basic
         request=urllib.request.Request(self.origin+'/api/v1/capture',data=b'{}',headers=headers,method='POST');start=time.monotonic()
-        with self.opener.open(request,timeout=5) as r:
-            if r.status!=200 or r.headers.get_content_type()!='image/jpeg':raise ValueError('invalid_camera_response')
-            length=int(r.headers.get('Content-Length','0'))
-            if not 4<=length<=MAX_IMAGE:raise ValueError('invalid_image_length')
-            parts=[];remaining=length
-            while remaining:
-                if time.monotonic()-start>20:raise ValueError('capture_deadline_exceeded')
-                block=r.read1(min(65536,remaining))
-                if not block:raise ValueError('truncated_image')
-                parts.append(block);remaining-=len(block)
-            return b''.join(parts),r.headers
+        try:
+            with self.opener.open(request,timeout=5) as r:
+                if r.status!=200 or r.headers.get_content_type()!='image/jpeg':raise ValueError('invalid_camera_response')
+                length=int(r.headers.get('Content-Length','0'))
+                if not 4<=length<=MAX_IMAGE:raise ValueError('invalid_image_length')
+                parts=[];remaining=length
+                while remaining:
+                    if time.monotonic()-start>20:raise ValueError('capture_deadline_exceeded')
+                    block=r.read1(min(65536,remaining))
+                    if not block:raise ValueError('truncated_image')
+                    parts.append(block);remaining-=len(block)
+                return b''.join(parts),r.headers
+        except urllib.error.HTTPError as exc:
+            try:
+                try:body=exc.read(257).decode('utf-8',errors='replace').strip()
+                except OSError:body=''
+                code={401:'camera_authentication_failed',403:'camera_authentication_failed',
+                      404:'camera_api_unavailable',405:'camera_api_unavailable',
+                      409:'camera_busy',429:'camera_busy',503:'camera_unavailable'}.get(exc.code,'camera_http_error')
+                if exc.code==503 and len(body)<=256:code=CAMERA_FAILURES.get(body,code)
+            finally:exc.close()
+            raise ValueError(code) from None
+        except urllib.error.URLError as exc:
+            if isinstance(exc.reason,ssl.SSLCertVerificationError):code='camera_certificate_invalid'
+            elif isinstance(exc.reason,(TimeoutError,socket.timeout)):code='camera_timeout'
+            elif isinstance(exc.reason,socket.gaierror):code='camera_name_unresolved'
+            else:code='camera_connection_failed'
+            raise ValueError(code) from None
+        except (TimeoutError,socket.timeout):
+            raise ValueError('camera_timeout') from None
 
 class Collector:
     def __init__(self,store,camera,interval):

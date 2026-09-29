@@ -1,6 +1,27 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id);
+const captureErrors={
+ camera_authentication_failed:'Camera login was rejected. Check its credentials in app configuration.',
+ camera_api_unavailable:'This camera firmware does not provide the remote capture API.',
+ camera_busy:'Camera is busy. The next scheduled capture will try again.',
+ camera_unavailable:'Camera is unavailable. Check the device and camera connection.',
+ camera_clock_unsynchronized:'Camera is waiting for its clock to synchronize.',
+ camera_clock_changed:'Camera time changed during capture. That image was rejected.',
+ camera_settings_unavailable:'Camera settings could not be applied. Check the device setup.',
+ camera_lighting_failed:'Camera lighting failed. The image was rejected.',
+ camera_demo_mode:'The camera is in demo mode. Live capture is unavailable.',
+ camera_worker_unavailable:'The camera could not start a capture. The next scheduled capture will try again.',
+ camera_certificate_invalid:'Camera TLS certificate could not be verified.',
+ camera_timeout:'Camera did not respond in time. The next scheduled capture will try again.',
+ camera_name_unresolved:'Camera name could not be resolved. Check its address.',
+ camera_connection_failed:'Could not connect to the camera. Check its power and network address.',
+ camera_http_error:'Camera returned an unexpected response.',
+ stored_image_corrupt:'A saved image failed its integrity check. The original file has been kept.',
+ stored_image_missing:'A saved image is missing from app storage.',
+ storage_low_space:'Capture paused: local storage is low on space. Existing images are kept.',
+ storage_unavailable:'Capture paused: local storage is unavailable.'
+};
 const date=value=>value?new Date(value).toLocaleString():'—';
 const theme=$('theme');
 try {theme.value=localStorage.getItem('aiedge-theme')||'system';} catch {}
@@ -9,17 +30,30 @@ function applyTheme(){
   try {localStorage.setItem('aiedge-theme',theme.value);} catch {}
 }
 theme.onchange=applyTheme;applyTheme();
+let activePage='overview';
 function page(name){
+  activePage=name;
+  $('error').hidden=!$('error').textContent||$('error').dataset.owner===name;
   for(const id of ['overview','captures','setup','format']){
     $(id).hidden=id!==name;$(id+'-tab').setAttribute('aria-current',id===name?'page':'false');
   }
   $('title').textContent={overview:'Overview',captures:'Captures',setup:'Calibration',format:'Number format'}[name];
 }
-$('overview-tab').onclick=()=>page('overview');
-$('captures-tab').onclick=()=>page('captures');
-$('setup-tab').onclick=()=>{page('setup');window.openCalibration();};
-$('format-tab').onclick=()=>{page('format');window.openReadingFormat();};
-let busy=false,timer=null,galleryKey=null,imageHash=null;
+const routes={overview:'overview',captures:'captures',calibration:'setup',format:'format'};
+function route(){
+ const name=routes[location.hash.slice(1)]||'overview';page(name);
+ if(name==='setup')window.openCalibration();
+ if(name==='format')window.openReadingFormat();
+}
+for(const [hash,name] of Object.entries(routes))$(name+'-tab').onclick=()=>{
+ if(location.hash==='#'+hash)route();else location.hash=hash;
+};
+window.addEventListener('hashchange',route);
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',route,{once:true});
+else route();
+let busy=false,timer=null,galleryKey=null,imageHash=null,imageFailed=false;
+$('latest-image').onerror=()=>{imageFailed=true;$('latest-image').hidden=true;$('empty-image').hidden=false;$('empty-image').querySelector('strong').textContent='Image unavailable';$('empty-image').querySelector('p').textContent='The saved image could not be loaded. Use Refresh to try again.';};
+$('latest-image').onload=()=>{imageFailed=false;$('latest-image').hidden=false;$('empty-image').hidden=true;};
 async function get(path){
   const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(8000)});
   if(!response.ok){
@@ -50,6 +84,7 @@ function gallery(rows){
     card.href='image/'+row.sha256;card.target='_blank';card.rel='noopener';
     const image=document.createElement('img');image.src=card.href;
     image.alt='Meter capture '+date(row.captured_at);image.loading='lazy';
+    image.onerror=()=>{image.hidden=true;card.classList.add('image-unavailable');};
     const body=document.createElement('div');body.className='body';
     const stamp=document.createElement('div');stamp.textContent=date(row.captured_at);
     const meta=document.createElement('small');meta.textContent=Math.round(row.bytes/1024)+' KB · Unlabeled';
@@ -67,17 +102,25 @@ function render(s,rows){
   $('storage-state').textContent=({ready:'Ready',low_space:'Low space',unavailable:'Unavailable'})[s.storage?.state]||'Unavailable';
   $('storage-free').textContent=Number.isFinite(s.storage?.free_bytes)?(s.storage.free_bytes/(1024**3)).toFixed(1)+' GiB':'—';
   $('capture-time').textContent=s.latest?'Captured '+date(s.latest.captured_at):'Waiting for the first image';
-  $('empty-image').querySelector('p').textContent=s.capture_enabled?'Waiting for the camera to return an image.':'Camera capture is not enabled.';
-  $('latest-image').hidden=!s.latest;$('empty-image').hidden=!!s.latest;
+  if(!imageFailed){
+    $('empty-image').querySelector('strong').textContent='No captures yet';
+    $('empty-image').querySelector('p').textContent=s.capture_enabled?'Waiting for the camera to return an image.':'Camera capture is not enabled.';
+  }
+  $('latest-image').hidden=!s.latest||imageFailed;$('empty-image').hidden=!!s.latest&&!imageFailed;
   if(s.latest?.sha256!==imageHash){
     imageHash=s.latest?.sha256||null;
-    if(imageHash)$('latest-image').src='image/'+imageHash;
+    if(imageHash){imageFailed=false;$('latest-image').src='image/'+imageHash;}
   }
   gallery(rows);
-  const issue=s.recognition_error?'Recognition is waiting for local storage.':
-    s.last_error?'Capture failed: '+s.last_error.error:
+  const issue=s.recognition?.error==='stored_result_invalid'?'The stored recognition result is damaged. Its image and original record have been kept.':
+    s.setup_recovery?.code==='recognition_runtime_unavailable'?'Recognition engine could not load. Check the app runtime and model files.':
+    s.setup_recovery?'Saved calibration could not be loaded. Open Calibration to recover it.':
+    s.format_recovery?'Saved number format could not be loaded. Open Number format to replace it.':
+    s.recognition_error?'Recognition is waiting for local storage.':
+    s.last_error?(captureErrors[s.last_error.error]||'Capture failed: '+s.last_error.error):
     s.capture_enabled&&s.storage?.state==='low_space'?'Capture paused: local storage is low on space. Existing images are kept.':'';
-  $('error').hidden=!issue;$('error').textContent=issue;
+  $('error').dataset.owner=s.setup_recovery?'setup':s.format_recovery?'format':'';
+  $('error').hidden=!issue||$('error').dataset.owner===activePage;$('error').textContent=issue;
   $('checked-at').textContent='Checked '+new Date().toLocaleTimeString();
 }
 async function refresh(){
@@ -93,14 +136,16 @@ async function refresh(){
     $('meter-value').textContent='—';$('reading-status').textContent='Status unavailable.';
     $('camera-status').textContent='Connection lost';$('mqtt-state').textContent='Unknown';
     $('storage-state').textContent='Unknown';$('storage-free').textContent='—';
-    $('dial-results').hidden=true;$('error').hidden=false;
+    $('dial-results').hidden=true;$('error').dataset.owner='';$('error').hidden=false;
     $('error').textContent=error.name==='TimeoutError'?'The app did not respond. Retrying automatically.':error instanceof TypeError?'Connection to the app was lost. Retrying automatically.':error.message;
   } finally {
     busy=false;$('refresh').disabled=false;
     if(!document.hidden)timer=setTimeout(refresh,5000);
   }
 }
-$('refresh').onclick=refresh;
+$('refresh').onclick=()=>{if(imageFailed){imageHash=null;$('latest-image').removeAttribute('src');}galleryKey=null;refresh();};
+window.addEventListener('aiedge-reading-format-saved',refresh);
+window.addEventListener('aiedge-calibration-saved',refresh);
 document.addEventListener('visibilitychange',()=>{
   clearTimeout(timer);if(!document.hidden)refresh();
 });

@@ -23,10 +23,27 @@ historical checkpoints; this section describes the current state.
   format layout, reference highlighting, no horizontal overflow, calibration labels,
   and disconnect/reconnect status. Invalid format saves preserve the prior file.
 
-Validation: **66 tests run, 65 passed, one skipped**. The skipped check requires the
+- Invalid saved calibration or number-format files now leave the app accessible.
+  A validated replacement preserves the failed original, verifies its hash and checks
+  for intervening disk changes. Unreadable storage stays blocked until repaired.
+- Crop handles choose the nearest corner and preserve the opposite anchor. Optional
+  proportion locking works for drag and numeric edits. Canceling a drag restores the
+  original box; selecting a new image cannot discard the draft before it loads.
+- Desktop editors keep the image within one pane, with scrolling limited to controls
+  on shorter screens. Mobile remains stacked without horizontal overflow. Page routes
+  survive reload and browser Back. Refresh retries missing image files.
+- Browser format saves now complete without a hidden global-function error. Calibration
+  saves stay disabled until a change is made. Recovery guidance is shown once.
+- Concurrent image-store writers serialize admission, verify duplicate files and leave
+  no ledger entry after a failed file write. Damaged inference rows remain preserved
+  and unavailable; no older result is substituted. Camera failures distinguish login,
+  unsupported API, busy camera, lighting, clock and transport problems.
+
+Validation: **82 tests run, 81 passed, one skipped**, plus **5 JavaScript geometry tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/app-tests-20260929.json`
-in the parent Home Assistant workspace. The real Paho client was exercised against a
+hashes: `needle-training/firmware-port-tests/server-native-20260929/app-tests-20260929T172258Z.json`
+in the parent Home Assistant workspace. A disposable browser fixture recovered both
+saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.
 
 A 245-second local trial processed nine unique archived images with the actual native
@@ -49,7 +66,9 @@ GitHub rejected the workflow push because the OAuth connection lacks workflow sc
 The prepared `.github/workflows/aiedge-app.yml` has not run. The source-only app branch
 omits that unpublished workflow. The published source-only Git archive was checked independently: every Docker COPY
 input exists and all 20 manifest asset hashes match. `.gitattributes` preserves
-exact asset bytes across Windows/Linux checkouts. CMake now defaults to the packaged
+exact asset bytes across Windows/Linux checkouts. Both Docker stages now pin the
+Python 3.14.7 slim-trixie OCI index digest; official registry metadata and the
+Linux amd64 manifest were verified without claiming a container execution. CMake now defaults to the packaged
 header snapshot; CMake execution itself was not tested on this host. The original
 AIEdge favicon and a development README are included. No production HA or meter
 changes were made.

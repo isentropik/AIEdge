@@ -37,7 +37,6 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 else:result=setup.save(data['reference_sha256'],data['design'],data['revision'])
                 self.reply(result)
             except (ValueError,KeyError,TypeError) as exc:self.reply({'error':str(exc)},400)
-            except FileNotFoundError:self.reply({'error':'Reference image not found.'},404)
             except OSError:self.reply({'error':'Could not complete setup storage. Reload before retrying.'},503)
         def do_GET(self):
             try:self.read_request()
@@ -53,6 +52,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state['interval_seconds']=collector.interval if collector else None
                 state['recognition']=recognition.latest() if recognition else {'state':'not_configured'}
                 state['reading']=reading_format.evaluate(state['recognition']) if reading_format else {'state':'not_configured','value':None}
+                state['setup_recovery']=setup.status().get('recovery') if setup else None
+                state['format_recovery']=reading_format.status().get('recovery') if reading_format else None
                 state['recognition_error']=recognition.last_error if recognition else None
                 state['mqtt']=mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}
                 body=json.dumps(state).encode();kind='application/json'
@@ -68,7 +69,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state.update(available=setup is not None,token=token);body=json.dumps(state).encode();kind='application/json'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js'):
+            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'

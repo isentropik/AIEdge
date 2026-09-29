@@ -40,6 +40,24 @@ class Tests(unittest.TestCase):
         self.reader.read_jpeg=fail;self.worker.once()
         self.assertEqual(self.worker.latest()['error'],'alignment_rejected');self.assertEqual(self.store.status()['captures'],1)
         self.assertFalse(self.worker.once())
+    def test_damaged_result_is_preserved_and_not_shown_as_a_reading(self):
+        self.store.add('camera',JPEG,headers());self.worker.once()
+        original=self.worker.latest()
+        cases=['{broken','null',json.dumps(dict(original,source_sha256='0'*64)),
+               json.dumps(dict(original,processing_seconds=float('inf'))),
+               json.dumps(dict(original,dial_positions='not a list'))]
+        for encoded in cases:
+            with self.subTest(encoded=encoded):
+                with self.store.connect() as db:
+                    db.execute('UPDATE inference SET result=?',(encoded,))
+                result=self.worker.latest()
+                self.assertEqual(result['state'],'unavailable')
+                self.assertEqual(result['error'],'stored_result_invalid')
+                self.assertFalse(self.worker.once())
+                self.assertFalse(result['training_allowed'])
+                with self.store.connect() as db:
+                    self.assertEqual(db.execute('SELECT result FROM inference').fetchone()[0],encoded)
+                self.assertEqual(self.store.image(original['source_sha256']),JPEG)
     def test_api_reports_result_for_current_image(self):
         self.store.add('camera',JPEG,headers());self.worker.once()
         server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,None,self.worker));thread=threading.Thread(target=server.serve_forever);thread.start()

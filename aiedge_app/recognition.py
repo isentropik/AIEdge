@@ -41,7 +41,19 @@ class Recognition:
             row=db.execute('SELECT sha256 FROM frames ORDER BY rowid DESC LIMIT 1').fetchone()
             if not row:return {'state':'waiting_for_image'}
             result=db.execute('SELECT result FROM inference WHERE sha256=? AND pipeline=?',(row[0],pipeline)).fetchone()
-        return json.loads(result[0]) if result else {'state':'pending','source_sha256':row[0]}
+        if not result:return {'state':'pending','source_sha256':row[0]}
+        try:
+            value=json.loads(result[0])
+            json.dumps(value,allow_nan=False)
+            if not isinstance(value,dict) or value.get('state') not in ('estimated','rejected') or value.get('pipeline_id')!=pipeline or value.get('source_sha256')!=row[0]:
+                raise ValueError('invalid_stored_result')
+            rows=value.get('dial_positions',[])
+            if not isinstance(rows,list) or any(not isinstance(row,dict) for row in rows):raise ValueError('invalid_dial_results')
+            return value
+        except (ValueError,TypeError):
+            # Preserve the evidence; never substitute a previous image's result.
+            return {'state':'unavailable','error':'stored_result_invalid','source_sha256':row[0],
+                    'pipeline_id':pipeline,'training_allowed':False,'accuracy_verified':False}
     def run(self):
         while not self.stop.is_set():
             try:

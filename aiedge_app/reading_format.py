@@ -88,10 +88,18 @@ class FormatStore:
         import threading
         self.path=Path(directory)/'reading-format.json'
         self.recognition=recognition;self.lock=threading.Lock();self.active=None
-        if self.path.exists():self.active=validate(json.loads(self.path.read_text(encoding='utf-8')))
+        from saved_file import SavedFile
+        self.saved=SavedFile(self.path)
+        try:
+            raw=self.saved.read()
+            if raw is not None:self.active=validate(json.loads(raw))
+        except (ValueError,KeyError,TypeError,UnicodeError):
+            self.saved.failed('saved_reading_format_invalid')
+        except OSError:
+            self.saved.failed('reading_format_file_unavailable')
     def status(self):
         with self.lock:
-            if self.active is None:return {'revision':None,'format':None}
+            if self.active is None:return {'revision':self.saved.revision,'format':None,**self.saved.recovery()}
             return {'revision':self.active[1],'format':json.loads(json.dumps(self.active[0]))}
     def save(self,document,revision):
         from setup_store import Setup
@@ -102,15 +110,15 @@ class FormatStore:
             if reader is None or candidate['pipeline_id']!=reader.pipeline_id:raise ValueError('reading_pipeline_changed')
             if sorted(d['index'] for d in candidate['dials'])!=list(range(len(reader.dials))):
                 raise ValueError('reading_dial_mapping_mismatch')
-            if revision!=(self.active[1] if self.active else None):raise ValueError('reading_format_changed_reload')
-            Setup._atomic(self.path,json.dumps(candidate,indent=2,allow_nan=False).encode('utf-8'))
+            if revision!=(self.active[1] if self.active else self.saved.revision):raise ValueError('reading_format_changed_reload')
+            self.saved.replace(json.dumps(candidate,indent=2,allow_nan=False).encode('utf-8'),Setup._atomic,'reading_format_changed_reload')
             self.active=(candidate,identity)
         return self.status()
     def evaluate(self,inference):
         with self.recognition.lock:
             reader=self.recognition.reader
             with self.lock:active=self.active
-            if active is None:return {'state':'not_configured','value':None}
+            if active is None:return {'state':'unavailable','reason':self.saved.error,'value':None} if self.saved.error else {'state':'not_configured','value':None}
             if reader is None:return {'state':'unavailable','reason':'reader_unavailable','value':None}
             if active[0]['pipeline_id']!=reader.pipeline_id:
                 return {'state':'unavailable','reason':'reading_pipeline_changed','value':None}

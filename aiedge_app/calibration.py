@@ -8,7 +8,7 @@ def finite_number(value):
     except OverflowError:return False
 
 def load(path):
-    raw=Path(path).read_bytes()
+    with Path(path).open('rb') as stream:raw=stream.read(262145)
     if len(raw)>262144:raise ValueError('calibration_too_large')
     return validate(json.loads(raw))
 
@@ -22,6 +22,7 @@ def validate(document):
     def nums(value,count):
         if not isinstance(value,list) or len(value)!=count or any(not finite_number(x) for x in value):raise ValueError('invalid_numeric_geometry')
     for m in d['markers']:
+        if not isinstance(m,dict):raise ValueError('invalid_marker')
         ints(m['box'],4);nums(m['target'],2);x,y,w,h=m['box']
         if not (8<=w<=128 and 8<=h<=128 and 0<=x<=640-w and 0<=y<=480-h):raise ValueError('marker_outside_frame')
         pixels=base64.b64decode(m['pixels'],validate=True)
@@ -29,6 +30,7 @@ def validate(document):
     if not isinstance(d.get('dials'),list) or not 1<=len(d['dials'])<=32:raise ValueError('invalid_dial_count')
     names=set()
     for dial in d['dials']:
+        if not isinstance(dial,dict):raise ValueError('invalid_dial')
         name=dial.get('name')
         if not isinstance(name,str) or not name.strip() or len(name)>80 or name in names:raise ValueError('invalid_or_duplicate_dial_name')
         names.add(name)

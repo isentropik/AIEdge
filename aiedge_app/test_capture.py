@@ -29,6 +29,36 @@ class Tests(unittest.TestCase):
     def test_corrupt_disk_rejected(self):
         self.store.add('camera',JPEG,headers());next((Path(self.temp.name)/'images').glob('*.jpg')).write_bytes(b'broken')
         with self.assertRaisesRegex(ValueError,'corrupt'):self.store.add('camera',JPEG,headers('2'))
+    def test_same_frame_duplicate_checks_saved_image_integrity(self):
+        self.store.add('camera',JPEG,headers())
+        path=next((Path(self.temp.name)/'images').glob('*.jpg'))
+        path.write_bytes(b'broken')
+        with self.assertRaisesRegex(ValueError,'stored_image_corrupt'):
+            self.store.add('camera',JPEG,headers())
+        path.unlink()
+        with self.assertRaisesRegex(ValueError,'stored_image_missing'):
+            self.store.add('camera',JPEG,headers())
+        self.assertEqual(self.store.status()['captures'],1)
+    def test_separate_store_instances_serialize_duplicate_admission(self):
+        from concurrent.futures import ThreadPoolExecutor
+        stores=[Store(self.temp.name) for _ in range(8)]
+        barrier=threading.Barrier(len(stores))
+        def add(store):
+            barrier.wait(timeout=5)
+            return store.add('camera',JPEG,headers())
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results=list(pool.map(add,stores))
+        self.assertEqual(sum(results),1)
+        self.assertEqual(self.store.status()['captures'],1)
+        self.assertEqual(len(list((Path(self.temp.name)/'images').glob('*.jpg'))),1)
+        self.assertEqual(list((Path(self.temp.name)/'images').glob('*.tmp')),[])
+    def test_failed_image_commit_does_not_create_a_frame_record(self):
+        from unittest.mock import patch
+        with patch('capture.os.replace',side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):self.store.add('camera',JPEG,headers())
+        self.assertEqual(self.store.status()['captures'],0)
+        self.assertEqual(list((Path(self.temp.name)/'images').iterdir()),[])
+        self.assertTrue(self.store.add('camera',JPEG,headers()))
     def test_fixture_camera_and_no_redirect(self):
         class Fixture(BaseHTTPRequestHandler):
             mode='ok';calls=0
@@ -47,6 +77,44 @@ class Tests(unittest.TestCase):
             Fixture.mode='redirect';collector.once();self.assertEqual(Fixture.calls,2)
             self.assertEqual(self.store.status()['last_error']['error'],'camera_redirect_rejected')
         finally:server.shutdown();thread.join();server.server_close()
+    def test_http_failures_are_classified_without_leaking_response_text(self):
+        class Fixture(BaseHTTPRequestHandler):
+            status=503;body=b'Camera clock is not synchronized';calls=0
+            def log_message(self,*args):pass
+            def do_POST(self):
+                Fixture.calls+=1;self.rfile.read(int(self.headers['Content-Length']))
+                self.send_response(Fixture.status);self.send_header('Content-Length',str(len(Fixture.body)))
+                self.end_headers();self.wfile.write(Fixture.body)
+        server=ThreadingHTTPServer(('127.0.0.1',0),Fixture)
+        thread=threading.Thread(target=server.serve_forever);thread.start()
+        camera=Camera('http://127.0.0.1:'+str(server.server_port),token='fixture-token')
+        cases=[(401,b'private details','camera_authentication_failed'),
+               (404,b'old firmware page','camera_api_unavailable'),
+               (409,b'private details','camera_busy'),
+               (503,b'Camera clock is not synchronized','camera_clock_unsynchronized'),
+               (503,b'Camera busy; retry shortly','camera_busy'),
+               (503,b'Illumination failed','camera_lighting_failed'),
+               (503,b'private details','camera_unavailable'),
+               (503,b'private details'*100,'camera_unavailable'),
+               (500,b'private details','camera_http_error')]
+        try:
+            for code,body,expected in cases:
+                Fixture.status,Fixture.body=code,body
+                with self.subTest(code=code,expected=expected):
+                    with self.assertRaisesRegex(ValueError,'^'+expected+'$'):camera.capture()
+            self.assertEqual(Fixture.calls,len(cases)) # No immediate capture retries.
+            self.assertEqual(self.store.status()['captures'],0)
+        finally:server.shutdown();thread.join();server.server_close()
+    def test_network_errors_are_classified_without_arbitrary_details(self):
+        import socket,ssl,urllib.error
+        from unittest.mock import patch
+        camera=Camera('http://127.0.0.1')
+        for cause,expected in [(TimeoutError('private'),'camera_timeout'),
+              (socket.gaierror('private'),'camera_name_unresolved'),
+              (ssl.SSLCertVerificationError('private'),'camera_certificate_invalid'),
+              (ConnectionRefusedError('private'),'camera_connection_failed')]:
+            with self.subTest(expected=expected),patch.object(camera.opener,'open',side_effect=urllib.error.URLError(cause)):
+                with self.assertRaisesRegex(ValueError,'^'+expected+'$'):camera.capture()
     def test_camera_authentication_and_redirect_boundary(self):
         seen=[];leaked=[]
         class Destination(BaseHTTPRequestHandler):

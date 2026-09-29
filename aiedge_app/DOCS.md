@@ -9,7 +9,8 @@ External storage is a future optional feature.
 The interface includes capture history, reference-image calibration and a number-format
 editor. The overview refreshes while it is open, shows local storage health and clears
 the displayed reading if the app stops responding. A dark, light or system theme can
-be selected at the top of every page.
+be selected at the top of every page. Reloading keeps the selected page.
+Use **Refresh** to retry an image that previously could not be loaded.
 
 The native alignment and LiteRT recognition pipeline estimate dial positions. The
 number format converts compatible positions to a physical register value. Optional
@@ -35,6 +36,9 @@ configured origin; redirects are rejected.
    clockwise from zero, then its needle pivot. Up to 16 dials are supported by the
    current physical-reading calculation. **Save calibration** validates the entire
    candidate before replacing the active calibration; it does not restart the camera.
+   Drag a crop corner to resize it or drag inside the crop to move it. **Lock proportions**
+   keeps its width-to-height ratio while resizing. The editor shows the image alongside
+   the controls on desktop; smaller screens place the image above them.
 3. Open **Number format**, choose the units printed on the meter and enter the value
    represented by one full revolution of each dial. Focusing a value highlights that
    dial in the reference image. Direction comes from Calibration. All dials participate;
@@ -76,6 +80,7 @@ fixture, not the user's Home Assistant broker.
 - `captures.sqlite3`: capture timestamps, receipt times, errors and model estimates.
 - `references/` and `calibration.json`: reference images and saved calibration.
 - `instance-id`: stable identity used for MQTT discovery, if MQTT is enabled.
+- `recovery/`: hash-verified copies of damaged setup files replaced through the editor.
 - `reading-format.json`: optional physical scales and uncertainty bounds, tied to
   the active model and calibration pipeline.
 
@@ -99,3 +104,20 @@ whether storage is ready, low on space or unavailable.
 The app exposes no host port. Ingress access is restricted to the Supervisor proxy.
 Native development binds to localhost by default. See `CAMERA-PROTOCOL.md` for the
 camera API and `PACKAGING.md` for build details.
+
+## Recover saved setup
+
+If a saved calibration or number-format file is damaged, the app stays open and shows
+which part needs attention. Recognition or physical conversion remains unavailable
+until that part is repaired. Save a valid replacement in the relevant editor; the app
+preserves the original bytes in `recovery/` before replacing them. It will refuse the
+save if it cannot preserve the original or the file changed since startup.
+
+A missing reference image requires choosing the reference again and checking its
+markers and dials. A missing recognition library or model requires fixing the app
+installation; re-entering calibration cannot repair those files. If the data directory
+cannot be read, fix storage access and restart the app. These recovery controls do
+not repair a damaged database or replace a Home Assistant backup.
+
+A damaged stored inference result is kept for diagnosis and shown as unavailable.
+It is not counted as a successful reading or silently replaced by an older result.

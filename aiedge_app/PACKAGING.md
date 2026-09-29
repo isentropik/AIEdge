@@ -42,3 +42,14 @@ before treating this as Linux-compatible.
 The September 29 attempt to push the CI workflow was rejected by GitHub because the
 current OAuth connection lacks workflow permission. No Linux CI run occurred. The
 workflow remains prepared locally; do not treat its presence as a successful build.
+
+## Base image pin
+
+Both stages use `python:3.14.7-slim-trixie` at OCI index digest
+`sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d`.
+The official registry's Linux amd64 manifest is
+`sha256:7bf6c3111fe094f8ee1a1cbcdc63c4cfb345b0e3df42d5aa9a90b3b4b022ab6d`.
+The manifest and configuration hashes, platform and Python version were checked on
+September 29, 2026. This pins the selected base; it is not evidence of a successful
+Linux build or Supervisor run. Update the digest deliberately when taking base-image
+security updates, then repeat the container build and service checks.
