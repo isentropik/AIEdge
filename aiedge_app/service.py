@@ -44,7 +44,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
         def do_GET(self):
             try:self.read_request()
             except (BrokenPipeError,ConnectionResetError):pass
-            except (OSError,sqlite3.Error):self.reply({'error':'Local storage is unavailable. Saved readings have not been replaced.'},503)
+            except (OSError,sqlite3.Error):self.reply({'error':'Local storage is unavailable. Saved readings have not been replaced.','code':'storage_unavailable'},503)
         def read_request(self):
             if not self.allowed():self.send_error(403);return
             route=urllib.parse.urlsplit(self.path).path

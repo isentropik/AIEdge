@@ -70,7 +70,9 @@ historical checkpoints; this section describes the current state.
   has not been established on Linux or hardware.
 - HTTP connections are limited to 32 and idle reads to ten seconds. Active web
   requests share the 25-second worker shutdown deadline. Stalled connections cannot
-  extend that drain indefinitely. Blocked reference storage leaves the website open
+  extend that drain indefinitely. Capacity exhaustion returns a bounded busy
+  response; the UI distinguishes it from storage failure and recovered in the
+  browser fixture. Blocked reference storage leaves the website open
   and stops capture/MQTT without replacing the blocking file.
 - Oversized or contradictory stored inference provenance is rejected and preserved;
   it cannot turn an estimate into verified accuracy or a training label.
@@ -85,9 +87,9 @@ the capture/recognition workers; the new HTTP request-drain behavior was checked
 separately. Evidence: `server-native-20260929/clock-trial-20260929T2135Z/result.json`
 in the workspace test directory. Photograph labels and accuracy were not evaluated.
 
-Validation: **127 tests run, 126 passed, one skipped**, plus **15 JavaScript tests**. The skipped check requires the
+Validation: **127 tests run, 126 passed, one skipped**, plus **17 JavaScript tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-20260929T2200Z.json`
+hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-20260929T2205Z.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
 saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.

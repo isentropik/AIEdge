@@ -89,8 +89,13 @@ async function get(path){
   if(!response.ok){
     let message='Could not load app status.',code='status_unavailable';
     if(response.status===503){
-      message='Local storage is unavailable. Saved images have not been replaced.';
-      try{if((await response.json()).code==='storage_startup_failed'){code='storage_startup_failed';message='App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.';}}catch{}
+      code='app_unavailable';message='The app is temporarily unavailable. Retrying automatically.';
+      try{
+        const reason=(await response.json()).code;
+        if(reason==='storage_startup_failed'){code=reason;message='App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.';}
+        else if(reason==='storage_unavailable'){code=reason;message='Local storage is unavailable. Saved images have not been replaced.';}
+        else if(reason==='http_busy'){code=reason;message='The app is busy. Retrying automatically.';}
+      }catch{}
     }
     const error=Error(message);error.code=code;throw error;
   }
@@ -180,9 +185,9 @@ async function refresh(){
     window.latestReading={state:'unavailable',value:null};
     window.renderPhysicalReading?.(window.latestReading);
     $('meter-value').textContent='—';$('reading-status').textContent='Status unavailable.';
-    const storageFailed=error.code==='storage_startup_failed';
-    $('camera-status').textContent=storageFailed?'Capture stopped':'Connection lost';$('mqtt-state').textContent=storageFailed?'Stopped':'Unknown';
-    $('storage-state').textContent=storageFailed?'Unavailable':'Unknown';$('storage-free').textContent='—';
+    const storageFailed=error.code==='storage_startup_failed',storageUnavailable=error.code==='storage_unavailable';
+    $('camera-status').textContent=storageFailed?'Capture stopped':storageUnavailable?'Storage unavailable':error.code==='http_busy'?'App busy':error.code==='app_unavailable'?'App unavailable':'Connection lost';$('mqtt-state').textContent=storageFailed?'Stopped':'Unknown';
+    $('storage-state').textContent=storageFailed||storageUnavailable?'Unavailable':'Unknown';$('storage-free').textContent='—';
     $('schedule').textContent=storageFailed?'Stopped':'Unavailable';
     for(const id of ['count','unique','failures','missed','received'])$(id).textContent='—';
     $('checked-at').textContent='Last check '+new Date().toLocaleTimeString();

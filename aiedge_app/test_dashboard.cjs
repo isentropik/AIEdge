@@ -90,3 +90,18 @@ test('rejected recognition offers the relevant calibration action',async()=>{
   assert.equal(app.get('meter-value').textContent,'—');
  }
 });
+
+test('an overloaded app is not mislabeled as a storage or network failure',async()=>{
+ const app=fixture(async url=>url==='api/status'?{ok:false,status:503,json:async()=>({code:'http_busy'})}:response(page));
+ await tick();assert.equal(app.get('camera-status').textContent,'App busy');
+ assert.equal(app.get('error').textContent,'The app is busy. Retrying automatically.');
+ assert.equal(app.get('meter-value').textContent,'—');
+});
+
+test('unknown 503 and explicit storage errors keep distinct explanations',async()=>{
+ for(const [code,label,message] of [[undefined,'App unavailable','The app is temporarily unavailable. Retrying automatically.'],['storage_unavailable','Storage unavailable','Local storage is unavailable. Saved images have not been replaced.']]){
+  const app=fixture(async url=>url==='api/status'?{ok:false,status:503,json:async()=>({code})}:response(page));
+  await tick();assert.equal(app.get('camera-status').textContent,label);
+  assert.equal(app.get('error').textContent,message);
+ }
+});

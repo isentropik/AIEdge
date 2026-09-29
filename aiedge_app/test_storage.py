@@ -72,7 +72,7 @@ class StorageTests(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as raised:urllib.request.urlopen(origin+'/api/status',timeout=2)
                 with raised.exception as response:
                     self.assertEqual(response.code,503)
-                    self.assertEqual(json.load(response),{'error':'Local storage is unavailable. Saved readings have not been replaced.'})
+                    self.assertEqual(json.load(response),{'error':'Local storage is unavailable. Saved readings have not been replaced.','code':'storage_unavailable'})
                 # The UI shell remains available while a data request fails.
                 with urllib.request.urlopen(origin+'/',timeout=2) as response:self.assertEqual(response.status,200)
             with urllib.request.urlopen(origin+'/api/status',timeout=2) as response:self.assertEqual(json.load(response)['captures'],0)

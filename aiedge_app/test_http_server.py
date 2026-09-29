@@ -65,7 +65,8 @@ class HttpLifecycleTests(unittest.TestCase):
             self.assertTrue(started.wait(2));second=self.connect(server)
             try:data=second.recv(4096)
             except ConnectionError:data=b''
-            self.assertEqual(data,b'')
+            self.assertIn(b'503 Service Unavailable',data)
+            self.assertIn(b'"code":"http_busy"',data)
             with server._request_condition:self.assertEqual(len(server._requests),1)
             release.set();first.recv(4096);runtime.request_stop();thread.join(2);self.assertEqual(result,[True])
         finally:

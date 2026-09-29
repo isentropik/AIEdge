@@ -147,7 +147,8 @@ backup, then restart. The app does not automatically reset or repair the databas
 
 Normal shutdown stops new work and allows up to 25 seconds total for active web
 requests and workers to finish. Idle HTTP connections time out after ten seconds,
-and the app admits at most 32 concurrent requests. A timeout exits with an error. A forced process kill or power loss cannot
+and the app admits at most 32 concurrent requests. At capacity, ordinary requests
+receive a temporary busy response and the interface retries. A timeout exits with an error. A forced process kill or power loss cannot
 be made graceful; database transactions and verified image writes remain necessary.
 Actual Supervisor stop and backup behavior still requires Linux validation.
 

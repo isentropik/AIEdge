@@ -21,7 +21,21 @@ class AppHTTPServer(ThreadingHTTPServer):
             admitted=not self._draining and len(self._requests)<self.max_active_requests
             if admitted:self._requests.add(request)
         if not admitted:
-            self.shutdown_request(request)
+            # No request details or credentials are needed for a bounded busy
+            # response. Do not spend the normal read timeout in the accept loop.
+            body=b'{"error":"App is busy. Try again shortly.","code":"http_busy"}'
+            response=(b'HTTP/1.0 503 Service Unavailable\r\nContent-Type: application/json\r\n'
+                      b'Cache-Control: no-store\r\nRetry-After: 2\r\nConnection: close\r\nContent-Length: '
+                      +str(len(body)).encode('ascii')+b'\r\n\r\n'+body)
+            try:
+                # Consume a bounded already-arriving request prefix so closing a
+                # normal short request does not replace the response with a reset.
+                request.settimeout(.025)
+                try:request.recv(65536)
+                except (TimeoutError,BlockingIOError):pass
+                request.settimeout(.2);request.sendall(response)
+            except OSError:pass
+            finally:self.shutdown_request(request)
             return
         try:super().process_request(request,address)
         except BaseException:
