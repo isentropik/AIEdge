@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "files": {
+    "CREDITS.md": "5b3a215c3e267787d0adf9723da926d144fbd6bbd16c0eb55a3c86d7a0940bdc",
+    "Licence.md": "943f993397b19a5c123a939dafc8f747eda5fd3645727e0f5cf3acab785a013e",
+    "include/PolarAlignment.h": "9779da5ad3e15d95b5a69b01fc2adb3a1440bb0f43e105bb3eab1162c11943b6",
+    "include/PolarAlignmentCheck.h": "15cc07a9f5eb57600d77461deced1c45d587f7334728f91b4e20276cfbf92e63",
+    "include/PolarCalibration.h": "98ae8ce2c7f71176ace91c9b6c4f086a522e7da35a89140dea59cfd70d42096c",
+    "include/PolarCoarseAlignment.h": "c728a591f80c7f245673bb7fb9079d9b442e0d702609469a80531ea5f23f42f5",
+    "include/PolarDecoder.h": "4072e8913b0859d570345cf1f935284e2189d6434630a5fd43e81f1912c12f50",
+    "include/PolarFeatures.h": "87658b63638cd128c10d58eb9d0cec11bf665c08794ba4031c814a88020a348a",
+    "include/PolarImage.h": "2a9d20d637da1c15640829b52b93c989748d856ef53f01b3b2084350005a029f",
+    "include/PolarMarkerCalibration.h": "a15a3928bc6124c075841703b960cbfa3ba5db55bd67ccad3ed3294499f86d93",
+    "include/PolarPercentile.h": "608086660e8e8a2760b13c321c5ec9a81cf0845a1878e0f1dadc104a808aa8d9",
+    "include/PolarPipeline.h": "99014a2caa7b15b7d9b79d31f98acd4c2270f2e556e454840924258cd7540704",
+    "include/PolarProfile.h": "ba4bc186e09299e5dbdb6fb046066e4937decd69df258c4a631a4ec54929498c",
+    "include/PolarRuntimeGeometry.h": "2a38e7825532035eac917cf764b2636c4fbf3f2e47819d04f4ad1889821a8b2a",
+    "include/PolarUserMarkers.h": "e05552f746c856a6dbea82806e2abbd534e6f10fa8c849620c0706d956cf7a7c",
+    "include/PolarVisibility.h": "73288670bd995a64aa2697f5b24b579993357ca36d3206c185040108c164d751",
+    "include/PolarWarp.h": "2dae08e0acd051a9b423816e3eb64d18d11eb54a835b6815c508385f201c04ac",
+    "include/RevolutionReading.h": "f9ceb66ec951537edff5985c4eb296a871119ae9500a1c75df621a8d1c664ba3",
+    "models/polar-int8.tflite": "b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0",
+    "models/polar-main-int8.tflite": "9c145e67e9008bf1e17567cd69baa48ce54af3b1d6b7fa0e1aeeb6b5ce9ec6a5"
+  },
+  "model_source": "Exact models pinned in reader.py. Headers retain the legacy frozen calibration for parity tests; it is never activated by default. No capture archives or credentials are packaged."
+}

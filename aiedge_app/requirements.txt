@@ -1,0 +1,4 @@
+ai-edge-litert==2.2.0
+numpy==2.5.3
+Pillow==12.3.0
+paho-mqtt==2.1.0

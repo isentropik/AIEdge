@@ -1,0 +1,101 @@
+# AIEdge Home Assistant app
+
+AIEdge stores camera images, dial estimates and calibration inside the app's
+persistent `/data` directory. No separate storage server or credentials are needed.
+External storage is a future optional feature.
+
+## Current development build
+
+The interface includes capture history, reference-image calibration and a number-format
+editor. The overview refreshes while it is open, shows local storage health and clears
+the displayed reading if the app stops responding. A dark, light or system theme can
+be selected at the top of every page.
+
+The native alignment and LiteRT recognition pipeline estimate dial positions. The
+number format converts compatible positions to a physical register value. Optional
+MQTT output publishes that value to Home Assistant. Camera OTA management, cumulative
+consumption and flow are still being connected.
+
+This app has not yet been validated inside Home Assistant; do not replace a working
+meter with this development build.
+
+Capture starts only when `capture_enabled` is enabled and a camera URL is set.
+The existing r60 firmware does not implement the new capture API. Leave capture
+disabled until compatible camera firmware is installed. The app does not poll
+legacy raw-image or livestream endpoints. Camera credentials go only to the
+configured origin; redirects are rejected.
+
+## Set up a reading
+
+1. In the app configuration, enter the compatible camera's address. Use its token
+   **or** its username and password, depending on its firmware. Keep capture disabled
+   while preparing calibration. Changing app options currently requires an app restart.
+2. Open **Calibration** and choose a 640 × 480 reference image. Place three separated
+   marker boxes on fixed markings, away from needles. Add each dial and mark its rim
+   clockwise from zero, then its needle pivot. Up to 16 dials are supported by the
+   current physical-reading calculation. **Save calibration** validates the entire
+   candidate before replacing the active calibration; it does not restart the camera.
+3. Open **Number format**, choose the units printed on the meter and enter the value
+   represented by one full revolution of each dial. Focusing a value highlights that
+   dial in the reference image. Direction comes from Calibration. All dials participate;
+   there are no separate main/secondary roles or per-dial inclusion switches.
+4. Save the format, then enable capture when compatible camera firmware is available.
+   The default interval is 30 seconds. **Captures** shows original saved images, while
+   **Overview** shows the latest processed result and current capture/storage status.
+
+The current **Tolerance** field is an explicit engineering assumption on the 0–10
+position scale, not a measured accuracy figure. Validated bounds still need to replace
+manual assumptions in the normal setup workflow. The app refuses contradictory or
+ambiguous dial combinations. In particular, a small wheel can complete several turns
+inside the uncertainty of a larger dial: a single image cannot resolve those turns.
+It will show no total rather than invent one. Leading zeros and displayed precision
+come from the dial scales, angular resolution and supplied tolerances.
+
+## Send readings to Home Assistant
+
+MQTT output is optional and off by default. When testing inside Home Assistant, use a
+Supervisor-managed MQTT broker and enable `mqtt_enabled` in the app configuration.
+The app obtains the broker connection through Supervisor; it does not ask for a
+separate storage server. Camera images stay in app storage and are not sent over MQTT.
+
+AIEdge creates a distinct **Meter reading** sensor through MQTT discovery. It publishes
+only a recent estimate tied to the latest captured image and current number format.
+Rejected, stale or ambiguous readings make it unavailable. It does not replace existing
+meter entities or claim that estimates are verified. Changing units or physical scales
+creates a new sensor identity so previous history is not reinterpreted; the earlier
+entity remains unavailable and can be removed manually from Home Assistant.
+
+This is a register position, not yet a validated cumulative-consumption sensor, so it
+is not marked `total_increasing` for long-term statistics. Actual Supervisor and MQTT
+integration testing is pending. The local test uses Paho with a loopback protocol
+fixture, not the user's Home Assistant broker.
+
+## Saved data and backups
+
+- `images/`: original JPEGs, identified and verified by SHA-256.
+- `captures.sqlite3`: capture timestamps, receipt times, errors and model estimates.
+- `references/` and `calibration.json`: reference images and saved calibration.
+- `instance-id`: stable identity used for MQTT discovery, if MQTT is enabled.
+- `reading-format.json`: optional physical scales and uncertainty bounds, tied to
+  the active model and calibration pipeline.
+
+Identical images share one file while retaining their separate capture events.
+All collected images are unlabeled and excluded from training until reviewed.
+Model estimates are not verified labels or evidence of reading accuracy.
+
+Include AIEdge when selecting apps for a Home Assistant backup. The app is configured
+for a cold backup: Supervisor stops it during the backup so the database and image
+files cannot change while being copied. Captures pause during that time. Images are
+not excluded, so backup size will grow with the stored collection. A local stopped-app
+copy/restore test passes; a real Supervisor backup/restore still needs validation.
+
+New captures wait when less than 512 MiB plus one maximum-size image remains free
+on the data filesystem. They resume at a later scheduled check after space is
+available. This is a headroom check, not a disk quota: other apps can consume the
+same disk. Existing images are never automatically deleted. Automatic retention
+controls are not implemented yet. The status API reports remaining free bytes and
+whether storage is ready, low on space or unavailable.
+
+The app exposes no host port. Ingress access is restricted to the Supervisor proxy.
+Native development binds to localhost by default. See `CAMERA-PROTOCOL.md` for the
+camera API and `PACKAGING.md` for build details.

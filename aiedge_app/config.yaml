@@ -1,0 +1,32 @@
+name: AIEdge
+version: 0.2.0-dev1
+slug: aiedge
+description: Remote meter camera capture and recognition service (development)
+arch:
+  - amd64
+startup: application
+boot: manual
+init: false
+# Stop writes while Supervisor copies images, calibration and the SQLite ledger.
+backup: cold
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:gauge
+services:
+  - mqtt:want
+options:
+  camera_url: ""
+  camera_token: ""
+  camera_username: ""
+  camera_password: ""
+  mqtt_enabled: false
+  capture_enabled: false
+  interval_seconds: 30
+schema:
+  camera_url: str
+  camera_token: password
+  camera_username: str
+  camera_password: password
+  mqtt_enabled: bool
+  capture_enabled: bool
+  interval_seconds: int(10,3600)

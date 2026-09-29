@@ -1,0 +1,2 @@
+# The asset manifest hashes exact bytes across platforms.
+assets/** -text
