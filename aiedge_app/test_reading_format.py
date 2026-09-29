@@ -139,7 +139,7 @@ class PersistenceTests(unittest.TestCase):
             self.store.add('fixture',JPEG,headers())
             digest=self.store.status()['latest']['sha256']
             with self.store.connect() as db:
-                db.execute('INSERT INTO inference VALUES(?,?,?,?)',(digest,PIPELINE,now(),json.dumps(dict(observation([1.2,2]),source_sha256=digest))))
+                db.execute('INSERT INTO inference VALUES(?,?,?,?)',(digest,PIPELINE,now(),json.dumps(dict(observation([1.2,2]),source_sha256=digest,training_allowed=False,accuracy_verified=False))))
             with urllib.request.urlopen(origin+'/api/status') as r:state=json.load(r)
             self.assertEqual(state['reading']['state'],'estimated')
             self.assertAlmostEqual(state['reading']['value'],120)

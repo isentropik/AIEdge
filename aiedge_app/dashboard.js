@@ -8,6 +8,10 @@ const captureErrors={
  camera_unavailable:'Camera is unavailable. Check the device and camera connection.',
  camera_clock_unsynchronized:'Camera is waiting for its clock to synchronize.',
  camera_clock_changed:'Camera time changed during capture. That image was rejected.',
+ incomplete_capture_clock:'Camera returned incomplete timing metadata. That image was rejected.',
+ duplicate_capture_clock_header:'Camera returned conflicting timing headers. That image was rejected.',
+ invalid_capture_clock_id:'Camera returned an invalid clock identifier. That image was rejected.',
+ invalid_capture_clock_tick:'Camera returned an invalid capture clock. That image was rejected.',
  camera_settings_unavailable:'Camera settings could not be applied. Check the device setup.',
  camera_lighting_failed:'Camera lighting failed. The image was rejected.',
  camera_demo_mode:'The camera is in demo mode. Live capture is unavailable.',
@@ -52,7 +56,7 @@ window.addEventListener('hashchange',route);
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',route,{once:true});
 else route();
 let busy=false,timer=null,galleryKey=null,imageHash=null,imageFailed=false;
-let historyPage=null,historyCursors=[null],historyBusy=false;
+let historyPage=null,historyCursors=[null],historyBusy=false,historyFailed=false;
 function historyPath(){const before=historyCursors[historyCursors.length-1];return 'api/capture-history'+(before?'?before='+before:'');}
 function historyControls(){
  $('history-newer').disabled=historyBusy||historyCursors.length===1;
@@ -65,9 +69,17 @@ async function moveHistory(older){
  if(older){if(!historyPage?.next_before)return;historyCursors.push(historyPage.next_before);}
  else{if(historyCursors.length===1)return;historyCursors.pop();}
  historyBusy=true;historyControls();
- try{historyPage=await get(historyPath());gallery(historyPage.items);$('empty-gallery').textContent='No stored captures yet.';}
- catch(error){historyCursors=previous;$('error').dataset.owner='';$('error').textContent=error.message;$('error').hidden=false;}
+ try{historyPage=await get(historyPath());gallery(historyPage.items);historyError(null);}
+ catch(error){historyCursors=previous;historyError(error);}
  finally{historyBusy=false;historyControls();}
+}
+function historyError(error){
+ historyFailed=!!error;
+ $('empty-gallery').hidden=historyFailed||!!historyPage?.items.length;
+ $('history-error').hidden=!error;
+ $('history-error').textContent=error?'Capture history could not be loaded. Use Refresh to try again.':'';
+ $('empty-gallery').textContent=error?'Capture history unavailable.':'No stored captures yet.';
+ if(error&&!historyPage)$('history-summary').textContent='History unavailable';
 }
 $('history-newer').onclick=()=>moveHistory(false);$('history-older').onclick=()=>moveHistory(true);
 $('latest-image').onerror=()=>{imageFailed=true;$('latest-image').hidden=true;$('empty-image').hidden=false;$('empty-image').querySelector('strong').textContent='Image unavailable';$('empty-image').querySelector('p').textContent='The saved image could not be loaded. Use Refresh to try again.';};
@@ -87,7 +99,12 @@ async function get(path){
 function renderRecognition(result){
   const r=typeof result==='object'&&result?result:{state:'not_configured'};
   const labels={not_configured:'Recognition is not configured.',waiting_for_image:'Waiting for an image.',pending:'Processing the latest image.',estimated:'Set the number format to calculate a reading.',rejected:'Image rejected. No total available.'};
-  $('reading-status').textContent=labels[r.state]||'Recognition unavailable.';
+  const rejected={alignment_rejected:'Alignment failed. Check the reference image and markers.',
+    one_or_more_dials_rejected:'A dial could not be read. Check its crop and visibility.',
+    image_does_not_match_calibration:'Image dimensions changed. Review the calibration.',
+    stored_image_corrupt:'The saved image failed its integrity check. No reading available.',
+    stored_image_missing:'The saved image is missing. No reading available.'};
+  $('reading-status').textContent=(r.state==='rejected'&&rejected[r.error])||labels[r.state]||'Recognition unavailable.';
   const list=$('dial-results');list.replaceChildren();list.hidden=!(r.dial_positions?.length);
   for(const [i,dial] of (r.dial_positions||[]).entries()){
     const row=document.createElement('div'),name=document.createElement('dt'),value=document.createElement('dd');
@@ -99,7 +116,7 @@ function renderRecognition(result){
 function gallery(rows){
   const key=JSON.stringify(rows);
   if(key===galleryKey)return;
-  galleryKey=key;$('gallery').replaceChildren();$('empty-gallery').hidden=rows.length>0;
+  galleryKey=key;$('gallery').replaceChildren();$('empty-gallery').hidden=rows.length>0||historyFailed;
   for(const row of rows){
     const card=document.createElement('a');card.className='panel capture';
     card.href='image/'+row.sha256;card.target='_blank';card.rel='noopener';
@@ -115,8 +132,8 @@ function gallery(rows){
   }
 }
 function render(s,rows){
-  renderRecognition(s.recognition);window.latestReading=s.reading;
-  window.renderPhysicalReading?.(s.reading);
+  renderRecognition(s.recognition);window.latestReading=s.reading;window.latestRecognition=s.recognition;
+  window.renderPhysicalReading?.(s.reading,s.recognition);
   $('mqtt-state').textContent=({disabled:'Not connected',starting:'Connecting',connected:'Connected',publishing:'Publishing',waiting_for_format:'Needs number format',waiting_for_reading:'Waiting for reading',disconnected:'Disconnected',error:'Connection failed'})[s.mqtt?.state]||'Not connected';
   $('count').textContent=s.captures;$('unique').textContent=s.unique_images;$('failures').textContent=s.failures;
   $('schedule').textContent=s.capture_enabled?'Every '+s.interval_seconds+' seconds':'Disabled';
@@ -134,10 +151,9 @@ function render(s,rows){
     imageHash=s.latest?.sha256||null;
     if(imageHash){imageFailed=false;$('latest-image').src='image/'+imageHash;}
   }
-  $('empty-gallery').textContent='No stored captures yet.';
   gallery(rows);
   const configIssue=s.configuration?.state==='invalid';
-  const issue=configIssue?(s.configuration.code==='mqtt_identity_unavailable'?'The saved MQTT identity could not be loaded. Capture and MQTT are stopped. Restore the identity from backup, then restart AIEdge.':'App configuration could not be loaded. Capture and MQTT are stopped. Correct the app options and restart AIEdge.'):
+  const issue=configIssue?(s.configuration.code==='setup_storage_unavailable'?'Setup storage could not be opened. Capture and MQTT are stopped. Check the data volume, then restart AIEdge.':s.configuration.code==='mqtt_identity_unavailable'?'The saved MQTT identity could not be loaded. Capture and MQTT are stopped. Restore the identity from backup, then restart AIEdge.':'App configuration could not be loaded. Capture and MQTT are stopped. Correct the app options and restart AIEdge.'):
     s.recognition?.error==='stored_result_invalid'?'The stored recognition result is damaged. Its image and original record have been kept.':
     s.setup_recovery?.code==='recognition_runtime_unavailable'?'Recognition engine could not load. Check the app runtime and model files.':
     s.setup_recovery?'Saved calibration could not be loaded. Open Calibration to recover it.':
@@ -152,9 +168,12 @@ function render(s,rows){
 async function refresh(){
   if(busy)return;
   clearTimeout(timer);busy=true;$('refresh').disabled=true;
+  const historyRequest=historyBusy?Promise.resolve():get(historyPath()).then(page=>{
+    historyPage=page;historyControls();gallery(page.items);historyError(null);
+  },error=>historyError(error));
   try {
-    const [state,page]=await Promise.all([get('api/status'),historyBusy?Promise.resolve(null):get(historyPath())]);
-    if(page){historyPage=page;historyControls();}
+    // History may time out independently. Render a successful status promptly.
+    const state=await get('api/status');
     render(state,historyPage?.items||[]);
   } catch(error){
     // Keep historical images visible, but do not leave an old value looking live.
@@ -167,11 +186,12 @@ async function refresh(){
     $('schedule').textContent=storageFailed?'Stopped':'Unavailable';
     for(const id of ['count','unique','failures','missed','received'])$(id).textContent='—';
     $('checked-at').textContent='Last check '+new Date().toLocaleTimeString();
-    $('empty-gallery').textContent='Capture history unavailable.';
+    // History has its own result/error; a status outage must not discard it.
     if(!imageHash){$('empty-image').querySelector('strong').textContent='Image unavailable';$('empty-image').querySelector('p').textContent='Saved images could not be checked.';$('capture-time').textContent='Capture status unavailable';}
     $('dial-results').hidden=true;$('error').dataset.owner='';$('error').hidden=false;
     $('error').textContent=error.name==='TimeoutError'?'The app did not respond. Retrying automatically.':error instanceof TypeError?'Connection to the app was lost. Retrying automatically.':error.message;
   } finally {
+    await historyRequest;
     busy=false;$('refresh').disabled=false;
     if(!document.hidden)timer=setTimeout(refresh,5000);
   }

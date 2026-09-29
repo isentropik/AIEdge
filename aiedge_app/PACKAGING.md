@@ -53,3 +53,17 @@ The manifest and configuration hashes, platform and Python version were checked 
 September 29, 2026. This pins the selected base; it is not evidence of a successful
 Linux build or Supervisor run. Update the digest deliberately when taking base-image
 security updates, then repeat the container build and service checks.
+
+## Local regression checks
+
+From the repository root, use the project's Python environment and Node.js:
+
+```
+python -m unittest discover -s aiedge_app -p "test_*.py"
+node --test aiedge_app/test_editor_geometry.cjs aiedge_app/test_reference_image.cjs aiedge_app/test_dashboard.cjs
+```
+
+Native/model fixture checks require the paths documented in their test modules.
+A run with skipped fixtures does not establish native recognition compatibility.
+The Linux-only packaged-runtime check needs `AIEDGE_CONTAINER_TEST=1` inside the
+built container; it is intentionally skipped on the Windows development host.

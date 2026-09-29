@@ -45,7 +45,11 @@ class Tests(unittest.TestCase):
         original=self.worker.latest()
         cases=['{broken','null',json.dumps(dict(original,source_sha256='0'*64)),
                json.dumps(dict(original,processing_seconds=float('inf'))),
-               json.dumps(dict(original,dial_positions='not a list'))]
+               json.dumps(dict(original,dial_positions='not a list')),
+               json.dumps(dict(original,training_allowed=True)),
+               json.dumps(dict(original,accuracy_verified=True)),
+               json.dumps(dict(original,training_allowed=0)),
+               json.dumps(dict(original,padding='x'*262144))]
         for encoded in cases:
             with self.subTest(encoded=encoded):
                 with self.store.connect() as db:

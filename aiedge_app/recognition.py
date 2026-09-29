@@ -2,6 +2,8 @@
 import json,sqlite3,threading,time
 from capture import now
 
+MAX_RESULT_BYTES=262144
+
 class Recognition:
     def __init__(self,store,reader=None):
         self.store,self.reader=store,reader
@@ -40,13 +42,15 @@ class Recognition:
         with self.store.connect() as db:
             row=db.execute('SELECT f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
             if not row:return {'state':'waiting_for_image'}
-            result=db.execute('SELECT result FROM inference WHERE sha256=? AND pipeline=?',(row[0],pipeline)).fetchone()
+            result=db.execute('SELECT CASE WHEN length(CAST(result AS BLOB))<=? THEN result ELSE NULL END FROM inference WHERE sha256=? AND pipeline=?',(MAX_RESULT_BYTES,row[0],pipeline)).fetchone()
         if not result:return {'state':'pending','source_sha256':row[0]}
         try:
             value=json.loads(result[0])
             json.dumps(value,allow_nan=False)
             if not isinstance(value,dict) or value.get('state') not in ('estimated','rejected') or value.get('pipeline_id')!=pipeline or value.get('source_sha256')!=row[0]:
                 raise ValueError('invalid_stored_result')
+            if value.get('training_allowed') is not False or value.get('accuracy_verified') is not False:
+                raise ValueError('invalid_result_provenance')
             rows=value.get('dial_positions',[])
             if not isinstance(rows,list) or any(not isinstance(row,dict) for row in rows):raise ValueError('invalid_dial_results')
             return value

@@ -112,6 +112,36 @@ class OptionsProcessTests(unittest.TestCase):
             camera.shutdown();camera.server_close();thread.join()
 
 class StorageStartupTests(unittest.TestCase):
+    def test_blocked_reference_directory_keeps_website_available(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);blocked=root/'references';blocked.write_bytes(b'PRESERVE-THIS-FILE')
+            (root/'options.json').write_text(json.dumps({'capture_enabled':True,'camera_url':'http://127.0.0.1:1','mqtt_enabled':True}),encoding='utf-8')
+            with socket.socket() as probe:
+                probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
+            process=subprocess.Popen([sys.executable,str(Path(__file__).with_name('service.py')),
+                '--data',directory,'--port',str(port),'--native-library','unused-library','--models','unused-models'],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            try:
+                deadline=time.monotonic()+15
+                while True:
+                    if process.poll() is not None:
+                        stdout,stderr=process.communicate();self.fail('Reference storage failure stopped HTTP startup: '+stderr.decode(errors='replace'))
+                    try:
+                        with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/status',timeout=1) as response:status=json.load(response)
+                        break
+                    except OSError:
+                        if time.monotonic()>deadline:raise
+                        time.sleep(.05)
+                self.assertEqual(status['configuration'],{'state':'invalid','code':'setup_storage_unavailable'})
+                self.assertFalse(status['capture_enabled']);self.assertEqual(status['mqtt']['state'],'disabled')
+                self.assertEqual(status['captures'],0);self.assertEqual(status['failures'],0)
+                self.assertEqual(blocked.read_bytes(),b'PRESERVE-THIS-FILE')
+                self.assertFalse((root/'instance-id').exists())
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/',timeout=2) as response:self.assertIn(b'AIEdge',response.read())
+            finally:
+                process.terminate()
+                try:process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:process.kill();process.communicate()
+
     def test_damaged_database_preserves_file_and_serves_shell(self):
         import sqlite3
         for wrong_schema in (False, True):

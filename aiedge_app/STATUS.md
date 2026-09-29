@@ -58,9 +58,36 @@ historical checkpoints; this section describes the current state.
 - Eleven pinned Linux wheels have a hash-checked notice inventory, retained in the
   container. Full bundled-native and Debian distribution review remains pending.
 
-Validation: **102 tests run, 101 passed, one skipped**, plus **8 JavaScript geometry/image-loader tests**. The skipped check requires the
+- Optional camera clock metadata is stored with each acquisition and checked for
+  clock resets, backward ticks and UTC discontinuities. Old records are retained
+  without invented clock data. This is timing groundwork, not consumption output;
+  compatible firmware emission and physical timing validation remain pending.
+- History failures stay on Captures and do not hide a successful status response.
+  Pending or missing recognition is no longer overwritten by a number-format prompt.
+  Alignment and crop rejections point to the relevant calibration check.
+- Linux directory entries are flushed before capture/configuration success. Tests
+  cover flush failures and uncertain post-rename saves; real power-loss durability
+  has not been established on Linux or hardware.
+- HTTP connections are limited to 32 and idle reads to ten seconds. Active web
+  requests share the 25-second worker shutdown deadline. Stalled connections cannot
+  extend that drain indefinitely. Blocked reference storage leaves the website open
+  and stops capture/MQTT without replacing the blocking file.
+- Oversized or contradictory stored inference provenance is rejected and preserved;
+  it cannot turn an estimate into verified accuracy or a training label.
+
+A second 990.8-second loopback trial exercised a simulated camera reboot, a UTC
+jump, missing clock metadata and an exact frame replay across three app restarts.
+It retained 34 captures from 36 requests (nine unique images), rejected the one
+intentionally incomplete clock response and did not add the exact replay as a new
+event. There were no unexpected errors or missed scheduler slots. All clock
+faults were flagged; 450 status requests had a 0.025564-second p95. This trial used
+the capture/recognition workers; the new HTTP request-drain behavior was checked
+separately. Evidence: `server-native-20260929/clock-trial-20260929T2135Z/result.json`
+in the workspace test directory. Photograph labels and accuracy were not evaluated.
+
+Validation: **127 tests run, 126 passed, one skipped**, plus **15 JavaScript tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/app-tests-20260929T2114Z.json`
+hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-20260929T2200Z.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
 saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.

@@ -3,12 +3,14 @@ import hashlib,json,os,re,threading,uuid
 from pathlib import Path
 from calibration import validate
 from saved_file import SavedFile
+from durable_file import sync_directory
 from capture import MAX_IMAGE
 from calibration_builder import build,image_rgb
 
 class Setup:
     def __init__(self,directory,reader_factory,recognition):
         self.root=Path(directory);self.references=self.root/'references';self.references.mkdir(parents=True,exist_ok=True)
+        sync_directory(self.root)
         self.factory=reader_factory;self.recognition=recognition;self.lock=threading.Lock();self.active=None
         self.path=self.root/'calibration.json'
         self.saved=SavedFile(self.path);self.draft=None
@@ -49,6 +51,7 @@ class Setup:
             with temp.open('xb') as f:f.write(blob);f.flush();os.fsync(f.fileno())
             if temp.read_bytes()!=blob:raise OSError('setup_write_verification_failed')
             os.replace(temp,path)
+            sync_directory(path.parent)
         finally:
             if temp.exists():temp.unlink()
     def status(self):

@@ -22,6 +22,7 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
             status=store.status()
             report['storage']={key:status['storage'].get(key) for key in ('state','free_bytes','reserve_bytes')}
             report['capture'].update({key:status.get(key) for key in ('captures','unique_images','duplicate_images','failures')})
+            report['capture']['timing']=store.capture_timing()
         except (OSError,sqlite3.Error):pass
     if recognition:
         with recognition.lock:

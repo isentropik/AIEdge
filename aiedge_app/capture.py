@@ -3,6 +3,8 @@ import base64,hashlib,json,os,re,shutil,sqlite3,threading,time,urllib.request,ur
 from datetime import datetime,timezone
 from contextlib import contextmanager
 from pathlib import Path
+import capture_clock
+from durable_file import sync_directory
 MAX_IMAGE=4*1024*1024
 MIN_FREE_BYTES=512*1024*1024
 
@@ -27,6 +29,7 @@ def validate(blob,headers):
 class Store:
     def __init__(self,directory):
         self.root=Path(directory);(self.root/'images').mkdir(parents=True,exist_ok=True);self.lock=threading.Lock()
+        sync_directory(self.root)
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS frames(camera TEXT,frame_id TEXT,captured_at TEXT,received_at TEXT,sha256 TEXT,bytes INTEGER,training_allowed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(camera,frame_id))')
@@ -37,12 +40,17 @@ class Store:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inference'").fetchone():
                 db.execute('SELECT sha256,pipeline,processed_at,result FROM inference LIMIT 0')
             db.execute('CREATE TABLE IF NOT EXISTS capture_events(event_id INTEGER PRIMARY KEY AUTOINCREMENT,camera TEXT NOT NULL,frame_id TEXT NOT NULL,UNIQUE(camera,frame_id),FOREIGN KEY(camera,frame_id) REFERENCES frames(camera,frame_id))')
+            db.execute('CREATE TABLE IF NOT EXISTS capture_clocks(camera TEXT NOT NULL,frame_id TEXT NOT NULL,clock_id TEXT NOT NULL,monotonic_us INTEGER NOT NULL CHECK(monotonic_us>=0),PRIMARY KEY(camera,frame_id),FOREIGN KEY(camera,frame_id) REFERENCES frames(camera,frame_id))')
+            db.execute('SELECT camera,frame_id,clock_id,monotonic_us FROM capture_clocks LIMIT 0')
+            db.execute('CREATE INDEX IF NOT EXISTS capture_events_camera ON capture_events(camera,event_id)')
             db.execute('CREATE INDEX IF NOT EXISTS frames_sha256 ON frames(sha256)')
             # Add durable IDs without changing any original capture or image bytes.
             # Existing implicit frame rowids are used only for this one-time ordering.
             db.execute('INSERT INTO capture_events(camera,frame_id) SELECT f.camera,f.frame_id FROM frames f WHERE NOT EXISTS (SELECT 1 FROM capture_events e WHERE e.camera=f.camera AND e.frame_id=f.frame_id) ORDER BY f.rowid')
             if db.execute('SELECT 1 FROM capture_events e LEFT JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id WHERE f.camera IS NULL LIMIT 1').fetchone():
                 raise sqlite3.DatabaseError('capture_event_without_frame')
+            if db.execute('SELECT 1 FROM capture_clocks c LEFT JOIN frames f ON f.camera=c.camera AND f.frame_id=c.frame_id WHERE f.camera IS NULL LIMIT 1').fetchone():
+                raise sqlite3.DatabaseError('capture_clock_without_frame')
     @contextmanager
     def connect(self):
         db=sqlite3.connect(self.root/'captures.sqlite3',timeout=10)
@@ -62,6 +70,7 @@ class Store:
         if state['free_bytes']<MIN_FREE_BYTES+incoming:raise ValueError('storage_low_space')
     def add(self,camera,blob,headers):
         frame,stamp,digest=validate(blob,headers)
+        clock=capture_clock.parse(headers)
         with self.lock,self.connect() as db:
             # Serialize file+ledger admission even if another process opened this store.
             db.execute('BEGIN IMMEDIATE')
@@ -69,7 +78,8 @@ class Store:
             if target.exists():verified_image(target,digest)
             prior=db.execute('SELECT captured_at,sha256 FROM frames WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
             if prior:
-                if prior!=(stamp,digest):raise ValueError('frame_identity_conflict')
+                prior_clock=db.execute('SELECT clock_id,monotonic_us FROM capture_clocks WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
+                if prior!=(stamp,digest) or prior_clock!=clock:raise ValueError('frame_identity_conflict')
                 if not target.exists():raise ValueError('stored_image_missing')
                 return False
             self.require_space(0 if target.exists() else len(blob))
@@ -80,8 +90,11 @@ class Store:
                     os.replace(temp,target)
                 finally:
                     if temp.exists():temp.unlink()
+            # Persist the image directory entry before committing its ledger row.
+            sync_directory(target.parent)
             db.execute('INSERT INTO frames VALUES(?,?,?,?,?,?,0)',(camera,frame,stamp,now(),digest,len(blob)))
             db.execute('INSERT INTO capture_events(camera,frame_id) VALUES(?,?)',(camera,frame))
+            if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
         return True
     def fail(self,error):
         with self.lock,self.connect() as db:db.execute('INSERT INTO failures VALUES(?,?)',(now(),error))
@@ -105,6 +118,23 @@ class Store:
         items=[dict(zip(names,row)) for row in rows]
         for item in items:item['duplicate_image']=bool(item['duplicate_image']);item['training_allowed']=False
         return {'items':items,'next_before':rows[-1][0] if more else None}
+
+    def capture_timing(self):
+        """Newest acquisition and immediately preceding acquisition of that camera.
+
+        Missing clock metadata is not skipped over. Receive times and the text of
+        frame IDs are deliberately excluded from the continuity decision.
+        """
+        with self.lock,self.connect() as db:
+            latest=db.execute('SELECT camera,event_id FROM capture_events ORDER BY event_id DESC LIMIT 1').fetchone()
+            if not latest:return capture_clock.interval(None,None)
+            rows=db.execute("""SELECT e.camera,f.captured_at,c.clock_id,c.monotonic_us
+                FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id
+                LEFT JOIN capture_clocks c ON c.camera=e.camera AND c.frame_id=e.frame_id
+                WHERE e.camera=? AND e.event_id<=? ORDER BY e.event_id DESC LIMIT 2""",latest).fetchall()
+        names=('camera','captured_at','clock_id','monotonic_us')
+        current=dict(zip(names,rows[0]));previous=dict(zip(names,rows[1])) if len(rows)>1 else None
+        return capture_clock.interval(previous,current)
 
     def image(self,digest):
         if not re.fullmatch(r'[a-f0-9]{64}',digest):raise ValueError('invalid_image_id')

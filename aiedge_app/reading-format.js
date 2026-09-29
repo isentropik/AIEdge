@@ -81,9 +81,10 @@ form.onsubmit=async event=>{
 window.addEventListener('aiedge-calibration-saved',()=>{pipeline=null;loaded=false;controls();status('Calibration changed. Reopen Number format to check the current dials.',true);});
 window.openReadingFormat=()=>load();
 window.addEventListener('aiedge-refresh-images',event=>{if(event.detail==='format'&&!picture&&!busy&&loaded)loadPreview(referenceDigest);});
-window.renderPhysicalReading=reading=>{
+window.renderPhysicalReading=(reading,recognition)=>{
  $('meter-value').textContent='—';$('meter-unit').textContent='';
  if(!reading)return;
+ if(reading.state==='not_configured'&&recognition&&recognition.state!=='estimated')return;
  const messages={not_configured:'Set the number format to calculate a reading.',inconsistent:'Dial positions disagree. No reading published.',ambiguous:'More than one reading is possible.',invalid:'The number format is invalid.',unavailable:'No reading available.'};
  if(reading.state==='estimated'&&typeof reading.text==='string'){
   $('meter-value').textContent=reading.text;$('meter-unit').textContent=units[reading.unit]||reading.unit;
@@ -92,5 +93,5 @@ window.renderPhysicalReading=reading=>{
  if(reading.reason==='reading_pipeline_changed')$('reading-status').textContent='Review the number format after the calibration change.';
  else if(reading.state!=='unavailable'||!['image_unavailable','reading_pipeline_changed'].includes(reading.reason))$('reading-status').textContent=messages[reading.state]||'No reading available.';
 };
-window.renderPhysicalReading(window.latestReading);
+window.renderPhysicalReading(window.latestReading,window.latestRecognition);
 })();

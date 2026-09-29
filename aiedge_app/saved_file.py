@@ -5,6 +5,7 @@ resets a file: its bytes are retained until a validated replacement is saved.
 """
 import hashlib, os, shutil, uuid
 from pathlib import Path
+from durable_file import sync_directory
 
 LIMIT = 262144
 
@@ -62,6 +63,7 @@ class SavedFile:
         if self.error and self.digest:
             recovery = self.path.parent / 'recovery'
             recovery.mkdir(exist_ok=True)
+            sync_directory(recovery.parent)
             backup = recovery / (self.path.stem + '-' + self.digest + self.path.suffix)
             if not backup.exists():
                 temp = recovery / (uuid.uuid4().hex + '.tmp')
@@ -76,6 +78,7 @@ class SavedFile:
                 finally:
                     if temp.exists():
                         temp.unlink()
+            sync_directory(recovery)
             if fingerprint(backup) != self.digest:
                 raise OSError('recovery_copy_verification_failed')
             if fingerprint(self.path) != self.digest:

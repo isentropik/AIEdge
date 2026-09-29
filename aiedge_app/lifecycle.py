@@ -11,11 +11,12 @@ class ServiceRuntime:
         if self.stopping.is_set():return
         self.stopping.set()
         for worker in self.workers:worker.stop.set()
+        if hasattr(self.server,'begin_shutdown'):self.server.begin_shutdown()
         # HTTPServer.shutdown cannot run on the serve_forever thread itself.
         threading.Thread(target=self.server.shutdown,daemon=True).start()
 
     def run(self):
-        old_handlers={}
+        old_handlers={};requests_drained=True
         if threading.current_thread() is threading.main_thread():
             for name in (signal.SIGINT,signal.SIGTERM):
                 old_handlers[name]=signal.signal(name,self.request_stop)
@@ -28,8 +29,10 @@ class ServiceRuntime:
         finally:
             self.stopping.set()
             for worker in self.workers:worker.stop.set()
-            self.server.server_close()
             deadline=time.monotonic()+self.timeout
+            self.server.server_close()
+            if hasattr(self.server,'drain_requests'):
+                requests_drained=self.server.drain_requests(max(0,deadline-time.monotonic()))
             for thread in self.threads:thread.join(max(0,deadline-time.monotonic()))
             for name,previous in old_handlers.items():signal.signal(name,previous)
-        return not any(thread.is_alive() for thread in self.threads)
+        return requests_drained and not any(thread.is_alive() for thread in self.threads)

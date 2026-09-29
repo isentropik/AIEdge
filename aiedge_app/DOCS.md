@@ -128,11 +128,13 @@ It is not counted as a successful reading or silently replaced by an older resul
 
 Use **Older** and **Newer** on Captures to browse beyond the latest 50 events.
 Each card separates the camera's capture time from the app's receipt time.
+A history-loading error stays on Captures; it does not hide a successful current
+reading on Overview. Use **Refresh** to retry while keeping already-loaded images.
 **Repeated image** means its JPEG is identical to an earlier one; the capture
 is still retained as a separate timestamped event. It is not new accuracy evidence.
 
 **Download diagnostics** on Overview saves a local JSON report with runtime
-versions, storage health, capture counts and setup status. It excludes passwords,
+versions, storage health, capture counts, capture-clock continuity and setup status. It excludes passwords,
 camera addresses, images, dial positions, meter values and local paths. Nothing
 is uploaded automatically. The report is also available when the database cannot
 open, as long as the app process can start.
@@ -143,7 +145,14 @@ must be restored from backup; the app will not invent a replacement and split th
 sensor's history. If the database cannot open, fix the data volume or restore a
 backup, then restart. The app does not automatically reset or repair the database.
 
-Normal shutdown stops new work and allows up to 25 seconds for active workers to
-finish. A timeout exits with an error. A forced process kill or power loss cannot
+Normal shutdown stops new work and allows up to 25 seconds total for active web
+requests and workers to finish. Idle HTTP connections time out after ten seconds,
+and the app admits at most 32 concurrent requests. A timeout exits with an error. A forced process kill or power loss cannot
 be made graceful; database transactions and verified image writes remain necessary.
 Actual Supervisor stop and backup behavior still requires Linux validation.
+
+On Linux, new image and setup-file directory entries are flushed before a successful
+save is reported. If that flush fails after a settings rename, the file may already
+have changed: reload or restart to read it back before retrying. An error is not a
+promise that the old file remains active on disk. Windows tests cannot establish
+Linux power-loss durability, and physical power-loss recovery remains unverified.

@@ -1,5 +1,6 @@
 import argparse,json,sqlite3,threading,urllib.parse,secrets
-from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+from http_server import AppHTTPServer
 from pathlib import Path
 from capture import Store,Camera,Collector
 from options import load as load_options
@@ -122,13 +123,17 @@ def main():
         from reader import Reader
         from recognition import Recognition
         initial=create_reader(args.native_library,args.models,args.calibration_profile,args.calibration_file) if (args.calibration_profile or args.calibration_file) else None
-        recognition=Recognition(store,initial)
-        from setup_store import Setup
-        if initial and (Path(args.data)/'calibration.json').exists():raise ValueError('explicit_profile_conflicts_with_saved_setup')
-        setup=Setup(args.data,lambda document:Reader(args.native_library,args.models,document),recognition)
-        from reading_format import FormatStore
-        reading_format=FormatStore(args.data,recognition)
-    mqtt_enabled=options.get('mqtt_enabled',False) and not storage_error
+        try:
+            recognition=Recognition(store,initial)
+            from setup_store import Setup
+            if initial and (Path(args.data)/'calibration.json').exists():raise ValueError('explicit_profile_conflicts_with_saved_setup')
+            setup=Setup(args.data,lambda document:Reader(args.native_library,args.models,document),recognition)
+            from reading_format import FormatStore
+            reading_format=FormatStore(args.data,recognition)
+        except (OSError,sqlite3.Error):
+            recognition=None;setup=None;reading_format=None;enabled=False
+            configuration={'state':'invalid','code':'setup_storage_unavailable'}
+    mqtt_enabled=options.get('mqtt_enabled',False) and not storage_error and configuration.get('state')=='ready'
     if mqtt_enabled and (recognition is None or reading_format is None):
         configuration={'state':'invalid','code':'options_mqtt_runtime_required'}
         mqtt_enabled=False;enabled=False
@@ -143,8 +148,8 @@ def main():
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     if enabled:
         collector=Collector(store,Camera(options.get('camera_url',''),options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password','')),interval)
-    server=ThreadingHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration))
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration))
     from lifecycle import ServiceRuntime
     if not ServiceRuntime(server,(collector,recognition,mqtt_output)).run():
-        raise SystemExit('App worker shutdown timed out.')
+        raise SystemExit('App request or worker shutdown timed out.')
 if __name__=='__main__':main()
