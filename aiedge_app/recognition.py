@@ -18,7 +18,7 @@ class Recognition:
         with self.lock:
             if self.reader is None:return False
             with self.store.connect() as db:
-                row=db.execute('SELECT f.sha256 FROM frames f WHERE NOT EXISTS (SELECT 1 FROM inference i WHERE i.sha256=f.sha256 AND i.pipeline=?) ORDER BY f.rowid LIMIT 1',(self.reader.pipeline_id,)).fetchone()
+                row=db.execute('SELECT f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id WHERE NOT EXISTS (SELECT 1 FROM inference i WHERE i.sha256=f.sha256 AND i.pipeline=?) ORDER BY e.event_id LIMIT 1',(self.reader.pipeline_id,)).fetchone()
             if not row:return False
             digest=row[0];start=time.perf_counter()
             try:
@@ -38,7 +38,7 @@ class Recognition:
             if self.reader is None:return {'state':'not_configured'}
             pipeline=self.reader.pipeline_id
         with self.store.connect() as db:
-            row=db.execute('SELECT sha256 FROM frames ORDER BY rowid DESC LIMIT 1').fetchone()
+            row=db.execute('SELECT f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
             if not row:return {'state':'waiting_for_image'}
             result=db.execute('SELECT result FROM inference WHERE sha256=? AND pipeline=?',(row[0],pipeline)).fetchone()
         if not result:return {'state':'pending','source_sha256':row[0]}
@@ -50,7 +50,7 @@ class Recognition:
             rows=value.get('dial_positions',[])
             if not isinstance(rows,list) or any(not isinstance(row,dict) for row in rows):raise ValueError('invalid_dial_results')
             return value
-        except (ValueError,TypeError):
+        except (ValueError,TypeError,RecursionError):
             # Preserve the evidence; never substitute a previous image's result.
             return {'state':'unavailable','error':'stored_result_invalid','source_sha256':row[0],
                     'pipeline_id':pipeline,'training_allowed':False,'accuracy_verified':False}

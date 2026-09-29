@@ -38,7 +38,10 @@ def broker_config(data):
 
 def instance_id(directory):
     path=Path(directory)/'instance-id'
-    if path.exists():identity=path.read_text(encoding='ascii').strip()
+    if path.exists():
+        with path.open('rb') as stream:blob=stream.read(65)
+        if len(blob)>64:raise ValueError('invalid_instance_id')
+        identity=blob.decode('ascii').strip()
     else:
         identity=uuid.uuid4().hex;Setup._atomic(path,(identity+'\n').encode('ascii'))
     if not re.fullmatch('[a-f0-9]{32}',identity):raise ValueError('invalid_instance_id')

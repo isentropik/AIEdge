@@ -16,7 +16,7 @@ class Setup:
             raw=self.saved.read()
             if raw is None:return
             document,digest=validate(json.loads(raw))
-        except (ValueError,KeyError,TypeError,UnicodeError):
+        except (ValueError,KeyError,TypeError,UnicodeError,RecursionError):
             self.saved.failed('saved_calibration_invalid');return
         except OSError:
             self.saved.failed('calibration_file_unavailable');return

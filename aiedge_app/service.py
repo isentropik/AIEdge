@@ -2,8 +2,9 @@ import argparse,json,sqlite3,threading,urllib.parse,secrets
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from capture import Store,Camera,Collector
+from options import load as load_options
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None):
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -36,6 +37,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     result=reading_format.save(data['format'],data['revision'])
                 else:result=setup.save(data['reference_sha256'],data['design'],data['revision'])
                 self.reply(result)
+            except RecursionError:self.reply({'error':'Setup document is too deeply nested.'},400)
             except (ValueError,KeyError,TypeError) as exc:self.reply({'error':str(exc)},400)
             except OSError:self.reply({'error':'Could not complete setup storage. Reload before retrying.'},503)
         def do_GET(self):
@@ -45,8 +47,15 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
         def read_request(self):
             if not self.allowed():self.send_error(403);return
             route=urllib.parse.urlsplit(self.path).path
+            if route=='/api/diagnostics':
+                from diagnostics import build
+                body=json.dumps(build(store,collector,recognition,setup,reading_format,mqtt_output,configuration),indent=2,allow_nan=False).encode()
+                self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Disposition','attachment; filename="aiedge-diagnostics.json"');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
+            if store is None and (route.startswith('/api/') or route.startswith('/image/') or route.startswith('/reference/')):
+                self.reply({'error':'App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.','code':'storage_startup_failed'},503);return
             if route=='/api/status':
                 state=store.status();state.update(capture_enabled=collector is not None,missed_slots=collector.missed_slots if collector else 0)
+                state['configuration']=configuration or {'state':'ready'}
                 state['last_failure']=state['last_error']
                 state['last_error']=collector.last_error if collector else None
                 state['interval_seconds']=collector.interval if collector else None
@@ -74,6 +83,15 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
                 except (ValueError,FileNotFoundError):self.send_error(404);return
+            elif route=='/api/capture-history':
+                try:
+                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=2)
+                    if set(query)-{'before','limit'} or any(len(values)!=1 for values in query.values()):raise ValueError()
+                    before=int(query['before'][0]) if 'before' in query else None
+                    limit=int(query['limit'][0]) if 'limit' in query else 50
+                    page=store.history(before,limit)
+                except ValueError:self.reply({'error':'Invalid capture history page.'},400);return
+                body=json.dumps(page).encode();kind='application/json'
             elif route=='/api/captures':body=json.dumps(store.recent()).encode();kind='application/json'
             elif route.startswith('/image/'):
                 try:body=store.image(route.removeprefix('/image/'));kind='image/jpeg'
@@ -92,12 +110,14 @@ def create_reader(library,models,profile=None,calibration_file=None):
 
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file');args=parser.parse_args()
-    path=Path(args.data)/'options.json';options=json.loads(path.read_text()) if path.exists() else {}
-    interval=options.get('interval_seconds',30);enabled=options.get('capture_enabled',False)
-    if type(interval) is not int or not 10<=interval<=3600:raise ValueError('invalid_capture_interval')
-    if type(enabled) is not bool:raise ValueError('invalid_capture_enabled')
-    store=Store(args.data);collector=None;recognition=None;setup=None;reading_format=None;mqtt_output=None
-    if any((args.native_library,args.models,(args.calibration_profile or args.calibration_file))):
+    options,configuration=load_options(args.data)
+    interval=options['interval_seconds'];enabled=options['capture_enabled']
+    storage_error=False
+    try:store=Store(args.data)
+    except (OSError,sqlite3.Error):
+        store=None;storage_error=True;enabled=False
+    collector=None;recognition=None;setup=None;reading_format=None;mqtt_output=None
+    if not storage_error and any((args.native_library,args.models,(args.calibration_profile or args.calibration_file))):
         if not all((args.native_library,args.models)):raise ValueError('recognition_requires_library_and_models')
         from reader import Reader
         from recognition import Recognition
@@ -108,25 +128,23 @@ def main():
         setup=Setup(args.data,lambda document:Reader(args.native_library,args.models,document),recognition)
         from reading_format import FormatStore
         reading_format=FormatStore(args.data,recognition)
-    mqtt_enabled=options.get('mqtt_enabled',False)
-    if type(mqtt_enabled) is not bool:raise ValueError('invalid_mqtt_enabled')
+    mqtt_enabled=options.get('mqtt_enabled',False) and not storage_error
+    if mqtt_enabled and (recognition is None or reading_format is None):
+        configuration={'state':'invalid','code':'options_mqtt_runtime_required'}
+        mqtt_enabled=False;enabled=False
     if mqtt_enabled:
-        if recognition is None or reading_format is None:raise ValueError('mqtt_requires_recognition_runtime')
         from mqtt_output import MqttOutput
         def publication_snapshot():
             inference=recognition.latest();reading=reading_format.evaluate(inference);saved=reading_format.status()
             if reading.get('format_id')!=saved['revision']:reading={'state':'unavailable','value':None}
             return {'latest':store.status()['latest'],'reading':reading,'format':saved['format']}
-        mqtt_output=MqttOutput(args.data,publication_snapshot,interval)
+        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval)
+        except (OSError,ValueError,UnicodeError):
+            configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     if enabled:
         collector=Collector(store,Camera(options.get('camera_url',''),options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password','')),interval)
-    server=ThreadingHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output))
-    for worker in (collector,recognition,mqtt_output):
-        if worker:threading.Thread(target=worker.run,daemon=True).start()
-    try:server.serve_forever()
-    finally:
-        if collector:collector.stop.set()
-        if recognition:recognition.stop.set()
-        if mqtt_output:mqtt_output.stop.set()
-        server.server_close()
+    server=ThreadingHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration))
+    from lifecycle import ServiceRuntime
+    if not ServiceRuntime(server,(collector,recognition,mqtt_output)).run():
+        raise SystemExit('App worker shutdown timed out.')
 if __name__=='__main__':main()

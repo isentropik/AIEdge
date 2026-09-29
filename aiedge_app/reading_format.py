@@ -93,7 +93,7 @@ class FormatStore:
         try:
             raw=self.saved.read()
             if raw is not None:self.active=validate(json.loads(raw))
-        except (ValueError,KeyError,TypeError,UnicodeError):
+        except (ValueError,KeyError,TypeError,UnicodeError,RecursionError):
             self.saved.failed('saved_reading_format_invalid')
         except OSError:
             self.saved.failed('reading_format_file_unavailable')

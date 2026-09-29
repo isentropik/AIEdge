@@ -1,0 +1,42 @@
+"""Deliberately limited support report: no images, readings or credentials."""
+import importlib.metadata,platform,sqlite3
+from datetime import datetime,timezone
+
+PACKAGES=('ai-edge-litert','numpy','Pillow','paho-mqtt')
+
+def build(store,collector=None,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None):
+    report={'schema_version':1,'generated_at':datetime.now(timezone.utc).isoformat(),
+            'runtime':{'python':platform.python_version(),'system':platform.system(),'architecture':platform.machine()},
+            'dependencies':{},'configuration_valid':not configuration or configuration.get('state')=='ready',
+            'capture':{'enabled':collector is not None,'interval_seconds':collector.interval if collector else None,
+                       'missed_slots':collector.missed_slots if collector else None,'current_failure':bool(collector and collector.last_error)},
+            'storage':{'state':'unavailable'},'recognition':{'configured':False},
+            'calibration':{'available':setup is not None},'number_format':{'available':reading_format is not None},
+            'mqtt':{'enabled':mqtt_output is not None},
+            'omitted':['credentials','camera_address','images','dial_positions','meter_values','frame_identifiers','environment_variables','local_paths']}
+    for name in PACKAGES:
+        try:report['dependencies'][name]=importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:report['dependencies'][name]=None
+    if store:
+        try:
+            status=store.status()
+            report['storage']={key:status['storage'].get(key) for key in ('state','free_bytes','reserve_bytes')}
+            report['capture'].update({key:status.get(key) for key in ('captures','unique_images','duplicate_images','failures')})
+        except (OSError,sqlite3.Error):pass
+    if recognition:
+        with recognition.lock:
+            reader=recognition.reader
+            report['recognition']['configured']=reader is not None
+            report['recognition']['current_failure']=recognition.last_error is not None
+            if reader:
+                report['recognition']['dial_count']=len(reader.dials)
+                report['recognition']['pipeline_id']=reader.pipeline_id
+    for key,component in (('calibration',setup),('number_format',reading_format)):
+        if component:
+            state=component.status()
+            report[key]['recovery_required']=bool(state.get('recovery'))
+            report[key]['saved']=state.get('calibration' if key=='calibration' else 'format') is not None
+    if mqtt_output:
+        state=mqtt_output.status().get('state')
+        report['mqtt']['state']=state if state in ('starting','connected','publishing','waiting_for_format','waiting_for_reading','disconnected','error') else 'unknown'
+    return report

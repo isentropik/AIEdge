@@ -11,11 +11,13 @@ ARG BUILD_ARCH
 LABEL io.hass.type="app" io.hass.version="${BUILD_VERSION}" io.hass.arch="${BUILD_ARCH}"
 RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 libgomp1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/aiedge
-COPY requirements-linux-amd64.lock ./
+COPY requirements-linux-amd64.lock verify_notices.py ./
+COPY third-party ./third-party
+RUN python verify_notices.py
 RUN pip install --no-cache-dir --only-binary=:all: --require-hashes -r requirements-linux-amd64.lock && pip check
 COPY --from=native-build /build/libaiedge_native.so ./
 COPY assets ./assets
-COPY service.py capture.py recognition.py reader.py reading_format.py mqtt_output.py native.py calibration.py calibration_builder.py setup_store.py saved_file.py editor-geometry.js reference-image.js setup.js reading-format.js dashboard.js index.html favicon.svg package_assets.py verify_runtime.py ./
+COPY service.py diagnostics.py lifecycle.py options.py capture.py recognition.py reader.py reading_format.py mqtt_output.py native.py calibration.py calibration_builder.py setup_store.py saved_file.py editor-geometry.js reference-image.js setup.js reading-format.js dashboard.js index.html favicon.svg package_assets.py verify_runtime.py ./
 RUN python verify_runtime.py --library /opt/aiedge/libaiedge_native.so
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "service.py", "--data", "/data", "--bind", "0.0.0.0", "--ingress", "--native-library", "/opt/aiedge/libaiedge_native.so", "--models", "/opt/aiedge/assets/models"]

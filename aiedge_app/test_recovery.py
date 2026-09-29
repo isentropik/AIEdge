@@ -28,7 +28,7 @@ class RecoveryTests(unittest.TestCase):
 
     def test_bad_calibration_remains_until_valid_explicit_replacement(self):
         path = self.root / 'calibration.json'
-        for blob in (b'{broken', b'\xff', b'{}', b'x' * 262145):
+        for blob in (b'{broken', b'\xff', b'{}', b'['*2000+b']'*2000, b'x' * 262145):
             with self.subTest(length=len(blob)):
                 path.write_bytes(blob)
                 worker = Recognition(self.store)
@@ -154,6 +154,16 @@ class RecoveryTests(unittest.TestCase):
             setup.save(ref, DESIGN, state['revision'])
 
 
+class IdentityRecoveryTests(unittest.TestCase):
+    def test_oversized_and_invalid_mqtt_identity_is_preserved(self):
+        from mqtt_output import instance_id
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'instance-id'
+            for blob in (b'not-a-valid-identity', b'\xff', b'x'*100000):
+                path.write_bytes(blob)
+                with self.assertRaises((ValueError,UnicodeError)):instance_id(directory)
+                self.assertEqual(path.read_bytes(),blob)
+
 class ProcessRecoveryTests(unittest.TestCase):
     def test_damaged_files_do_not_stop_http_startup(self):
         import os, socket, subprocess, sys, time, urllib.request
@@ -165,6 +175,8 @@ class ProcessRecoveryTests(unittest.TestCase):
             root = Path(directory)
             (root/'calibration.json').write_bytes(b'{broken calibration')
             (root/'reading-format.json').write_bytes(b'{broken format')
+            (root/'options.json').write_text(json.dumps({'mqtt_enabled':True}),encoding='utf-8')
+            (root/'instance-id').write_bytes(b'invalid-saved-identity')
             with socket.socket() as probe:
                 probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
             process=subprocess.Popen([sys.executable,str(Path(__file__).with_name('service.py')),
@@ -182,6 +194,8 @@ class ProcessRecoveryTests(unittest.TestCase):
                     except OSError:
                         if time.monotonic()>deadline:raise
                         time.sleep(.1)
+                self.assertEqual(status['configuration']['code'],'mqtt_identity_unavailable')
+                self.assertEqual((root/'instance-id').read_bytes(),b'invalid-saved-identity')
                 self.assertEqual(status['setup_recovery']['code'],'saved_calibration_invalid')
                 self.assertEqual(status['format_recovery']['code'],'saved_reading_format_invalid')
                 self.assertIsNone(status['reading']['value'])

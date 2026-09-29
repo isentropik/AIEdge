@@ -42,9 +42,25 @@ historical checkpoints; this section describes the current state.
   to reject oversized damaged files without allocating their full size. Camera failures distinguish login,
   unsupported API, busy camera, lighting, clock and transport problems.
 
-Validation: **84 tests run, 83 passed, one skipped**, plus **8 JavaScript geometry/image-loader tests**. The skipped check requires the
+- Invalid options, unreadable startup storage and damaged MQTT identity leave the
+  website accessible with network workers stopped. Originals are not reset.
+- Capture history now has durable event IDs and bounded Older/Newer paging. The
+  migration preserves original frames, timestamps and model results. Repeated JPEGs
+  retain separate capture events while sharing one image file.
+- Normal app shutdown drains workers for up to 25 seconds. A 990.8-second loopback
+  trial exercised three restarts during capture: 36 events, nine unique archived
+  images, no failures or missed slots, and approximately 0.235-second shutdowns.
+  The 450 status requests had 0.026863-second p95. Transport times were simulated;
+  this does not validate real-camera operation or accuracy.
+- Overview offers a diagnostics download without credentials, camera addresses,
+  images, meter values or local paths. Recovery and history paging were checked
+  in desktop and mobile browser views.
+- Eleven pinned Linux wheels have a hash-checked notice inventory, retained in the
+  container. Full bundled-native and Debian distribution review remains pending.
+
+Validation: **102 tests run, 101 passed, one skipped**, plus **8 JavaScript geometry/image-loader tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/app-tests-20260929T172258Z.json`
+hashes: `needle-training/firmware-port-tests/server-native-20260929/app-tests-20260929T2114Z.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
 saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.

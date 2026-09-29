@@ -123,3 +123,27 @@ not repair a damaged database or replace a Home Assistant backup.
 
 A damaged stored inference result is kept for diagnosis and shown as unavailable.
 It is not counted as a successful reading or silently replaced by an older result.
+
+## Capture history and diagnostics
+
+Use **Older** and **Newer** on Captures to browse beyond the latest 50 events.
+Each card separates the camera's capture time from the app's receipt time.
+**Repeated image** means its JPEG is identical to an earlier one; the capture
+is still retained as a separate timestamped event. It is not new accuracy evidence.
+
+**Download diagnostics** on Overview saves a local JSON report with runtime
+versions, storage health, capture counts and setup status. It excludes passwords,
+camera addresses, images, dial positions, meter values and local paths. Nothing
+is uploaded automatically. The report is also available when the database cannot
+open, as long as the app process can start.
+
+Invalid app options stop capture and MQTT while leaving the website available.
+Correct the options in Home Assistant and restart the app. A damaged MQTT identity
+must be restored from backup; the app will not invent a replacement and split the
+sensor's history. If the database cannot open, fix the data volume or restore a
+backup, then restart. The app does not automatically reset or repair the database.
+
+Normal shutdown stops new work and allows up to 25 seconds for active workers to
+finish. A timeout exits with an error. A forced process kill or power loss cannot
+be made graceful; database transactions and verified image writes remain necessary.
+Actual Supervisor stop and backup behavior still requires Linux validation.

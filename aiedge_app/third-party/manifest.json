@@ -1,0 +1,250 @@
+{
+  "scope": "Exact CPython 3.14 Linux amd64 Python wheels plus two matching-release upstream license texts. Not a complete native or Debian distribution audit.",
+  "packages": [
+    {
+      "name": "ai-edge-litert",
+      "version": "2.2.0",
+      "wheel_sha256": "359dc296220194bb13802c1633e99caf879b01e0c3807e1a7707850ba7029688",
+      "declared_license": "Apache 2.0",
+      "notices": [
+        {
+          "file": "ai-edge-litert-c71d239df917.txt",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "source": "https://raw.githubusercontent.com/google-ai-edge/LiteRT/refs/tags/v2.2.0/LICENSE"
+        }
+      ],
+      "wheel_contains_separate_license_file": false
+    },
+    {
+      "name": "backports.strenum",
+      "version": "1.2.8",
+      "wheel_sha256": "fc297cb26971f7d5e15a478a06a78575197f81daea47975771b1aae996dcccf4",
+      "declared_license": "MIT",
+      "notices": [
+        {
+          "file": "backports.strenum-1dceef1677a3.txt",
+          "sha256": "1dceef1677a39befa8bf0285ab2db441ba117520bb2de839547ace006a17750d",
+          "source": "wheel:backports_strenum-1.2.8-py3-none-any.whl!/backports_strenum-1.2.8.dist-info/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "wheel_sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6",
+      "declared_license": null,
+      "notices": [
+        {
+          "file": "colorama-cac35c02686e.txt",
+          "sha256": "cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318",
+          "source": "wheel:colorama-0.4.6-py2.py3-none-any.whl!/colorama-0.4.6.dist-info/licenses/LICENSE.txt"
+        }
+      ]
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19",
+      "wheel_sha256": "7634f50c427838bb021c2d66a3d1168e9d199b0607e6329399f04846d42e20b4",
+      "declared_license": "Apache 2.0",
+      "notices": [
+        {
+          "file": "flatbuffers-cfc7749b96f6.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "source": "https://raw.githubusercontent.com/google/flatbuffers/refs/tags/v25.12.19/LICENSE"
+        }
+      ],
+      "wheel_contains_separate_license_file": false
+    },
+    {
+      "name": "ml_dtypes",
+      "version": "0.6.0",
+      "wheel_sha256": "8f490c003369ce60e514a0c3b12374f05274c101fee1bead6740ec8a564032b0",
+      "declared_license": "Apache-2.0",
+      "notices": [
+        {
+          "file": "ml_dtypes-cfc7749b96f6.txt",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "source": "wheel:ml_dtypes-0.6.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/ml_dtypes-0.6.0.dist-info/licenses/LICENSE"
+        },
+        {
+          "file": "ml_dtypes-3f3d9e0024b1.txt",
+          "sha256": "3f3d9e0024b1921b067d6f7f88deb4a60cbe7a78e76c64e3f1d7fc3b779b9d04",
+          "source": "wheel:ml_dtypes-0.6.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/ml_dtypes-0.6.0.dist-info/licenses/LICENSE.eigen"
+        }
+      ]
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.3",
+      "wheel_sha256": "b0521d0f4aebb6e06189451025fa17a913287b13c03d5fe05c017333b654ea5b",
+      "declared_license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "notices": [
+        {
+          "file": "numpy-fbc539f47d0c.txt",
+          "sha256": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy/_core/include/numpy/random/LICENSE.txt"
+        },
+        {
+          "file": "numpy-05f3b8835198.txt",
+          "sha256": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy/ma/LICENSE"
+        },
+        {
+          "file": "numpy-103166b62b80.txt",
+          "sha256": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy/random/LICENSE.md"
+        },
+        {
+          "file": "numpy-4860083caa0d.txt",
+          "sha256": "4860083caa0de2ac3292ca98bd074bd8f45d8b32624e37b1e70a240bff61e488",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/LICENSE.txt"
+        },
+        {
+          "file": "numpy-fbc539f47d0c.txt",
+          "sha256": "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/_core/include/numpy/libdivide/LICENSE.txt"
+        },
+        {
+          "file": "numpy-3f2c1ffa7638.txt",
+          "sha256": "3f2c1ffa76383a55ae0aac01c9737cd70050dff63e1f026694fbe9d662573c98",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/_core/src/common/pythoncapi-compat/COPYING"
+        },
+        {
+          "file": "numpy-e340270d4f64.txt",
+          "sha256": "e340270d4f64384569a91d546acb5b094d69ce47f0c015db77abb74dc6f815af",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/_core/src/highway/LICENSE"
+        },
+        {
+          "file": "numpy-f7b14309e5f5.txt",
+          "sha256": "f7b14309e5f54e5022b26448eefd419988ada2aec01d3c1162d84a0ea8f21f2c",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/_core/src/multiarray/dragon4_LICENSE.txt"
+        },
+        {
+          "file": "numpy-211e7d737d61.txt",
+          "sha256": "211e7d737d6179a08f791ebb0a99897ce7cd2457410c542876d125576edfe910",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/_core/src/npysort/x86-simd-sort/LICENSE.md"
+        },
+        {
+          "file": "numpy-c17011467b4f.txt",
+          "sha256": "c17011467b4fe6e20fbfbeda4df09e58c2bca5480a063e55735a4000a379aad9",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/_core/src/umath/svml/LICENSE"
+        },
+        {
+          "file": "numpy-a85ca13fdf90.txt",
+          "sha256": "a85ca13fdf90160b64a0698215868c13b74d835ad0a4e2ba44713b8c5058a056",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/fft/pocketfft/LICENSE.md"
+        },
+        {
+          "file": "numpy-a14cc25e10d4.txt",
+          "sha256": "a14cc25e10d40a3aa705b7de2fb764a6535d8ee9b2db4e1724900585457dfd55",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/linalg/lapack_lite/LICENSE.txt"
+        },
+        {
+          "file": "numpy-05f3b8835198.txt",
+          "sha256": "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/ma/LICENSE"
+        },
+        {
+          "file": "numpy-103166b62b80.txt",
+          "sha256": "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/random/LICENSE.md"
+        },
+        {
+          "file": "numpy-469778be8f33.txt",
+          "sha256": "469778be8f33d54e1bcaab28c281cc472916d2d273f835e55bc487d30503face",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/random/src/distributions/LICENSE.md"
+        },
+        {
+          "file": "numpy-0e111337b254.txt",
+          "sha256": "0e111337b25494a773106695f0e799f642b8567aaacca4f116a74a8177179156",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/random/src/mt19937/LICENSE.md"
+        },
+        {
+          "file": "numpy-e7d4f4fb2035.txt",
+          "sha256": "e7d4f4fb20358f314210a892ae17351e04993813646f697ec387385ca2a36918",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/random/src/pcg64/LICENSE.md"
+        },
+        {
+          "file": "numpy-6f5828a57223.txt",
+          "sha256": "6f5828a57223d4cc7f8ea505a2623e7b978b242752c1515e355f46ba2cec1800",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/random/src/philox/LICENSE.md"
+        },
+        {
+          "file": "numpy-9d4098846018.txt",
+          "sha256": "9d4098846018319cd68e228ee6220361787f73bccbf00237a85e4fc9621b998f",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/random/src/sfc64/LICENSE.md"
+        },
+        {
+          "file": "numpy-268b0ca06759.txt",
+          "sha256": "268b0ca06759d31ea3ca68dd35f20e877916e927b1c2a835e4592a3c4354b1f9",
+          "source": "wheel:numpy-2.5.3-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/numpy-2.5.3.dist-info/licenses/numpy/random/src/splitmix64/LICENSE.md"
+        }
+      ]
+    },
+    {
+      "name": "paho-mqtt",
+      "version": "2.1.0",
+      "wheel_sha256": "6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee",
+      "declared_license": "EPL-2.0 OR BSD-3-Clause",
+      "notices": [
+        {
+          "file": "paho-mqtt-66408b049249.txt",
+          "sha256": "66408b049249c3bdb0ba1ed285f5422ce67e371d40151bebd4d806af454ffe7c",
+          "source": "wheel:paho_mqtt-2.1.0-py3-none-any.whl!/paho_mqtt-2.1.0.dist-info/licenses/LICENSE.txt"
+        }
+      ]
+    },
+    {
+      "name": "pillow",
+      "version": "12.3.0",
+      "wheel_sha256": "251bf95b67017e27b13d82f5b326234ca62d70f9cf4c2b9032de2358a3b12c7b",
+      "declared_license": "MIT-CMU",
+      "notices": [
+        {
+          "file": "pillow-dda12a98c197.txt",
+          "sha256": "dda12a98c1979cf3d94df1cff45d27a4cb3f04a60c76f76902ac54cac03ec0ce",
+          "source": "wheel:pillow-12.3.0-cp314-cp314-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl!/pillow-12.3.0.dist-info/licenses/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "protobuf",
+      "version": "7.36.2",
+      "wheel_sha256": "89f23aa53c24553a2416fd4fd1ec06f74fa42b14b546d8883128813f775bbfd2",
+      "declared_license": "3-Clause BSD License",
+      "notices": [
+        {
+          "file": "protobuf-6e5e117324af.txt",
+          "sha256": "6e5e117324afd944dcf67f36cf329843bc1a92229a8cd9bb573d7a83130fea7d",
+          "source": "wheel:protobuf-7.36.2-cp310-abi3-manylinux2014_x86_64.whl!/protobuf-7.36.2.dist-info/LICENSE"
+        }
+      ]
+    },
+    {
+      "name": "tqdm",
+      "version": "4.70.1",
+      "wheel_sha256": "c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73",
+      "declared_license": "MPL-2.0 AND MIT",
+      "notices": [
+        {
+          "file": "tqdm-fcff87c3a47c.txt",
+          "sha256": "fcff87c3a47ce8028a8512aa182d4fcf0ad1c90544ee75cf9b343684cac194de",
+          "source": "wheel:tqdm-4.70.1-py3-none-any.whl!/tqdm-4.70.1.dist-info/licenses/LICENCE"
+        }
+      ]
+    },
+    {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "wheel_sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "declared_license": "PSF-2.0",
+      "notices": [
+        {
+          "file": "typing_extensions-3b2f81fe21d1.txt",
+          "sha256": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf",
+          "source": "wheel:typing_extensions-4.16.0-py3-none-any.whl!/typing_extensions-4.16.0.dist-info/licenses/LICENSE"
+        }
+      ]
+    }
+  ]
+}

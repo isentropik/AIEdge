@@ -37,3 +37,22 @@ Home Assistant app labels, optional MQTT service access and cold backups were ch
 against the official app documentation:
 - https://developers.home-assistant.io/docs/apps/configuration/
 - https://developers.home-assistant.io/docs/apps/communication/
+
+## September 29 notice and advisory check
+
+The exact eleven Linux wheels now have a retained notice inventory in
+[third-party/manifest.json](third-party/manifest.json). Original texts are kept
+verbatim with SHA-256 hashes and source paths. LiteRT and FlatBuffers did not
+include separately named license files; matching-release upstream texts were
+retrieved from their official repositories. The container build verifies the
+inventory against the Linux lock and includes it in `/opt/aiedge/third-party`.
+
+An OSV package/version query on September 29 returned no matching advisories for
+these eleven pinned Python package versions. This is a limited database lookup,
+not a clean bill of health: bundled native libraries and Debian packages were
+not covered. Full binary notices and container vulnerability review remain open.
+
+Sources:
+- https://github.com/google-ai-edge/LiteRT/blob/v2.2.0/LICENSE
+- https://github.com/google/flatbuffers/blob/v25.12.19/LICENSE
+- https://osv.dev/

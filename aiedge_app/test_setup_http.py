@@ -46,6 +46,7 @@ class Tests(unittest.TestCase):
             with urllib.request.urlopen(origin+'/api/setup') as response:initial=json.load(response)
             payload=json.dumps({'reference_sha256':self.ref,'design':DESIGN,'revision':None}).encode()
             self.assertEqual(post('/api/setup/save',b'')[0],403)
+            self.assertEqual(post('/api/setup/save',b'['*2000+b']'*2000,initial['token'])[0],400)
             self.assertEqual(post('/api/setup/save',b'',initial['token'],{'Host':'evil.example'})[0],403)
             code,saved=post('/api/setup/save',payload,initial['token']);self.assertEqual(code,200);self.assertIsNotNone(saved['revision'])
             self.assertEqual(post('/api/setup/save',payload,initial['token'])[0],400)

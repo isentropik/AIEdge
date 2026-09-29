@@ -52,14 +52,35 @@ window.addEventListener('hashchange',route);
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',route,{once:true});
 else route();
 let busy=false,timer=null,galleryKey=null,imageHash=null,imageFailed=false;
+let historyPage=null,historyCursors=[null],historyBusy=false;
+function historyPath(){const before=historyCursors[historyCursors.length-1];return 'api/capture-history'+(before?'?before='+before:'');}
+function historyControls(){
+ $('history-newer').disabled=historyBusy||historyCursors.length===1;
+ $('history-older').disabled=historyBusy||!historyPage?.next_before;
+ $('history-summary').textContent=historyPage?.items.length?(historyCursors.length===1?'Latest captures':'Earlier captures')+' · '+historyPage.items.length:'No stored captures';
+}
+async function moveHistory(older){
+ if(historyBusy||busy)return;
+ const previous=[...historyCursors];
+ if(older){if(!historyPage?.next_before)return;historyCursors.push(historyPage.next_before);}
+ else{if(historyCursors.length===1)return;historyCursors.pop();}
+ historyBusy=true;historyControls();
+ try{historyPage=await get(historyPath());gallery(historyPage.items);$('empty-gallery').textContent='No stored captures yet.';}
+ catch(error){historyCursors=previous;$('error').dataset.owner='';$('error').textContent=error.message;$('error').hidden=false;}
+ finally{historyBusy=false;historyControls();}
+}
+$('history-newer').onclick=()=>moveHistory(false);$('history-older').onclick=()=>moveHistory(true);
 $('latest-image').onerror=()=>{imageFailed=true;$('latest-image').hidden=true;$('empty-image').hidden=false;$('empty-image').querySelector('strong').textContent='Image unavailable';$('empty-image').querySelector('p').textContent='The saved image could not be loaded. Use Refresh to try again.';};
 $('latest-image').onload=()=>{imageFailed=false;$('latest-image').hidden=false;$('empty-image').hidden=true;};
 async function get(path){
   const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(8000)});
   if(!response.ok){
-    let message='Could not load app status.';
-    if(response.status===503)message='Local storage is unavailable. Saved images have not been replaced.';
-    throw Error(message);
+    let message='Could not load app status.',code='status_unavailable';
+    if(response.status===503){
+      message='Local storage is unavailable. Saved images have not been replaced.';
+      try{if((await response.json()).code==='storage_startup_failed'){code='storage_startup_failed';message='App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.';}}catch{}
+    }
+    const error=Error(message);error.code=code;throw error;
   }
   return response.json();
 }
@@ -86,9 +107,11 @@ function gallery(rows){
     image.alt='Meter capture '+date(row.captured_at);image.loading='lazy';
     image.onerror=()=>{image.hidden=true;card.classList.add('image-unavailable');};
     const body=document.createElement('div');body.className='body';
-    const stamp=document.createElement('div');stamp.textContent=date(row.captured_at);
-    const meta=document.createElement('small');meta.textContent=Math.round(row.bytes/1024)+' KB · Unlabeled';
-    body.append(stamp,meta);card.append(image,body);$('gallery').append(card);
+    const stamp=document.createElement('div');stamp.textContent='Captured '+date(row.captured_at);
+    const meta=document.createElement('small');meta.textContent=Math.round(row.bytes/1024)+' KB · '+(row.duplicate_image?'Repeated image · ':'')+'Unlabeled';
+    const received=document.createElement('small');received.textContent='Received '+date(row.received_at);received.style.display='block';
+    body.title='Frame '+row.frame_id;
+    body.append(stamp,received,meta);card.append(image,body);$('gallery').append(card);
   }
 }
 function render(s,rows){
@@ -111,15 +134,18 @@ function render(s,rows){
     imageHash=s.latest?.sha256||null;
     if(imageHash){imageFailed=false;$('latest-image').src='image/'+imageHash;}
   }
+  $('empty-gallery').textContent='No stored captures yet.';
   gallery(rows);
-  const issue=s.recognition?.error==='stored_result_invalid'?'The stored recognition result is damaged. Its image and original record have been kept.':
+  const configIssue=s.configuration?.state==='invalid';
+  const issue=configIssue?(s.configuration.code==='mqtt_identity_unavailable'?'The saved MQTT identity could not be loaded. Capture and MQTT are stopped. Restore the identity from backup, then restart AIEdge.':'App configuration could not be loaded. Capture and MQTT are stopped. Correct the app options and restart AIEdge.'):
+    s.recognition?.error==='stored_result_invalid'?'The stored recognition result is damaged. Its image and original record have been kept.':
     s.setup_recovery?.code==='recognition_runtime_unavailable'?'Recognition engine could not load. Check the app runtime and model files.':
     s.setup_recovery?'Saved calibration could not be loaded. Open Calibration to recover it.':
     s.format_recovery?'Saved number format could not be loaded. Open Number format to replace it.':
     s.recognition_error?'Recognition is waiting for local storage.':
     s.last_error?(captureErrors[s.last_error.error]||'Capture failed: '+s.last_error.error):
     s.capture_enabled&&s.storage?.state==='low_space'?'Capture paused: local storage is low on space. Existing images are kept.':'';
-  $('error').dataset.owner=s.setup_recovery?'setup':s.format_recovery?'format':'';
+  $('error').dataset.owner=configIssue?'':s.setup_recovery?'setup':s.format_recovery?'format':'';
   $('error').hidden=!issue||$('error').dataset.owner===activePage;$('error').textContent=issue;
   $('checked-at').textContent='Checked '+new Date().toLocaleTimeString();
 }
@@ -127,15 +153,22 @@ async function refresh(){
   if(busy)return;
   clearTimeout(timer);busy=true;$('refresh').disabled=true;
   try {
-    const [state,rows]=await Promise.all([get('api/status'),get('api/captures')]);
-    render(state,rows);
+    const [state,page]=await Promise.all([get('api/status'),historyBusy?Promise.resolve(null):get(historyPath())]);
+    if(page){historyPage=page;historyControls();}
+    render(state,historyPage?.items||[]);
   } catch(error){
     // Keep historical images visible, but do not leave an old value looking live.
     window.latestReading={state:'unavailable',value:null};
     window.renderPhysicalReading?.(window.latestReading);
     $('meter-value').textContent='—';$('reading-status').textContent='Status unavailable.';
-    $('camera-status').textContent='Connection lost';$('mqtt-state').textContent='Unknown';
-    $('storage-state').textContent='Unknown';$('storage-free').textContent='—';
+    const storageFailed=error.code==='storage_startup_failed';
+    $('camera-status').textContent=storageFailed?'Capture stopped':'Connection lost';$('mqtt-state').textContent=storageFailed?'Stopped':'Unknown';
+    $('storage-state').textContent=storageFailed?'Unavailable':'Unknown';$('storage-free').textContent='—';
+    $('schedule').textContent=storageFailed?'Stopped':'Unavailable';
+    for(const id of ['count','unique','failures','missed','received'])$(id).textContent='—';
+    $('checked-at').textContent='Last check '+new Date().toLocaleTimeString();
+    $('empty-gallery').textContent='Capture history unavailable.';
+    if(!imageHash){$('empty-image').querySelector('strong').textContent='Image unavailable';$('empty-image').querySelector('p').textContent='Saved images could not be checked.';$('capture-time').textContent='Capture status unavailable';}
     $('dial-results').hidden=true;$('error').dataset.owner='';$('error').hidden=false;
     $('error').textContent=error.name==='TimeoutError'?'The app did not respond. Retrying automatically.':error instanceof TypeError?'Connection to the app was lost. Retrying automatically.':error.message;
   } finally {

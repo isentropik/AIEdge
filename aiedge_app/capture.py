@@ -28,7 +28,21 @@ class Store:
     def __init__(self,directory):
         self.root=Path(directory);(self.root/'images').mkdir(parents=True,exist_ok=True);self.lock=threading.Lock()
         with self.connect() as db:
-            db.executescript('CREATE TABLE IF NOT EXISTS frames(camera TEXT,frame_id TEXT,captured_at TEXT,received_at TEXT,sha256 TEXT,bytes INTEGER,training_allowed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(camera,frame_id)); CREATE TABLE IF NOT EXISTS failures(received_at TEXT,error TEXT);')
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('CREATE TABLE IF NOT EXISTS frames(camera TEXT,frame_id TEXT,captured_at TEXT,received_at TEXT,sha256 TEXT,bytes INTEGER,training_allowed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(camera,frame_id))')
+            db.execute('CREATE TABLE IF NOT EXISTS failures(received_at TEXT,error TEXT)')
+            # Check the existing schema before committing any initialization writes.
+            db.execute('SELECT camera,frame_id,captured_at,received_at,sha256,bytes,training_allowed FROM frames LIMIT 0')
+            db.execute('SELECT received_at,error FROM failures LIMIT 0')
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inference'").fetchone():
+                db.execute('SELECT sha256,pipeline,processed_at,result FROM inference LIMIT 0')
+            db.execute('CREATE TABLE IF NOT EXISTS capture_events(event_id INTEGER PRIMARY KEY AUTOINCREMENT,camera TEXT NOT NULL,frame_id TEXT NOT NULL,UNIQUE(camera,frame_id),FOREIGN KEY(camera,frame_id) REFERENCES frames(camera,frame_id))')
+            db.execute('CREATE INDEX IF NOT EXISTS frames_sha256 ON frames(sha256)')
+            # Add durable IDs without changing any original capture or image bytes.
+            # Existing implicit frame rowids are used only for this one-time ordering.
+            db.execute('INSERT INTO capture_events(camera,frame_id) SELECT f.camera,f.frame_id FROM frames f WHERE NOT EXISTS (SELECT 1 FROM capture_events e WHERE e.camera=f.camera AND e.frame_id=f.frame_id) ORDER BY f.rowid')
+            if db.execute('SELECT 1 FROM capture_events e LEFT JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id WHERE f.camera IS NULL LIMIT 1').fetchone():
+                raise sqlite3.DatabaseError('capture_event_without_frame')
     @contextmanager
     def connect(self):
         db=sqlite3.connect(self.root/'captures.sqlite3',timeout=10)
@@ -67,13 +81,31 @@ class Store:
                 finally:
                     if temp.exists():temp.unlink()
             db.execute('INSERT INTO frames VALUES(?,?,?,?,?,?,0)',(camera,frame,stamp,now(),digest,len(blob)))
+            db.execute('INSERT INTO capture_events(camera,frame_id) VALUES(?,?)',(camera,frame))
         return True
     def fail(self,error):
         with self.lock,self.connect() as db:db.execute('INSERT INTO failures VALUES(?,?)',(now(),error))
     def recent(self):
         with self.lock,self.connect() as db:
-            rows=db.execute('SELECT captured_at,received_at,sha256,bytes FROM frames ORDER BY rowid DESC LIMIT 50').fetchall()
+            rows=db.execute('SELECT f.captured_at,f.received_at,f.sha256,f.bytes FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 50').fetchall()
         return [dict(zip(('captured_at','received_at','sha256','bytes'),row)) for row in rows]
+    def history(self,before=None,limit=50):
+        if type(limit) is not int or not 1<=limit<=100 or (before is not None and (type(before) is not int or not 1<=before<=9223372036854775807)):
+            raise ValueError('invalid_history_cursor')
+        condition="WHERE e.event_id<?" if before is not None else ""
+        parameters=(before,limit+1) if before is not None else (limit+1,)
+        with self.lock,self.connect() as db:
+            rows=db.execute("""SELECT e.event_id,f.captured_at,f.received_at,f.sha256,f.bytes,f.frame_id,
+                EXISTS(SELECT 1 FROM capture_events prior JOIN frames p ON p.camera=prior.camera AND p.frame_id=prior.frame_id
+                       WHERE prior.event_id<e.event_id AND p.sha256=f.sha256)
+                FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id
+                """+condition+" ORDER BY e.event_id DESC LIMIT ?",parameters).fetchall()
+        more=len(rows)>limit;rows=rows[:limit]
+        names=('event_id','captured_at','received_at','sha256','bytes','frame_id','duplicate_image')
+        items=[dict(zip(names,row)) for row in rows]
+        for item in items:item['duplicate_image']=bool(item['duplicate_image']);item['training_allowed']=False
+        return {'items':items,'next_before':rows[-1][0] if more else None}
+
     def image(self,digest):
         if not re.fullmatch(r'[a-f0-9]{64}',digest):raise ValueError('invalid_image_id')
         with self.lock,self.connect() as db:
@@ -82,7 +114,7 @@ class Store:
     def status(self):
         with self.lock,self.connect() as db:
             total,unique=db.execute('SELECT COUNT(*),COUNT(DISTINCT sha256) FROM frames').fetchone()
-            row=db.execute('SELECT captured_at,received_at,sha256 FROM frames ORDER BY rowid DESC LIMIT 1').fetchone()
+            row=db.execute('SELECT f.captured_at,f.received_at,f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
             failure=db.execute('SELECT received_at,error FROM failures ORDER BY rowid DESC LIMIT 1').fetchone()
             failed=db.execute('SELECT COUNT(*) FROM failures').fetchone()[0]
         return dict(captures=total,unique_images=unique,duplicate_images=total-unique,failures=failed,latest=dict(zip(('captured_at','received_at','sha256'),row)) if row else None,last_error=dict(zip(('at','error'),failure)) if failure else None,recognition='not_connected',training_allowed=False,storage=self.storage_status())
@@ -108,8 +140,8 @@ CAMERA_FAILURES={
 class Camera:
     def __init__(self,url,token='',username='',password=''):
         p=urllib.parse.urlsplit(url)
-        if p.scheme not in ('http','https') or not p.hostname or p.username or p.password or p.query or p.fragment or p.path not in ('','/'):raise ValueError('camera_url_must_be_an_http_origin')
-        if '\r' in token or '\n' in token:raise ValueError('invalid_camera_token')
+        if p.scheme not in ('http','https') or not p.hostname or p.username or p.password or p.query or p.fragment or p.path not in ('','/') or any(c.isspace() or ord(c)<32 for c in url) or (p.port is not None and not 1<=p.port<=65535):raise ValueError('camera_url_must_be_an_http_origin')
+        if any(ord(c)<33 or ord(c)>126 for c in token):raise ValueError('invalid_camera_token')
         if token and (username or password):raise ValueError('choose_one_camera_auth_method')
         if bool(username)!=bool(password) or ':' in username or any(c in username+password for c in ('\r','\n')):raise ValueError('invalid_camera_credentials')
         self.origin=url.rstrip('/');self.token=token
