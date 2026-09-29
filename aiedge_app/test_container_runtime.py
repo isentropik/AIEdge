@@ -5,7 +5,10 @@ import json, os, pathlib, socket, subprocess, sys, tempfile, time, unittest, url
 class ContainerRuntimeTests(unittest.TestCase):
     def test_packaged_service_startup_and_persistent_restart(self):
         with tempfile.TemporaryDirectory() as directory:
-            for attempt in range(2):
+            for attempt in range(3):
+                if attempt==2:
+                    (pathlib.Path(directory)/'calibration.json').write_bytes(b'{broken calibration')
+                    (pathlib.Path(directory)/'reading-format.json').write_bytes(b'{broken format')
                 with socket.socket() as probe:
                     probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
                 command=[sys.executable,'/opt/aiedge/service.py','--data',directory,'--port',str(port),
@@ -23,11 +26,16 @@ class ContainerRuntimeTests(unittest.TestCase):
                             if time.monotonic()>deadline:raise
                             time.sleep(.1)
                     self.assertFalse(state['capture_enabled']);self.assertEqual(state['captures'],0)
-                    self.assertEqual(state['reading']['state'],'not_configured')
+                    self.assertEqual(state['reading']['state'],'unavailable' if attempt==2 else 'not_configured')
+                    if attempt==2:
+                        self.assertEqual(state['setup_recovery']['code'],'saved_calibration_invalid')
+                        self.assertEqual(state['format_recovery']['code'],'saved_reading_format_invalid')
+                        self.assertEqual((pathlib.Path(directory)/'calibration.json').read_bytes(),b'{broken calibration')
+                        self.assertEqual((pathlib.Path(directory)/'reading-format.json').read_bytes(),b'{broken format')
                     self.assertEqual(state['recognition']['state'],'not_configured')
                     with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/setup') as r:setup=json.load(r)
                     self.assertTrue(setup['available']);self.assertIsNone(setup['calibration'])
-                    for route,needle in [('/',b'Number format'),('/reading-format.js',b'openReadingFormat'),('/dashboard.js',b'visibilitychange'),('/favicon.svg',b'<svg')]:
+                    for route,needle in [('/',b'Number format'),('/reading-format.js',b'openReadingFormat'),('/dashboard.js',b'visibilitychange'),('/favicon.svg',b'<svg'),('/editor-geometry.js',b'AIEdgeGeometry'),('/reference-image.js',b'AIEdgeReferenceImage')]:
                         with urllib.request.urlopen(f'http://127.0.0.1:{port}'+route) as r:self.assertIn(needle,r.read())
                     self.assertTrue((pathlib.Path(directory)/'captures.sqlite3').is_file())
                 finally:

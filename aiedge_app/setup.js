@@ -2,7 +2,7 @@
 'use strict';
 const geometry=window.AIEdgeGeometry;
 const $=id=>document.getElementById(id),canvas=$('calibration-canvas'),ctx=canvas.getContext('2d');
-let state={markers:[null,null,null],dials:[]},revision=null,reference=null,token=null,available=false,loaded=false,mode='markers',selected=0,picture=null,drag=null,busy=false,dirty=false;
+let state={markers:[null,null,null],dials:[]},revision=null,reference=null,token=null,available=false,loaded=false,mode='markers',selected=0,picture=null,pendingReference=null,drag=null,busy=false,dirty=false;
 const errorText={reference_image_not_found:'The reference image is missing. Choose the image again before saving.',reference_image_unreadable:'This image could not be opened. Choose a complete JPEG or PNG file.',reference_must_be_640x480:'Choose a 640 × 480 JPEG or PNG image.',invalid_landmark:'Keep each landmark inside the image.',invalid_dial_geometry:'Check the dial geometry.',setup_changed_reload_before_saving:'Calibration changed in another session. Reload before saving.',reference_recognition_rejected:'The reference did not pass alignment or needle visibility. Check the markers and dial landmarks.',three_markers_required:'Place all three markers.',invalid_dial_count:'Use between 1 and 16 dials.'};
 const recoveryText={saved_calibration_invalid:'Saved calibration could not be read. Rebuild it here; the original file will be kept.',calibration_file_unavailable:'The calibration file is not readable. Check app storage and restart before saving.',saved_reference_unavailable:'The saved reference is missing or damaged. Choose a replacement image before saving.',recognition_runtime_unavailable:'The recognition engine could not load this calibration. Check the installed model and runtime files.'};
 function status(message,error=false){$('setup-status').textContent=message;$('setup-status').dataset.error=String(error);}
@@ -43,20 +43,29 @@ canvas.onpointermove=e=>{if(!picture)return;const p=location(e),b=currentBox(),h
  if(box){setBox(box);controls();}};
 canvas.onpointerup=e=>{if(drag){const modified=JSON.stringify(currentBox())!==JSON.stringify(drag.box||null);drag=null;if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);if(modified)changed();}};canvas.onpointercancel=()=>{if(drag){setBox(drag.box||null);drag=null;controls();}};
 async function request(path,body,raw=false){const response=await fetch(path,{method:'POST',headers:{'X-AIEdge-Setup':token,'Content-Type':raw?'application/octet-stream':'application/json'},body:raw?body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});let data;try{data=await response.json();}catch{throw Error('The server did not return a valid response. Reload before retrying.');}if(!response.ok){const key=String(data.error).split(':')[0];throw Error(errorText[key]||String(data.error).replaceAll('_',' '));}return data;}
-async function showReference(digest,newState){const img=new Image();await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(Error('Could not load the reference image.'));img.src='reference/'+digest;});picture=img;reference=digest;if(newState){state=newState;selected=0;mode='markers';}canvas.hidden=false;$('reference-empty').hidden=true;$('reference-size').textContent='640 × 480';controls();}
+async function showReference(digest,newState){const img=await window.AIEdgeReferenceImage.load('reference/'+digest);picture=img;reference=digest;pendingReference=digest;if(newState){state=newState;selected=0;mode='markers';}canvas.hidden=false;$('reference-empty').hidden=true;$('reference-size').textContent='640 × 480';controls();}
+window.addEventListener('aiedge-refresh-images',async event=>{
+ if(event.detail!=='setup'||picture||busy)return;
+ if(!loaded){window.openCalibration();return;}
+ if(!pendingReference)return;
+ busy=true;controls();status('Loading reference…');
+ try{await showReference(pendingReference);status(dirty?'Unsaved changes':'');}
+ catch(e){status(e.message,true);}
+ finally{busy=false;controls();}
+});
 window.openCalibration=async()=>{
  if(loaded||busy)return;busy=true;controls();status('Loading calibration…');
  try{
   const r=await fetch('api/setup',{cache:'no-store',signal:AbortSignal.timeout(10000)});
   if(!r.ok)throw Error('Could not load calibration.');
-  const s=await r.json();token=s.token;available=s.available;revision=s.revision;
+  const s=await r.json();let referenceError=null;token=s.token;available=s.available;revision=s.revision;
   if(s.calibration){
    const c=s.calibration;
    state={markers:c.markers.map(m=>m.box),dials:c.dials.map(d=>({name:d.name,model:d.model,direction:d.direction,crop:d.crop,rim_points:d.landmarks?.rim_points||[null,null,null,null],needle_pivot:d.landmarks?.needle_pivot||null}))};
-   try{await showReference(c.reference_sha256);}catch(e){if(!s.recovery)throw e;}
+   pendingReference=c.reference_sha256;try{await showReference(pendingReference);}catch(e){referenceError=e.message;}
   }
   loaded=true;dirty=!!s.recovery;
-  status(s.recovery?(recoveryText[s.recovery.code]||'Saved calibration needs recovery.'):available?'':'Calibration runtime is not configured.',!!s.recovery||!available);
+  status(s.recovery?(recoveryText[s.recovery.code]||'Saved calibration needs recovery.'):referenceError||(available?'':'Calibration runtime is not configured.'),!!s.recovery||!!referenceError||!available);
  }catch(e){status(e.message,true);}
  finally{busy=false;controls();}
 };

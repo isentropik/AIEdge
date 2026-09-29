@@ -10,7 +10,9 @@ The interface includes capture history, reference-image calibration and a number
 editor. The overview refreshes while it is open, shows local storage health and clears
 the displayed reading if the app stops responding. A dark, light or system theme can
 be selected at the top of every page. Reloading keeps the selected page.
-Use **Refresh** to retry an image that previously could not be loaded.
+Use **Refresh** to retry an image that previously could not be loaded. A reference
+image that does not load within ten seconds shows a retry message; number-format
+fields remain usable while its preview loads.
 
 The native alignment and LiteRT recognition pipeline estimate dial positions. The
 number format converts compatible positions to a physical register value. Optional

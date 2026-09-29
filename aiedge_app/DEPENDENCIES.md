@@ -1,7 +1,8 @@
 # Dependency baseline
 
 Reviewed September 28, 2026 against official Docker Python and PyPI package metadata.
-Container base: python:3.14.7-slim-trixie.
+Container base: python:3.14.7-slim-trixie, pinned to the verified OCI index digest
+listed in PACKAGING.md on September 29.
 Inference requirements pinned in requirements.txt: ai-edge-litert 2.2.0,
 numpy 2.5.3, Pillow 12.3.0 and paho-mqtt 2.1.0. Installed into an isolated Python 3.12 Windows environment;
 the older training environment was not modified. Current package metadata offers
@@ -21,8 +22,8 @@ build and model invocation smoke test pass; current host-suite results are recor
 in STATUS.md. Paho 2.1.0 is pinned with its wheel hash in the Linux lock and was
 installed only into the isolated server environment.
 
-Before release: build/test Linux Python 3.14 and Supervisor, pin the base-image
-digest, inspect all dependency licenses and scan dependencies. Debian compiler and
+Before release: build/test Linux Python 3.14 and Supervisor, inspect all dependency
+licenses and scan dependencies. Debian compiler and
 runtime package versions are not yet locked. No Docker or WSL runtime is installed
 on the current Windows host. No container execution or HA installation is claimed.
 

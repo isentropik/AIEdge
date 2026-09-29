@@ -19,7 +19,7 @@ historical checkpoints; this section describes the current state.
 - Disk/database failures no longer kill the recognition worker. Invalid reference
   files and extreme/nonfinite landmarks fail validation without replacing calibration.
   Setup is limited to the 16 dials supported by the physical calculation.
-- Desktop 1440 × 900 and mobile 390 × 844 checks covered light/dark themes, compact
+- Desktop 1440 × 900 and mobile 390 × 844 viewport checks covered light/dark themes, compact
   format layout, reference highlighting, no horizontal overflow, calibration labels,
   and disconnect/reconnect status. Invalid format saves preserve the prior file.
 
@@ -31,7 +31,9 @@ historical checkpoints; this section describes the current state.
   original box; selecting a new image cannot discard the draft before it loads.
 - Desktop editors keep the image within one pane, with scrolling limited to controls
   on shorter screens. Mobile remains stacked without horizontal overflow. Page routes
-  survive reload and browser Back. Refresh retries missing image files.
+  survive reload and browser Back. Refresh retries missing image files. Reference-image
+  loads time out after ten seconds; the number-format fields remain usable while the
+  preview loads. A stalled-response browser fixture verifies timeout and recovery.
 - Browser format saves now complete without a hidden global-function error. Calibration
   saves stay disabled until a change is made. Recovery guidance is shown once.
 - Concurrent image-store writers serialize admission, verify duplicate files and leave
@@ -39,7 +41,7 @@ historical checkpoints; this section describes the current state.
   and unavailable; no older result is substituted. Camera failures distinguish login,
   unsupported API, busy camera, lighting, clock and transport problems.
 
-Validation: **82 tests run, 81 passed, one skipped**, plus **5 JavaScript geometry tests**. The skipped check requires the
+Validation: **82 tests run, 81 passed, one skipped**, plus **8 JavaScript geometry/image-loader tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
 hashes: `needle-training/firmware-port-tests/server-native-20260929/app-tests-20260929T172258Z.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both

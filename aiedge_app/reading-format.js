@@ -2,7 +2,7 @@
 'use strict';
 const $=id=>document.getElementById(id),form=$('reading-form'),canvas=$('format-canvas'),ctx=canvas.getContext('2d');
 const units={ft3:'ft³',m3:'m³',L:'L',gal_us:'US gal',kWh:'kWh'};
-let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0;
+let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0,imageGeneration=0,referenceDigest=null;
 const messages={reading_scale_too_small:'That revolution value is too small to represent in the selected units.',reading_pipeline_changed:'Calibration or the model changed. Reload the format and check each dial.',reading_format_changed_reload:'The format was changed in another session. Reload saved values before trying again.',reading_dial_mapping_mismatch:'The dial list changed. Reload the format.',reading_scales_must_be_nested:'Dial values must have whole-number revolution ratios, such as 1000 and 5.',invalid_reading_scale_or_error:'Enter positive revolution values and tolerances from 0 to less than 0.5.'};
 function status(message,error=false){$('format-status').textContent=message;$('format-status').dataset.error=String(error);}
 function controls(){
@@ -29,6 +29,15 @@ async function request(path,options={}){
 function input(id,label,value,min,max){
  const field=document.createElement('input');field.id=id;field.type='number';field.step='any';field.min=String(min);if(max!==null)field.max=String(max);field.required=true;field.inputMode='decimal';field.setAttribute('aria-label',label);field.value=value??'';field.addEventListener('input',changed);return field;
 }
+async function loadPreview(digest){
+ const generation=++imageGeneration;picture=null;canvas.hidden=true;$('format-image-empty').hidden=false;
+ $('format-image-empty').textContent=digest?'Loading reference image…':'Save a calibration first.';
+ if(!digest)return;
+ try{const image=await window.AIEdgeReferenceImage.load('reference/'+digest);
+  if(generation!==imageGeneration)return;
+  picture=image;canvas.hidden=false;$('format-image-empty').hidden=true;draw();
+ }catch(e){if(generation===imageGeneration)$('format-image-empty').textContent=e.message;}
+}
 async function load(force=false){
  if(busy||loaded&&!force)return;
  busy=true;controls();status('Loading dial format…');
@@ -54,11 +63,7 @@ async function load(force=false){
   else if(saved.recovery)status('The saved number format could not be loaded. Enter replacement values; the original file will be kept.',true);
   else if(stale)status('Calibration or the model changed. Enter the values for the current dials.',true);
   else status('');
-  if(setup.calibration?.reference_sha256){
-   const image=new Image();image.src='reference/'+setup.calibration.reference_sha256;
-   try{await image.decode();picture=image;canvas.hidden=false;$('format-image-empty').hidden=true;selected=0;draw();}
-   catch{$('format-image-empty').textContent='Reference image could not be loaded.';}
-  }
+  selected=0;referenceDigest=setup.calibration?.reference_sha256;loadPreview(referenceDigest);
  }catch(e){status(e.message,true);loaded=false;}
  finally{busy=false;controls();}
 }
@@ -75,6 +80,7 @@ form.onsubmit=async event=>{
 };
 window.addEventListener('aiedge-calibration-saved',()=>{pipeline=null;loaded=false;controls();status('Calibration changed. Reopen Number format to check the current dials.',true);});
 window.openReadingFormat=()=>load();
+window.addEventListener('aiedge-refresh-images',event=>{if(event.detail==='format'&&!picture&&!busy&&loaded)loadPreview(referenceDigest);});
 window.renderPhysicalReading=reading=>{
  $('meter-value').textContent='—';$('meter-unit').textContent='';
  if(!reading)return;

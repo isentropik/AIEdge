@@ -143,7 +143,7 @@ async function refresh(){
     if(!document.hidden)timer=setTimeout(refresh,5000);
   }
 }
-$('refresh').onclick=()=>{if(imageFailed){imageHash=null;$('latest-image').removeAttribute('src');}galleryKey=null;refresh();};
+$('refresh').onclick=()=>{if(imageFailed){imageHash=null;$('latest-image').removeAttribute('src');}galleryKey=null;window.dispatchEvent(new CustomEvent('aiedge-refresh-images',{detail:activePage}));refresh();};
 window.addEventListener('aiedge-reading-format-saved',refresh);
 window.addEventListener('aiedge-calibration-saved',refresh);
 document.addEventListener('visibilitychange',()=>{
