@@ -8,6 +8,12 @@ MIN_FREE_BYTES=512*1024*1024
 
 def now():return datetime.now(timezone.utc).isoformat()
 
+def verified_image(path,digest):
+    with path.open('rb') as stream:blob=stream.read(MAX_IMAGE+1)
+    if len(blob)>MAX_IMAGE or hashlib.sha256(blob).hexdigest()!=digest:
+        raise ValueError('stored_image_corrupt')
+    return blob
+
 def validate(blob,headers):
     if not 4<=len(blob)<=MAX_IMAGE or not blob.startswith(b'\xff\xd8') or not blob.endswith(b'\xff\xd9'):raise ValueError('invalid_jpeg_envelope')
     frame=headers.get('X-AIEdge-Frame-Id','')
@@ -46,8 +52,7 @@ class Store:
             # Serialize file+ledger admission even if another process opened this store.
             db.execute('BEGIN IMMEDIATE')
             target=self.root/'images'/(digest+'.jpg')
-            if target.exists() and hashlib.sha256(target.read_bytes()).hexdigest()!=digest:
-                raise ValueError('stored_image_corrupt')
+            if target.exists():verified_image(target,digest)
             prior=db.execute('SELECT captured_at,sha256 FROM frames WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
             if prior:
                 if prior!=(stamp,digest):raise ValueError('frame_identity_conflict')
@@ -73,9 +78,7 @@ class Store:
         if not re.fullmatch(r'[a-f0-9]{64}',digest):raise ValueError('invalid_image_id')
         with self.lock,self.connect() as db:
             if not db.execute('SELECT 1 FROM frames WHERE sha256=? LIMIT 1',(digest,)).fetchone():raise FileNotFoundError(digest)
-        blob=(self.root/'images'/(digest+'.jpg')).read_bytes()
-        if hashlib.sha256(blob).hexdigest()!=digest:raise ValueError('stored_image_corrupt')
-        return blob
+        return verified_image(self.root/'images'/(digest+'.jpg'),digest)
     def status(self):
         with self.lock,self.connect() as db:
             total,unique=db.execute('SELECT COUNT(*),COUNT(DISTINCT sha256) FROM frames').fetchone()

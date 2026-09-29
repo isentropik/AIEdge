@@ -38,10 +38,11 @@ historical checkpoints; this section describes the current state.
   saves stay disabled until a change is made. Recovery guidance is shown once.
 - Concurrent image-store writers serialize admission, verify duplicate files and leave
   no ledger entry after a failed file write. Damaged inference rows remain preserved
-  and unavailable; no older result is substituted. Camera failures distinguish login,
+  and unavailable; no older result is substituted. Saved image reads are bounded
+  to reject oversized damaged files without allocating their full size. Camera failures distinguish login,
   unsupported API, busy camera, lighting, clock and transport problems.
 
-Validation: **82 tests run, 81 passed, one skipped**, plus **8 JavaScript geometry/image-loader tests**. The skipped check requires the
+Validation: **84 tests run, 83 passed, one skipped**, plus **8 JavaScript geometry/image-loader tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
 hashes: `needle-training/firmware-port-tests/server-native-20260929/app-tests-20260929T172258Z.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both

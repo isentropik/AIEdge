@@ -133,6 +133,16 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), b'{}')
         self.assertEqual(next((root/'recovery').glob('*.json')).read_bytes(), b'broken')
 
+    def test_oversized_reference_keeps_startup_recoverable(self):
+        from capture import MAX_IMAGE
+        setup=Setup(self.root,Candidate,self.worker)
+        ref=setup.add_reference(reference());setup.save(ref,DESIGN,None)
+        path=setup.references/(ref+'.image')
+        with path.open('wb') as stream:stream.seek(MAX_IMAGE);stream.write(b'x')
+        worker=Recognition(self.store);restarted=Setup(self.root,Candidate,worker)
+        self.assertIsNone(worker.reader)
+        self.assertEqual(restarted.status()['recovery']['code'],'saved_reference_unavailable')
+        self.assertEqual(path.stat().st_size,MAX_IMAGE+1)
     def test_unreadable_file_cannot_be_silently_replaced(self):
         with patch('saved_file.Path.open', side_effect=PermissionError()):
             setup = Setup(self.root, Candidate, self.worker)

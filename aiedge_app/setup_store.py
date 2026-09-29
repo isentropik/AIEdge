@@ -3,6 +3,7 @@ import hashlib,json,os,re,threading,uuid
 from pathlib import Path
 from calibration import validate
 from saved_file import SavedFile
+from capture import MAX_IMAGE
 from calibration_builder import build,image_rgb
 
 class Setup:
@@ -30,9 +31,10 @@ class Setup:
         self.active=(document,digest)
     def reference(self,digest):
         if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):raise ValueError('invalid_reference_id')
-        try:blob=(self.references/(digest+'.image')).read_bytes()
+        try:
+            with (self.references/(digest+'.image')).open('rb') as stream:blob=stream.read(MAX_IMAGE+1)
         except FileNotFoundError:raise ValueError('reference_image_not_found') from None
-        if hashlib.sha256(blob).hexdigest()!=digest:raise ValueError('reference_corrupt')
+        if len(blob)>MAX_IMAGE or hashlib.sha256(blob).hexdigest()!=digest:raise ValueError('reference_corrupt')
         return blob
     def add_reference(self,blob):
         image_rgb(blob);digest=hashlib.sha256(blob).hexdigest();path=self.references/(digest+'.image')

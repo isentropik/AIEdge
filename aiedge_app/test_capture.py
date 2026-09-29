@@ -29,6 +29,16 @@ class Tests(unittest.TestCase):
     def test_corrupt_disk_rejected(self):
         self.store.add('camera',JPEG,headers());next((Path(self.temp.name)/'images').glob('*.jpg')).write_bytes(b'broken')
         with self.assertRaisesRegex(ValueError,'corrupt'):self.store.add('camera',JPEG,headers('2'))
+    def test_oversized_saved_image_is_rejected_and_preserved(self):
+        from capture import MAX_IMAGE
+        self.store.add('camera',JPEG,headers())
+        path=next((Path(self.temp.name)/'images').glob('*.jpg'))
+        with path.open('wb') as stream:stream.seek(MAX_IMAGE);stream.write(b'x')
+        digest=headers()['X-AIEdge-SHA256']
+        with self.assertRaisesRegex(ValueError,'stored_image_corrupt'):self.store.image(digest)
+        with self.assertRaisesRegex(ValueError,'stored_image_corrupt'):self.store.add('camera',JPEG,headers('2'))
+        self.assertEqual(path.stat().st_size,MAX_IMAGE+1)
+        self.assertEqual(self.store.status()['captures'],1)
     def test_same_frame_duplicate_checks_saved_image_integrity(self):
         self.store.add('camera',JPEG,headers())
         path=next((Path(self.temp.name)/'images').glob('*.jpg'))
