@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(aiedge_native LANGUAGES CXX)
-set(AIEDGE_POLAR_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/../code/components/jomjol_tfliteclass" CACHE PATH "Shared firmware headers")
+set(AIEDGE_POLAR_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/assets/include" CACHE PATH "Verified shared-header snapshot")
 add_library(aiedge_native SHARED native.cpp)
 target_include_directories(aiedge_native PRIVATE "${AIEDGE_POLAR_HEADERS}")
 target_compile_features(aiedge_native PRIVATE cxx_std_17)

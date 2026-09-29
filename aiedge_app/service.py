@@ -66,6 +66,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             elif route=='/api/setup':
                 state=setup.status() if setup else {'revision':None,'calibration':None}
                 state.update(available=setup is not None,token=token);body=json.dumps(state).encode();kind='application/json'
+            elif route=='/favicon.svg':
+                body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
             elif route in ('/setup.js','/reading-format.js','/dashboard.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:

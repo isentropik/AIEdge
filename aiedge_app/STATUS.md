@@ -1,6 +1,6 @@
 # Current checkpoint — September 29, 2026
 
-The app source is being prepared on `codex/aiedge-ha-app`. This is a development
+The app source is published on `codex/aiedge-ha-app`. This is a development
 branch, not a release or live deployment. The earlier dated entries below are
 historical checkpoints; this section describes the current state.
 
@@ -47,7 +47,12 @@ register position. Supplied tolerances are assumptions, not measured accuracy.
 
 GitHub rejected the workflow push because the OAuth connection lacks workflow scope.
 The prepared `.github/workflows/aiedge-app.yml` has not run. The source-only app branch
-omits that unpublished workflow. No production HA or meter changes were made.
+omits that unpublished workflow. The published source-only Git archive was checked independently: every Docker COPY
+input exists and all 20 manifest asset hashes match. `.gitattributes` preserves
+exact asset bytes across Windows/Linux checkouts. CMake now defaults to the packaged
+header snapshot; CMake execution itself was not tested on this host. The original
+AIEdge favicon and a development README are included. No production HA or meter
+changes were made.
 
 ---
 

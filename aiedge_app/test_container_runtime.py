@@ -27,7 +27,7 @@ class ContainerRuntimeTests(unittest.TestCase):
                     self.assertEqual(state['recognition']['state'],'not_configured')
                     with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/setup') as r:setup=json.load(r)
                     self.assertTrue(setup['available']);self.assertIsNone(setup['calibration'])
-                    for route,needle in [('/',b'Number format'),('/reading-format.js',b'openReadingFormat'),('/dashboard.js',b'visibilitychange')]:
+                    for route,needle in [('/',b'Number format'),('/reading-format.js',b'openReadingFormat'),('/dashboard.js',b'visibilitychange'),('/favicon.svg',b'<svg')]:
                         with urllib.request.urlopen(f'http://127.0.0.1:{port}'+route) as r:self.assertIn(needle,r.read())
                     self.assertTrue((pathlib.Path(directory)/'captures.sqlite3').is_file())
                 finally:

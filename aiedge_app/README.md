@@ -1,0 +1,20 @@
+# AIEdge for Home Assistant
+
+A development app that processes meter images on your Home Assistant server. The
+ESP32 supplies pictures; the app aligns the image, estimates the analog dial positions
+and calculates a reading from the dial values you configure.
+
+- Images, readings and calibration stay in the app's local storage.
+- The interface includes capture history, calibration and number formatting.
+- Optional MQTT output sends recent readings to Home Assistant.
+- External storage is a future option, not a setup requirement.
+
+**Development status:** the Windows server and local saved-image tests pass. Linux,
+Home Assistant installation and the new ESP32 camera firmware still require validation.
+This branch is not ready to replace a working meter installation.
+
+[User guide](DOCS.md) · [Current status](STATUS.md) · [Build notes](PACKAGING.md)
+
+AIEdge builds on [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device)
+by jomjol and its contributors. Original notices and the project license are preserved
+in [Credits](assets/CREDITS.md) and [License](assets/Licence.md).

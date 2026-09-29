@@ -25,6 +25,9 @@ class Tests(unittest.TestCase):
             with urllib.request.urlopen(origin+'/dashboard.js') as response:
                 self.assertEqual(response.headers.get_content_type(),'text/javascript')
                 self.assertIn(b'visibilitychange',response.read())
+            with urllib.request.urlopen(origin+'/favicon.svg') as response:
+                self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
+                self.assertIn(b'<svg',response.read())
         finally:server.shutdown();thread.join();server.server_close()
     def test_http_setup_round_trip_and_request_protection(self):
         server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,None,self.worker,self.setup));thread=threading.Thread(target=server.serve_forever);thread.start();origin='http://127.0.0.1:'+str(server.server_port)
