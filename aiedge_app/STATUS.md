@@ -209,6 +209,13 @@ all expected ABI exports. This used Zig on Windows, not the container's g++ runt
 It is compilation evidence only: Linux execution, container builds and Supervisor
 installation remain unverified. Evidence: `linux-cross-compile-20260930/result.json`.
 
+An isolated abrupt-exit test terminated the actual Python process after a capture
+commit, during an uncommitted SQLite transaction, and after an accounting commit.
+All earlier decisions and image hashes survived; the incomplete transaction rolled
+back, and each repeated image recovered without positive consumption. This checks
+process-crash recovery on Windows, not physical power loss or Linux durability.
+Evidence: `abrupt-exit-recovery-20260930/result.json` in the private test directory.
+
 ---
 
 # Server migration status
