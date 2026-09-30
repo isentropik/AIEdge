@@ -74,3 +74,36 @@ The Docker build runs these checks in its native build stage. They cover synthet
 A run with skipped fixtures does not establish native recognition compatibility.
 The Linux-only packaged-runtime check needs `AIEDGE_CONTAINER_TEST=1` inside the
 built container; it is intentionally skipped on the Windows development host.
+
+## Required native coverage
+
+Use the checked runner instead of interpreting a green test command with skipped
+native fixtures as a complete result:
+
+```
+python aiedge_app/run_validation.py --library PATH_TO_RECOGNITION_LIBRARY --accounting-library PATH_TO_ACCOUNTING_LIBRARY --models PATH_TO_MODELS --allow-missing-archive-replay --report validation.json
+```
+
+It loads both native ABIs and both pinned models, requires the durable-accounting,
+number-format and generated-image checks, and rejects unexpected skipped tests or
+missing test files. The generated scene exercises both needle-model routes and
+stationary capture persistence. It is synthetic coverage, not reading accuracy.
+
+For the packaged Linux amd64 service, mount the source tests read-only and require
+its startup/restart check:
+
+```
+docker run --rm --network none --mount type=bind,src="$PWD/aiedge_app",dst=/tests,readonly --entrypoint python aiedge-app:development /tests/run_validation.py --container --library /opt/aiedge/libaiedge_native.so --accounting-library /opt/aiedge/libaiedge_accounting.so --models /opt/aiedge/assets/models --allow-missing-archive-replay
+```
+
+`--allow-missing-archive-replay` explicitly permits six archived-image/profile checks
+to remain unrun. It does not turn generated images into real-image validation.
+For authorized private replay, omit that flag and supply `--archive-calibration`,
+`--archive-rgb` and `--archive-jpeg` together. Those files must match the frozen
+replay profile. Keep photographs and private calibration fixtures outside public
+source and CI artifacts. The JSON report lists every skipped check and identifies
+whether archive replay and packaged startup were required.
+
+The prepared workflow now uses this runner and the accounting library. It remains
+unpublished because workflow permission is unavailable. Neither the runner's
+Windows results nor the workflow file establishes Linux or Supervisor execution.

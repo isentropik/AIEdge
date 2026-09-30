@@ -133,9 +133,9 @@ the capture/recognition workers; the new HTTP request-drain behavior was checked
 separately. Evidence: `server-native-20260929/clock-trial-20260929T2135Z/result.json`
 in the workspace test directory. Photograph labels and accuracy were not evaluated.
 
-Validation: **163 tests run, 162 passed, one skipped**, plus **21 JavaScript tests**. The skipped check requires the
+Validation: **173 tests run, 172 passed, one skipped**, plus **21 JavaScript tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-final-20260930.json`
+hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-portable-validation-20260930.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
 saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.
@@ -167,8 +167,8 @@ header snapshot; CMake execution itself was not tested on this host. The origina
 AIEdge favicon and a development README are included. No production HA or meter
 changes were made.
 
-Consumption validation: 163 app Python checks run with actual native/model fixtures:
-162 pass and the Linux-only container check remains skipped. All 21 JavaScript
+Consumption validation: 173 app Python checks run with actual native/model fixtures:
+172 pass and the Linux-only container check remains skipped. All 21 JavaScript
 checks pass. The separate C++ oracle checks 1,000 intervals, 6,000 stationary/jitter
 observations, generic scale ratios, 20/200 gas-wheel turns, register wraps, ambiguous
 gaps and nondecreasing published consumption points. Twenty-three durable-accounting
@@ -222,6 +222,16 @@ p95 was 0.03322 seconds and maximum was 0.13745 seconds. Image hashes and all 21
 accounting decisions were unchanged. This used an isolated saved-photo store on
 Windows, with no camera or Home Assistant access. It is not an HA-host benchmark.
 Evidence: `browsing-load-20260930/result.json` in the private test directory.
+
+The portable validation runner explicitly requires both native libraries, both
+models, durable accounting, number formatting and generated-image coverage. It
+rejects missing test files and unexpected skips. Three generated-image checks use
+both actual models, reject absent markers and replay saved stationary decisions;
+they do not verify real-image accuracy. Seven runner checks guard missing and
+skipped required coverage. Optional private archived-image replay must be supplied
+as a complete fixture set or explicitly omitted, with every skipped test listed.
+The prepared Linux workflow was corrected to run accounting and require packaged
+startup through this runner. It remains unpublished and has not run on Linux.
 
 ---
 
