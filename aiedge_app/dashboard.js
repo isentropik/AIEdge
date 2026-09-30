@@ -2,6 +2,9 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const captureErrors={
+ duplicate_camera_header:'Camera returned repeated capture metadata. The image was rejected.',
+ invalid_camera_header:'Camera returned invalid capture metadata. The image was rejected.',
+ invalid_image_length:'Camera returned an invalid image length or transfer format. The image was rejected.',
  camera_authentication_failed:'Camera login was rejected. Check its credentials in app configuration.',
  camera_api_unavailable:'This camera firmware does not provide the remote capture API.',
  camera_busy:'Camera is busy. The next scheduled capture will try again.',

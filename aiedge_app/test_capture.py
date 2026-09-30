@@ -26,6 +26,41 @@ class Tests(unittest.TestCase):
             h=headers();h.replace_header(key,value)
             with self.assertRaises(ValueError):self.store.add('camera',JPEG,h)
         self.assertEqual(self.store.status()['captures'],0)
+    def test_duplicate_provenance_headers_are_rejected_without_persistence(self):
+        for name in ('X-AIEdge-Frame-Id','X-AIEdge-Captured-At','X-AIEdge-SHA256'):
+            for duplicate in (headers()[name],'contradictory'):
+                candidate=headers();candidate[name]=duplicate
+                with self.subTest(header=name,identical=duplicate==headers()[name]):
+                    with self.assertRaisesRegex(ValueError,'duplicate_camera_header'):self.store.add('camera',JPEG,candidate)
+        self.assertEqual(self.store.status()['captures'],0)
+        self.assertEqual(list((Path(self.temp.name)/'images').iterdir()),[])
+    def test_malformed_metadata_remains_a_controlled_rejection(self):
+        for name in ('X-AIEdge-Frame-Id','X-AIEdge-Captured-At','X-AIEdge-SHA256'):
+            for value in (None,False,42):
+                candidate=dict(headers().items());candidate[name]=value
+                with self.subTest(header=name,value=value),self.assertRaises(ValueError):self.store.add('camera',JPEG,candidate)
+        candidate=headers();candidate.replace_header('X-AIEdge-Captured-At','2'*65)
+        with self.assertRaisesRegex(ValueError,'invalid_capture_time'):self.store.add('camera',JPEG,candidate)
+        self.assertEqual(self.store.status()['captures'],0)
+    def test_ambiguous_http_framing_is_rejected_before_reading_the_body(self):
+        from unittest.mock import patch
+        class Response:
+            status=200;closed=False
+            def __init__(self):
+                self.headers=Message();self.headers['Content-Type']='image/jpeg';self.headers['Content-Length']=str(len(JPEG))
+            def __enter__(self):return self
+            def __exit__(self,*args):self.closed=True
+            def read1(self,*args):raise AssertionError('Malformed framing body must not be read')
+        cases=[('Content-Type','image/jpeg'),('Content-Length',str(len(JPEG))),('Transfer-Encoding','chunked')]
+        camera=Camera('http://127.0.0.1')
+        for name,value in cases:
+            response=Response();response.headers[name]=value
+            with self.subTest(header=name),patch.object(camera.opener,'open',return_value=response),self.assertRaises(ValueError):camera.capture()
+            self.assertTrue(response.closed)
+        for value in ('+5','05','5, 5','5.0','999999999'):
+            response=Response();response.headers.replace_header('Content-Length',value)
+            with self.subTest(length=value),patch.object(camera.opener,'open',return_value=response),self.assertRaises(ValueError):camera.capture()
+            self.assertTrue(response.closed)
     def test_corrupt_disk_rejected(self):
         self.store.add('camera',JPEG,headers());next((Path(self.temp.name)/'images').glob('*.jpg')).write_bytes(b'broken')
         with self.assertRaisesRegex(ValueError,'corrupt'):self.store.add('camera',JPEG,headers('2'))

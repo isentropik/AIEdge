@@ -18,8 +18,10 @@ Success is `200 image/jpeg` with Content-Length and these headers:
 - X-AIEdge-SHA256: lowercase SHA-256 of the JPEG bytes
 
 IDs use 1-128 ASCII letters/digits, underscore, dot or hyphen. The server rejects
-missing/invalid metadata, oversize/truncated bodies, redirects, future timestamps
-and hash mismatches. Device receipt or download time must never substitute for
+missing/invalid metadata, duplicate provenance or framing headers,
+oversize/truncated bodies, redirects, future timestamps and hash mismatches.
+Content-Length must be a single canonical positive decimal length; chunked
+transfer encoding is outside this protocol. Device receipt or download time must never substitute for
 capture time. Unsynchronized cameras must report failure instead of inventing time.
 A repeated frame ID with different bytes, timestamp or clock metadata is a protocol error.
 
@@ -42,8 +44,20 @@ of the monotonic interval. A reboot, backward tick or larger UTC discontinuity
 requires a new accounting anchor. The allowance is a conservative software rule,
 not measured hardware clock accuracy. Even a continuous interval does not prove
 that no wheel revolutions were missed. Consumption and flow are not yet published.
-The current local firmware route does not yet emit this optional pair; hardware
-support and timing validation remain pending.
+The local ESP32 route now emits this pair. Its clock ID is a random 128-bit boot
+epoch shared by captures within that boot; the tick is the same sensor acquisition
+timestamp used to calculate UTC. These local firmware changes are not deployed.
+The actual route was compiled on the host with substituted SDK/camera/hash/clock
+services and passed same-boot, reboot, replay and response-failure checks against
+the app parser and capture ledger. Hardware timing validation remains pending.
+
+Header, JPEG and HTTP error-body reads share a 20-second monotonic I/O deadline;
+individual socket waits are capped at five seconds. Continuous trickle traffic
+does not extend that deadline. DNS still uses the operating-system resolver;
+this wrapper cannot interrupt a resolver blocked inside the operating system.
+TLS keeps normal certificate and hostname checks. The public certificate/key in
+`test-fixtures` is used only by isolated loopback tests and is excluded from the
+Docker build context; runtime never adds it to the trusted certificate list.
 
 The MVP is pull-based: the server schedules capture, never overlaps calls, and
 skips missed slots instead of building a queue. Outage buffering and fetch-by-ID

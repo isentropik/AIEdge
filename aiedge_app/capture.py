@@ -4,8 +4,10 @@ from datetime import datetime,timezone
 from contextlib import contextmanager
 from pathlib import Path
 import capture_clock
+from camera_transport import DeadlineHTTPHandler,DeadlineHTTPSHandler
 from durable_file import sync_directory
 MAX_IMAGE=4*1024*1024
+CAPTURE_IO_DEADLINE=20
 MIN_FREE_BYTES=512*1024*1024
 
 def now():return datetime.now(timezone.utc).isoformat()
@@ -16,14 +18,24 @@ def verified_image(path,digest):
         raise ValueError('stored_image_corrupt')
     return blob
 
+def camera_header(headers,name):
+    """A capture field has one meaning; repeated values are never silently chosen."""
+    entries=headers.get_all(name) if hasattr(headers,'get_all') else ([headers[name]] if name in headers else [])
+    if entries and len(entries)!=1:raise ValueError('duplicate_camera_header')
+    value=entries[0] if entries else ''
+    if not isinstance(value,str):raise ValueError('invalid_camera_header')
+    return value
+
 def validate(blob,headers):
     if not 4<=len(blob)<=MAX_IMAGE or not blob.startswith(b'\xff\xd8') or not blob.endswith(b'\xff\xd9'):raise ValueError('invalid_jpeg_envelope')
-    frame=headers.get('X-AIEdge-Frame-Id','')
+    frame=camera_header(headers,'X-AIEdge-Frame-Id')
     if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',frame):raise ValueError('invalid_frame_id')
-    stamp=datetime.fromisoformat(headers.get('X-AIEdge-Captured-At','').replace('Z','+00:00'))
+    raw_stamp=camera_header(headers,'X-AIEdge-Captured-At')
+    if len(raw_stamp)>64:raise ValueError('invalid_capture_time')
+    stamp=datetime.fromisoformat(raw_stamp.replace('Z','+00:00'))
     if stamp.tzinfo is None or stamp.year<2020 or stamp.timestamp()>time.time()+60:raise ValueError('invalid_capture_time')
     digest=hashlib.sha256(blob).hexdigest()
-    if headers.get('X-AIEdge-SHA256')!=digest:raise ValueError('image_hash_mismatch')
+    if camera_header(headers,'X-AIEdge-SHA256')!=digest:raise ValueError('image_hash_mismatch')
     return frame,stamp.astimezone(timezone.utc).isoformat(),digest
 
 class Store:
@@ -176,20 +188,25 @@ class Camera:
         if bool(username)!=bool(password) or ':' in username or any(c in username+password for c in ('\r','\n')):raise ValueError('invalid_camera_credentials')
         self.origin=url.rstrip('/');self.token=token
         self.basic=base64.b64encode((username+':'+password).encode('utf-8')).decode('ascii') if username else None
-        self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
+        self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),DeadlineHTTPHandler(),DeadlineHTTPSHandler())
     def capture(self):
         headers={'Content-Type':'application/json'}
         if self.token:headers['Authorization']='Bearer '+self.token
         elif self.basic:headers['Authorization']='Basic '+self.basic
         request=urllib.request.Request(self.origin+'/api/v1/capture',data=b'{}',headers=headers,method='POST');start=time.monotonic()
+        request.aiedge_deadline=start+CAPTURE_IO_DEADLINE
         try:
             with self.opener.open(request,timeout=5) as r:
+                camera_header(r.headers,'Content-Type')
                 if r.status!=200 or r.headers.get_content_type()!='image/jpeg':raise ValueError('invalid_camera_response')
-                length=int(r.headers.get('Content-Length','0'))
+                raw_length=camera_header(r.headers,'Content-Length')
+                if not re.fullmatch('[1-9][0-9]{0,7}',raw_length) or r.headers.get_all('Transfer-Encoding'):
+                    raise ValueError('invalid_image_length')
+                length=int(raw_length)
                 if not 4<=length<=MAX_IMAGE:raise ValueError('invalid_image_length')
                 parts=[];remaining=length
                 while remaining:
-                    if time.monotonic()-start>20:raise ValueError('capture_deadline_exceeded')
+                    if time.monotonic()>=request.aiedge_deadline:raise ValueError('capture_deadline_exceeded')
                     block=r.read1(min(65536,remaining))
                     if not block:raise ValueError('truncated_image')
                     parts.append(block);remaining-=len(block)

@@ -27,6 +27,10 @@ The existing r60 firmware does not implement the new capture API. Leave capture
 disabled until compatible camera firmware is installed. The app does not poll
 legacy raw-image or livestream endpoints. Camera credentials go only to the
 configured origin; redirects are rejected.
+A stalled camera response stops after a 20-second response I/O deadline; the next
+scheduled capture can retry. Duplicate or conflicting capture metadata is rejected
+before an image is saved. HTTPS still checks the server certificate. Hostname
+lookup uses the operating system and can take longer than the response deadline.
 
 ## Set up a reading
 

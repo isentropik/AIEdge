@@ -105,3 +105,11 @@ test('unknown 503 and explicit storage errors keep distinct explanations',async(
   assert.equal(app.get('error').textContent,message);
  }
 });
+
+
+test('rejected capture metadata has readable messages',async()=>{
+ for(const [error,message] of [['duplicate_camera_header','Camera returned repeated capture metadata. The image was rejected.'],['invalid_camera_header','Camera returned invalid capture metadata. The image was rejected.'],['invalid_image_length','Camera returned an invalid image length or transfer format. The image was rejected.']]){
+  const app=fixture(async url=>response(url==='api/status'?{...state,last_error:{error}}:page));
+  await tick();assert.equal(app.get('error').hidden,false);assert.equal(app.get('error').textContent,message);
+ }
+});

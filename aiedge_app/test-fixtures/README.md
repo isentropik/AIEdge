@@ -1,0 +1,1 @@
+The certificate and key in this directory are public, disposable loopback test fixtures. They never authenticate a real device and must not be used outside the automated test server. Runtime code keeps the default trusted certificate authorities and hostname checks. Tests may explicitly trust this fixture certificate inside an isolated test.

@@ -1,4 +1,4 @@
-# Current checkpoint — September 29, 2026
+# Current checkpoint — September 30, 2026
 
 The app source is published on `codex/aiedge-ha-app`. This is a development
 branch, not a release or live deployment. The earlier dated entries below are
@@ -61,7 +61,7 @@ historical checkpoints; this section describes the current state.
 - Optional camera clock metadata is stored with each acquisition and checked for
   clock resets, backward ticks and UTC discontinuities. Old records are retained
   without invented clock data. This is timing groundwork, not consumption output;
-  compatible firmware emission and physical timing validation remain pending.
+  firmware emission now builds locally; physical timing validation remains pending.
 - History failures stay on Captures and do not hide a successful status response.
   Pending or missing recognition is no longer overwritten by a number-format prompt.
   Alignment and crop rejections point to the relevant calibration check.
@@ -77,6 +77,42 @@ historical checkpoints; this section describes the current state.
 - Oversized or contradictory stored inference provenance is rejected and preserved;
   it cannot turn an estimate into verified accuracy or a training label.
 
+Camera contract follow-up: the local firmware now emits a per-boot clock ID and
+sensor capture tick. The actual capture route was compiled with SDK substitutes
+and checked against app persistence: same-boot time, a changed boot, exact replay,
+six header-write failures and failed transmission. The test uses a synthetic JPEG
+envelope and substituted camera/clock/hash; it does not validate decoding or hardware.
+Both authenticated ESP32 targets build: camera-only uses 1,565,736 of 1,945,600
+flash bytes, and the full reader uses 1,851,360. Hashed binaries and changed-source
+snapshots are retained locally; these are not released managed update packages.
+A separate real archived JPEG passed the compiled route's emitted headers through
+HTTP transport, storage, native alignment and both actual LiteRT models; its six
+estimates survived restart and remain excluded from training and unverified for
+accuracy. Evidence: `clock-contract-real-image-20260930.json` and
+`camera-clock-candidate-20260930/manifest.json` in the same test directory.
+
+The app also rejects duplicate provenance/framing fields
+and noncanonical image lengths before persistence. Evidence:
+`server-native-20260929/clock-contract-20260930.json` in the workspace test directory.
+
+HTTP/TLS response headers, images and error bodies now share a 20-second I/O
+deadline. Loopback tests cover slow trickle traffic, buffered header/body delivery,
+trusted TLS and rejection of an untrusted certificate. DNS still uses the OS
+resolver and is not forcibly interrupted. Runtime trust is unchanged; disposable
+TLS fixtures are excluded from the container context.
+
+A 470.6-second transport fault trial then exercised the new response deadline and
+request-draining server together with recognition. It retained 14 capture events
+from 18 requests and nine unique archived JPEGs. Three injected faults (incomplete
+clock metadata, duplicate hash metadata and a trickled body) were rejected; one
+exact replay added no event. Two app restarts preserved all data. Shutdown took
+20.031 seconds while draining the slow response, then 0.219 seconds normally;
+no scheduler slots were missed. The 204 status requests had a 0.027494-second p95
+and 0.040377-second maximum. Clock reset, UTC jump and missing metadata were all
+flagged. Evidence: `server-native-20260929/transport-trial-20260930T0610Z/result.json`
+in the workspace test directory. Transport times were simulated, images remain
+excluded from training, and accuracy and real-device behavior were not evaluated.
+
 A second 990.8-second loopback trial exercised a simulated camera reboot, a UTC
 jump, missing clock metadata and an exact frame replay across three app restarts.
 It retained 34 captures from 36 requests (nine unique images), rejected the one
@@ -87,9 +123,9 @@ the capture/recognition workers; the new HTTP request-drain behavior was checked
 separately. Evidence: `server-native-20260929/clock-trial-20260929T2135Z/result.json`
 in the workspace test directory. Photograph labels and accuracy were not evaluated.
 
-Validation: **127 tests run, 126 passed, one skipped**, plus **17 JavaScript tests**. The skipped check requires the
+Validation: **137 tests run, 136 passed, one skipped**, plus **18 JavaScript tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-20260929T2205Z.json`
+hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-20260930T0640Z.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
 saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.
