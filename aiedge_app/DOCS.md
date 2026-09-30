@@ -67,7 +67,9 @@ come from the dial scales, angular resolution and supplied tolerances.
 **Consumption** on Overview is the change since a capture anchor, in the configured
 meter units. **Average rate** is that change divided by the actual capture interval,
 shown per minute. These are estimates under your tolerance and rate assumptions;
-they are not a lifetime meter total or independently verified accuracy.
+they are not a lifetime meter total or independently verified accuracy. Display
+precision accounts for uncertainty in both endpoint readings; raw estimates remain
+saved separately from their rounded text.
 
 The optional **Maximum rate** in Number format is an upper bound in units per minute.
 Leave it empty if you do not know a reliable bound. Without one, images alone cannot

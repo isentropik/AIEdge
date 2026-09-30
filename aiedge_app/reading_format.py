@@ -39,13 +39,13 @@ def validate(document):
     blob=json.dumps(document,sort_keys=True,separators=(',',':'),allow_nan=False)
     return json.loads(blob),hashlib.sha256(blob.encode()).hexdigest()
 
-def display_quantity(value,document,register=False):
+def display_quantity(value,document,register=False,resolution_factor=1):
     """Presentation only. Precision comes from the smallest dial's bound/bin size."""
     lowest=document['dials'][-1];period=document['dials'][0]['value_per_revolution']
     # Decoder has 360 angular bins. Neither this resolution nor the supplied
     # tolerance establishes accuracy; the result remains an unverified estimate.
     resolution=max(lowest['value_per_revolution']/360,
-                   lowest['value_per_revolution']*lowest['position_error']/10)
+                   lowest['value_per_revolution']*lowest['position_error']/10)*resolution_factor
     if not math.isfinite(resolution) or resolution<=0:raise ValueError('reading_resolution_unrepresentable')
     exponent=max(-12,math.floor(math.log10(resolution)))
     decimals=max(0,-exponent)

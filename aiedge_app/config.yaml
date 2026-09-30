@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev1
+version: 0.2.0-dev2
 slug: aiedge
 description: Remote meter camera capture and recognition service (development)
 arch:

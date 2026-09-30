@@ -29,7 +29,7 @@ historical checkpoints; this section describes the current state.
 - Disk/database failures no longer kill the recognition worker. Invalid reference
   files and extreme/nonfinite landmarks fail validation without replacing calibration.
   Setup is limited to the 16 dials supported by the physical calculation.
-- Desktop 1440 × 900 and mobile 390 × 844 viewport checks covered light/dark themes, compact
+- Desktop 1440 × 900 and mobile 320 × 760 / 390 × 844 viewport checks covered light/dark themes, compact
   format layout, reference highlighting, no horizontal overflow, calibration labels,
   and disconnect/reconnect status. Invalid format saves preserve the prior file.
 
@@ -133,9 +133,9 @@ the capture/recognition workers; the new HTTP request-drain behavior was checked
 separately. Evidence: `server-native-20260929/clock-trial-20260929T2135Z/result.json`
 in the workspace test directory. Photograph labels and accuracy were not evaluated.
 
-Validation: **137 tests run, 136 passed, one skipped**, plus **21 JavaScript tests**. The skipped check requires the
+Validation: **163 tests run, 162 passed, one skipped**, plus **21 JavaScript tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-20260930T0640Z.json`
+hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-final-20260930.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
 saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.
@@ -167,11 +167,11 @@ header snapshot; CMake execution itself was not tested on this host. The origina
 AIEdge favicon and a development README are included. No production HA or meter
 changes were made.
 
-Consumption validation: 162 app Python checks run with actual native/model fixtures:
-161 pass and the Linux-only container check remains skipped. All 21 JavaScript
+Consumption validation: 163 app Python checks run with actual native/model fixtures:
+162 pass and the Linux-only container check remains skipped. All 21 JavaScript
 checks pass. The separate C++ oracle checks 1,000 intervals, 6,000 stationary/jitter
 observations, generic scale ratios, 20/200 gas-wheel turns, register wraps, ambiguous
-gaps and nondecreasing published consumption points. Twenty-two durable-accounting
+gaps and nondecreasing published consumption points. Twenty-three durable-accounting
 checks cover capture timing, unavailable images, restart replay, concurrent workers,
 failed/uncertain writes, software/format changes and damaged state. These quantities
 are synthetic test cases and do not measure model accuracy.
@@ -187,6 +187,27 @@ performance. Evidence: `server-native-20260929/consumption-trial-20260930T0740Z/
 in the private workspace evidence directory. The source snapshot is hash-recorded;
 later publication additionally checks the final accounting library built from the
 clean source archive.
+
+The final core trial repeated that 451-second exercise with frozen source and the
+final accounting library: 17 capture events, all accounting decisions recovered,
+zero positive consumption from repeated images, no missed slots and no unexpected
+errors. Status p95 was 0.02891 seconds and maximum was 0.04403 seconds. Subsequent
+changes affect display precision and layout; the clean publication regression run
+covers them separately. Evidence: `consumption-final-trial-20260930T0752Z/result.json`.
+An isolated upgrade check preserved the 17 original decisions, inference rows and
+both image hashes, started a separate interpretation segment, and replayed the new
+anchor identically. Evidence: `final-upgrade-recovery-20260930/result.json`.
+
+Consumption display precision now includes uncertainty at both endpoints. Raw
+estimates remain unchanged. On 320-pixel screens the navigation and format editor
+fit without horizontal overflow; the save controls stay available while editing.
+Dropdown arrows are inset ten pixels. Desktop/mobile screenshots and measurements
+are retained in `ui-accounting-20260930/` in the private workspace test directory.
+
+Both native libraries also cross-compile to Linux amd64 ELF shared libraries with
+all expected ABI exports. This used Zig on Windows, not the container's g++ runtime.
+It is compilation evidence only: Linux execution, container builds and Supervisor
+installation remain unverified. Evidence: `linux-cross-compile-20260930/result.json`.
 
 ---
 

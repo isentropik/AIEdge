@@ -133,7 +133,7 @@ class Consumption:
                                           elapsed_seconds=(native['through_us']-native['anchor_us'])/1e6)
                             if native['through_us']==native['anchor_us']:output.update(state='anchored',value=0)
                             if output['value'] is not None:
-                                output['text']=display_quantity(output['value'],document)
+                                output['text']=display_quantity(output['value'],document,resolution_factor=2)
                                 if output['elapsed_seconds']>0:
                                     rate=output['value']/output['elapsed_seconds']
                                     if finite_number(rate):output['average_rate_per_second']=rate
@@ -141,7 +141,7 @@ class Consumption:
                                     scaled=lowest['value_per_revolution']*ratio
                                     if finite_number(rate*60) and finite_number(scaled) and scaled>0:
                                         rate_document={'dials':[{**lowest,'value_per_revolution':scaled}]}
-                                        output['average_rate_per_minute_text']=display_quantity(rate*60,rate_document)
+                                        output['average_rate_per_minute_text']=display_quantity(rate*60,rate_document,resolution_factor=2)
             encoded_output=json.dumps(output,sort_keys=True,separators=(',',':'),allow_nan=False)
             if len(encoded_output.encode())>MAX_RECORD_BYTES:raise ValueError('consumption_result_too_large')
             if cached and (cached[0] is None or json.loads(cached[0])!=output):raise ValueError('consumption_saved_result_invalid')

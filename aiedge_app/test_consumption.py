@@ -74,6 +74,12 @@ class AccountingTests(unittest.TestCase):
         self.assertAlmostEqual(state['average_rate_per_second'],1/30)
         self.assertEqual(self.restart(),state)
         with self.store.connect() as db:self.assertEqual(db.execute('SELECT COUNT(*) FROM consumption_records').fetchone()[0],41)
+    def test_display_precision_accounts_for_uncertainty_in_both_endpoints(self):
+        self.event(0);self.assertEqual(self.consume()['text'],'0.0')
+        self.event(1.28);state=self.consume()
+        self.assertAlmostEqual(state['value'],1.28);self.assertEqual(state['text'],'1.3')
+        self.assertEqual(state['average_rate_per_minute_text'],'2.6')
+        self.assertEqual(self.restart(),state)
     def test_same_image_still_records_distinct_timing_events_without_noise_consumption(self):
         self.event(12,duplicate=True);self.consume()
         for _ in range(3):self.event(12,duplicate=True);state=self.consume()
