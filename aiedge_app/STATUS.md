@@ -216,6 +216,13 @@ back, and each repeated image recovered without positive consumption. This check
 process-crash recovery on Windows, not physical power loss or Linux durability.
 Evidence: `abrupt-exit-recovery-20260930/result.json` in the private test directory.
 
+A final 60-second local browsing trial used eight concurrent clients across status,
+capture history, original JPEGs and diagnostics. All 1,813 requests succeeded;
+p95 was 0.03322 seconds and maximum was 0.13745 seconds. Image hashes and all 21
+accounting decisions were unchanged. This used an isolated saved-photo store on
+Windows, with no camera or Home Assistant access. It is not an HA-host benchmark.
+Evidence: `browsing-load-20260930/result.json` in the private test directory.
+
 ---
 
 # Server migration status
