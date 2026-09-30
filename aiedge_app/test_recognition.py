@@ -62,6 +62,38 @@ class Tests(unittest.TestCase):
                 with self.store.connect() as db:
                     self.assertEqual(db.execute('SELECT result FROM inference').fetchone()[0],encoded)
                 self.assertEqual(self.store.image(original['source_sha256']),JPEG)
+    def test_latest_capture_has_priority_then_history_drains_in_order(self):
+        images=[]
+        for number in range(1,8):
+            blob=b'\xff\xd8'+str(number).encode()+b'\xff\xd9'
+            self.store.add('camera',blob,headers(str(number),blob));images.append(blob)
+        seen=[]
+        def read(blob):
+            seen.append(blob)
+            return {'state':'estimated','dial_positions':[],'physical_value':None}
+        self.reader.read_jpeg=read
+        self.assertEqual(self.worker.latest()['state'],'pending')
+        self.assertTrue(self.worker.once())
+        self.assertEqual(seen,[images[-1]])
+        self.assertEqual(self.worker.latest()['state'],'estimated')
+        while self.worker.once():pass
+        self.assertEqual(seen,[images[-1],*images[:-1]])
+    def test_new_arrival_interrupts_history_priority_without_losing_history(self):
+        seen=[]
+        def read(blob):
+            seen.append(blob)
+            return {'state':'estimated','dial_positions':[],'physical_value':None}
+        self.reader.read_jpeg=read
+        for number in range(1,4):
+            blob=b'\xff\xd8'+str(number).encode()+b'\xff\xd9'
+            self.store.add('camera',blob,headers(str(number),blob))
+        self.worker.once();self.worker.once()
+        blob=b'\xff\xd8new\xff\xd9';self.store.add('camera',blob,headers('4',blob))
+        self.assertEqual(self.worker.latest()['state'],'pending');self.worker.once()
+        self.assertEqual(seen[-1],blob);self.assertEqual(self.worker.latest()['state'],'estimated')
+        self.worker=Recognition(Store(self.temp.name),self.reader)
+        while self.worker.once():pass
+        self.assertEqual(seen,[b'\xff\xd83\xff\xd9',b'\xff\xd81\xff\xd9',blob,b'\xff\xd82\xff\xd9'])
     def test_api_reports_result_for_current_image(self):
         self.store.add('camera',JPEG,headers());self.worker.once()
         server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,None,self.worker));thread=threading.Thread(target=server.serve_forever);thread.start()

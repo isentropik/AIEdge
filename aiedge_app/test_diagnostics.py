@@ -22,6 +22,11 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertEqual(report['capture']['captures'],0)
             self.assertTrue(report['capture']['current_failure'])
             self.assertTrue(report['calibration']['recovery_required'])
+    def test_consumption_diagnostics_omit_quantities_timestamps_and_private_errors(self):
+        consumption=SimpleNamespace(last_error='PRIVATE-ERROR',status=lambda:{'state':'estimated','value':123.4,'unit':'PRIVATE-UNIT','anchor_captured_at':'PRIVATE-TIME','segment_id':'PRIVATE-SEGMENT'})
+        report=build(None,consumption=consumption)
+        self.assertEqual(report['consumption'],{'configured':True,'state':'estimated','current_failure':True})
+        self.assertNotIn('PRIVATE-',json.dumps(report));self.assertNotIn('123.4',json.dumps(report))
     def test_download_works_even_when_storage_cannot_open(self):
         server=ThreadingHTTPServer(('127.0.0.1',0),handler(None,False,None))
         thread=threading.Thread(target=server.serve_forever);thread.start()

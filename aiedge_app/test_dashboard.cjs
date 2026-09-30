@@ -113,3 +113,27 @@ test('rejected capture metadata has readable messages',async()=>{
   await tick();assert.equal(app.get('error').hidden,false);assert.equal(app.get('error').textContent,message);
  }
 });
+
+const consumption={state:'estimated',value:4.5,text:'4.50',unit:'ft3',average_rate_per_minute_text:'0.09',anchor_captured_at:'2026-09-29T00:00:00Z'};
+test('relative consumption and average rate use explicit server formatting',async()=>{
+ const app=fixture(async url=>response(url==='api/status'?{...state,consumption}:page));
+ await tick();assert.equal(app.get('consumption-value').textContent,'4.50 ft\u00b3');
+ assert.equal(app.get('consumption-rate').textContent,'0.09 ft\u00b3/min');
+ assert.equal(app.get('consumption-anchor').hidden,false);
+});
+test('ambiguous or pending consumption clears both previous numeric values',async()=>{
+ let current=consumption;
+ const app=fixture(async url=>response(url==='api/status'?{...state,consumption:current}:page));
+ await tick();assert.equal(app.get('consumption-value').textContent,'4.50 ft\u00b3');
+ for(const unavailable of ['ambiguous','pending','within_noise']){
+  current={...consumption,state:unavailable,value:null};app.get('refresh').onclick();await tick();
+  assert.equal(app.get('consumption-value').textContent,'\u2014');assert.equal(app.get('consumption-rate').textContent,'\u2014');
+ }
+});
+test('status outage never leaves a previous consumption or rate looking current',async()=>{
+ let unavailable=false;
+ const app=fixture(async url=>{if(url==='api/status'&&unavailable)throw TypeError('offline');return response(url==='api/status'?{...state,consumption}:page);});
+ await tick();unavailable=true;app.get('refresh').onclick();await tick();
+ assert.equal(app.get('consumption-value').textContent,'\u2014');assert.equal(app.get('consumption-rate').textContent,'\u2014');
+ assert.equal(app.get('consumption-anchor').hidden,true);assert.equal(app.get('consumption-status').textContent,'Status unavailable.');
+});

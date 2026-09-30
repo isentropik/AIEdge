@@ -8,12 +8,14 @@ def finite_number(value):
     except OverflowError:return False
 
 def validate(document):
-    if not isinstance(document,dict) or set(document)!={'version','pipeline_id','unit','dials'}:
+    if not isinstance(document,dict) or set(document) not in ({'version','pipeline_id','unit','dials'},{'version','pipeline_id','unit','dials','maximum_rate_per_second'}):
         raise ValueError('invalid_reading_format')
     if type(document['version']) is not int or document['version']!=1:raise ValueError('invalid_reading_format_version')
     if not isinstance(document['pipeline_id'],str) or not re.fullmatch('[a-f0-9]{64}',document['pipeline_id']):
         raise ValueError('invalid_reading_pipeline')
     if document['unit'] not in ('ft3','m3','L','gal_us','kWh'):raise ValueError('invalid_reading_unit')
+    rate=document.get('maximum_rate_per_second')
+    if rate is not None and (not finite_number(rate) or rate<0):raise ValueError('invalid_maximum_rate')
     dials=document['dials']
     if not isinstance(dials,list) or not 1<=len(dials)<=16:raise ValueError('invalid_reading_dials')
     seen=set();previous=None
@@ -32,10 +34,12 @@ def validate(document):
             if not math.isfinite(ratio) or not 2<=ratio<=1000000 or abs(ratio-round(ratio))>1e-9:
                 raise ValueError('reading_scales_must_be_nested')
         previous=scale
+    document=dict(document)
+    if rate is None:document.pop('maximum_rate_per_second',None)
     blob=json.dumps(document,sort_keys=True,separators=(',',':'),allow_nan=False)
     return json.loads(blob),hashlib.sha256(blob.encode()).hexdigest()
 
-def display_reading(value,document):
+def display_quantity(value,document,register=False):
     """Presentation only. Precision comes from the smallest dial's bound/bin size."""
     lowest=document['dials'][-1];period=document['dials'][0]['value_per_revolution']
     # Decoder has 360 angular bins. Neither this resolution nor the supplied
@@ -49,10 +53,12 @@ def display_reading(value,document):
     with localcontext() as context:
         context.prec=340
         rounded=Decimal(str(value)).quantize(Decimal(1).scaleb(exponent),rounding=ROUND_HALF_UP)
-        rounded%=Decimal(str(period))
+        if register:rounded%=Decimal(str(period))
         text=format(rounded,f'.{decimals}f')
     integer,separator,fraction=text.partition('.')
-    return integer.zfill(width)+(separator+fraction if separator else '')
+    return (integer.zfill(width) if register else integer)+(separator+fraction if separator else '')
+
+def display_reading(value,document):return display_quantity(value,document,register=True)
 
 class ReadingFormat:
     def __init__(self,native,document):

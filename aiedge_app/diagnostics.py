@@ -4,7 +4,7 @@ from datetime import datetime,timezone
 
 PACKAGES=('ai-edge-litert','numpy','Pillow','paho-mqtt')
 
-def build(store,collector=None,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None):
+def build(store,collector=None,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None):
     report={'schema_version':1,'generated_at':datetime.now(timezone.utc).isoformat(),
             'runtime':{'python':platform.python_version(),'system':platform.system(),'architecture':platform.machine()},
             'dependencies':{},'configuration_valid':not configuration or configuration.get('state')=='ready',
@@ -40,4 +40,9 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
     if mqtt_output:
         state=mqtt_output.status().get('state')
         report['mqtt']['state']=state if state in ('starting','connected','publishing','waiting_for_format','waiting_for_reading','disconnected','error') else 'unknown'
+    report['consumption']={'configured':consumption is not None}
+    if consumption:
+        state=consumption.status().get('state')
+        report['consumption']['state']=state if state in ('not_configured','unavailable','waiting_for_image','recovering','pending','anchored','estimated','within_noise','bounded','ambiguous') else 'unknown'
+        report['consumption']['current_failure']=consumption.last_error is not None
     return report

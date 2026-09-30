@@ -6,7 +6,9 @@ and calculates a reading from the dial values you configure.
 
 - Images, readings and calibration stay in the app's local storage.
 - The interface includes capture history, calibration and number formatting.
-- Optional MQTT output sends recent readings to Home Assistant.
+- Optional MQTT output sends recent register readings to Home Assistant.
+- Relative consumption and average rate retain uncertain intervals without guessing
+  missed turns; they are not yet published as HA sensors.
 - External storage is a future option, not a setup requirement.
 
 **Development status:** the Windows server and local saved-image tests pass. Linux,

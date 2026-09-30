@@ -3,6 +3,8 @@
   "files": {
     "CREDITS.md": "5b3a215c3e267787d0adf9723da926d144fbd6bbd16c0eb55a3c86d7a0940bdc",
     "Licence.md": "943f993397b19a5c123a939dafc8f747eda5fd3645727e0f5cf3acab785a013e",
+    "include/MeterAccounting.h": "3d1d21dc41e997f11cf7d5f35400aeb8ec41ab3c51b458bbacc437a6373c3c44",
+    "include/MeterCumulative.h": "85c88dffa131f97e09daa933de9d10eb397f1686f2ffdde63cf6ae1a2b4b3a30",
     "include/PolarAlignment.h": "9779da5ad3e15d95b5a69b01fc2adb3a1440bb0f43e105bb3eab1162c11943b6",
     "include/PolarAlignmentCheck.h": "15cc07a9f5eb57600d77461deced1c45d587f7334728f91b4e20276cfbf92e63",
     "include/PolarCalibration.h": "98ae8ce2c7f71176ace91c9b6c4f086a522e7da35a89140dea59cfd70d42096c",
@@ -18,6 +20,8 @@
     "include/PolarUserMarkers.h": "e05552f746c856a6dbea82806e2abbd534e6f10fa8c849620c0706d956cf7a7c",
     "include/PolarVisibility.h": "73288670bd995a64aa2697f5b24b579993357ca36d3206c185040108c164d751",
     "include/PolarWarp.h": "2dae08e0acd051a9b423816e3eb64d18d11eb54a835b6815c508385f201c04ac",
+    "include/ReadingFormat.h": "a2e99191d6469c020124b1d88c38bb9c805af85c38a8a6dfbeae1b04009d4c7d",
+    "include/RevolutionAccounting.h": "f60b31e10f700162f8c78a15bb8106051512ac02a27ce619002dcdb6efc6817b",
     "include/RevolutionReading.h": "f9ceb66ec951537edff5985c4eb296a871119ae9500a1c75df621a8d1c664ba3",
     "models/polar-int8.tflite": "b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0",
     "models/polar-main-int8.tflite": "9c145e67e9008bf1e17567cd69baa48ce54af3b1d6b7fa0e1aeeb6b5ce9ec6a5"

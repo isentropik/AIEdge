@@ -5,7 +5,7 @@ from pathlib import Path
 from capture import Store,Camera,Collector
 from options import load as load_options
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None):
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -50,7 +50,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             route=urllib.parse.urlsplit(self.path).path
             if route=='/api/diagnostics':
                 from diagnostics import build
-                body=json.dumps(build(store,collector,recognition,setup,reading_format,mqtt_output,configuration),indent=2,allow_nan=False).encode()
+                body=json.dumps(build(store,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption),indent=2,allow_nan=False).encode()
                 self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Disposition','attachment; filename="aiedge-diagnostics.json"');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             if store is None and (route.startswith('/api/') or route.startswith('/image/') or route.startswith('/reference/')):
                 self.reply({'error':'App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.','code':'storage_startup_failed'},503);return
@@ -66,6 +66,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state['format_recovery']=reading_format.status().get('recovery') if reading_format else None
                 state['recognition_error']=recognition.last_error if recognition else None
                 state['mqtt']=mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}
+                state['consumption']=consumption.status() if consumption else {'state':'unavailable' if consumption_error else 'not_configured','reason':consumption_error,'value':None,'accuracy_verified':False,'training_allowed':False}
                 body=json.dumps(state).encode();kind='application/json'
             elif route=='/api/reading-format':
                 state=reading_format.status() if reading_format else {'revision':None,'format':None}
@@ -110,7 +111,7 @@ def create_reader(library,models,profile=None,calibration_file=None):
     return Reader(library,models,profile)
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--accounting-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file');args=parser.parse_args()
     options,configuration=load_options(args.data)
     interval=options['interval_seconds'];enabled=options['capture_enabled']
     storage_error=False
@@ -148,8 +149,14 @@ def main():
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     if enabled:
         collector=Collector(store,Camera(options.get('camera_url',''),options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password','')),interval)
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration))
+    consumption=None;consumption_error=None
+    if args.accounting_library and recognition and reading_format:
+        try:
+            from consumption import Consumption
+            consumption=Consumption(store,recognition,reading_format,args.accounting_library)
+        except (OSError,sqlite3.Error,ValueError):consumption_error='consumption_runtime_unavailable'
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition,mqtt_output)).run():
+    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption)).run():
         raise SystemExit('App request or worker shutdown timed out.')
 if __name__=='__main__':main()

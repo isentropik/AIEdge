@@ -16,8 +16,9 @@ fields remain usable while its preview loads.
 
 The native alignment and LiteRT recognition pipeline estimate dial positions. The
 number format converts compatible positions to a physical register value. Optional
-MQTT output publishes that value to Home Assistant. Camera OTA management, cumulative
-consumption and flow are still being connected.
+MQTT output publishes that value to Home Assistant. Overview also tracks relative
+consumption and average rate when the capture clocks and configured bounds can
+resolve the movement. Camera OTA management remains pending.
 
 This app has not yet been validated inside Home Assistant; do not replace a working
 meter with this development build.
@@ -61,6 +62,40 @@ inside the uncertainty of a larger dial: a single image cannot resolve those tur
 It will show no total rather than invent one. Leading zeros and displayed precision
 come from the dial scales, angular resolution and supplied tolerances.
 
+## Consumption and average rate
+
+**Consumption** on Overview is the change since a capture anchor, in the configured
+meter units. **Average rate** is that change divided by the actual capture interval,
+shown per minute. These are estimates under your tolerance and rate assumptions;
+they are not a lifetime meter total or independently verified accuracy.
+
+The optional **Maximum rate** in Number format is an upper bound in units per minute.
+Leave it empty if you do not know a reliable bound. Without one, images alone cannot
+rule out hidden whole-register turns, so the app withholds a consumption point.
+A longer gap can remain ambiguous even with a bound. Do not choose a smaller limit
+just to make an ambiguous reading appear. Zero means no forward movement is allowed
+outside the configured reading uncertainty; clearing the field removes the bound.
+
+All dials constrain the same physical movement. The calculation carries through
+rollovers and uses the finest resolved position without adding overlapping dial
+fractions twice. For example, a 5 ft³ wheel makes 20 turns for one numbered step
+of a 1,000 ft³/revolution dial. Individual phases can wrap from 9.9 to 0 normally.
+Contradictory backward movement produces no value. Small jitter is compared with a
+fixed anchor rather than added as positive consumption; a decreasing point inside
+an overlapping error range is withheld, retaining the range instead of clamping it.
+Stationary images do not become new evidence of accuracy.
+
+Capture time comes from the camera's same-boot monotonic tick, not the image download
+time. Rejected images preserve the last usable observation. A camera change, missing
+or inconsistent timing, a rebooted camera, or a change to calibration, physical format
+or accounting software starts a separate relative segment. Previous records stay
+saved. An app restart on the same camera clock replays the saved decisions; it does
+not add the consumed volume again. A damaged accounting record is kept and blocks
+consumption until storage is repaired or restored. The app never resets it silently.
+
+Consumption and average rate are currently shown only in AIEdge. MQTT still publishes
+the register reading; no cumulative sensor or `total_increasing` entity is created.
+
 ## Send readings to Home Assistant
 
 MQTT output is optional and off by default. When testing inside Home Assistant, use a
@@ -83,7 +118,8 @@ fixture, not the user's Home Assistant broker.
 ## Saved data and backups
 
 - `images/`: original JPEGs, identified and verified by SHA-256.
-- `captures.sqlite3`: capture timestamps, receipt times, errors and model estimates.
+- `captures.sqlite3`: capture timestamps, receipt times, errors, model estimates and
+  relative consumption segments/decisions.
 - `references/` and `calibration.json`: reference images and saved calibration.
 - `instance-id`: stable identity used for MQTT discovery, if MQTT is enabled.
 - `recovery/`: hash-verified copies of damaged setup files replaced through the editor.
@@ -127,6 +163,9 @@ not repair a damaged database or replace a Home Assistant backup.
 
 A damaged stored inference result is kept for diagnosis and shown as unavailable.
 It is not counted as a successful reading or silently replaced by an older result.
+Recognition gives the newest capture priority, then processes remaining history
+oldest first. Calibration changes do not make the current reading wait behind a
+large archive.
 
 ## Capture history and diagnostics
 
@@ -138,7 +177,8 @@ reading on Overview. Use **Refresh** to retry while keeping already-loaded image
 is still retained as a separate timestamped event. It is not new accuracy evidence.
 
 **Download diagnostics** on Overview saves a local JSON report with runtime
-versions, storage health, capture counts, capture-clock continuity and setup status. It excludes passwords,
+versions, storage health, capture counts, capture-clock continuity, setup and
+consumption-engine status. It excludes passwords,
 camera addresses, images, dial positions, meter values and local paths. Nothing
 is uploaded automatically. The report is also available when the database cannot
 open, as long as the app process can start.

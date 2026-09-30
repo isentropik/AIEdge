@@ -1,7 +1,7 @@
 # App packaging (development)
 
 The Home Assistant app directory is a complete Docker build context. The container
-compiles the native recognition library, installs hash-locked CPython 3.14 Linux
+compiles separate native recognition and accounting libraries, installs hash-locked CPython 3.14 Linux
 amd64 wheels, verifies both models and starts the calibration/recognition service.
 Capture is off by default. No meter-specific calibration is activated on startup.
 The shared headers still contain the explicit legacy replay calibration; it is not
@@ -26,8 +26,10 @@ On a Linux amd64 Docker host, build from the repository root:
 docker build -t aiedge-app:development aiedge_app
 ```
 
-The image build checks packaged-file hashes, loads ABI 2, verifies tensor shapes and
-quantization, and invokes both models. It does not prove recognition accuracy.
+The image build checks all 24 packaged-file hashes, loads recognition ABI 2 and
+accounting ABI 1, verifies tensor shapes and quantization, invokes both models, and
+checks a synthetic two-dial interval. Accounting remains separate so adding it does
+not change the recognition binary or existing calibration pipeline identity. It does not prove recognition accuracy.
 The default command requires HA Ingress; direct network access is intentionally
 rejected. Standalone remote authentication and a standalone Docker launch workflow
 remain pending. Do not install this development build on live HA yet: Linux and
@@ -64,6 +66,11 @@ node --test aiedge_app/test_editor_geometry.cjs aiedge_app/test_reference_image.
 ```
 
 Native/model fixture checks require the paths documented in their test modules.
+Set `AIEDGE_ACCOUNTING_LIBRARY` to the separately compiled accounting library to
+run the durable consumption regressions. The shared C++ interval-oracle checks are
+run with `python aiedge_app/check_accounting_core.py` using an existing C++17
+compiler. Windows development can use `--zig-python PATH_TO_PYTHON_WITH_ZIG`.
+The Docker build runs these checks in its native build stage. They cover synthetic quantities, not model accuracy.
 A run with skipped fixtures does not establish native recognition compatibility.
 The Linux-only packaged-runtime check needs `AIEDGE_CONTAINER_TEST=1` inside the
 built container; it is intentionally skipped on the Windows development host.

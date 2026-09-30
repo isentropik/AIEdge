@@ -121,6 +121,18 @@ function renderRecognition(result){
     row.append(name,value);list.append(row);
   }
 }
+function renderConsumption(c){
+ const units={ft3:'ft³',m3:'m³',L:'L',gal_us:'US gal',kWh:'kWh'};
+ $('consumption-value').textContent='—';$('consumption-rate').textContent='—';$('consumption-anchor').hidden=true;
+ const states={not_configured:'Set the number format to track consumption.',waiting_for_image:'Waiting for an image.',recovering:'Restoring the saved capture sequence.',pending:'Waiting for the latest dial estimates.',anchored:'Waiting for another capture.',estimated:'Estimate · accuracy not yet verified',within_noise:'No change resolved within the reading tolerance.',bounded:'Only a range can be established.',ambiguous:'Complete turns cannot be determined for this interval.'};
+ const reasons={capture_clock_missing:'Capture timing is missing. A new anchor is required.',capture_clock_invalid:'Capture timing is invalid. No consumption available.',reading_pipeline_changed:'Review the number format after the calibration change.',consumption_image_rejected:'The latest image could not be used for consumption.',consumption_positions_contradict_bounds:'Dial movement contradicts the configured bounds.',consumption_runtime_unavailable:'Consumption engine could not be loaded.',consumption_storage_unavailable:'Consumption is waiting for local storage.',consumption_saved_state_invalid:'Saved consumption could not be verified. Its records have been kept.'};
+ $('consumption-status').textContent=c?(states[c.state]||reasons[c.reason]||'No consumption available.'):'Consumption is not configured.';
+ if(c&&(c.state==='estimated'||c.state==='anchored')&&Number.isFinite(c.value)&&typeof c.text==='string'){
+  const unit=units[c.unit]||c.unit;$('consumption-value').textContent=c.text+' '+unit;
+  if(typeof c.average_rate_per_minute_text==='string')$('consumption-rate').textContent=c.average_rate_per_minute_text+' '+unit+'/min';
+ }
+ if(c?.anchor_captured_at){$('consumption-anchor').textContent='Anchor '+date(c.anchor_captured_at);$('consumption-anchor').hidden=false;}
+}
 function gallery(rows){
   const key=JSON.stringify(rows);
   if(key===galleryKey)return;
@@ -140,6 +152,7 @@ function gallery(rows){
   }
 }
 function render(s,rows){
+  renderConsumption(s.consumption);
   renderRecognition(s.recognition);window.latestReading=s.reading;window.latestRecognition=s.recognition;
   window.renderPhysicalReading?.(s.reading,s.recognition);
   $('mqtt-state').textContent=({disabled:'Not connected',starting:'Connecting',connected:'Connected',publishing:'Publishing',waiting_for_format:'Needs number format',waiting_for_reading:'Waiting for reading',disconnected:'Disconnected',error:'Connection failed'})[s.mqtt?.state]||'Not connected';
@@ -185,6 +198,8 @@ async function refresh(){
     render(state,historyPage?.items||[]);
   } catch(error){
     // Keep historical images visible, but do not leave an old value looking live.
+    renderConsumption({state:'unavailable',value:null});
+    $('consumption-status').textContent='Status unavailable.';
     window.latestReading={state:'unavailable',value:null};
     window.renderPhysicalReading?.(window.latestReading);
     $('meter-value').textContent='—';$('reading-status').textContent='Status unavailable.';

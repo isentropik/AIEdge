@@ -1,0 +1,94 @@
+#pragma once
+#include "MeterAccounting.h"
+
+namespace meter {
+struct CumulativeResult {
+    bool available=false, current=false;
+    int64_t anchorUs=0, throughUs=0;
+    double minimumFt3=0, maximumFt3=0;
+    double estimatedFt3=std::numeric_limits<double>::quiet_NaN();
+    Status status=Status::Invalid;
+};
+
+// Consumption since a fixed same-boot anchor, never a sum of positive noisy
+// deltas. Every new endpoint is compared with that anchor; uniquely established
+// discrete turns are retained from intervening frames, so stationary jitter
+// cannot ratchet consumption upward once per sample. Bounds are conditional on
+// the caller's error assumptions; this is not a verified lifetime meter total.
+struct LegacyCumulativeResolver {
+    Interval operator()(const Frame& a,const Frame& b,const Bounds& bounds) const {return resolve(a,b,bounds);}
+    double turnUnits() const {return secondaryRevolutionFt3;}
+    double phaseError(const Bounds& bounds) const {return bounds.secondaryDial+numericalSlackFt3;}
+    double epsilon() const {return 1e-9;}
+};
+template<class Observation,class Resolver>
+class FixedAnchorCumulative {
+    Observation anchor{};
+    Observation previous{};
+    Resolver resolver;
+    bool trackedTurns=false;
+    int64_t turnOffset=0;
+    CumulativeResult result;
+public:
+    explicit FixedAnchorCumulative(const Resolver& value=Resolver()):resolver(value){}
+    const CumulativeResult& current() const {return result;}
+    bool anchorFrame(Observation& out) const {if(!result.available)return false;out=anchor;return true;}
+    void stale(){result.current=false;result.estimatedFt3=std::numeric_limits<double>::quiet_NaN();}
+    void reset(const Observation& frame) {
+        anchor=previous=frame;trackedTurns=true;turnOffset=0;result=CumulativeResult{};
+        result.available=true;result.current=true;
+        result.anchorUs=result.throughUs=frame.captureUs;
+        result.status=Status::WithinNoise;
+    }
+    bool observe(const Observation& frame,const Bounds& bounds) {
+        if(!result.available || frame.clockId!=anchor.clockId || frame.captureUs<=result.throughUs)
+            return false;
+        Interval whole=resolver(anchor,frame,bounds);
+        if(whole.status==Status::Invalid || whole.status==Status::Review ||
+           !std::isfinite(whole.minimumFt3) || std::isnan(whole.maximumFt3) ||
+           whole.maximumFt3<whole.minimumFt3 ||
+           (!std::isfinite(whole.maximumFt3)&&whole.status!=Status::Ambiguous))return false;
+        // Propagate only discrete, uniquely established turn offsets. Never sum
+        // positive noisy volumes: the phase still comes from the fixed anchor.
+        const Interval step=resolver(previous,frame,bounds);
+        if(step.status==Status::Invalid || step.status==Status::Review)return false;
+        bool nextTracked=trackedTurns && step.candidates==1 &&
+            step.status!=Status::Invalid && step.status!=Status::Review;
+        int64_t nextOffset=turnOffset;
+        if(nextTracked) {
+            const int64_t delta=step.firstTurnOffset;
+            if((delta>0 && turnOffset>std::numeric_limits<int64_t>::max()-delta) ||
+               (delta<0 && turnOffset<std::numeric_limits<int64_t>::min()-delta))return false;
+            nextOffset+=delta;
+            if(nextOffset<whole.firstTurnOffset || nextOffset>whole.lastTurnOffset)return false;
+            const double estimate=whole.rawPhaseDelta+resolver.turnUnits()*nextOffset;
+            const double error=resolver.phaseError(bounds);
+            const double lo=std::max(whole.minimumFt3,estimate-error);
+            const double hi=std::min(whole.maximumFt3,estimate+error);
+            if(lo>hi)return false;
+            whole.minimumFt3=lo;whole.maximumFt3=hi;
+            whole.estimatedFt3=std::numeric_limits<double>::quiet_NaN();
+            if(estimate<=error+resolver.epsilon())whole.status=Status::WithinNoise;
+            else if(estimate<lo-resolver.epsilon() || estimate>hi+resolver.epsilon())whole.status=Status::BoundedOnly;
+            else {whole.status=Status::Estimated;whole.estimatedFt3=estimate;}
+        } else if(whole.candidates==1) {
+            // The main register may resolve a previously ambiguous gap later.
+            nextTracked=true;nextOffset=whole.firstTurnOffset;
+        }
+        // Physical consumption cannot fall below a previously established lower
+        // bound. Do not silently clamp a contradictory upper bound into agreement.
+        const double lower=std::max(result.minimumFt3,whole.minimumFt3);
+        if(whole.maximumFt3<lower)return false;
+        result.current=true;result.throughUs=frame.captureUs;
+        result.minimumFt3=lower;result.maximumFt3=whole.maximumFt3;
+        result.estimatedFt3=whole.estimatedFt3;result.status=whole.status;
+        if(std::isfinite(result.estimatedFt3) && result.estimatedFt3<lower) {
+            result.estimatedFt3=std::numeric_limits<double>::quiet_NaN();
+            result.status=Status::BoundedOnly;
+        }
+        previous=frame;trackedTurns=nextTracked;turnOffset=nextOffset;
+        return true;
+    }
+};
+using Cumulative=FixedAnchorCumulative<Frame,LegacyCumulativeResolver>;
+}

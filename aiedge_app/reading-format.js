@@ -3,7 +3,7 @@
 const $=id=>document.getElementById(id),form=$('reading-form'),canvas=$('format-canvas'),ctx=canvas.getContext('2d');
 const units={ft3:'ft³',m3:'m³',L:'L',gal_us:'US gal',kWh:'kWh'};
 let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0,imageGeneration=0,referenceDigest=null;
-const messages={reading_scale_too_small:'That revolution value is too small to represent in the selected units.',reading_pipeline_changed:'Calibration or the model changed. Reload the format and check each dial.',reading_format_changed_reload:'The format was changed in another session. Reload saved values before trying again.',reading_dial_mapping_mismatch:'The dial list changed. Reload the format.',reading_scales_must_be_nested:'Dial values must have whole-number revolution ratios, such as 1000 and 5.',invalid_reading_scale_or_error:'Enter positive revolution values and tolerances from 0 to less than 0.5.'};
+const messages={invalid_maximum_rate:'Enter a maximum rate of zero or greater, or leave it empty.',reading_scale_too_small:'That revolution value is too small to represent in the selected units.',reading_pipeline_changed:'Calibration or the model changed. Reload the format and check each dial.',reading_format_changed_reload:'The format was changed in another session. Reload saved values before trying again.',reading_dial_mapping_mismatch:'The dial list changed. Reload the format.',reading_scales_must_be_nested:'Dial values must have whole-number revolution ratios, such as 1000 and 5.',invalid_reading_scale_or_error:'Enter positive revolution values and tolerances from 0 to less than 0.5.'};
 function status(message,error=false){$('format-status').textContent=message;$('format-status').dataset.error=String(error);}
 function controls(){
  for(const input of form.querySelectorAll('input,select'))input.disabled=busy||!pipeline;
@@ -19,7 +19,7 @@ function draw(){
  const text=dials[i]?.name||'Dial '+(i+1);ctx.font='12px system-ui';const width=ctx.measureText(text).width+10,x=Math.min(b[0],640-width),y=Math.max(0,b[1]-21);ctx.fillStyle='#101115e8';ctx.fillRect(x,y,width,20);ctx.fillStyle='#fff';ctx.fillText(text,x+5,y+14);});
  $('format-selected').textContent=dials[selected]?.name||'Reference image';
 }
-function labelUnits(){const unit=units[$('format-unit').value];$('format-scale-label').textContent=unit?`Value (${unit}/rev)`:'Value per revolution';}
+function labelUnits(){const unit=units[$('format-unit').value];$('format-scale-label').textContent=unit?`Value (${unit}/rev)`:'Value per revolution';$('format-rate-unit').textContent=(unit||'units')+'/min';}
 async function request(path,options={}){
  const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(10000),...options});
  const body=await response.json().catch(()=>({error:'Could not read the device response.'}));
@@ -48,7 +48,7 @@ async function load(force=false){
   const stale=!!saved.format&&saved.format.pipeline_id!==pipeline;
   // Never silently transfer physical scales to a changed calibration by array index.
   const mapping=new Map(!stale?(saved.format?.dials||[]).map(d=>[d.index,d]):[]);
-  $('format-unit').value=saved.format?.unit||'';labelUnits();$('format-dials').replaceChildren();
+  $('format-unit').value=saved.format?.unit||'';$('format-max-rate').value=!stale&&saved.format?.maximum_rate_per_second!=null?saved.format.maximum_rate_per_second*60:'';labelUnits();$('format-dials').replaceChildren();
   for(const dial of dials){
    const row=document.createElement('div');row.className='format-row';const name=document.createElement('div');name.className='format-name';name.textContent=dial.name;
    const direction=document.createElement('small');direction.textContent=dial.direction==='ccw'?'CCW':'CW';name.append(direction);
@@ -67,14 +67,19 @@ async function load(force=false){
  }catch(e){status(e.message,true);loaded=false;}
  finally{busy=false;controls();}
 }
+$('format-max-rate').addEventListener('input',changed);
 $('format-unit').addEventListener('change',()=>{labelUnits();changed();});
 $('reload-format').onclick=()=>load(true);
 form.onsubmit=async event=>{
  event.preventDefault();if(busy||!pipeline||!form.reportValidity())return;
  const values=dials.map(d=>({index:d.index,value_per_revolution:Number($('format-value-'+d.index).value),position_error:Number($('format-error-'+d.index).value)})).sort((a,b)=>b.value_per_revolution-a.value_per_revolution);
  if(values.some(d=>!Number.isFinite(d.value_per_revolution)||d.value_per_revolution<=0||!Number.isFinite(d.position_error)||d.position_error<0||d.position_error>=.5)){status(messages.invalid_reading_scale_or_error,true);return;}
+ const rateText=$('format-max-rate').value;const rate=rateText===''?null:Number(rateText)/60;
+ if(rate!==null&&(!Number.isFinite(rate)||rate<0)){status(messages.invalid_maximum_rate,true);return;}
+ const candidate={version:1,pipeline_id:pipeline,unit:$('format-unit').value,dials:values};
+ if(rate!==null)candidate.maximum_rate_per_second=rate;
  busy=true;controls();status('Saving…');
- try{const saved=await request('api/reading-format',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':token},body:JSON.stringify({revision,format:{version:1,pipeline_id:pipeline,unit:$('format-unit').value,dials:values}})});revision=saved.revision;dirty=false;status('Format saved');window.dispatchEvent(new Event('aiedge-reading-format-saved'));}
+ try{const saved=await request('api/reading-format',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':token},body:JSON.stringify({revision,format:candidate})});revision=saved.revision;dirty=false;status('Format saved');window.dispatchEvent(new Event('aiedge-reading-format-saved'));}
  catch(e){status(e.message,true);}
  finally{busy=false;controls();}
 };

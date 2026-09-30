@@ -8,6 +8,16 @@ historical checkpoints; this section describes the current state.
 - Number-format UI is connected to the shared physical-reading algorithm, with
   per-dial revolution values, explicit error assumptions, reference highlights,
   leading zeros and derived display precision. No separate reading roles are exposed.
+- Relative consumption and average rate are connected to the existing fixed-anchor
+  accounting through a generic nested-scale adapter. Saved capture decisions replay
+  after an app restart. Clock/interpretation changes start separate relative segments
+  and preserve previous records. A rate bound is optional; unresolved turns, jitter,
+  contradictions and rejected images cannot become fabricated point values. A
+  decreasing estimate inside overlapping uncertainty is withheld, not clamped.
+  This output is conditional on unvalidated model-error/rate assumptions and is not
+  a lifetime or MQTT consumption sensor.
+- Recognition prioritizes the current capture before draining older unprocessed
+  images, so a calibration change cannot hide the latest result behind an archive.
 - Optional MQTT discovery/publication is implemented with Supervisor service lookup,
   Paho 2.1.0, unique physical-format identity, acknowledged QoS 1 delivery and stale/
   rejected/ambiguous availability handling. Images are not uploaded to the broker.
@@ -60,8 +70,8 @@ historical checkpoints; this section describes the current state.
 
 - Optional camera clock metadata is stored with each acquisition and checked for
   clock resets, backward ticks and UTC discontinuities. Old records are retained
-  without invented clock data. This is timing groundwork, not consumption output;
-  firmware emission now builds locally; physical timing validation remains pending.
+  without invented clock data. Relative consumption uses compatible metadata;
+  firmware emission builds locally, while physical timing validation remains pending.
 - History failures stay on Captures and do not hide a successful status response.
   Pending or missing recognition is no longer overwritten by a number-format prompt.
   Alignment and crop rejections point to the relevant calibration check.
@@ -123,7 +133,7 @@ the capture/recognition workers; the new HTTP request-drain behavior was checked
 separately. Evidence: `server-native-20260929/clock-trial-20260929T2135Z/result.json`
 in the workspace test directory. Photograph labels and accuracy were not evaluated.
 
-Validation: **137 tests run, 136 passed, one skipped**, plus **18 JavaScript tests**. The skipped check requires the
+Validation: **137 tests run, 136 passed, one skipped**, plus **21 JavaScript tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
 hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-20260930T0640Z.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
@@ -143,19 +153,40 @@ workspace evidence directory.
 Still unverified/pending: Linux container execution, actual Supervisor installation,
 MQTT discovery with HA, Supervisor backup/restore, compatible remote-camera firmware
 on hardware, camera controls/OTA, validated model error bounds, training review UI,
-rollover-aware cumulative consumption and flow. The current format value is a modulo
+hardware validation of relative consumption/flow and any lifetime-total publication. The current format value is a modulo
 register position. Supplied tolerances are assumptions, not measured accuracy.
 
 GitHub rejected the workflow push because the OAuth connection lacks workflow scope.
 The prepared `.github/workflows/aiedge-app.yml` has not run. The source-only app branch
 omits that unpublished workflow. The published source-only Git archive was checked independently: every Docker COPY
-input exists and all 20 manifest asset hashes match. `.gitattributes` preserves
+input exists and all 24 manifest asset hashes match. `.gitattributes` preserves
 exact asset bytes across Windows/Linux checkouts. Both Docker stages now pin the
 Python 3.14.7 slim-trixie OCI index digest; official registry metadata and the
 Linux amd64 manifest were verified without claiming a container execution. CMake now defaults to the packaged
 header snapshot; CMake execution itself was not tested on this host. The original
 AIEdge favicon and a development README are included. No production HA or meter
 changes were made.
+
+Consumption validation: 162 app Python checks run with actual native/model fixtures:
+161 pass and the Linux-only container check remains skipped. All 21 JavaScript
+checks pass. The separate C++ oracle checks 1,000 intervals, 6,000 stationary/jitter
+observations, generic scale ratios, 20/200 gas-wheel turns, register wraps, ambiguous
+gaps and nondecreasing published consumption points. Twenty-two durable-accounting
+checks cover capture timing, unavailable images, restart replay, concurrent workers,
+failed/uncertain writes, software/format changes and damaged state. These quantities
+are synthetic test cases and do not measure model accuracy.
+
+A frozen-source 451.17-second loopback trial processed 17 capture events from 18
+requests, retained two unique images (one actual reference and one synthetic blank
+rejection), and drained three stops/restarts. All 17 accounting decisions survived
+recovery. No stationary image produced positive consumption, no capture slots were
+missed, and no unexpected runtime error occurred. There was one deliberately
+incomplete clock response. Status p95 was 0.02582 seconds. Clocks, tolerance and
+rate bounds were simulated; the trial does not establish physical accuracy or HA
+performance. Evidence: `server-native-20260929/consumption-trial-20260930T0740Z/result.json`
+in the private workspace evidence directory. The source snapshot is hash-recorded;
+later publication additionally checks the final accounting library built from the
+clean source archive.
 
 ---
 

@@ -6,7 +6,7 @@ from package_assets import verify
 def stage(models,check=False):
     app=Path(__file__).resolve().parent;repo=app.parent
     shared=repo/'code/components/jomjol_tfliteclass';assets=app/'assets'
-    contents={};pending=['PolarUserMarkers.h','PolarPipeline.h','PolarDecoder.h','RevolutionReading.h']
+    contents={};pending=['PolarUserMarkers.h','PolarPipeline.h','PolarDecoder.h','RevolutionReading.h','RevolutionAccounting.h']
     while pending:
         name=pending.pop()
         if 'include/'+name in contents:continue

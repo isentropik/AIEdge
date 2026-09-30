@@ -12,7 +12,7 @@ class ContainerRuntimeTests(unittest.TestCase):
                 with socket.socket() as probe:
                     probe.bind(('127.0.0.1',0));port=probe.getsockname()[1]
                 command=[sys.executable,'/opt/aiedge/service.py','--data',directory,'--port',str(port),
-                         '--native-library','/opt/aiedge/libaiedge_native.so','--models','/opt/aiedge/assets/models']
+                         '--native-library','/opt/aiedge/libaiedge_native.so','--accounting-library','/opt/aiedge/libaiedge_accounting.so','--models','/opt/aiedge/assets/models']
                 process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
                 try:
                     deadline=time.monotonic()+20
