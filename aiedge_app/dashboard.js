@@ -48,7 +48,10 @@ function page(name){
 }
 const routes={overview:'overview',captures:'captures',calibration:'setup',format:'format'};
 function route(){
- const name=routes[location.hash.slice(1)]||'overview';page(name);
+ const review=/^#captures\/([1-9][0-9]*)$/.exec(location.hash);
+ const name=review?'captures':routes[location.hash.slice(1)]||'overview';page(name);
+ if(review){$('title').textContent='Review capture';window.AIEdgeReview?.open(Number(review[1]));}
+ else window.AIEdgeReview?.close();
  if(name==='setup')window.openCalibration();
  if(name==='format')window.openReadingFormat();
 }
@@ -138,17 +141,19 @@ function gallery(rows){
   if(key===galleryKey)return;
   galleryKey=key;$('gallery').replaceChildren();$('empty-gallery').hidden=rows.length>0||historyFailed;
   for(const row of rows){
-    const card=document.createElement('a');card.className='panel capture';
-    card.href='image/'+row.sha256;card.target='_blank';card.rel='noopener';
-    const image=document.createElement('img');image.src=card.href;
+    const card=document.createElement('button');card.type='button';card.className='panel capture';
+    card.onclick=()=>{location.hash='captures/'+row.event_id;};
+    card.setAttribute('aria-label','Review capture '+date(row.captured_at));
+    const image=document.createElement('img');image.src='image/'+row.sha256;
     image.alt='Meter capture '+date(row.captured_at);image.loading='lazy';
     image.onerror=()=>{image.hidden=true;card.classList.add('image-unavailable');};
     const body=document.createElement('div');body.className='body';
     const stamp=document.createElement('div');stamp.textContent='Captured '+date(row.captured_at);
-    const meta=document.createElement('small');meta.textContent=Math.round(row.bytes/1024)+' KB · '+(row.duplicate_image?'Repeated image · ':'')+'Unlabeled';
+    const meta=document.createElement('small');meta.textContent=Math.round(row.bytes/1024)+' KB · '+(row.duplicate_image?'Repeated image · ':'')+(row.review_error?'Review unavailable':row.reviewed_dials===null||row.reviewed_dials===undefined?'Unlabeled':row.reviewed_dials+' of '+row.review_dials+' reviewed');
     const received=document.createElement('small');received.textContent='Received '+date(row.received_at);received.style.display='block';
     body.title='Frame '+row.frame_id;
-    body.append(stamp,received,meta);card.append(image,body);$('gallery').append(card);
+    const action=document.createElement('div');action.className='capture-action';const label=document.createElement('span');label.textContent='Review image';action.append(label);
+    body.append(stamp,received,meta,action);card.append(image,body);$('gallery').append(card);
   }
 }
 function render(s,rows){

@@ -62,6 +62,30 @@ inside the uncertainty of a larger dial: a single image cannot resolve those tur
 It will show no total rather than invent one. Leading zeros and displayed precision
 come from the dial scales, angular resolution and supplied tolerances.
 
+## Review saved images
+
+Open **Captures** and select a photo. Enter each dial position on its 0–10 scale,
+using zero for the wrap point. Leave a dial blank when you cannot read it. The form
+starts without model estimates filled in, so those estimates cannot become labels
+just by clicking Save.
+
+**Dial map** shows the numbered crops on the calibration reference. Use it to identify
+the dial names, then return to **Capture** to read the original photo. The app does not
+draw reference boxes over a new photo or claim those boxes have been aligned to it.
+**Open full image** opens the original at full size for a closer look.
+
+**Save review** stores the image hash, model pipeline, calibration snapshot and entered
+positions in the app's local database. Zero and unknown are kept separately. Edits
+create new records and preserve earlier versions. Identical photos share one review;
+repeated captures do not become independent accuracy evidence. Changing the model or
+calibration requires a review for the new setup. A conflicting or unverified save
+requires **Reload review** before retrying.
+
+Reviewing does not change the live reading, consumption, training permission or
+held-out status. Training admission and near-duplicate checks are still separate;
+there is no automatic retraining or verified-accuracy claim. Human entries are private
+app data and are not included in the diagnostics download.
+
 ## Consumption and average rate
 
 **Consumption** on Overview is the change since a capture anchor, in the configured

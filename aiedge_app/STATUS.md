@@ -4,6 +4,15 @@ The app source is published on `codex/aiedge-ha-app`. This is a development
 branch, not a release or live deployment. The earlier dated entries below are
 historical checkpoints; this section describes the current state.
 
+- Calibration can suggest separated textured marker patches outside configured dial
+  crops, with an undo action. Proposals stay in the draft and require review; they do
+  not recognize printed symbols or guarantee that a feature is stationary. Insufficient
+  texture or spacing leaves the existing markers untouched.
+- Saved-image review is available from Captures, with manual 0–10 positions, unknown
+  entries and a separate numbered calibration-reference map. Immutable revisions
+  preserve the image hash, calibration, model hashes and pipeline identity. Duplicate
+  images share a review; stale calibration/tab edits are rejected. Review does not
+  update training permissions or claim accuracy.
 - Home Assistant-local storage is the default. No external archive server is needed.
 - Number-format UI is connected to the shared physical-reading algorithm, with
   per-dial revolution values, explicit error assumptions, reference highlights,

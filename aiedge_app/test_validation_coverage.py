@@ -24,9 +24,12 @@ class ValidationCoverageTests(unittest.TestCase):
         complete={*('test_consumption.AccountingTests.test_'+str(i) for i in range(20)),
                   *('test_consumption.FormatBoundTests.test_'+str(i) for i in range(3)),
                   *('test_synthetic_pipeline.GeneratedPipelineTests.test_'+str(i) for i in range(3)),
-                  *('test_reading_format.Tests.test_'+str(i) for i in range(13))}
+                  *('test_reading_format.Tests.test_'+str(i) for i in range(13)),
+                  *('test_reviews.ReviewTests.test_'+str(i) for i in range(13)),
+                  *('test_review_http.HttpReviewTests.test_'+str(i) for i in range(3)),
+                  *('test_marker_suggestions.SuggestionTests.test_'+str(i) for i in range(5))}
         self.assertEqual(inventory_errors(complete,True,False),[])
-        for prefix in ('test_consumption.','test_synthetic_pipeline.'):
+        for prefix in ('test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
         self.assertTrue(inventory_errors(['test_consumption.AccountingTests.test_one']*23,True,False))
@@ -34,7 +37,10 @@ class ValidationCoverageTests(unittest.TestCase):
         complete={*('test_consumption.AccountingTests.test_'+str(i) for i in range(20)),
                   *('test_consumption.FormatBoundTests.test_'+str(i) for i in range(3)),
                   *('test_synthetic_pipeline.GeneratedPipelineTests.test_'+str(i) for i in range(3)),
-                  *('test_reading_format.Tests.test_'+str(i) for i in range(13))}
+                  *('test_reading_format.Tests.test_'+str(i) for i in range(13)),
+                  *('test_reviews.ReviewTests.test_'+str(i) for i in range(13)),
+                  *('test_review_http.HttpReviewTests.test_'+str(i) for i in range(3)),
+                  *('test_marker_suggestions.SuggestionTests.test_'+str(i) for i in range(5))}
         self.assertEqual(len(inventory_errors(complete,True,True)),1)
         self.assertEqual(len(inventory_errors(complete,False,False)),1)
         self.assertEqual(inventory_errors(complete|ARCHIVE_CHECKS|{PACKAGED_CHECK},False,True),[])

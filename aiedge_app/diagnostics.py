@@ -13,7 +13,7 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
             'storage':{'state':'unavailable'},'recognition':{'configured':False},
             'calibration':{'available':setup is not None},'number_format':{'available':reading_format is not None},
             'mqtt':{'enabled':mqtt_output is not None},
-            'omitted':['credentials','camera_address','images','dial_positions','meter_values','frame_identifiers','environment_variables','local_paths']}
+            'omitted':['credentials','camera_address','images','dial_positions','human_reviews','meter_values','frame_identifiers','environment_variables','local_paths']}
     for name in PACKAGES:
         try:report['dependencies'][name]=importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:report['dependencies'][name]=None

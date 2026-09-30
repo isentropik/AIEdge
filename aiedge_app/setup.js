@@ -2,7 +2,7 @@
 'use strict';
 const geometry=window.AIEdgeGeometry;
 const $=id=>document.getElementById(id),canvas=$('calibration-canvas'),ctx=canvas.getContext('2d');
-let state={markers:[null,null,null],dials:[]},revision=null,reference=null,token=null,available=false,loaded=false,mode='markers',selected=0,picture=null,pendingReference=null,drag=null,busy=false,dirty=false;
+let state={markers:[null,null,null],dials:[]},revision=null,reference=null,token=null,available=false,loaded=false,mode='markers',selected=0,picture=null,pendingReference=null,drag=null,busy=false,dirty=false,markerUndo=null;
 const errorText={reference_image_not_found:'The reference image is missing. Choose the image again before saving.',reference_image_unreadable:'This image could not be opened. Choose a complete JPEG or PNG file.',reference_must_be_640x480:'Choose a 640 × 480 JPEG or PNG image.',invalid_landmark:'Keep each landmark inside the image.',invalid_dial_geometry:'Check the dial geometry.',setup_changed_reload_before_saving:'Calibration changed in another session. Reload before saving.',reference_recognition_rejected:'The reference did not pass alignment or needle visibility. Check the markers and dial landmarks.',three_markers_required:'Place all three markers.',invalid_dial_count:'Use between 1 and 16 dials.'};
 const recoveryText={saved_calibration_invalid:'Saved calibration could not be read. Rebuild it here; the original file will be kept.',calibration_file_unavailable:'The calibration file is not readable. Check app storage and restart before saving.',saved_reference_unavailable:'The saved reference is missing or damaged. Choose a replacement image before saving.',recognition_runtime_unavailable:'The recognition engine could not load this calibration. Check the installed model and runtime files.'};
 function status(message,error=false){$('setup-status').textContent=message;$('setup-status').dataset.error=String(error);}
@@ -13,6 +13,8 @@ function option(value,text){const e=document.createElement('option');e.value=val
 function controls(){
  for(const control of document.querySelectorAll('.editor-controls input,.editor-controls select,.editor-controls button'))control.disabled=busy;
  $('reference-file').disabled=!available||busy;
+ $('suggest-markers').hidden=mode!=='markers';$('suggest-markers').disabled=busy||!picture||!state.dials.length;
+ $('suggest-markers').textContent=markerUndo?'Undo suggestions':'Suggest markers';
  $('edit-markers').setAttribute('aria-pressed',String(mode==='markers'));$('edit-dials').setAttribute('aria-pressed',String(mode==='dials'));
  $('dial-controls').hidden=mode!=='dials';$('selected-item').replaceChildren();
  const names=mode==='markers'?['Marker 1','Marker 2','Marker 3']:state.dials.map(d=>d.name);
@@ -43,7 +45,7 @@ canvas.onpointermove=e=>{if(!picture)return;const p=location(e),b=currentBox(),h
  if(box){setBox(box);controls();}};
 canvas.onpointerup=e=>{if(drag){const modified=JSON.stringify(currentBox())!==JSON.stringify(drag.box||null);drag=null;if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);if(modified)changed();}};canvas.onpointercancel=()=>{if(drag){setBox(drag.box||null);drag=null;controls();}};
 async function request(path,body,raw=false){const response=await fetch(path,{method:'POST',headers:{'X-AIEdge-Setup':token,'Content-Type':raw?'application/octet-stream':'application/json'},body:raw?body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});let data;try{data=await response.json();}catch{throw Error('The server did not return a valid response. Reload before retrying.');}if(!response.ok){const key=String(data.error).split(':')[0];throw Error(errorText[key]||String(data.error).replaceAll('_',' '));}return data;}
-async function showReference(digest,newState){const img=await window.AIEdgeReferenceImage.load('reference/'+digest);picture=img;reference=digest;pendingReference=digest;if(newState){state=newState;selected=0;mode='markers';}canvas.hidden=false;$('reference-empty').hidden=true;$('reference-size').textContent='640 × 480';controls();}
+async function showReference(digest,newState){const img=await window.AIEdgeReferenceImage.load('reference/'+digest);picture=img;reference=digest;pendingReference=digest;if(newState){markerUndo=null;state=newState;selected=0;mode='markers';}canvas.hidden=false;$('reference-empty').hidden=true;$('reference-size').textContent='640 × 480';controls();}
 window.addEventListener('aiedge-refresh-images',async event=>{
  if(event.detail!=='setup'||picture||busy)return;
  if(!loaded){window.openCalibration();return;}
@@ -70,7 +72,17 @@ window.openCalibration=async()=>{
  finally{busy=false;controls();}
 };
 $('reference-file').onchange=async()=>{const file=$('reference-file').files[0];if(!file)return;if(file.size>4*1024*1024){status('Choose an image smaller than 4 MB.',true);return;}busy=true;controls();status('Loading reference…');try{const r=await request('api/setup/reference',await file.arrayBuffer(),true);await showReference(r.reference_sha256,{markers:[null,null,null],dials:[]});changed('Place three markers on fixed markings.');}catch(e){status(e.message,true);}finally{busy=false;controls();$('reference-file').value='';}};
-$('save-calibration').onclick=async()=>{if(busy)return;if(state.markers.some(x=>!x)){status('Place all three markers.',true);return;}if(!state.dials.length||state.dials.some(d=>d.rim_points.some(p=>!p)||!d.needle_pivot)){status('Place four rim points and the needle pivot for every dial.',true);return;}busy=true;controls();status('Validating calibration…');try{const s=await request('api/setup/save',{reference_sha256:reference,design:state,revision});revision=s.revision;dirty=false;status('Calibration applied.');window.dispatchEvent(new Event('aiedge-calibration-saved'));}catch(e){status(e.message,true);}finally{busy=false;controls();}};
+$('suggest-markers').onclick=async()=>{
+ if(busy||!reference||!state.dials.length)return;
+ if(markerUndo){state.markers=markerUndo;markerUndo=null;selected=0;changed();return;}
+ busy=true;controls();status('Finding marker locations…');
+ try{const result=await request('api/setup/suggest-markers',{reference_sha256:reference,crops:state.dials.map(d=>d.crop)});
+  if(result.markers.length===3){markerUndo=state.markers.map(box=>box?[...box]:null);state.markers=result.markers;selected=0;dirty=true;status(result.reason);}
+  else status(result.reason);
+ }catch(error){status(error.message,true);}
+ finally{busy=false;controls();}
+};
+$('save-calibration').onclick=async()=>{if(busy)return;if(state.markers.some(x=>!x)){status('Place all three markers.',true);return;}if(!state.dials.length||state.dials.some(d=>d.rim_points.some(p=>!p)||!d.needle_pivot)){status('Place four rim points and the needle pivot for every dial.',true);return;}busy=true;controls();status('Validating calibration…');try{const s=await request('api/setup/save',{reference_sha256:reference,design:state,revision});revision=s.revision;dirty=false;markerUndo=null;status('Calibration applied.');window.dispatchEvent(new Event('aiedge-calibration-saved'));}catch(e){status(e.message,true);}finally{busy=false;controls();}};
 $('edit-markers').onclick=()=>{mode='markers';selected=0;controls();};$('edit-dials').onclick=()=>{mode='dials';selected=0;controls();};$('selected-item').onchange=()=>{selected=Number($('selected-item').value);controls();};
 $('add-dial').onclick=()=>{let n=state.dials.length+1;while(state.dials.some(d=>d.name==='Dial '+n))n++;state.dials.push({name:'Dial '+n,model:'main',direction:'cw',crop:[0,0,140,140],rim_points:[null,null,null,null],needle_pivot:null});selected=state.dials.length-1;changed('Draw a crop around the dial.');};$('remove-dial').onclick=()=>{state.dials.splice(selected,1);selected=Math.max(0,selected-1);changed();};
 for(const [id,key] of [['dial-name','name'],['dial-direction','direction'],['dial-model','model']])$(id).onchange=()=>{if(state.dials[selected]){state.dials[selected][key]=$(id).value;changed();}};

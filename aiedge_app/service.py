@@ -5,7 +5,8 @@ from pathlib import Path
 from capture import Store,Camera,Collector
 from options import load as load_options
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None):
+    from review_store import ReviewConflict
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -21,7 +22,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.send_error(403);return
             if setup is None:self.reply({'error':'Calibration runtime is not configured.'},503);return
             route=urllib.parse.urlsplit(self.path).path
-            if route not in ('/api/setup/reference','/api/setup/save','/api/reading-format'):self.send_error(404);return
+            if route not in ('/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/reading-format','/api/reviews'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -33,11 +34,20 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     digest=setup.add_reference(body);self.reply({'reference_sha256':digest});return
                 if self.headers.get_content_type()!='application/json':raise ValueError('JSON request required.')
                 data=json.loads(body)
-                if route=='/api/reading-format':
+                if route=='/api/setup/suggest-markers':
+                    from marker_suggestions import propose
+                    result=propose(setup.reference(data['reference_sha256']),data['crops'])
+                elif route=='/api/reviews':
+                    if reviews is None:self.reply({'error':'Image review storage is unavailable.'},503);return
+                    result=reviews.save(data)
+                elif route=='/api/reading-format':
                     if reading_format is None:self.reply({'error':'Reading format is not configured.'},503);return
                     result=reading_format.save(data['format'],data['revision'])
                 else:result=setup.save(data['reference_sha256'],data['design'],data['revision'])
                 self.reply(result)
+            except ReviewConflict as exc:self.reply({'error':str(exc),'code':'review_conflict'},409)
+            except FileNotFoundError:self.reply({'error':'Capture not found.'},404)
+            except sqlite3.Error:self.reply({'error':'Review storage is unavailable. Reload before retrying.'},503)
             except RecursionError:self.reply({'error':'Setup document is too deeply nested.'},400)
             except (ValueError,KeyError,TypeError) as exc:self.reply({'error':str(exc)},400)
             except OSError:self.reply({'error':'Could not complete setup storage. Reload before retrying.'},503)
@@ -80,11 +90,17 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state.update(available=setup is not None,token=token);body=json.dumps(state).encode();kind='application/json'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js'):
+            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
                 except (ValueError,FileNotFoundError):self.send_error(404);return
+            elif route.startswith('/api/reviews/'):
+                if reviews is None:self.reply({'error':'Image review storage is unavailable.'},503);return
+                try:result=reviews.get(int(route.removeprefix('/api/reviews/')))
+                except FileNotFoundError:self.reply({'error':'Capture not found.'},404);return
+                except (ValueError,TypeError) as exc:self.reply({'error':str(exc)},400);return
+                body=json.dumps(result,allow_nan=False).encode();kind='application/json'
             elif route=='/api/capture-history':
                 try:
                     query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=2)
@@ -92,6 +108,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     before=int(query['before'][0]) if 'before' in query else None
                     limit=int(query['limit'][0]) if 'limit' in query else 50
                     page=store.history(before,limit)
+                    if reviews:reviews.summaries(page['items'])
                 except ValueError:self.reply({'error':'Invalid capture history page.'},400);return
                 body=json.dumps(page).encode();kind='application/json'
             elif route=='/api/captures':body=json.dumps(store.recent()).encode();kind='application/json'
@@ -155,7 +172,12 @@ def main():
             from consumption import Consumption
             consumption=Consumption(store,recognition,reading_format,args.accounting_library)
         except (OSError,sqlite3.Error,ValueError):consumption_error='consumption_runtime_unavailable'
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error))
+    reviews=None
+    if store:
+        from review_store import Reviews
+        try:reviews=Reviews(store,recognition)
+        except (OSError,sqlite3.Error):pass
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews))
     from lifecycle import ServiceRuntime
     if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption)).run():
         raise SystemExit('App request or worker shutdown timed out.')

@@ -32,6 +32,18 @@ class Tests(unittest.TestCase):
                 self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
                 self.assertIn(b'<svg',response.read())
         finally:server.shutdown();thread.join();server.server_close()
+    def test_http_marker_suggestions_preserve_calibration_and_runtime(self):
+        saved=self.setup.save(self.ref,DESIGN,None);before=self.setup.path.read_bytes();pipeline=self.worker.reader.pipeline_id
+        server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,None,self.worker,self.setup))
+        thread=threading.Thread(target=server.serve_forever);thread.start();origin='http://127.0.0.1:'+str(server.server_port)
+        try:
+            with urllib.request.urlopen(origin+'/api/setup') as response:token=json.load(response)['token']
+            request=urllib.request.Request(origin+'/api/setup/suggest-markers',data=json.dumps({'reference_sha256':self.ref,'crops':[DESIGN['dials'][0]['crop']]}).encode(),headers={'Content-Type':'application/json','X-AIEdge-Setup':token},method='POST')
+            with urllib.request.urlopen(request) as response:result=json.load(response)
+            self.assertEqual(result['markers'],[]);self.assertFalse(result['automatic_calibration'])
+            self.assertEqual(self.setup.path.read_bytes(),before);self.assertEqual(self.setup.status(),saved)
+            self.assertEqual(self.worker.reader.pipeline_id,pipeline)
+        finally:server.shutdown();thread.join();server.server_close()
     def test_http_setup_round_trip_and_request_protection(self):
         server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,None,self.worker,self.setup));thread=threading.Thread(target=server.serve_forever);thread.start();origin='http://127.0.0.1:'+str(server.server_port)
         def post(path,body,token=None,extra=None):
