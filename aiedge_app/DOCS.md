@@ -6,9 +6,10 @@ External storage is a future optional feature.
 
 ## Install for a first Home Assistant test
 
-This is an experimental **amd64** build for Home Assistant OS. Linux build and
-Supervisor saved-image recognition and persistence still need validation. One Linux
-amd64 HA installation has built and started successfully. Installation builds the app on your HA
+This is an experimental **amd64** build for Home Assistant OS. One Linux amd64
+installation has built, processed a saved reference image and retained its six-dial
+calibration and number format after an app restart. Full Linux regressions and live
+camera/MQTT integration remain unverified. Installation builds the app on your HA
 host and can take several minutes; check the app logs if it fails. Keep your
 existing meter installation running during this test.
 
@@ -53,9 +54,9 @@ MQTT output publishes that value to Home Assistant. Overview also tracks relativ
 consumption and average rate when the capture clocks and configured bounds can
 resolve the movement. Camera OTA management remains pending.
 
-The app has started inside Home Assistant. Saved-image recognition, persistence and
-end-to-end camera/MQTT checks there remain pending; do not replace a working meter
-with this development build.
+The saved-image processing and persistence test passed inside Home Assistant, with
+capture and MQTT disabled. End-to-end camera/MQTT checks remain pending; do not
+replace a working meter with this development build.
 
 Capture starts only when `capture_enabled` is enabled and a camera URL is set.
 The existing r60 firmware does not implement the new capture API. Leave capture

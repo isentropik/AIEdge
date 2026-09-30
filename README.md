@@ -35,8 +35,10 @@ capture and MQTT disabled and use a saved image in Calibration.
 ## Test status
 
 The development container has built and started on Home Assistant's Linux amd64
-host. Read-only HA checks confirmed the UI routes, empty storage and disabled camera
-and MQTT. Saved-image calibration and persistence inside HA are still pending.
+host. UI/API checks pass. The approved saved-image test processed a reference with
+six dials, then verified its image hash, calibration and ft³ format after an app
+restart. Capture and MQTT remained disabled. Full Linux regression coverage and
+live camera/MQTT integration remain pending.
 Windows tests use the actual native pipeline and pinned models. Synthetic tests and
 unlabeled estimates do not establish recognition accuracy. This is not a validated
 release or a replacement for a working meter installation.

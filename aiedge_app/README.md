@@ -12,8 +12,9 @@ and calculates a reading from the dial values you configure.
 - External storage is a future option, not a setup requirement.
 
 **Development status:** the Windows server and local saved-image tests pass. One
-Home Assistant Linux amd64 installation has built and started; calibration, persistence,
-full Linux tests and the new ESP32 camera firmware still require validation.
+Home Assistant Linux amd64 installation has built and started. Its saved reference
+image, six-dial calibration and number format survived an app restart. Full Linux
+regressions and live camera/MQTT integration still require validation.
 This branch is not ready to replace a working meter installation.
 
 [Install the development app](DOCS.md#install-for-a-first-home-assistant-test) · [User guide](DOCS.md) · [Current status](STATUS.md) · [Build notes](PACKAGING.md)

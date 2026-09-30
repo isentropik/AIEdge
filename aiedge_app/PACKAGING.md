@@ -33,8 +33,10 @@ not change the recognition binary or existing calibration pipeline identity. It 
 The default command requires HA Ingress; direct network access is intentionally
 rejected. Standalone remote authentication and a standalone Docker launch workflow
 remain pending. The development container built and started on one Home Assistant Linux amd64 host
-on September 30. Read-only UI/API checks pass; the full Linux suite, saved-image
-calibration and persistence there have not yet been tested. A first experimental HA test
+on September 30. UI/API checks and an approved saved-image calibration/persistence
+test pass. The actual container accepted all six dials and retained the reference hash,
+calibration and ft³ format after an app restart, with capture/MQTT disabled. The full
+Linux regression suite has not run. A first experimental HA test
 can build it through the app store using the branch-specific repository URL in
 DOCS.md, with capture and MQTT disabled. This is not a validated release or a
 replacement for the existing meter. MQTT is implemented locally; its Supervisor

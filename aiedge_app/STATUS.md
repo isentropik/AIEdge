@@ -8,8 +8,12 @@ historical checkpoints; this section describes the current state.
   host on September 30. Read-only checks verified the HTML/CSS and status, setup,
   number-format, diagnostics and history endpoints. Storage is ready, with zero
   captures and capture/MQTT disabled. Python 3.14.7 and the pinned dependency
-  versions are reported. Saved-image calibration, app persistence and the full
-  Linux validation suite are still pending; this is not an accuracy or release claim.
+  versions are reported. The approved saved-image test passed: three markers, six dial crops and separate
+  fixed pivots were accepted by the actual native/model runtime. The reference hash,
+  calibration and ft³ format persisted after an AIEdge-only restart. Capture and MQTT
+  stayed disabled. Time Machine and a cold app-only Supervisor backup were verified
+  before the writes. The full Linux suite and live camera/MQTT tests remain pending;
+  this is not an accuracy or release claim.
 - The development repository has root metadata and a branch-specific installation
   guide. Use `https://github.com/isentropik/AIEdge#codex/aiedge-ha-app` in HA;
   the GitHub `/tree/` page URL cannot be cloned as a repository.
