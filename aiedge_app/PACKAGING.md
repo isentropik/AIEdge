@@ -32,15 +32,16 @@ checks a synthetic two-dial interval. Accounting remains separate so adding it d
 not change the recognition binary or existing calibration pipeline identity. It does not prove recognition accuracy.
 The default command requires HA Ingress; direct network access is intentionally
 rejected. Standalone remote authentication and a standalone Docker launch workflow
-remain pending. Linux and Supervisor execution have not been tested. A first experimental HA test
+remain pending. The development container built and started on one Home Assistant Linux amd64 host
+on September 30. Read-only UI/API checks pass; the full Linux suite, saved-image
+calibration and persistence there have not yet been tested. A first experimental HA test
 can build it through the app store using the branch-specific repository URL in
 DOCS.md, with capture and MQTT disabled. This is not a validated release or a
 replacement for the existing meter. MQTT is implemented locally; its Supervisor
 integration and the camera firmware still need end-to-end validation. External archives are deferred; images
 stay in app storage. Windows packaged-header compilation and the local app suite
 pass. A Linux Docker build and packaged-service startup workflow is prepared locally in
-`.github/workflows/aiedge-app.yml`; it is not published. A successful run is required
-before treating this as Linux-compatible.
+`.github/workflows/aiedge-app.yml`; it is not published. A successful full run is still required for Linux regression coverage.
 
 
 The September 29 attempt to push the CI workflow was rejected by GitHub because the

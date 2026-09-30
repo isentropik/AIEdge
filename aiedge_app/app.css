@@ -1103,3 +1103,37 @@ canvas{
   min-height:0;
   min-width:0
 }
+
+/* Touch controls use larger targets; 16px fields avoid focus zoom on iOS. */
+@media(max-width:850px),(any-pointer:coarse){
+  button,select,input:not([type=checkbox]),.file-label{
+    min-height:44px;
+  }
+  input:not([type=checkbox]),select{
+    font-size:16px;
+  }
+  .icon-button{
+    min-width:44px;
+  }
+  .check-label{
+    min-height:44px;
+  }
+  .check-label input{
+    width:22px;
+    height:22px;
+  }
+  .review-views button{
+    min-height:44px;
+  }
+  .toolbar .actions{
+    gap:6px;
+  }
+  .toolbar h1{
+    min-width:0;
+  }
+}
+@media(max-width:850px),(any-pointer:coarse){
+  nav button{
+    min-height:44px;
+  }
+}

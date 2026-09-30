@@ -4,6 +4,19 @@ The app source is published on `codex/aiedge-ha-app`. This is a development
 branch, not a release or live deployment. The earlier dated entries below are
 historical checkpoints; this section describes the current state.
 
+- The `0.2.0-dev3` container built and started on a Home Assistant Linux amd64
+  host on September 30. Read-only checks verified the HTML/CSS and status, setup,
+  number-format, diagnostics and history endpoints. Storage is ready, with zero
+  captures and capture/MQTT disabled. Python 3.14.7 and the pinned dependency
+  versions are reported. Saved-image calibration, app persistence and the full
+  Linux validation suite are still pending; this is not an accuracy or release claim.
+- The development repository has root metadata and a branch-specific installation
+  guide. Use `https://github.com/isentropik/AIEdge#codex/aiedge-ha-app` in HA;
+  the GitHub `/tree/` page URL cannot be cloned as a repository.
+- Phone/tablet controls have larger touch targets and 16px input text. Crop handles
+  remain visible at smaller image scales, with a wider touch hit area. All four
+  pages were checked at 320, 390, 768 and 1280px without horizontal overflow;
+  actual phone Safari/Android and HA Ingress rendering still need a device check.
 - Calibration can suggest separated textured marker patches outside configured dial
   crops, with an undo action. Proposals stay in the draft and require review; they do
   not recognize printed symbols or guarantee that a feature is stationary. Insufficient
@@ -142,12 +155,21 @@ the capture/recognition workers; the new HTTP request-drain behavior was checked
 separately. Evidence: `server-native-20260929/clock-trial-20260929T2135Z/result.json`
 in the workspace test directory. Photograph labels and accuracy were not evaluated.
 
-Validation: **173 tests run, 172 passed, one skipped**, plus **21 JavaScript tests**. The skipped check requires the
+Validation: **195 tests run, 194 passed, one skipped**, plus **30 JavaScript tests**. The skipped check requires the
 Linux container. All native/model fixture tests were enabled. Test evidence and source
-hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-portable-validation-20260930.json`
+hashes: `needle-training/firmware-port-tests/server-native-20260929/publication-mobile-ha-20260930.json`
 in the parent Home Assistant workspace. A disposable browser fixture recovered both
 saved-file errors and verified preserved original bytes. The real Paho client was exercised against a
 loopback MQTT 3.1.1 protocol fixture; this is not a live broker or Supervisor test.
+
+A 601-second mixed capture/review trial processed 21 copies of one archived image,
+including 76 deliberately synthetic review edits, one app restart and one injected
+camera HTTP 503. It retained the expected camera failure, with no unexpected test
+errors. The 1,184 web requests had 0.032-second p95 and 0.08182-second maximum
+latency. Earlier accounting records, image hashes, inference results and training
+exclusions were preserved. Review entries in this disposable fixture are not real
+labels. Duplicate captures are not new accuracy evidence. Evidence:
+`server-native-20260929/review-capture-trial-20260930/result.json` in the workspace.
 
 A 245-second local trial processed nine unique archived images with the actual native
 pipeline and LiteRT models. Requests were 29.984–30.016 seconds apart; no missed slots

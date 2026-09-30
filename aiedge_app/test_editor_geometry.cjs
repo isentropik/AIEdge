@@ -38,3 +38,13 @@ test('numeric width and height edits honor the same proportion lock',()=>{
  assert.equal(resizeDimension([100,100,80,100],2,148,148,true),null);
  assert.equal(resizeDimension([100,100,80,100],2,NaN,148,true),null);
 });
+
+test('touch corner target scales with the screen and keeps the nearest anchor',()=>{
+ for(const scale of [.25,.5,1,2]){
+  const box=[100,100,100,80],near=[100-20/scale,100];
+  assert.equal(nearestCorner(near,box,scale),-1);
+  assert.equal(nearestCorner(near,box,scale,22),0);
+  assert.equal(nearestCorner([100-23/scale,100],box,scale,22),-1);
+  corners([100,100,8,8]).forEach((point,index)=>assert.equal(nearestCorner(point,[100,100,8,8],scale,22),index));
+ }
+});

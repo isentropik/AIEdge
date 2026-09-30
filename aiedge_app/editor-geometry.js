@@ -2,11 +2,11 @@
 (function(root){
  'use strict';
  const corners=b=>[[b[0],b[1]],[b[0]+b[2],b[1]],[b[0]+b[2],b[1]+b[3]],[b[0],b[1]+b[3]]];
- function nearestCorner(point,box,screenScale){
+ function nearestCorner(point,box,screenScale,screenRadius=14){
   if(!box||!(screenScale>0))return -1;
   const distances=corners(box).map(([x,y])=>Math.hypot(x-point[0],y-point[1]));
   const closest=Math.min(...distances);
-  return closest<=14/screenScale?distances.indexOf(closest):-1;
+  return closest<=screenRadius/screenScale?distances.indexOf(closest):-1;
  }
  function resizeBox(drag,point,maximum){
   if(drag.move){

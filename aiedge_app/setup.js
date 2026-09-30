@@ -26,21 +26,21 @@ function controls(){
  $('editor-hint').textContent=!picture?'Choose a 640 × 480 image to begin.':mode==='markers'?'Draw three separated boxes around fixed markings, away from needles. Drag a corner to resize. Maximum 128 × 128 px.':!d?'Add a dial, then draw its crop.':'Draw a crop up to 148 × 148 px. Place four rim points clockwise from zero, then the needle pivot. The pivot is separate from the dial center.';
  draw();
 }
-function draw(){if(!picture)return;ctx.clearRect(0,0,640,480);ctx.drawImage(picture,0,0,640,480);
+function draw(){if(!picture)return;const bounds=canvas.getBoundingClientRect(),scale=Math.max(.1,Math.min(bounds.width/640,bounds.height/480));ctx.clearRect(0,0,640,480);ctx.drawImage(picture,0,0,640,480);
  const boxes=mode==='markers'?state.markers:state.dials.map(d=>d.crop);
  boxes.forEach((b,i)=>{if(!b)return;ctx.strokeStyle=i===selected?'#d6bdff':'#67d6cf';ctx.lineWidth=i===selected?2:1;ctx.strokeRect(...b);ctx.font='12px system-ui';ctx.fillStyle='#111c';ctx.fillRect(b[0],Math.max(0,b[1]-20),72,19);ctx.fillStyle='#fff';ctx.fillText((mode==='markers'?'Marker ':'Dial ')+(i+1),b[0]+4,Math.max(13,b[1]-6));
- if(i===selected){ctx.fillStyle='#e5d9ff';for(const [x,y] of corners(b))ctx.fillRect(x-3,y-3,6,6);}});
+ if(i===selected){ctx.fillStyle='#e5d9ff';ctx.strokeStyle='#322648';ctx.lineWidth=1/scale;for(const [x,y] of corners(b)){ctx.beginPath();ctx.arc(x,y,4/scale,0,Math.PI*2);ctx.fill();ctx.stroke();}}});
  if(mode==='dials'&&state.dials[selected]){const d=state.dials[selected];[...d.rim_points,d.needle_pivot].forEach((p,i)=>{if(!p)return;ctx.strokeStyle=i===4?'#70e1fc':'#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p[0],p[1],4,0,Math.PI*2);ctx.stroke();ctx.fillStyle='#111';ctx.fillRect(p[0]+5,p[1]-15,30,17);ctx.fillStyle='#fff';ctx.fillText(['0','¼','½','¾','P'][i],p[0]+8,p[1]-2);});}
 }
 const corners=geometry.corners;
 function location(e){const r=canvas.getBoundingClientRect();const scale=Math.min(r.width/640,r.height/480),ox=(r.width-640*scale)/2,oy=(r.height-480*scale)/2;return [(e.clientX-r.left-ox)/scale,(e.clientY-r.top-oy)/scale,scale];}
-function hit(p,b){return geometry.nearestCorner(p,b,p[2]);}
+function hit(p,b,pointerType){return geometry.nearestCorner(p,b,p[2],pointerType==='touch'?22:14);}
 function within(p,b){return b&&p[0]>=b[0]&&p[0]<=b[0]+b[2]&&p[1]>=b[1]&&p[1]<=b[1]+b[3];}
 canvas.onpointerdown=e=>{if(!picture||busy)return;const p=location(e);if(p[0]<0||p[1]<0||p[0]>640||p[1]>480)return;
  const d=state.dials[selected],tool=$('edit-tool').value;if(mode==='dials'&&!d)return;
  if(mode==='dials'&&tool!=='crop'){const point=p.slice(0,2).map(v=>Math.round(v*10)/10);if(tool==='pivot')d.needle_pivot=point;else d.rim_points[Number(tool)]=point;changed();return;}
- const b=currentBox(),corner=hit(p,b);drag={start:p,box:b?.slice(),corner,move:corner<0&&within(p,b),ratio:$('lock-proportions').checked?(corner>=0?b[2]/b[3]:1):null};canvas.setPointerCapture(e.pointerId);e.preventDefault();};
-canvas.onpointermove=e=>{if(!picture)return;const p=location(e),b=currentBox(),h=hit(p,b);canvas.style.cursor=mode==='dials'&&$('edit-tool').value!=='crop'?'crosshair':h>=0?(h%2?'nesw-resize':'nwse-resize'):within(p,b)?'move':'crosshair';if(!drag)return;
+ const b=currentBox(),corner=hit(p,b,e.pointerType);drag={start:p,box:b?.slice(),corner,move:corner<0&&within(p,b),ratio:$('lock-proportions').checked?(corner>=0?b[2]/b[3]:1):null};canvas.setPointerCapture(e.pointerId);e.preventDefault();};
+canvas.onpointermove=e=>{if(!picture)return;const p=location(e),b=currentBox(),h=hit(p,b,e.pointerType);canvas.style.cursor=mode==='dials'&&$('edit-tool').value!=='crop'?'crosshair':h>=0?(h%2?'nesw-resize':'nwse-resize'):within(p,b)?'move':'crosshair';if(!drag)return;
  const box=geometry.resizeBox(drag,p,mode==='markers'?128:148);
  if(box){setBox(box);controls();}};
 canvas.onpointerup=e=>{if(drag){const modified=JSON.stringify(currentBox())!==JSON.stringify(drag.box||null);drag=null;if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);if(modified)changed();}};canvas.onpointercancel=()=>{if(drag){setBox(drag.box||null);drag=null;controls();}};

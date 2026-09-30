@@ -1,6 +1,8 @@
 name: AIEdge
-version: 0.2.0-dev3
+version: 0.2.0-dev4
 slug: aiedge
+stage: experimental
+url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
 description: Remote meter camera capture and recognition service (development)
 arch:
   - amd64

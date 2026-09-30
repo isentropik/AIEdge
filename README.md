@@ -1,57 +1,55 @@
-# AIEdge
+# AIEdge for Home Assistant
 
-Read analog meter dials with an ESP32 camera and process the images on your Home
-Assistant server. Images, calibration and reading history stay in the app's local
-storage. An external storage server is a future option.
+AIEdge processes analog meter images on your Home Assistant server. An ESP32 camera
+supplies pictures; the app aligns them, estimates needle positions and calculates
+readings from the dial values you define. Images and calibration stay in the app's
+local storage. An external storage server is not required.
 
-**This branch develops the Home Assistant app.** The local Windows implementation
-and saved-image tests pass. Linux, Home Assistant installation and the compatible
-ESP32 camera firmware still need validation. It is not a release for replacing a
-working meter yet. See [current status](aiedge_app/STATUS.md).
+This branch contains the **experimental Home Assistant app**. The ESP32 firmware
+project remains on [the firmware branch](https://github.com/isentropik/AIEdge/tree/codex/aiedge-publication).
 
-## How it works
+## Install the development app
 
-- **ESP32 camera:** takes a picture and supplies its capture time and image hash.
-- **AIEdge app:** aligns the image, finds the analog needles and converts their
-  positions using the dial values you enter.
-- **Home Assistant:** can receive recent register readings through optional MQTT.
+On Home Assistant OS with an **amd64** host, open **Settings → Apps → Install app**.
+Choose **⋮ → Repositories** and add this exact URL:
 
-The app keeps the original images and separates estimates from confirmed labels.
-Uncertain readings stay unavailable. Relative consumption and average rate use
-capture clocks and configured uncertainty bounds; missed whole turns are not guessed.
-These are estimates, not independently verified accuracy or lifetime totals.
+```text
+https://github.com/isentropik/AIEdge#codex/aiedge-ha-app
+```
 
-## Start here
+Select **AIEdge → Install → Start → Open Web UI**. Installation builds the container
+on your HA host and can take several minutes. For the first test, leave camera
+capture and MQTT disabled and use a saved image in Calibration.
 
-| What you need | Guide |
-| --- | --- |
-| Understand setup and saved data | [User guide](aiedge_app/DOCS.md) |
-| Check what works and what is still unverified | [Development status](aiedge_app/STATUS.md) |
-| Build or test the app | [Build notes](aiedge_app/PACKAGING.md) |
-| Implement a compatible camera | [Camera API](aiedge_app/CAMERA-PROTOCOL.md) |
-| See the approximate project hours | [Development time](docs/DEVELOPMENT-TIME.md) |
+[Installation and user guide](aiedge_app/DOCS.md) · [Current status](aiedge_app/STATUS.md) ·
+[Build and test instructions](aiedge_app/PACKAGING.md)
 
-The interface has Overview, Captures, Calibration and Number format, with light,
-dark and system themes. Calibration identifies fixed markers and dial geometry.
-Number format defines units and the physical value of each full revolution. All
-dials constrain one reading; there are no separate main/secondary roles.
+## What is available
 
-The older firmware installer and guides elsewhere in this repository describe the
-edition that processes readings on the ESP32. That installer does not install the
-new Home Assistant app or establish compatibility with its camera API.
+- A compact interface with desktop, tablet and phone layouts, plus light/dark themes.
+- Local capture history and human image review with immutable revisions.
+- Reference-image calibration, separate needle pivots and three alignment markers.
+- Generic per-dial revolution values, number formatting and conservative consumption accounting.
+- Optional MQTT register readings; uncertain intervals stay explicit.
 
-## Credits and license
+## Test status
+
+The development container has built and started on Home Assistant's Linux amd64
+host. Read-only HA checks confirmed the UI routes, empty storage and disabled camera
+and MQTT. Saved-image calibration and persistence inside HA are still pending.
+Windows tests use the actual native pipeline and pinned models. Synthetic tests and
+unlabeled estimates do not establish recognition accuracy. This is not a validated
+release or a replacement for a working meter installation.
+
+The existing r60 firmware does not implement the new remote-camera API; do not
+point enabled app capture at that firmware. ARM/Raspberry Pi builds are not provided yet.
+
+## Credits
 
 AIEdge builds on [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device)
-by jomjol and its contributors, alongside work from Espressif and other component
-authors. AIEdge is an independent modified project; upstream does not endorse or
-support this development branch. Original notices remain in the source.
+by jomjol and its contributors. Their license and notices remain in the
+[credits](aiedge_app/assets/CREDITS.md) and [license](aiedge_app/assets/Licence.md).
 
-See [project credits](CREDITS.md), the unchanged [upstream license](Licence.md),
-[packaged source credits](aiedge_app/assets/CREDITS.md) and
-[dependency notices](aiedge_app/third-party/README.md). Release packaging still needs
-its complete bundled-native and base-system notice review.
-
-AIEdge is being **vibe coded with Codex**, with user direction, image labeling and
-hardware testing. The [running hour estimate](docs/DEVELOPMENT-TIME.md) is rounded to
-the nearest hour and records this fork's work separately from the upstream project.
+This fork is being vibe coded with Codex, with user direction, labeling and hardware
+testing. The approximate recorded project time is tracked in
+[Development time](docs/DEVELOPMENT-TIME.md).
