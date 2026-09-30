@@ -28,8 +28,11 @@ docker build -t aiedge-app:development aiedge_app
 
 The image build checks all 24 packaged-file hashes, loads recognition ABI 2 and
 accounting ABI 1, verifies tensor shapes and quantization, invokes both models, and
-checks a synthetic two-dial interval. Accounting remains separate so adding it does
-not change the recognition binary or existing calibration pipeline identity. It does not prove recognition accuracy.
+checks a synthetic two-dial interval. Accounting remains separate from recognition. The changed-dial cache is an additive
+ABI 2 entry point; it preserves the full path for changed or rejected regions. Its new
+recognition binary and reader source produce a new pipeline identity. Existing dial
+values must be reviewed and rebound to that identity before readings are enabled.
+These checks do not prove recognition accuracy.
 The default command requires HA Ingress; direct network access is intentionally
 rejected. Standalone remote authentication and a standalone Docker launch workflow
 remain pending. The development container built and started on one Home Assistant Linux amd64 host

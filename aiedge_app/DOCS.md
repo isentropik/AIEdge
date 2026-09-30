@@ -58,6 +58,11 @@ The saved-image processing and persistence test passed inside Home Assistant, wi
 capture and MQTT disabled. End-to-end camera/MQTT checks remain pending; do not
 replace a working meter with this development build.
 
+After recognition code, native libraries or models change, the pipeline identity
+changes too. Review **Number format** and save the same dial values for the new
+pipeline before enabling capture or MQTT. A stale format is withheld rather than
+silently applied to a different pipeline.
+
 Capture starts only when `capture_enabled` is enabled and a camera URL is set.
 The existing r60 firmware does not implement the new capture API. Leave capture
 disabled until compatible camera firmware is installed. The app does not poll

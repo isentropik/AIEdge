@@ -13,9 +13,9 @@ MODELS={'main':('polar-main-int8.tflite','9c145e67e9008bf1e17567cd69baa48ce54af3
 NAMES=('main.10000k','main.1000k','main.100k','main.10k','main.1k','secondary.5')
 
 class Reader:
-    def __init__(self,library,models,profile,reference_kernels=False):
+    def __init__(self,library,models,profile,reference_kernels=False,reuse_unchanged=True):
         self.native=Native(library);self.lock=threading.Lock();self.networks={}
-        self.runtime=None
+        self.runtime=None;self.reuse_unchanged=reuse_unchanged;self.last_dials={}
         if isinstance(profile,dict):
             self.runtime=Profile(self.native,profile)
             self.dials=self.runtime.document['dials'];identity=self.runtime.digest
@@ -38,24 +38,40 @@ class Reader:
         contract={'profile':self.profile,'models':self.hashes,'native':hashlib.sha256(Path(library).read_bytes()).hexdigest(),
                   'reader':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'sparse':True,
                   'litert':importlib.metadata.version('ai-edge-litert'),'pillow':importlib.metadata.version('Pillow'),
-                  'numpy':np.__version__,'reference_kernels':reference_kernels}
+                  'numpy':np.__version__,'reference_kernels':reference_kernels,
+                  'dial_reuse':'exact-source-region-v1' if reuse_unchanged else 'disabled'}
         self.pipeline_id=hashlib.sha256(json.dumps(contract,sort_keys=True).encode()).hexdigest()
     def read_rgb(self,rgb,sparse=True):
         start=time.perf_counter()
         result={'state':'rejected','profile':self.profile,'model_hashes':self.hashes,'dial_positions':[],
-                'accuracy_verified':False,'training_allowed':False,'physical_value':None}
+                'accuracy_verified':False,'training_allowed':False,'physical_value':None,
+                'work':{'preprocessing_reused':0,'inference_reused':0,'dials':len(self.dials)}}
         with self.lock:
-            try:prepared=(self.runtime or self.native).prepare(rgb,sparse=sparse)
+            try:
+                prepare=self.runtime.prepare_with_reuse if self.runtime and self.reuse_unchanged else (self.runtime or self.native).prepare
+                prepared=prepare(rgb,sparse=sparse)
             except ValueError as e:
+                self.last_dials.clear()
                 result['error']=str(e);result['processing_seconds']=time.perf_counter()-start;return result
             for i,row in enumerate(prepared):
                 dial=self.dials[i]
                 item={'name':dial['name'],'state':row['state'],'position':None,'visibility':row['visibility']}
+                if row.get('reused'):result['work']['preprocessing_reused']+=1
                 if row['state']=='ok':
-                    role=dial['model'];net,inp,out=self.networks[role]
-                    net.set_tensor(inp['index'],np.frombuffer(row['features'],dtype=np.int8).reshape(1,384,40));net.invoke()
-                    scores=net.get_tensor(out['index']).tobytes()
-                    item.update(state='estimated',position=self.native.decode(scores,dial['direction']=='ccw'),scores_sha256=hashlib.sha256(scores).hexdigest())
+                    previous=self.last_dials.get(i)
+                    if self.reuse_unchanged and previous and previous[0]==row['features']:
+                        item.update(previous[1]);result['work']['inference_reused']+=1
+                    else:
+                        try:
+                            role=dial['model'];net,inp,out=self.networks[role]
+                            net.set_tensor(inp['index'],np.frombuffer(row['features'],dtype=np.int8).reshape(1,384,40));net.invoke()
+                            scores=net.get_tensor(out['index']).tobytes()
+                            item.update(state='estimated',position=self.native.decode(scores,dial['direction']=='ccw'),scores_sha256=hashlib.sha256(scores).hexdigest())
+                        except Exception:
+                            # A partial failed frame cannot leave successful dial outputs reusable.
+                            self.last_dials.clear();raise
+                    if self.reuse_unchanged:self.last_dials[i]=(row['features'],{k:item[k] for k in ('state','position','scores_sha256')})
+                else:self.last_dials.pop(i,None)
                 result['dial_positions'].append(item)
         if all(r['state']=='estimated' for r in result['dial_positions']):result['state']='estimated'
         else:result['error']='one_or_more_dials_rejected'

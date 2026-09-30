@@ -22,7 +22,8 @@ def inventory_errors(identifiers,allow_archive,packaged):
     identifiers=set(identifiers);errors=[]
     for prefix,minimum in (('test_consumption.AccountingTests.',20),('test_consumption.FormatBoundTests.',3),
                            ('test_synthetic_pipeline.GeneratedPipelineTests.',3),
-                           ('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5)):
+                           ('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5),
+                           ('test_changed_dials.ChangedDialTests.',12)):
         if sum(name.startswith(prefix) for name in identifiers)<minimum:
             errors.append('Required test coverage is missing: '+prefix)
     if packaged and PACKAGED_CHECK not in identifiers:

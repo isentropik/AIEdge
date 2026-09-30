@@ -47,6 +47,10 @@ class Profile:
         lib.aiedge_profile_create.argtypes=[ctypes.POINTER(Marker),ctypes.c_size_t,ctypes.POINTER(Dial),ctypes.c_size_t,ctypes.POINTER(ctypes.c_int)];lib.aiedge_profile_create.restype=ctypes.c_void_p
         lib.aiedge_profile_destroy.argtypes=[ctypes.c_void_p];lib.aiedge_profile_destroy.restype=None
         lib.aiedge_prepare_profile.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_size_t,ctypes.c_int,ctypes.c_void_p,ctypes.c_size_t,ctypes.c_void_p,ctypes.c_void_p,ctypes.c_size_t];lib.aiedge_prepare_profile.restype=ctypes.c_int
+        self.reuse_function=getattr(lib,'aiedge_prepare_profile_reuse',None)
+        if self.reuse_function:
+            self.reuse_function.argtypes=lib.aiedge_prepare_profile.argtypes+[ctypes.c_void_p]
+            self.reuse_function.restype=ctypes.c_int
         buffers=[];markers=(Marker*3)();count=len(self.document['dials']);dials=(Dial*count)()
         for i,m in enumerate(self.document['markers']):
             b=ctypes.create_string_buffer(base64.b64decode(m['pixels']));buffers.append(b)
@@ -59,11 +63,20 @@ class Profile:
     def close(self):
         with self.lock:self.finalizer();self.handle=None
     def prepare(self,rgb,sparse=True):
+        return self._prepare(rgb,sparse,False)
+    def prepare_with_reuse(self,rgb,sparse=True):
+        return self._prepare(rgb,sparse,True)
+    def _prepare(self,rgb,sparse,reuse):
         if len(rgb)!=640*480*3:raise ValueError('frame_dimensions_must_match_profile')
         count=len(self.document['dials']);size=count*384*40
         source=ctypes.create_string_buffer(rgb);out=ctypes.create_string_buffer(size);states=(ctypes.c_int*count)();visibility=(ctypes.c_double*count)()
+        reused=(ctypes.c_int*count)()
         with self.lock:
             if not self.handle:raise ValueError('calibration_closed')
-            status=self.native.lib.aiedge_prepare_profile(self.handle,source,len(rgb),int(sparse),out,size,states,visibility,count)
+            args=(self.handle,source,len(rgb),int(sparse),out,size,states,visibility,count)
+            status=self.reuse_function(*args,reused) if reuse and self.reuse_function else self.native.lib.aiedge_prepare_profile(*args)
         if status:raise ValueError({-1:'invalid_native_input',-2:'alignment_rejected',-3:'preprocessing_failed'}.get(status,'unknown_native_error'))
-        return [{'state':self.native.lib.aiedge_preparation_status(states[i]).decode(),'visibility':visibility[i],'features':out.raw[i*15360:(i+1)*15360]} for i in range(count)]
+        rows=[{'state':self.native.lib.aiedge_preparation_status(states[i]).decode(),'visibility':visibility[i],'features':out.raw[i*15360:(i+1)*15360]} for i in range(count)]
+        if reuse:
+            for i,row in enumerate(rows):row['reused']=bool(reused[i])
+        return rows
