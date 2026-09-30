@@ -15,7 +15,7 @@ and calculates a reading from the dial values you configure.
 Home Assistant installation and the new ESP32 camera firmware still require validation.
 This branch is not ready to replace a working meter installation.
 
-[User guide](DOCS.md) · [Current status](STATUS.md) · [Build notes](PACKAGING.md)
+[Install the development app](DOCS.md#install-for-a-first-home-assistant-test) · [User guide](DOCS.md) · [Current status](STATUS.md) · [Build notes](PACKAGING.md)
 
 AIEdge builds on [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device)
 by jomjol and its contributors. Original notices and the project license are preserved

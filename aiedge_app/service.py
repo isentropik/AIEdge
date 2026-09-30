@@ -88,6 +88,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             elif route=='/api/setup':
                 state=setup.status() if setup else {'revision':None,'calibration':None}
                 state.update(available=setup is not None,token=token);body=json.dumps(state).encode();kind='application/json'
+            elif route=='/app.css':
+                body=(Path(__file__).parent/'app.css').read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
             elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js'):

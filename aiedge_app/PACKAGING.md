@@ -32,8 +32,10 @@ checks a synthetic two-dial interval. Accounting remains separate so adding it d
 not change the recognition binary or existing calibration pipeline identity. It does not prove recognition accuracy.
 The default command requires HA Ingress; direct network access is intentionally
 rejected. Standalone remote authentication and a standalone Docker launch workflow
-remain pending. Do not install this development build on live HA yet: Linux and
-Supervisor execution have not been tested. MQTT is implemented locally; its Supervisor
+remain pending. Linux and Supervisor execution have not been tested. A first experimental HA test
+can build it through the app store using the branch-specific repository URL in
+DOCS.md, with capture and MQTT disabled. This is not a validated release or a
+replacement for the existing meter. MQTT is implemented locally; its Supervisor
 integration and the camera firmware still need end-to-end validation. External archives are deferred; images
 stay in app storage. Windows packaged-header compilation and the local app suite
 pass. A Linux Docker build and packaged-service startup workflow is prepared locally in

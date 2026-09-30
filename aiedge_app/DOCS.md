@@ -4,6 +4,38 @@ AIEdge stores camera images, dial estimates and calibration inside the app's
 persistent `/data` directory. No separate storage server or credentials are needed.
 External storage is a future optional feature.
 
+## Install for a first Home Assistant test
+
+This is an experimental **amd64** build for Home Assistant OS. Linux build and
+Supervisor startup are still unverified. Installation builds the app on your HA
+host and can take several minutes; check the app logs if it fails. Keep your
+existing meter installation running during this test.
+
+1. Open **Settings → Apps → Install app**. From the three-dot menu, choose
+   **Repositories** and add this complete URL, including the branch after `#`:
+
+   ```text
+   https://github.com/isentropik/AIEdge#codex/aiedge-ha-app
+   ```
+
+2. Refresh the store, choose **AIEdge**, and select **Install**.
+3. Leave `capture_enabled` and `mqtt_enabled` off and the camera address blank.
+   Select **Start**, then **Open Web UI**. Enable **Show in sidebar** if desired.
+4. Check that Overview, Captures, Calibration and Number format open. For the
+   initial test, upload a saved reference image in Calibration; no live camera is
+   needed. Images and app settings stay in HA app storage.
+5. Restart only the AIEdge app and verify your saved calibration and number format
+   remain. If startup or a page fails, use the app's **Log** tab for the error.
+
+This first test checks installation, the interface and persistence. It does not
+verify meter accuracy. Do not enable capture against the existing r60 meter:
+that firmware does not implement this app's new camera API. The old HA entities
+are unchanged with MQTT disabled. An amd64 host is currently required; ARM/Raspberry
+Pi builds are not provided.
+
+[Home Assistant app installation](https://www.home-assistant.io/apps) ·
+[Development source](https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app)
+
 ## Current development build
 
 The interface includes capture history, reference-image calibration and a number-format

@@ -28,6 +28,9 @@ class Tests(unittest.TestCase):
             with urllib.request.urlopen(origin+'/reference-image.js') as response:
                 self.assertEqual(response.headers.get_content_type(),'text/javascript')
                 self.assertIn(b'AIEdgeReferenceImage',response.read())
+            with urllib.request.urlopen(origin+'/app.css') as response:
+                self.assertEqual(response.headers.get_content_type(),'text/css')
+                self.assertIn(b'color-scheme',response.read())
             with urllib.request.urlopen(origin+'/favicon.svg') as response:
                 self.assertEqual(response.headers.get_content_type(),'image/svg+xml')
                 self.assertIn(b'<svg',response.read())
