@@ -1,5 +1,17 @@
 # Changes
 
+## 0.2.0-dev8
+
+- Stop requests are handled during initialization, before capture workers start.
+- An app stop gives in-flight requests and workers a shared 35-second drain
+  deadline; Supervisor allows 45 seconds before a forced stop.
+- Startup, clean stops and drain timeouts produce structured app log events.
+- Coverage checks verify that imported runtime modules are packaged and require
+  startup/shutdown regressions. The Linux packaged-runtime test now checks a
+  successful SIGTERM exit as well as persistent storage.
+- Recognition, physical calculations, dependencies, calibration, saved images
+  and capture/MQTT options retain their dev7 behavior. No camera firmware change.
+
 ## 0.2.0-dev7
 
 - Linux camera connections request smaller TCP segments before connecting,

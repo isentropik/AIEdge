@@ -1,3 +1,10 @@
+Local dev8 candidate: startup stop handling, bounded worker/request draining,
+structured lifecycle logs and a 45-second Supervisor stop grace are prepared.
+This is an app-only correction. Windows checks cannot establish Linux container
+SIGTERM behavior or clean shutdown during a live camera transfer; those remain
+deployment validation steps. Installed dev7 and its capture/MQTT settings are
+unchanged. The cause of the previous Supervisor error has not been proven.
+
 # Current checkpoint — September 30, 2026
 
 The app source is published on `codex/aiedge-ha-app`. This is a development

@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev7
+version: 0.2.0-dev8
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -9,6 +9,9 @@ arch:
 startup: application
 boot: manual
 init: false
+# Allow a bounded in-flight transfer/ledger commit to finish before forced stop.
+# The Python runtime drains for at most 35 seconds, leaving 10 seconds of margin.
+timeout: 45
 # Stop writes while Supervisor copies images, calibration and the SQLite ledger.
 backup: cold
 ingress: true

@@ -38,6 +38,14 @@ class ContainerRuntimeTests(unittest.TestCase):
                     for route,needle in [('/',b'Number format'),('/reading-format.js',b'openReadingFormat'),('/dashboard.js',b'visibilitychange'),('/favicon.svg',b'<svg'),('/editor-geometry.js',b'AIEdgeGeometry'),('/reference-image.js',b'AIEdgeReferenceImage')]:
                         with urllib.request.urlopen(f'http://127.0.0.1:{port}'+route) as r:self.assertIn(needle,r.read())
                     self.assertTrue((pathlib.Path(directory)/'captures.sqlite3').is_file())
+                    process.terminate()  # Actual Linux SIGTERM to the packaged service.
+                    out,err=process.communicate(timeout=5)
+                    self.assertEqual(process.returncode,0,out+err)
+                    events=[json.loads(line) for line in out.splitlines() if line.startswith('{')]
+                    stopped=[event for event in events if event.get('event')=='aiedge_stopped']
+                    self.assertTrue(stopped,out+err)
+                    self.assertTrue(stopped[-1]['requests_drained'])
+                    self.assertEqual(stopped[-1]['pending_workers'],0)
                 finally:
                     if process.poll() is None:process.terminate()
                     try:process.communicate(timeout=5)

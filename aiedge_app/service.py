@@ -129,25 +129,29 @@ def create_reader(library,models,profile=None,calibration_file=None):
         profile,_=load(calibration_file)
     return Reader(library,models,profile)
 
-def main():
+def run_service(stop_signals):
     parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--accounting-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file');args=parser.parse_args()
     options,configuration=load_options(args.data)
+    stop_signals.checkpoint()
     interval=options['interval_seconds'];enabled=options['capture_enabled']
     storage_error=False
     try:store=Store(args.data)
     except (OSError,sqlite3.Error):
         store=None;storage_error=True;enabled=False
+    stop_signals.checkpoint()
     collector=None;recognition=None;setup=None;reading_format=None;mqtt_output=None
     if not storage_error and any((args.native_library,args.models,(args.calibration_profile or args.calibration_file))):
         if not all((args.native_library,args.models)):raise ValueError('recognition_requires_library_and_models')
         from reader import Reader
         from recognition import Recognition
         initial=create_reader(args.native_library,args.models,args.calibration_profile,args.calibration_file) if (args.calibration_profile or args.calibration_file) else None
+        stop_signals.checkpoint()
         try:
             recognition=Recognition(store,initial)
             from setup_store import Setup
             if initial and (Path(args.data)/'calibration.json').exists():raise ValueError('explicit_profile_conflicts_with_saved_setup')
             setup=Setup(args.data,lambda document:Reader(args.native_library,args.models,document),recognition)
+            stop_signals.checkpoint()
             from reading_format import FormatStore
             reading_format=FormatStore(args.data,recognition)
         except (OSError,sqlite3.Error):
@@ -179,8 +183,14 @@ def main():
         from review_store import Reviews
         try:reviews=Reviews(store,recognition)
         except (OSError,sqlite3.Error):pass
+    stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption)).run():
+    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
+def main():
+    from lifecycle import StartupSignals,StartupStopped,lifecycle_event
+    with StartupSignals() as stop_signals:
+        try:run_service(stop_signals)
+        except StartupStopped:lifecycle_event('aiedge_stopped',phase='startup',workers=0)
 if __name__=='__main__':main()
