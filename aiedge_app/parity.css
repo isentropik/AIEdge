@@ -109,3 +109,14 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .image-capture-button:active{transform:translate(-50%,-50%)}.reference-stale canvas{opacity:.3}
 @media(max-width:540px){.lighting-card{padding:15px}.lighting-card .panel-title{flex-wrap:wrap;gap:12px}.lighting-card label{grid-template-columns:1fr minmax(0,150px)}#lighting-custom{grid-template-columns:repeat(4,minmax(0,1fr))}#lighting-custom label{grid-template-columns:1fr}}
 @media(max-width:540px){.setup-steps{display:flex;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none}.setup-steps button{flex:none;white-space:nowrap;min-height:36px;padding:6px 8px}}
+/* Data keeps optional network storage in one compact, responsive card. */
+.archive-card{grid-column:1/-1;max-width:56rem}
+.archive-card .panel-title{flex-wrap:wrap;gap:.75rem}
+.archive-toggle{display:flex;align-items:center;gap:.5rem;font-size:.875rem}
+.archive-toggle input{width:1.125rem;height:1.125rem;margin:0}
+.archive-path{display:grid;grid-template-columns:5rem minmax(0,1fr);align-items:center;gap:.75rem}
+.archive-path input{min-width:0;width:100%;font-family:ui-monospace,monospace;font-size:.875rem}
+.archive-card dl{max-width:25rem}
+.archive-card .setup-status{margin:.75rem 0 0}
+.archive-card .actions:has(button:not([hidden])){margin-top:.75rem}
+@media(max-width:600px){.archive-path{grid-template-columns:1fr;gap:.375rem}.archive-card .panel-title{align-items:flex-start}.archive-card a{overflow-wrap:anywhere}}

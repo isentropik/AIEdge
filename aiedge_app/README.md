@@ -10,7 +10,7 @@ and calculates a reading from the dial values you configure.
 - Optional MQTT output sends recent register readings to Home Assistant.
 - Relative consumption and average rate retain uncertain intervals without guessing
   missed turns; they are not yet published as HA sensors.
-- External storage is a future option, not a setup requirement.
+- Optional SMB/NFS archive copies use Home Assistant network storage. Local storage remains the default; see [setup instructions](DOCS.md#optional-network-archive).
 
 **Development status:** the Windows server and local saved-image tests pass. One
 Home Assistant Linux amd64 installation has built and started. Its saved reference

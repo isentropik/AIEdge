@@ -17,7 +17,11 @@ NEW_COVERAGE={*(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
               *(f'test_lifecycle.LifecycleTests.test_{i}' for i in range(2)),
               *(f'test_camera_setup.CameraSetupTests.test_{i}' for i in range(8)),
               *(f'test_camera_lighting.ConfigTests.test_{i}' for i in range(7)),
-              *(f'test_camera_lighting.LightingTransactions.test_{i}' for i in range(12)),*SAMPLING_CHECKS}
+              *(f'test_camera_lighting.LightingTransactions.test_{i}' for i in range(12)),
+              *(f'test_archive.ArchiveTests.test_{i}' for i in range(15)),
+              *(f'test_archive.ArchiveCopyTests.test_{i}' for i in range(6)),
+              *(f'test_archive.ArchiveLinuxTests.test_{i}' for i in range(2)),
+              *(f'test_archive_http.ArchiveHttpTests.test_{i}' for i in range(3)),*SAMPLING_CHECKS}
 class ValidationCoverageTests(unittest.TestCase):
     def test_archive_omission_requires_explicit_permission(self):
         value=result(ARCHIVE_CHECKS)

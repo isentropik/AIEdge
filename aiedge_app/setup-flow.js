@@ -70,6 +70,7 @@ async function show(next,updateHash=false){
   window.AIEdgeCalibration?.setMode(next==='alignment'?'markers':next==='dials'?'dials':'image');
  }
  if(next==='format')await window.openReadingFormat();
+ if(next==='data')await window.AIEdgeArchive.load();
  if(next==='finish')await summary();
  if(active&&generation===viewGeneration)controls();
 }
@@ -81,6 +82,7 @@ async function leave(){
  if(step==='alignment')return state.markers_complete||fail('Place all three markers on fixed markings.');
  if(step==='dials')return await window.AIEdgeCalibration.save();
  if(step==='format')return await window.AIEdgeFormat.save();
+ if(step==='data')return await window.AIEdgeArchive.save();
  return true;
 }
 async function go(target){
@@ -206,6 +208,7 @@ $('reference-fit').onclick=()=>setZoom(1);$('reference-zoom-in').onclick=()=>set
 window.updateSetupFlow=controls;
 window.AIEdgeFlow={route,renderStatus,statusUnavailable(){statusSnapshot=null;for(const id of ['settings-storage','setup-local-storage','settings-mqtt'])$(id).textContent='Unknown';const mqtt=$('setup-summary-mqtt');if(mqtt)mqtt.textContent='Unknown';for(const id of ['settings-free-space','setup-free-space'])$(id).textContent='—';}};
 window.addEventListener('aiedge-calibration-saved',()=>{if(active)controls();});
+window.addEventListener('resize',()=>{if(active)controls();});
 window.AIEdgeCameraControls?.connect(cameraAction);
 route(location.hash);loadCamera();
 })();

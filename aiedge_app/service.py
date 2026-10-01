@@ -5,8 +5,9 @@ from pathlib import Path
 from capture import Store,Camera,Collector
 from options import load as load_options
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None):
     from review_store import ReviewConflict
+    from archive import ArchiveConflict
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -18,11 +19,20 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
         def reply(self,payload,status=200):
             body=json.dumps(payload,allow_nan=False).encode();self.send_response(status)
             self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        def reject_post(self):
+            # A small POST body can still be arriving when access is rejected.
+            # Drain it briefly so TCP close does not turn a 403 into a reset.
+            try:
+                length=int(self.headers.get('Content-Length','0'))
+                if 0<length<=4096 and not self.headers.get('Transfer-Encoding'):
+                    self.connection.settimeout(.025);self.rfile.read(length)
+            except (OSError,ValueError):pass
+            self.send_error(403)
         def do_POST(self):
-            if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.send_error(403);return
+            if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.reject_post();return
             if setup is None:self.reply({'error':'Calibration runtime is not configured.'},503);return
             route=urllib.parse.urlsplit(self.path).path
-            if route not in ('/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/reading-format','/api/reviews','/api/camera-setup'):self.send_error(404);return
+            if route not in ('/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -34,7 +44,13 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     digest=setup.add_reference(body);self.reply({'reference_sha256':digest});return
                 if self.headers.get_content_type()!='application/json':raise ValueError('JSON request required.')
                 data=json.loads(body)
-                if route=='/api/camera-setup':
+                if route=='/api/archive':
+                    if archive is None:self.reply({'error':'archive_unavailable'},503);return
+                    if not isinstance(data,dict):raise ValueError('archive_action_invalid')
+                    if set(data)=={'action','config','revision'} and data['action']=='save':result=archive.save(data['config'],data['revision'])
+                    elif set(data)=={'action','revision'} and data['action']=='retry':result=archive.retry(data['revision'])
+                    else:raise ValueError('archive_action_invalid')
+                elif route=='/api/camera-setup':
                     if camera_setup is None:self.reply({'error':'camera_not_configured'},503);return
                     if not isinstance(data,dict) or set(data) != ({'action','revision','lighting'} if data.get('action')=='lighting-apply' else {'action'}):raise ValueError('invalid_camera_setup_action')
                     result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'))
@@ -50,6 +66,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 else:result=setup.save(data['reference_sha256'],data['design'],data['revision'])
                 self.reply(result)
             except ReviewConflict as exc:self.reply({'error':str(exc),'code':'review_conflict'},409)
+            except ArchiveConflict as exc:self.reply({'error':str(exc),'code':'archive_conflict'},409)
             except FileNotFoundError:self.reply({'error':'Capture not found.'},404)
             except sqlite3.Error:self.reply({'error':'Review storage is unavailable. Reload before retrying.'},503)
             except RecursionError:self.reply({'error':'Setup document is too deeply nested.'},400)
@@ -64,7 +81,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             route=urllib.parse.urlsplit(self.path).path
             if route=='/api/diagnostics':
                 from diagnostics import build
-                body=json.dumps(build(store,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption),indent=2,allow_nan=False).encode()
+                body=json.dumps(build(store,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,archive),indent=2,allow_nan=False).encode()
                 self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Disposition','attachment; filename="aiedge-diagnostics.json"');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             if store is None and (route.startswith('/api/') or route.startswith('/image/') or route.startswith('/reference/')):
                 self.reply({'error':'App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.','code':'storage_startup_failed'},503);return
@@ -85,6 +102,9 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from reading_format import reconcile_reading
                 state['reading']=reconcile_reading(state['reading'],state['consumption'])
                 body=json.dumps(state).encode();kind='application/json'
+            elif route=='/api/archive':
+                state=archive.status() if archive else {'state':'unavailable','error':'archive_unavailable'}
+                body=json.dumps(state).encode();kind='application/json'
             elif route=='/api/camera-setup':
                 state=camera_setup.status() if camera_setup else {'configured':False,'state':'idle','camera_settings_supported':False}
                 body=json.dumps(state).encode();kind='application/json'
@@ -102,7 +122,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js'):
+            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/archive.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -198,15 +218,20 @@ def run_service(stop_signals):
         from review_store import Reviews
         try:reviews=Reviews(store,recognition)
         except (OSError,sqlite3.Error):pass
+    archive=None
+    if store:
+        from archive import Archive
+        try:archive=Archive(store)
+        except (OSError,sqlite3.Error,ValueError):pass
     from camera_setup import CameraSetup
     from camera_lighting import CameraLighting
     lighting=CameraLighting(camera,args.data) if camera else None
     if camera:camera.lighting=lighting
     preview=CameraSetup(camera,setup,interval,enabled,lighting) if store and configuration.get('state')=='ready' else None
     stop_signals.checkpoint()
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview))
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption,preview),signals=stop_signals).run():
+    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption,preview,archive),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
 def main():
     from lifecycle import StartupSignals,StartupStopped,lifecycle_event
