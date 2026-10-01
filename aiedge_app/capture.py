@@ -187,12 +187,21 @@ class Camera:
         if token and (username or password):raise ValueError('choose_one_camera_auth_method')
         if bool(username)!=bool(password) or ':' in username or any(c in username+password for c in ('\r','\n')):raise ValueError('invalid_camera_credentials')
         self.origin=url.rstrip('/');self.token=token
+        self.operation_lock=threading.RLock();self.lighting=None
         self.basic=base64.b64encode((username+':'+password).encode('utf-8')).decode('ascii') if username else None
         self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),DeadlineHTTPHandler(),DeadlineHTTPSHandler())
+    @contextmanager
+    def operation(self):
+        if not self.operation_lock.acquire(blocking=False):raise ValueError('camera_busy')
+        try:yield
+        finally:self.operation_lock.release()
+    def require_capture(self):
+        if self.lighting is not None:self.lighting.require_capture()
     def readiness(self):
         from camera_status import probe
         return probe(self)
     def capture(self):
+        self.require_capture()
         headers={'Content-Type':'application/json'}
         if self.token:headers['Authorization']='Bearer '+self.token
         elif self.basic:headers['Authorization']='Basic '+self.basic
@@ -237,6 +246,17 @@ class Collector:
     def __init__(self,store,camera,interval):
         self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None;self.camera_state={'state':'not_checked'}
     def once(self):
+        # Serialize the whole status/capture pair against camera-setting jobs.
+        from contextlib import nullcontext
+        try:
+            with self.camera.operation() if hasattr(self.camera,'operation') else nullcontext():
+                if hasattr(self.camera,'require_capture'):self.camera.require_capture()
+                self._once()
+        except ValueError as error:
+            self.last_error={'error':str(error) if str(error) in ('camera_busy','camera_lighting_unverified') else 'camera_connection_failed'}
+            try:self.store.fail(self.last_error['error'])
+            except (AttributeError,OSError,sqlite3.Error):pass
+    def _once(self):
         try:
             self.store.require_space()
             # One passive check per scheduled cycle. It is an admission snapshot,

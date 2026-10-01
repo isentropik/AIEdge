@@ -17,7 +17,7 @@ class StorageTests(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def disk(self,free):return patch('capture.shutil.disk_usage',return_value=SimpleNamespace(free=free))
     def test_low_space_prevents_camera_request_and_recovers(self):
-        camera=Mock(origin='fixture');camera.readiness.return_value={'state':'ready'};camera.capture.return_value=(JPEG,headers())
+        camera=Mock(spec=['origin','readiness','capture'],origin='fixture');camera.readiness.return_value={'state':'ready'};camera.capture.return_value=(JPEG,headers())
         collector=Collector(self.store,camera,30)
         with self.disk(MIN_FREE_BYTES):
             collector.once();camera.capture.assert_not_called()
@@ -41,12 +41,12 @@ class StorageTests(unittest.TestCase):
         with self.disk(MIN_FREE_BYTES):self.assertTrue(self.store.add('fixture',JPEG,headers('2')))
         self.assertEqual(self.store.status()['unique_images'],1)
     def test_unknown_space_does_not_capture(self):
-        camera=Mock(origin='fixture');collector=Collector(self.store,camera,30)
+        camera=Mock(spec=['origin','readiness','capture'],origin='fixture');collector=Collector(self.store,camera,30)
         with patch('capture.shutil.disk_usage',side_effect=OSError('unmounted')):
             collector.once();camera.capture.assert_not_called()
             self.assertEqual(collector.last_error['error'],'storage_unavailable')
     def test_failure_to_write_error_does_not_terminate_worker(self):
-        collector=Collector(self.store,Mock(origin='fixture'),30)
+        collector=Collector(self.store,Mock(spec=['origin','readiness','capture'],origin='fixture'),30)
         with self.disk(0),patch.object(self.store,'fail',side_effect=sqlite3.OperationalError('disk full')):
             collector.once()
         self.assertEqual(collector.last_error['error'],'storage_low_space')

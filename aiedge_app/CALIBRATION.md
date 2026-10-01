@@ -53,7 +53,8 @@ editor overwriting a newer profile. Atomic replacement occurs under the recognit
 frame lock; rejected candidates and failed writes leave the active reader unchanged.
 Reference files are not captures, training labels, or accuracy evidence. Creation of
 a usable geometry does not prove that existing models generalize to a new meter.
-The local Calibration editor and setup HTTP endpoints now use this path. Camera
-connection and lighting setup remain separate pending stages. Number format is now
+The local Calibration editor and setup HTTP endpoints use this path. Lighting
+and Image precede Alignment and Dials. Configure the compatible camera's address
+in the HA app options; setup never enables automatic capture. Number format is
 available as a separate page. The setup editor and physical-reading calculation
 currently support at most 16 dials, although the low-level geometry ABI accepts 32.

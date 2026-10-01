@@ -8,6 +8,7 @@ const captureErrors={
  camera_authentication_failed:'Camera login was rejected. Check its credentials in app configuration.',
  camera_api_unavailable:'This camera firmware does not provide the remote capture API.',
  camera_busy:'Camera is busy. The next scheduled capture will try again.',
+ camera_lighting_unverified:'Lighting activation is unverified. Open Setup → Lighting to load and activate the saved settings. No picture was requested.',
  camera_unavailable:'Camera is unavailable. Check the device and camera connection.',
  camera_clock_unsynchronized:'Camera is waiting for its clock to synchronize.',
  camera_clock_changed:'Camera time changed during capture. That image was rejected.',

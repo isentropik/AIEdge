@@ -1,5 +1,13 @@
 # Changes
 
+## 0.2.0-dev11 (review candidate)
+
+- Add a separate Lighting step with explicit camera-settings loading, built-in or addressable lighting, GPIO, pixel format/count, dedicated white, RGB and custom channel mix. Brightness belongs on Image and scales the selected light.
+- Use the installed camera's existing conflict-protected save and lighting-activation handlers. Preserve unrelated configuration bytes; unchanged choices cause no SD write. Lighting applies without restarting the camera.
+- Persist uncertain write/activation state and block new captures until saved choices are loaded and explicitly activated. Do not retry uncertain writes automatically. Camera credentials and raw configuration are not sent to the browser or stored in the intent record.
+- Gray a stale photo and highlight its centered Take picture button; retain an unchanged reference. Keep camera model visible and custom RGBW mix free of the RGB picker. Hide the mobile step-strip scrollbar without causing page overflow.
+- Preserve models, native cores, calculations, calibration, number format and application options. Exposure, gain and sensor orientation still use the camera website. Physical lighting behavior has not been verified by this candidate.
+
 ## 0.2.0-dev10 (review candidate)
 
 - Add a compact guided setup: Image, Alignment, Dials, Number format, Data and Finish. Next validates and applies the relevant step; finishing does not restart the camera or enable capture/MQTT.
@@ -7,7 +15,7 @@
 - Keep the reference beside controls on desktop and visible while scrolling controls on mobile. Add grid, zoom and fit icons without altering image pixels.
 - Reuse an unchanged reference and calibration. A different reference requires fresh geometry. Failed image loads retain the old reference.
 - Add explicit, asynchronous camera checks and setup photos. Page navigation never probes or captures from the camera. Verified photos become reference candidates, not reading events or training labels.
-- Add Settings for camera status, local HA storage and diagnostics. Lighting, exposure and camera-side orientation remain on the camera website because the capture API has no management endpoints.
+- Add Settings for camera status, local HA storage and diagnostics. Camera setting controls remained on the camera website in this version; dev11 integrates the existing lighting handlers.
 - Fix stale navigation, legacy calibration bookmarks and selection resets. Use one specific setup error instead of duplicate notifications.
 - Preserve trained models, native cores, physical calculation, saved reader assumptions and application options.
 

@@ -10,8 +10,9 @@ This is an experimental **amd64** build for Home Assistant OS. One Linux amd64
 installation has built, processed saved images and retained six-dial calibration
 and number format after restarts. A September 30 dev8 trial received three photos
 about 30 seconds apart with no transfer failures. This short trial does not verify
-sustained operation or reading accuracy. Full Linux regressions and MQTT integration
-remain unverified. Installation builds the app on your HA host and can take several
+sustained operation or reading accuracy. Dev10's Linux regressions and packaged
+startup checks passed; end-to-end MQTT integration remains unverified.
+Installation builds the app on your HA host and can take several
 minutes; check the app logs if it fails.
 
 1. Open **Settings → Apps → Install app**. From the three-dot menu, choose
@@ -91,23 +92,27 @@ lookup uses the operating system and can take longer than the response deadline.
 1. In the app configuration, enter the compatible camera's address. Use its token
    **or** its username and password, depending on its firmware. Keep capture disabled
    while preparing calibration. Changing app options currently requires an app restart.
-2. Open **Setup → Image**. Choose a saved 640 × 480 image or use the latest stored
+2. Open **Setup → Lighting** and explicitly **Load camera settings** if a camera is
+   configured. Select the installed light, strip type/count and white or RGB mode.
+   Next saves changed lighting and activates it without restarting the camera.
+   With no camera configured, continue using saved images.
+3. In **Image**, choose a saved 640 × 480 image or use the latest stored
    capture. With a compatible camera configured, **Take picture** requests one photo.
    Opening a page does not take a photo. An unchanged reference carries forward;
    replacing it with a different image requires new markers and dial geometry.
-3. Select **Next** to open **Alignment**. Place all three markers on fixed print,
+4. Select **Next** to open **Alignment**. Place all three markers on fixed print,
    spread across the image and away from needles or reflections. Use X/Y and size
    fields, or drag a box. Marker suggestions are available once dial crops exist.
-4. In **Dials**, use the selector to edit every dial, including the small wheel.
+5. In **Dials**, use the selector to edit every dial, including the small wheel.
    Draw a crop, mark four rim points clockwise from zero, then place the needle pivot.
    Select CW or CCW to match the printed scale. **Lock width / height** preserves
    proportions while resizing. Next validates the whole calibration before replacing
    the active one. Up to 16 dials are supported.
-5. In **Number format**, choose the units printed on the meter and enter the value
+6. In **Number format**, choose the units printed on the meter and enter the value
    represented by one full revolution of each dial. Focusing a value highlights that
    dial in the reference image. Direction comes from Dials. All dials participate;
    there are no separate main/secondary roles or per-dial inclusion switches.
-6. **Data** shows local storage and MQTT state. **Finish** summarizes saved choices.
+7. **Data** shows local storage and MQTT state. **Finish** summarizes saved choices.
    Open Overview when finished; the camera does not restart. Enable capture in app
    configuration when compatible camera firmware is available.
    The default interval is 30 seconds. **Captures** shows original saved images, while
@@ -115,9 +120,12 @@ lookup uses the operating system and can take longer than the response deadline.
 
 Desktop setup keeps the image beside its controls. Mobile places it above them and
 keeps it visible while you scroll the controls. Grid, zoom and fit change only the
-view. LED channels, exposure and sensor orientation remain on the camera's website;
-open it from **Settings → Camera and lighting controls**. The capture API does not
-yet allow the app to change those settings. See [UI parity](UI-PARITY.md).
+view. Image contains one brightness control for the selected light. A lighting
+change grays the previous photo and highlights Take picture; unchanged choices
+retain the existing reference. Failed or uncertain lighting activation blocks new
+captures until you load and explicitly activate the saved choices. Exposure, gain
+and sensor orientation remain on the camera website; open it from Settings.
+See [UI parity](UI-PARITY.md) for supported handlers and remaining controls.
 
 There is no tolerance or accuracy control in setup. Editing physical dial values
 preserves the saved reader's uncertainty assumptions. New formats currently use
