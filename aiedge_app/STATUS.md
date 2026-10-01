@@ -1,11 +1,31 @@
-Local dev8 candidate: startup stop handling, bounded worker/request draining,
-structured lifecycle logs and a 45-second Supervisor stop grace are prepared.
-This is an app-only correction. Windows checks cannot establish Linux container
-SIGTERM behavior or clean shutdown during a live camera transfer; those remain
-deployment validation steps. Installed dev7 and its capture/MQTT settings are
-unchanged. The cause of the previous Supervisor error has not been proven.
-
 # Current checkpoint — September 30, 2026
+
+September 30 dev8 checkpoint: experimental `0.2.0-dev8` is installed and
+started in Home Assistant after explicit chat approval, a fresh verified Time
+Machine backup and an AIEdge-only cold backup. Smart Backup was restored and
+verified. Automatic updates for experimental AIEdge are now disabled.
+
+The approved short trial stored three unique real-camera JPEGs with zero capture
+failures. Actual capture intervals were 29.99 and 29.95 seconds. Capture-to-receipt
+times ranged from 1.61 to 1.94 seconds; decoding, alignment, preprocessing and
+inference took 12 to 21 milliseconds. Both app stops reached the stopped state;
+structured logs show drained requests and no pending workers. These stops occurred
+after image transfer, so draining a hardware transfer in flight remains unverified.
+
+Original app options, reference, six-dial calibration, number format, pipeline
+identity and saved image history were verified after restoration. Capture and
+MQTT are off. No camera firmware, lighting, image-quality setting or device restart
+was changed by this deployment. New images are protected from training.
+
+This establishes a short capture/shutdown trial, not sustained reliability or
+reading accuracy. Fine absolute position and skipped whole wheel turns remain
+unresolved under the current history and rate assumptions. The user's `02558`
+confirmation belongs only to its specific earlier image. It is never a fixed
+prefix for subsequent captures. User-operated high-flow calibration is planned;
+it was not part of this trial. Evidence and rollback: `app-shutdown-dev8/` under
+`needle-training/firmware-port-tests/server-native-20260929/`; cold backup `030a429c`.
+
+Older checkpoints below are historical.
 
 The app source is published on `codex/aiedge-ha-app`. This is a development
 branch, not a release or live deployment. The earlier dated entries below are
