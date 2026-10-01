@@ -1,16 +1,27 @@
 # Changes
 
+## 0.2.0-dev9 (review candidate)
+
+- Check passive camera readiness before each scheduled capture and distinguish
+  missing hardware, unavailable settings, unsynchronized clocks and busy cameras.
+- Show feasible total ranges and the register digits shared by every current
+  range. Inconsistent estimates identify a conflicting dial group without
+  guessing which individual dial is wrong or publishing a replacement total.
+- Reconcile absolute offsets with existing cumulative-consumption bounds and
+  replay the decisions after restart. Unbounded intervals retain possible whole
+  turns. Changed interpretation starts a separate segment and retains old records.
+- Current source and format identities gate status and optional MQTT output;
+  pending or rejected captures cannot publish an earlier temporal estimate.
+- Preserve reference, calibration, model and native-core contracts. This candidate
+  does not flash the camera, change its settings or enable capture or MQTT.
+
 ## 0.2.0-dev8
 
-- Stop requests are handled during initialization, before capture workers start.
-- An app stop gives in-flight requests and workers a shared 35-second drain
-  deadline; Supervisor allows 45 seconds before a forced stop.
-- Startup, clean stops and drain timeouts produce structured app log events.
-- Coverage checks verify that imported runtime modules are packaged and require
-  startup/shutdown regressions. The Linux packaged-runtime test now checks a
-  successful SIGTERM exit as well as persistent storage.
-- Recognition, physical calculations, dependencies, calibration, saved images
-  and capture/MQTT options retain their dev7 behavior. No camera firmware change.
+- Handle stop requests during initialization and drain active requests and
+  workers within a shared 35-second deadline. Supervisor stop grace is 45 seconds.
+- Emit bounded readiness and shutdown events. A timed-out stop remains a failure.
+- Recognition models, calibration, physical calculations and native cores remain
+  unchanged. The approved three-image trial and two clean stops were verified.
 
 ## 0.2.0-dev7
 

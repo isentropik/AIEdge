@@ -1,4 +1,4 @@
-# Current checkpoint — September 30, 2026
+# Current checkpoint â€” September 30, 2026
 
 September 30 dev8 checkpoint: experimental `0.2.0-dev8` is installed and
 started in Home Assistant after explicit chat approval, a fresh verified Time
@@ -27,17 +27,158 @@ it was not part of this trial. Evidence and rollback: `app-shutdown-dev8/` under
 
 Older checkpoints below are historical.
 
-The app source is published on `codex/aiedge-ha-app`. This is a development
-branch, not a release or live deployment. The earlier dated entries below are
+September 30 dev7 checkpoint: experimental `0.2.0-dev7` is installed and
+running in Home Assistant. Fresh verified Time Machine and AIEdge-only backups
+preceded the update. Reference, six-dial calibration, ft3 format, original
+options and recognition pipeline were preserved. The approved temporary capture
+trial stored one new 640 by 480 JPEG through the actual Linux app client; local
+readback verified its 29,327 bytes and SHA256. Capture-to-receipt time was 5.05
+seconds; this is not the full request duration. All six dial estimates were
+produced in about 19 milliseconds including decoding/preprocessing/inference.
+
+The trial ended early: the coordinator treated a startup ingress HTTP failure
+as terminal, then did not wait for its stop request to finish. Supervisor later
+reported an error state with no active app jobs. Original options were restored,
+AIEdge restarted successfully, and saved data/image persistence was verified.
+Capture and MQTT are off. The receipt is consumed as partially verified; no
+trial or uncertain stop was blindly retried. The coordinator's startup waiting
+and stop observation are corrected locally with 11 passing fake-Supervisor
+checks. Sustained capture cadence and clean active-capture shutdown still need
+verification. No ESP32 firmware, lighting, quality setting or restart changed.
+
+The current combined physical reading remains ambiguous. With a 0.1 position
+error on the 1,000-ft3 dial, several full 5-ft3 secondary turns fit a single
+image. The diagnostic first-five-dial value is only an unverified estimate;
+no live format or tolerance was changed to manufacture a precise total.
+Real-image accuracy remains unverified. The new trial image is excluded from
+training. Evidence, backup identifiers and restore instructions are in
+`needle-training/firmware-port-tests/server-native-20260929/app-transport-dev7/`.
+
+Previous dev6 checkpoint follows.
+
+September 30 app update: experimental `0.2.0-dev6` is installed and started
+on Home Assistant. Fresh Time Machine and AIEdge-only backups were verified;
+the reference image, six-dial calibration, ft3 number format, options and native
+pipeline identity are unchanged. Automatic capture and MQTT remain off. No
+ESP32 firmware update or device restart was made during this app deployment.
+
+All three approved local Windows requests through the exact frozen dev6 client
+were issued once and timed out at the absolute 20-second deadline. Traced
+responses had valid JPEG and timestamp headers but incomplete image bodies.
+Passive downloads of the already saved reference JPEG also stalled with both
+clients. The meter still reported camera ready and 42m 46s uptime after the
+capture attempts. A later RSSI read was -84 dBm. A bounded full-size ping probe lost two of
+four packets; four subsequent small pings passed. These sequential small samples
+support a network contribution, not an established sole cause or sustained loss
+rate. Reliable transfer,
+real-image accuracy, clock continuity and sustained cadence remain unverified.
+The app update approval is consumed as partially verified: installation and
+preservation passed, capture validation failed. Evidence and restore steps:
+`needle-training/firmware-port-tests/server-native-20260929/app-transport-dev6/`.
+The client change removes the separate five-second idle cap while preserving
+the total deadline; its local delayed-body regression passes, but the current
+hardware transfer still stalls.
+
+Previous firmware checkpoint (before the dev6 app update):
+
+Latest camera state: the approved timestamp correction is installed and its
+exact bundle boot identity is verified. After the user cold boot, the camera
+became ready; settings/reference hashes and embedded pages passed verification.
+All three approved captures were requested exactly once. One diagnostic-client
+capture returned a valid 640 by 480 JPEG with matching hash, UTC, numeric tick
+and frame ID; transfer took 14 seconds. Both normal app-client requests timed
+out. Final camera status remained ready and uptime continued without another
+restart. This verifies the timestamp correction on one image, not reliable app
+capture, clock continuity, accuracy or sustained cadence. HA capture/MQTT remain
+off. At this earlier firmware checkpoint, a local client timeout correction passed
+39 host capture/clock checks, including a delayed-body regression. Its subsequent
+dev6 app deployment and failed hardware transfer checks are recorded above. The
+GPIO32 warm-start reset defect is also local and unproven as the hardware cause.
+Automatic bootloader rollback remains absent. Evidence: timestamp deployment
+`result.json`; the single-attempt approval is consumed as partially verified.
+
+The camera checkpoints below are earlier evidence.
+
+Latest camera checkpoint, September 30: the approved recovery package now boots
+on the original meter, with camera ready, embedded recovery pages accessible and
+saved configuration/reference bytes preserved. All three approved captures were
+requested. The firmware emitted invalid monotonic ticks (`ld`) and repeated frame
+suffixes (`lx`), so none was admitted as a valid capture. Two diagnostic JPEGs
+were preserved with valid raw hashes and UTC timestamps, excluded from training.
+The 64-bit formatting correction passed local host regressions; deployment of that
+correction remains separate. HA app capture/MQTT are still off. The old migration
+and SD recovery entries below describe earlier checkpoints, not current readiness.
+
+The app source is published on `codex/aiedge-ha-app`. Experimental version
+`0.2.0-dev6` is installed on one Home Assistant host; this is not a release.
+The earlier dated entries below are
 historical checkpoints; this section describes the current state.
 
+- The approved camera migration selected its new flash image, then panic-reset
+  repeatedly on the production meter at 10.1.0.127. The approved SD lighting
+  workaround was tested on that meter and failed before its intended validation
+  message. The user then moved the same SD card into a different backup board,
+  connected on COM10 at 10.1.0.83. Its September 25 firmware remains in that
+  board's flash; retained SD logs provide the failed meter's startup evidence.
+  They do not contain its UART backtrace. No validation captures were taken.
+- A separate-stack startup correction and persistent internal-NVS interrupted
+  startup guard are built, packaged and tested locally. Host tests cover the
+  production startup admission branch, storage failures and both status modes;
+  they do not prove the hardware crash cause or recovery. The guard does not
+  write to SD and commits internal NVS twice per successful initialization,
+  never per capture/status request. Existing device logging still writes to SD.
+  The separately approved SD recovery disabled only the failed application's
+  bundle index and restored the original configuration. The original meter
+  at 10.1.0.127 now serves reduced HTTP status, detects its camera and reached
+  3m 51s uptime in bounded checks. Capture settings remain unavailable. The
+  updater status API responds, but its bundle-dependent page returns 404.
+  Known-working firmware restoration and pre-HTTP recovery remain unverified.
+  Neither board has received the corrected firmware. The HA app is unchanged.
+- Firmware-resident recovery status and update pages are now implemented and
+  built locally. They do not depend on SD web assets; the status page avoids the
+  old broken links and repeated per-visit SD error write. The existing update
+  client preserves separate upload/verify/install actions and no automatic
+  restart or uncertain-write retry. Handler/auth/failure tests and seven client
+  regressions pass. Desktop/light and mobile/dark previews were inspected; the
+  390-pixel mobile layout has no horizontal overflow. Exact package identity and
+  host staging evidence are in `server-native-20260929/recovery-pages-validation-20260930.json`.
+  This does not establish production firmware recovery or authorize a new flash.
+- The exact recovery-flash review now binds the current original-meter baseline,
+  candidate ZIP/binary and all 141 packaged assets. A separate deployment runner
+  passed 27 local regressions covering explicit approval/exception gates, fresh
+  Time Machine backup and Smart Backup restoration, retained file hashes,
+  uncertain writes without repeats, same-job observation, one restart, camera
+  admission and three simulated hash-checked JPEGs kept excluded from training.
+  A real missing-approval command also refuses to start under Python optimization.
+  These tests use simulated endpoints and temporary stores, not hardware.
+  Evidence and operator instructions: `server-native-20260929/flash-readiness-20260930/`.
+  Exact OTA approval remains pending; no new device or HA write was made.
+- The latest local validation passed 213 app tests with native libraries,
+  both pinned models and private archive replay, plus 23 dashboard/crop/reference
+  UI checks. The Linux-only packaged-runtime test was skipped on Windows. A new
+  production startup-helper test passed 15 cases, including the original card
+  configuration and rejection of the temporary recovery configuration. Sensor
+  setters and journal I/O are substituted; no physical boot/capture is claimed.
+  September 30 PyPI metadata still matches all four direct dependency pins.
+- Locally prepared app changes add one passive readiness request per scheduled
+  capture cycle. Unready settings, an unsynchronized clock, a busy camera,
+  unavailable camera or demo mode prevent the picture request. The snapshot is
+  distinct from capture completion, image persistence and reading accuracy.
+  This requires the new camera status API and is not deployed on Home Assistant.
+- The approved dev3-to-dev5 update passed on September 30 at 18:11 UTC. A fresh
+  Time Machine backup and cold app-only Supervisor backup were verified before
+  deployment. The actual Linux runtime accepted the saved six-dial reference;
+  its image hash and calibration were preserved. The existing ftÂ³ number format
+  was rebound to the new pipeline and persisted after an app-only restart.
+  Capture and MQTT remain disabled. This verifies installation and persistence,
+  not real-image accuracy or a live camera workflow.
 - The `0.2.0-dev3` container built and started on a Home Assistant Linux amd64
   host on September 30. Read-only checks verified the HTML/CSS and status, setup,
   number-format, diagnostics and history endpoints. Storage is ready, with zero
   captures and capture/MQTT disabled. Python 3.14.7 and the pinned dependency
   versions are reported. The approved saved-image test passed: three markers, six dial crops and separate
   fixed pivots were accepted by the actual native/model runtime. The reference hash,
-  calibration and ft³ format persisted after an AIEdge-only restart. Capture and MQTT
+  calibration and ftÂ³ format persisted after an AIEdge-only restart. Capture and MQTT
   stayed disabled. Time Machine and a cold app-only Supervisor backup were verified
   before the writes. The full Linux suite and live camera/MQTT tests remain pending;
   this is not an accuracy or release claim.
@@ -48,7 +189,7 @@ historical checkpoints; this section describes the current state.
   remain visible at smaller image scales, with a wider touch hit area. All four
   pages were checked at 320, 390, 768 and 1280px without horizontal overflow;
   actual phone Safari/Android and HA Ingress rendering still need a device check.
-- The local `0.2.0-dev5` candidate compares exact source pixels per dial after
+- Installed `0.2.0-dev5` compares exact source pixels per dial after
   validating alignment. Identical regions reuse extraction and model results; changed
   regions take the full path. Changed registration, failed alignment, poor visibility,
   sampling changes and model errors cannot reuse an unvalidated result. Cached work
@@ -61,7 +202,7 @@ historical checkpoints; this section describes the current state.
   crops, with an undo action. Proposals stay in the draft and require review; they do
   not recognize printed symbols or guarantee that a feature is stationary. Insufficient
   texture or spacing leaves the existing markers untouched.
-- Saved-image review is available from Captures, with manual 0–10 positions, unknown
+- Saved-image review is available from Captures, with manual 0â€“10 positions, unknown
   entries and a separate numbered calibration-reference map. Immutable revisions
   preserve the image hash, calibration, model hashes and pipeline identity. Duplicate
   images share a review; stale calibration/tab edits are rejected. Review does not
@@ -91,7 +232,7 @@ historical checkpoints; this section describes the current state.
 - Disk/database failures no longer kill the recognition worker. Invalid reference
   files and extreme/nonfinite landmarks fail validation without replacing calibration.
   Setup is limited to the 16 dials supported by the physical calculation.
-- Desktop 1440 × 900 and mobile 320 × 760 / 390 × 844 viewport checks covered light/dark themes, compact
+- Desktop 1440 Ã— 900 and mobile 320 Ã— 760 / 390 Ã— 844 viewport checks covered light/dark themes, compact
   format layout, reference highlighting, no horizontal overflow, calibration labels,
   and disconnect/reconnect status. Invalid format saves preserve the prior file.
 
@@ -212,7 +353,7 @@ labels. Duplicate captures are not new accuracy evidence. Evidence:
 `server-native-20260929/review-capture-trial-20260930/result.json` in the workspace.
 
 A 245-second local trial processed nine unique archived images with the actual native
-pipeline and LiteRT models. Requests were 29.984–30.016 seconds apart; no missed slots
+pipeline and LiteRT models. Requests were 29.984â€“30.016 seconds apart; no missed slots
 or capture failures occurred. All nine produced dial estimates. Maximum processing
 was 0.040718 seconds. The 122 concurrent status requests had 0.023817-second p95 and
 0.029649-second maximum latency. Trial capture timestamps/frame IDs were simulated in

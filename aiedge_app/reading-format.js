@@ -88,12 +88,37 @@ window.openReadingFormat=()=>load();
 window.addEventListener('aiedge-refresh-images',event=>{if(event.detail==='format'&&!picture&&!busy&&loaded)loadPreview(referenceDigest);});
 window.renderPhysicalReading=(reading,recognition)=>{
  $('meter-value').textContent='—';$('meter-unit').textContent='';
+ $('reading-bounds').hidden=true;$('reading-ranges').replaceChildren();
  if(!reading)return;
  if(reading.state==='not_configured'&&recognition&&recognition.state!=='estimated')return;
  const messages={not_configured:'Set the number format to calculate a reading.',inconsistent:'Dial positions disagree. No reading published.',ambiguous:'More than one reading is possible.',invalid:'The number format is invalid.',unavailable:'No reading available.'};
  if(reading.state==='estimated'&&typeof reading.text==='string'){
   $('meter-value').textContent=reading.text;$('meter-unit').textContent=units[reading.unit]||reading.unit;
   $('reading-status').textContent='Estimate · accuracy not yet verified';return;
+ }
+ if(reading.state==='inconsistent'&&Array.isArray(reading.consistency?.dial_indices)){
+  const indices=reading.consistency.dial_indices;
+  if(indices.length>1&&indices.length<=16&&indices.every(i=>Number.isInteger(i)&&i>=0&&i<32)){
+   $('reading-status').textContent='Dials '+indices.map(i=>i+1).join(', ')+' disagree within the reading tolerances. No total published.';
+   return;
+  }
+ }
+ const bounds=reading.bounds;
+ if(reading.state==='ambiguous'&&bounds?.state==='bounded'&&Array.isArray(bounds.ranges)&&bounds.ranges.length){
+  const unit=units[reading.unit]||reading.unit;
+  $('reading-status').textContent='Reading unresolved. No total published.';
+  if(typeof bounds.common_integer_prefix==='string'&&/^\d+$/.test(bounds.common_integer_prefix)){
+   $('meter-value').textContent=bounds.common_integer_prefix+'…';$('meter-unit').textContent=unit;
+   $('reading-status').textContent='Fine reading unresolved. No total published.';
+  }
+  $('reading-bounds-label').textContent=bounds.ranges.length===1?'Possible range':bounds.ranges.length+' possible ranges';
+  for(const range of bounds.ranges){
+   const row=document.createElement('li');
+   row.textContent=range.lower_text+' – '+range.upper_text+' '+unit;
+   $('reading-ranges').append(row);
+  }
+  $('reading-bounds-note').textContent=bounds.wraps_register?'The ranges cross the register rollover. They depend on the configured dial tolerances.':'These ranges depend on the configured dial tolerances; accuracy is unverified.';
+  $('reading-bounds').hidden=false;return;
  }
  if(reading.reason==='reading_pipeline_changed')$('reading-status').textContent='Review the number format after the calibration change.';
  else if(reading.state!=='unavailable'||!['image_unavailable','reading_pipeline_changed'].includes(reading.reason))$('reading-status').textContent=messages[reading.state]||'No reading available.';

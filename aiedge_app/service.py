@@ -67,6 +67,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if route=='/api/status':
                 state=store.status();state.update(capture_enabled=collector is not None,missed_slots=collector.missed_slots if collector else 0)
                 state['configuration']=configuration or {'state':'ready'}
+                state['camera']=dict(collector.camera_state) if collector else {'state':'not_checked'}
                 state['last_failure']=state['last_error']
                 state['last_error']=collector.last_error if collector else None
                 state['interval_seconds']=collector.interval if collector else None
@@ -77,6 +78,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state['recognition_error']=recognition.last_error if recognition else None
                 state['mqtt']=mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}
                 state['consumption']=consumption.status() if consumption else {'state':'unavailable' if consumption_error else 'not_configured','reason':consumption_error,'value':None,'accuracy_verified':False,'training_allowed':False}
+                from reading_format import reconcile_reading
+                state['reading']=reconcile_reading(state['reading'],state['consumption'])
                 body=json.dumps(state).encode();kind='application/json'
             elif route=='/api/reading-format':
                 state=reading_format.status() if reading_format else {'revision':None,'format':None}
@@ -166,6 +169,8 @@ def run_service(stop_signals):
         def publication_snapshot():
             inference=recognition.latest();reading=reading_format.evaluate(inference);saved=reading_format.status()
             if reading.get('format_id')!=saved['revision']:reading={'state':'unavailable','value':None}
+            from reading_format import reconcile_reading
+            reading=reconcile_reading(reading,consumption.status() if consumption else None)
             return {'latest':store.status()['latest'],'reading':reading,'format':saved['format']}
         try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval)
         except (OSError,ValueError,UnicodeError):

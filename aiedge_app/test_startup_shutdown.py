@@ -122,8 +122,17 @@ class RuntimeTests(unittest.TestCase):
         blob=b'\xff\xd8lifecycle-fixture\xff\xd9'
         entered,release=threading.Event(),threading.Event()
         class CameraFixture(BaseHTTPRequestHandler):
-            count=0
+            count=0;checks=0
             def log_message(self,*args):pass
+            def do_GET(self):
+                assert self.path=='/api/v1/camera'
+                CameraFixture.checks+=1
+                body=json.dumps({'protocol_version':1,'mode':'remote-camera','state':'ready',
+                    'camera_available':True,'settings_ready':True,'clock_synchronized':True,
+                    'capture_path':'/api/v1/capture','capture_method':'POST',
+                    'capture_clock_metadata':True,'image_sha256':True}).encode()
+                self.send_response(200);self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
             def do_POST(self):
                 self.rfile.read(int(self.headers.get('Content-Length','0')));CameraFixture.count+=1
                 self.send_response(200);self.send_header('Content-Type','image/jpeg');self.send_header('Content-Length',str(len(blob)))
@@ -142,6 +151,7 @@ class RuntimeTests(unittest.TestCase):
                     runtime.request_stop();self.assertTrue(collector.stop.is_set());release.set()
                     thread.join(3);self.assertFalse(thread.is_alive());self.assertEqual(result,[True])
                     self.assertEqual(CameraFixture.count,1)
+                    self.assertEqual(CameraFixture.checks,1)
                     self.assertEqual(Store(directory).status()['captures'],1,collector.last_error)
                     self.assertFalse(store.status()['training_allowed'])
                 finally:release.set();runtime.request_stop();thread.join(3)

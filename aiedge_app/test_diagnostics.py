@@ -12,6 +12,8 @@ class DiagnosticsTests(unittest.TestCase):
             store=Store(directory)
             (Path(directory)/'options.json').write_text(json.dumps({'camera_password':'PRIVATE-PASSWORD','camera_url':'http://PRIVATE-CAMERA'}),encoding='utf-8')
             collector=SimpleNamespace(interval=30,missed_slots=1,last_error={'error':'PRIVATE-ERROR'},camera=SimpleNamespace(origin='PRIVATE-CAMERA'))
+            collector.camera_state={'state':'busy','mode':'remote-camera','settings_ready':False,
+                                    'private':'PRIVATE-CREDENTIAL','checked_at':'PRIVATE-TIME'}
             reader=SimpleNamespace(dials=[{'name':'PRIVATE-NAME'}],pipeline_id='a'*64)
             recognition=SimpleNamespace(lock=threading.Lock(),reader=reader,last_error='PRIVATE-INFERENCE')
             setup=SimpleNamespace(status=lambda:{'calibration':{'private':'PRIVATE-GEOMETRY'},'recovery':{'detail':'PRIVATE-ERROR'}})
@@ -21,6 +23,7 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertNotIn('PRIVATE-',text);self.assertNotIn(directory,text)
             self.assertEqual(report['capture']['captures'],0)
             self.assertTrue(report['capture']['current_failure'])
+            self.assertEqual(report['camera'],{'state':'busy','mode':'remote-camera','settings_ready':False})
             self.assertTrue(report['calibration']['recovery_required'])
     def test_consumption_diagnostics_omit_quantities_timestamps_and_private_errors(self):
         consumption=SimpleNamespace(last_error='PRIVATE-ERROR',status=lambda:{'state':'estimated','value':123.4,'unit':'PRIVATE-UNIT','anchor_captured_at':'PRIVATE-TIME','segment_id':'PRIVATE-SEGMENT'})

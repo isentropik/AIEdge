@@ -23,7 +23,10 @@ def inventory_errors(identifiers,allow_archive,packaged):
     for prefix,minimum in (('test_consumption.AccountingTests.',20),('test_consumption.FormatBoundTests.',3),
                            ('test_synthetic_pipeline.GeneratedPipelineTests.',3),
                            ('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5),
-                           ('test_changed_dials.ChangedDialTests.',12),('test_startup_shutdown.StartupTests.',3),
+                           ('test_changed_dials.ChangedDialTests.',12),('test_reading_bounds.BoundTests.',8),
+                           ('test_reading_bounds.IntegrationTests.',3),('test_startup_shutdown.StartupTests.',3),
+                           ('test_temporal_reading.TemporalTests.',10),('test_temporal_reading.PublicationTests.',4),
+                           ('test_reading_consistency.ConsistencyTests.',5),('test_reading_consistency.IntegrationTests.',1),
                            ('test_startup_shutdown.RuntimeTests.',5),('test_runtime_copy.RuntimeCopyTests.',4),
                            ('test_lifecycle.LifecycleTests.',2)):
         if sum(name.startswith(prefix) for name in identifiers)<minimum:

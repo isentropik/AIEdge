@@ -6,6 +6,7 @@ from datetime import datetime
 from accounting_native import AccountingNative
 from recognition import decode_result,MAX_RESULT_BYTES
 from reading_format import validate,display_quantity,finite_number
+from temporal_reading import TemporalReading
 
 MAX_RECORD_BYTES=65536
 class SegmentChanged(Exception):pass
@@ -14,11 +15,12 @@ class Consumption:
     def __init__(self,store,recognition,formats,library):
         self.store,self.recognition,self.formats=store,recognition,formats
         self.native=AccountingNative(library)
-        dependencies=('consumption.py','accounting_native.py','reading_format.py','capture_clock.py','recognition.py')
+        dependencies=('consumption.py','accounting_native.py','reading_format.py','capture_clock.py','recognition.py',
+                      'temporal_reading.py','reading_bounds.py')
         contract={'native':self.native.identity,'sources':{name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in dependencies},'schema':1}
         self.engine=hashlib.sha256(json.dumps(contract,sort_keys=True).encode()).hexdigest()
         self.stop=threading.Event();self.lock=threading.Lock();self.last_error=None;self.blocked=False
-        self.tracker=None;self.segment=None;self.cursor=0;self.previous=None;self.anchor=None
+        self.tracker=None;self.absolute=None;self.segment=None;self.cursor=0;self.previous=None;self.anchor=None
         self.state={'state':'not_configured','value':None,'accuracy_verified':False,'training_allowed':False}
         with store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -30,10 +32,11 @@ class Consumption:
             db.execute('SELECT segment_id,event_id,result FROM consumption_records LIMIT 0')
     def _drop(self):
         if self.tracker:self.tracker.close()
-        self.tracker=None;self.segment=None;self.previous=None;self.anchor=None
+        self.tracker=None;self.absolute=None;self.segment=None;self.previous=None;self.anchor=None
     def _activate(self,segment,document):
         tracker=self.native.tracker(document)
         self._drop();self.tracker=tracker;self.segment=segment;self.document=document
+        self.absolute=TemporalReading(document)
         self.cursor=segment['first_event']-1
         self.state={'state':'recovering','value':None,'segment_id':segment['segment_id'],
                     'accuracy_verified':False,'training_allowed':False}
@@ -49,6 +52,7 @@ class Consumption:
                 db.execute('INSERT INTO consumption_active VALUES(1,?) ON CONFLICT(singleton) DO UPDATE SET segment_id=excluded.segment_id',(segment['segment_id'],))
         except Exception:tracker.close();raise
         self._drop();self.tracker=tracker;self.segment=segment;self.document=document;self.cursor=first-1
+        self.absolute=TemporalReading(document)
         self.state={'state':'recovering','value':None,'segment_id':segment['segment_id'],'accuracy_verified':False,'training_allowed':False}
     def _prepare(self,identity,document):
         with self.store.connect() as db:
@@ -76,7 +80,8 @@ class Consumption:
         return {'event_id':event,'source_sha256':digest,'format_id':self.segment['format_id'],
                 'segment_id':self.segment['segment_id'],'unit':self.document['unit'],'value':None,
                 'average_rate_per_second':None,'accuracy_verified':False,'training_allowed':False,
-                'gap_reason':self.segment['gap_reason']}
+                'gap_reason':self.segment['gap_reason'],
+                'absolute':{'state':'unavailable','value':None,'accuracy_verified':False,'training_allowed':False}}
     def once(self):
         # Calibration, physical interpretation, replay and persistence cannot mix.
         with self.recognition.lock,self.formats.lock,self.lock:
@@ -129,6 +134,7 @@ class Consumption:
                         else:
                             if self.anchor is None:self.anchor={'captured_at':stamp,'monotonic_us':tick,'camera':camera}
                             output.update({key:native[key] for key in ('state','minimum','maximum','value','upper_unbounded')})
+                            output['absolute']=self.absolute.observe(positions,native)
                             output.update(anchor_captured_at=self.anchor['captured_at'],through_captured_at=stamp,
                                           elapsed_seconds=(native['through_us']-native['anchor_us'])/1e6)
                             if native['through_us']==native['anchor_us']:output.update(state='anchored',value=0)
@@ -175,7 +181,9 @@ class Consumption:
             active=db.execute('SELECT segment_id FROM consumption_active WHERE singleton=1').fetchone()
         if segment and (not active or active[0]!=segment):return {'state':'recovering','value':None,'accuracy_verified':False,'training_allowed':False}
         if latest>cursor and state.get('state') not in ('not_configured','unavailable','pending','recovering'):
-            return {**state,'state':'pending','value':None,'text':None,'average_rate_per_second':None,'average_rate_per_minute_text':None,'reason':'consumption_waiting_for_latest_capture'}
+            return {**state,'state':'pending','value':None,'text':None,'average_rate_per_second':None,'average_rate_per_minute_text':None,
+                    'absolute':{'state':'pending','value':None,'accuracy_verified':False,'training_allowed':False},
+                    'reason':'consumption_waiting_for_latest_capture'}
         return state
     def run(self):
         try:

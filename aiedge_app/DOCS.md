@@ -64,6 +64,12 @@ pipeline before enabling capture or MQTT. A stale format is withheld rather than
 silently applied to a different pipeline.
 
 Capture starts only when `capture_enabled` is enabled and a camera URL is set.
+Each scheduled cycle first checks `GET /api/v1/camera`. It requests a picture only
+when the camera reports ready settings, synchronized time and an available camera.
+An unready or unreachable camera is checked again at the next scheduled cycle;
+there is no immediate retry loop. This readiness snapshot does not guarantee that
+the subsequent capture will succeed. Firmware must provide both the status and
+capture APIs. The local command-line camera checker uses the same status parser.
 The existing r60 firmware does not implement the new capture API. Leave capture
 disabled until compatible camera firmware is installed. The app does not poll
 legacy raw-image or livestream endpoints. Camera credentials go only to the

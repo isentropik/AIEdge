@@ -10,7 +10,7 @@ class Tests(unittest.TestCase):
     def test_historical_failure_does_not_look_like_current_failure(self):
         from types import SimpleNamespace
         self.store.fail('earlier_capture_failed')
-        collector=SimpleNamespace(last_error=None,missed_slots=0,interval=30)
+        collector=SimpleNamespace(last_error=None,missed_slots=0,interval=30,camera_state={'state':'ready'})
         server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,collector))
         thread=threading.Thread(target=server.serve_forever);thread.start()
         origin='http://127.0.0.1:'+str(server.server_port)
@@ -19,6 +19,7 @@ class Tests(unittest.TestCase):
             self.assertIsNone(state['last_error']);self.assertEqual(state['failures'],1)
             self.assertEqual(state['last_failure']['error'],'earlier_capture_failed')
             self.assertEqual(state['interval_seconds'],30)
+            self.assertEqual(state['camera'],{'state':'ready'})
             collector.last_error={'error':'current_failure','at':'fixture'}
             with urllib.request.urlopen(origin+'/api/status') as response:state=json.load(response)
             self.assertEqual(state['last_error'],collector.last_error)

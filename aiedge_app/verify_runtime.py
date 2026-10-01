@@ -16,6 +16,22 @@ def main():
         assert net.get_tensor(out["index"]).shape==(1,360)
     reading=reader.native.reading([1000,100,10],[1.234,2.34,3.4],[.01,.01,.01])
     if reading['state']!='estimated' or abs(reading['value']-123.4)>1e-8:raise ValueError('reading_runtime_contract')
+    from reading_format import ReadingFormat
+    ambiguity_document={'version':1,'pipeline_id':'a'*64,'unit':'ft3','dials':[
+        {'index':0,'value_per_revolution':1000,'position_error':.1},
+        {'index':1,'value_per_revolution':5,'position_error':.01}]}
+    ambiguity=ReadingFormat(reader.native,ambiguity_document).evaluate({'state':'estimated','pipeline_id':'a'*64,
+        'dial_positions':[{'state':'estimated','position':1.1},{'state':'estimated','position':9}]})
+    if ambiguity['state']!='ambiguous' or ambiguity['value'] is not None or len(ambiguity['bounds']['ranges'])!=4:
+        raise ValueError('reading_ambiguity_runtime_contract')
+    inconsistent_document={**ambiguity_document,'dials':[
+        {'index':0,'value_per_revolution':10000,'position_error':.01},
+        {'index':1,'value_per_revolution':1000,'position_error':.1},
+        {'index':2,'value_per_revolution':5,'position_error':.01}]}
+    inconsistent=ReadingFormat(reader.native,inconsistent_document).evaluate({'state':'estimated','pipeline_id':'a'*64,
+        'dial_positions':[{'state':'estimated','position':p} for p in (9,1,0)]})
+    if inconsistent['state']!='inconsistent' or not inconsistent['consistency']['dial_indices'] or inconsistent['value'] is not None:
+        raise ValueError('reading_consistency_runtime_contract')
     if a.accounting_library:
         from accounting_native import AccountingNative
         document={'version':1,'pipeline_id':'a'*64,'unit':'ft3','dials':[{'index':0,'value_per_revolution':1000,'position_error':.1},{'index':1,'value_per_revolution':5,'position_error':.1}],'maximum_rate_per_second':.05}
@@ -25,5 +41,11 @@ def main():
             value=tracker.observe([.01,2],31000000,'runtime-check')
             if value['state']!='estimated' or abs(value['value']-1)>1e-8:raise ValueError('accounting_runtime_contract')
         finally:tracker.close()
-    print('Native ABI, physical calculation and both pinned model tensor contracts loaded successfully.')
+    from temporal_reading import TemporalReading
+    temporal=TemporalReading(ambiguity_document)
+    temporal.observe([1.194,9],{'minimum':0,'maximum':0,'upper_unbounded':False})
+    resolved=temporal.observe([1.006,1],{'minimum':.99,'maximum':1.01,'upper_unbounded':False})
+    if resolved['state']!='estimated' or abs(resolved['value']-110.5)>1e-8:
+        raise ValueError('temporal_reading_runtime_contract')
+    print('Native ABI, physical calculation, ambiguity ranges and both pinned model tensor contracts loaded successfully.')
 if __name__=='__main__':main()

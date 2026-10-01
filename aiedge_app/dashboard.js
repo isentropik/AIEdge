@@ -16,6 +16,7 @@ const captureErrors={
  invalid_capture_clock_id:'Camera returned an invalid clock identifier. That image was rejected.',
  invalid_capture_clock_tick:'Camera returned an invalid capture clock. That image was rejected.',
  camera_settings_unavailable:'Camera settings could not be applied. Check the device setup.',
+ camera_startup_recovery:'Camera startup was interrupted or its recovery guard failed. Automatic initialization is paused; check device diagnostics.',
  camera_lighting_failed:'Camera lighting failed. The image was rejected.',
  camera_demo_mode:'The camera is in demo mode. Live capture is unavailable.',
  camera_worker_unavailable:'The camera could not start a capture. The next scheduled capture will try again.',
@@ -24,6 +25,8 @@ const captureErrors={
  camera_name_unresolved:'Camera name could not be resolved. Check its address.',
  camera_connection_failed:'Could not connect to the camera. Check its power and network address.',
  camera_http_error:'Camera returned an unexpected response.',
+ camera_status_invalid:'Camera returned invalid readiness information. No picture was requested.',
+ camera_protocol_unsupported:'Camera firmware uses an unsupported capture protocol. No picture was requested.',
  stored_image_corrupt:'A saved image failed its integrity check. The original file has been kept.',
  stored_image_missing:'A saved image is missing from app storage.',
  storage_low_space:'Capture paused: local storage is low on space. Existing images are kept.',
@@ -163,7 +166,8 @@ function render(s,rows){
   $('mqtt-state').textContent=({disabled:'Not connected',starting:'Connecting',connected:'Connected',publishing:'Publishing',waiting_for_format:'Needs number format',waiting_for_reading:'Waiting for reading',disconnected:'Disconnected',error:'Connection failed'})[s.mqtt?.state]||'Not connected';
   $('count').textContent=s.captures;$('unique').textContent=s.unique_images;$('failures').textContent=s.failures;
   $('schedule').textContent=s.capture_enabled?'Every '+s.interval_seconds+' seconds':'Disabled';
-  $('camera-status').textContent=s.capture_enabled?'Capture enabled':'Capture disabled';
+  const cameraLabels={not_checked:'Waiting for camera check',checking:'Checking camera',ready:'Camera ready',busy:'Camera busy',camera_unavailable:'Camera unavailable',settings_unavailable:'Camera settings unavailable',startup_recovery:'Camera startup recovery',clock_unsynchronized:'Waiting for camera clock',demo_mode:'Camera in demo mode',unavailable:'Camera unreachable'};
+  $('camera-status').textContent=s.capture_enabled?(cameraLabels[s.camera?.state]||'Waiting for camera check'):'Capture disabled';
   $('missed').textContent=s.missed_slots;$('received').textContent=date(s.latest?.received_at);
   $('storage-state').textContent=({ready:'Ready',low_space:'Low space',unavailable:'Unavailable'})[s.storage?.state]||'Unavailable';
   $('storage-free').textContent=Number.isFinite(s.storage?.free_bytes)?(s.storage.free_bytes/(1024**3)).toFixed(1)+' GiB':'—';

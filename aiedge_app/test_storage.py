@@ -17,7 +17,7 @@ class StorageTests(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def disk(self,free):return patch('capture.shutil.disk_usage',return_value=SimpleNamespace(free=free))
     def test_low_space_prevents_camera_request_and_recovers(self):
-        camera=Mock(origin='fixture');camera.capture.return_value=(JPEG,headers())
+        camera=Mock(origin='fixture');camera.readiness.return_value={'state':'ready'};camera.capture.return_value=(JPEG,headers())
         collector=Collector(self.store,camera,30)
         with self.disk(MIN_FREE_BYTES):
             collector.once();camera.capture.assert_not_called()

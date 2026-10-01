@@ -296,6 +296,29 @@ h2{
   max-width:250px;
   margin:0
 }
+.reading-bounds{
+  margin:10px 0 12px;
+  font-size:12px
+}
+.reading-bounds summary{
+  cursor:pointer;
+  color:var(--accent);
+  padding:5px 0
+}
+.reading-bounds ul{
+  list-style:none;
+  padding:0;
+  margin:4px 0 7px;
+  font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere
+}
+.reading-bounds li{
+  padding:3px 0
+}
+.reading-bounds summary:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:3px
+}
 .details h2{
   margin-bottom:9px
 }
