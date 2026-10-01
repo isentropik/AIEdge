@@ -1,10 +1,11 @@
 """Real loopback HTTP/TLS checks for deadline, buffering and trust boundaries."""
-import contextlib,ssl,threading,time,unittest,urllib.request
+import contextlib,errno,socket,ssl,threading,time,unittest,urllib.request
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from unittest.mock import patch
 from capture import Camera,NoRedirect
 from camera_transport import DeadlineHTTPHandler,DeadlineHTTPSHandler
+import camera_transport
 from test_capture import JPEG,headers
 
 CERT=Path(__file__).parent/'test-fixtures/transport-test-cert.pem'
@@ -43,6 +44,107 @@ def fixture(mode='ok',tls=False):
     finally:server.shutdown();thread.join(2);server.server_close()
 
 class TransportTests(unittest.TestCase):
+    def connection_fixture(self,platform='linux',option_error=None,connect_error=None):
+        events=[]
+        class Socket:
+            def settimeout(self,value):events.append(('timeout',value))
+            def setsockopt(self,*args):
+                events.append(('option',args))
+                if option_error:raise option_error
+            def bind(self,value):events.append(('bind',value))
+            def connect(self,value):
+                events.append(('connect',value))
+                if connect_error:raise connect_error
+            def close(self):events.append(('close',))
+        instance=Socket()
+        patches=(patch.object(camera_transport.sys,'platform',platform),
+                 patch.object(camera_transport.socket,'getaddrinfo',return_value=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('10.1.0.127',80))]),
+                 patch.object(camera_transport.socket,'socket',return_value=instance),
+                 patch.object(camera_transport.time,'monotonic',return_value=10))
+        return events,instance,patches
+
+    def test_linux_negotiates_smaller_segments_before_connecting(self):
+        events,instance,patches=self.connection_fixture()
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            result=camera_transport.camera_connection(('meter',80),5,('10.1.1.43',0),deadline=30)
+        self.assertIs(result,instance)
+        self.assertEqual(events,[('timeout',5),('option',(socket.IPPROTO_TCP,socket.TCP_MAXSEG,512)),
+                                 ('bind',('10.1.1.43',0)),('connect',('10.1.0.127',80))])
+
+    def test_other_platforms_retain_the_standard_socket_path(self):
+        events,_,patches=self.connection_fixture(platform='win32')
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            camera_transport.camera_connection(('meter',80),5,deadline=30)
+        self.assertEqual(events,[('timeout',5),('connect',('10.1.0.127',80))])
+
+    def test_unsupported_segment_option_keeps_normal_connectivity(self):
+        events,_,patches=self.connection_fixture(option_error=OSError(errno.ENOPROTOOPT,'unsupported'))
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            camera_transport.camera_connection(('meter',80),5,deadline=30)
+        self.assertEqual(events[-1],('connect',('10.1.0.127',80)))
+
+    def test_unexpected_socket_option_error_is_not_hidden(self):
+        events,_,patches=self.connection_fixture(option_error=OSError(errno.EPERM,'denied'))
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            with self.assertRaises(OSError):camera_transport.camera_connection(('meter',80),5,deadline=30)
+        self.assertEqual(events[-1],('close',))
+        self.assertFalse(any(row[0]=='connect' for row in events))
+
+    def test_failed_connection_closes_its_socket(self):
+        events,_,patches=self.connection_fixture(connect_error=ConnectionRefusedError('fixture'))
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            with self.assertRaises(ConnectionRefusedError):camera_transport.camera_connection(('meter',80),5,deadline=30)
+        self.assertEqual(events[-1],('close',))
+
+    def test_connection_setup_uses_only_the_remaining_deadline(self):
+        events,_,patches=self.connection_fixture()
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            camera_transport.camera_connection(('meter',80),5,deadline=11)
+        self.assertEqual(events[0],('timeout',1))
+
+    def test_expired_deadline_never_opens_a_socket(self):
+        events,_,patches=self.connection_fixture()
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            with self.assertRaises(TimeoutError):camera_transport.camera_connection(('meter',80),5,deadline=10)
+        self.assertEqual(events,[])
+
+    def test_ipv6_destination_is_preserved(self):
+        events,_,patches=self.connection_fixture()
+        destination=('fd00::127',80,0,0)
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            with patch.object(camera_transport.socket,'getaddrinfo',return_value=[(socket.AF_INET6,socket.SOCK_STREAM,6,'',destination)]):
+                camera_transport.camera_connection(('meter',80),5,deadline=30)
+        self.assertEqual(events[-1],('connect',destination))
+
+    def test_address_fallback_does_not_restart_the_connect_budget(self):
+        events,first,patches=self.connection_fixture(connect_error=ConnectionRefusedError('first address'))
+        second_events,second,_=self.connection_fixture()
+        addresses=[(socket.AF_INET,socket.SOCK_STREAM,6,'',('10.1.0.126',80)),
+                   (socket.AF_INET,socket.SOCK_STREAM,6,'',('10.1.0.127',80))]
+        with contextlib.ExitStack() as stack:
+            for p in patches:stack.enter_context(p)
+            with patch.object(camera_transport.socket,'getaddrinfo',return_value=addresses), \
+                 patch.object(camera_transport.socket,'socket',side_effect=[first,second]), \
+                 patch.object(camera_transport.time,'monotonic',side_effect=[10,14]):
+                result=camera_transport.camera_connection(('meter',80),5,deadline=15)
+        self.assertIs(result,second)
+        self.assertEqual(events[-1],('close',))
+        self.assertEqual(second_events[0],('timeout',1))
+
+    def test_plain_and_tls_connections_use_the_same_socket_admission(self):
+        for kind in (camera_transport.DeadlineConnection,camera_transport.DeadlineTLSConnection):
+            connection=kind('meter',deadline=123)
+            self.assertIs(connection._create_connection.func,camera_transport.camera_connection)
+            self.assertEqual(connection._create_connection.keywords,{'deadline':123})
+
     def test_body_pause_over_five_seconds_still_within_total_deadline(self):
         with fixture('delayed_body') as url:
             start=time.monotonic();blob,metadata=Camera(url).capture()

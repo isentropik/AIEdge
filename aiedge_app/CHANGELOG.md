@@ -1,5 +1,16 @@
 # Changes
 
+## 0.2.0-dev7
+
+- Linux camera connections request smaller TCP segments before connecting,
+  reducing the impact of large-packet loss without changing the camera or LAN.
+- Connection attempts share the remaining capture deadline. IPv4, IPv6, TLS
+  verification and platforms without this socket option retain their behavior.
+- Image hashes, capture identity checks and the total capture deadline stay
+  enforced. Failed or partial transfers remain rejected, with no capture retry.
+- Models, reference images, calibration, number format and capture/MQTT settings
+  are unchanged. This update does not flash or restart the camera.
+
 ## 0.2.0-dev6
 
 - Camera transfers use the complete 20-second capture deadline. A separate

@@ -3,7 +3,34 @@
 DNS and the initial connection still use the platform resolver/socket timeout;
 this does not promise to interrupt a blocked operating-system DNS resolver.
 """
-import functools,http.client,time,urllib.request
+import errno,functools,http.client,socket,sys,time,urllib.request
+
+# Small camera JPEGs benefit more from avoiding oversized radio packets than
+# from filling each Ethernet-sized segment. This is a per-connection admission
+# setting, not a change to the device, host interface or network MTU.
+CAMERA_TCP_MAXSEG=512
+
+def camera_connection(address,timeout=socket._GLOBAL_DEFAULT_TIMEOUT,source_address=None,*,deadline):
+    last_error=None
+    for family,kind,protocol,_,destination in socket.getaddrinfo(address[0],address[1],0,socket.SOCK_STREAM):
+        remaining=deadline-time.monotonic()
+        if remaining<=0:raise TimeoutError('camera_io_deadline')
+        connection=None
+        try:
+            connection=socket.socket(family,kind,protocol)
+            connection.settimeout(min(remaining,timeout) if isinstance(timeout,(int,float)) else remaining)
+            if sys.platform.startswith('linux') and hasattr(socket,'TCP_MAXSEG'):
+                try:connection.setsockopt(socket.IPPROTO_TCP,socket.TCP_MAXSEG,CAMERA_TCP_MAXSEG)
+                except OSError as error:
+                    if error.errno not in (errno.ENOPROTOOPT,errno.EOPNOTSUPP):raise
+            if source_address:connection.bind(source_address)
+            connection.connect(destination)
+            return connection
+        except OSError as error:
+            last_error=error
+            if connection is not None:connection.close()
+    if last_error is not None:raise last_error
+    raise OSError('camera_address_unavailable')
 
 class DeadlineStream:
     def __init__(self,stream,sock,deadline):
@@ -56,11 +83,13 @@ class DeadlineResponse(http.client.HTTPResponse):
 class DeadlineConnection(http.client.HTTPConnection):
     def __init__(self,*args,deadline,**kwargs):
         super().__init__(*args,**kwargs)
+        self._create_connection=functools.partial(camera_connection,deadline=deadline)
         self.response_class=functools.partial(DeadlineResponse,deadline=deadline)
 
 class DeadlineTLSConnection(http.client.HTTPSConnection):
     def __init__(self,*args,deadline,**kwargs):
         super().__init__(*args,**kwargs)
+        self._create_connection=functools.partial(camera_connection,deadline=deadline)
         self.response_class=functools.partial(DeadlineResponse,deadline=deadline)
 
 class DeadlineHTTPHandler(urllib.request.HTTPHandler):
