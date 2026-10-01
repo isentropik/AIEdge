@@ -106,11 +106,11 @@ lookup uses the operating system and can take longer than the response deadline.
    The default interval is 30 seconds. **Captures** shows original saved images, while
    **Overview** shows the latest processed result and current capture/storage status.
 
-**Advanced error bounds** contains optional overrides on the 0–10 position scale.
-Saved bounds are preserved, including zero. New formats start at ±0.1: this is a
-provisional engineering assumption, not measured model accuracy. Validated bounds
-still need to replace that assumption; increasing it can conceal disagreement
-between dials. Normal setup does not require choosing these bounds. The app refuses contradictory or
+There is no tolerance or accuracy control in setup. Editing physical dial values
+preserves the saved reader's uncertainty assumptions. New formats currently use
+an internal provisional ±0.1 bound on the 0–10 position scale. This is not measured
+model accuracy; validated model/calibration error still needs to replace it.
+The app refuses contradictory or
 ambiguous dial combinations. In particular, a small wheel can complete several turns
 inside the uncertainty of a larger dial: a single image cannot resolve those turns.
 It will show no total rather than invent one. Leading zeros and displayed precision

@@ -2,9 +2,10 @@
 
 ## 0.2.0-dev9 (review candidate)
 
-- Keep Number format focused on dial values. Manual position-error overrides are
-  under Advanced; saved bounds, including zero, are preserved. New formats use
-  an explicitly provisional ±0.1 bound, not a claim of measured model accuracy.
+- Remove position-error controls from Number format, including Advanced. Editing
+  physical dial values preserves saved reader assumptions. New formats retain
+  the provisional ±0.1 default until model/calibration error is validated; this
+  is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames
   retained feasible ranges with full sampling; sparse sampling rejected one.

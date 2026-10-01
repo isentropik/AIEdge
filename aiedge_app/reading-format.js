@@ -4,8 +4,8 @@ const $=id=>document.getElementById(id),form=$('reading-form'),canvas=$('format-
 const units={ft3:'ft³',m3:'m³',L:'L',gal_us:'US gal',kWh:'kWh'};
 // Provisional until held-out calibration/model error has been measured.
 const defaultPositionError=.1;
-let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0,imageGeneration=0,referenceDigest=null;
-const messages={invalid_maximum_rate:'Enter a maximum rate of zero or greater, or leave it empty.',reading_scale_too_small:'That revolution value is too small to represent in the selected units.',reading_pipeline_changed:'Calibration or the model changed. Reload the format and check each dial.',reading_format_changed_reload:'The format was changed in another session. Reload saved values before trying again.',reading_dial_mapping_mismatch:'The dial list changed. Reload the format.',reading_scales_must_be_nested:'Dial values must have whole-number revolution ratios, such as 1000 and 5.',invalid_reading_scale_or_error:'Enter positive revolution values and tolerances from 0 to less than 0.5.'};
+let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0,imageGeneration=0,referenceDigest=null,positionErrors=new Map();
+const messages={invalid_maximum_rate:'Enter a maximum rate of zero or greater, or leave it empty.',reading_scale_too_small:'That revolution value is too small to represent in the selected units.',reading_pipeline_changed:'Calibration or the model changed. Reload the format and check each dial.',reading_format_changed_reload:'The format was changed in another session. Reload saved values before trying again.',reading_dial_mapping_mismatch:'The dial list changed. Reload the format.',reading_scales_must_be_nested:'Dial values must have whole-number revolution ratios, such as 1000 and 5.',invalid_reading_scale_or_error:'The dial values or saved reader configuration are invalid. Reload the format.'};
 function status(message,error=false){$('format-status').textContent=message;$('format-status').dataset.error=String(error);}
 function controls(){
  for(const input of form.querySelectorAll('input,select'))input.disabled=busy||!pipeline;
@@ -50,19 +50,15 @@ async function load(force=false){
   const stale=!!saved.format&&saved.format.pipeline_id!==pipeline;
   // Never silently transfer physical scales to a changed calibration by array index.
   const mapping=new Map(!stale?(saved.format?.dials||[]).map(d=>[d.index,d]):[]);
-  $('format-unit').value=saved.format?.unit||'';$('format-max-rate').value=!stale&&saved.format?.maximum_rate_per_second!=null?saved.format.maximum_rate_per_second*60:'';labelUnits();$('format-dials').replaceChildren();$('format-errors').replaceChildren();
+  $('format-unit').value=saved.format?.unit||'';$('format-max-rate').value=!stale&&saved.format?.maximum_rate_per_second!=null?saved.format.maximum_rate_per_second*60:'';labelUnits();$('format-dials').replaceChildren();positionErrors=new Map();
   for(const dial of dials){
    const row=document.createElement('div');row.className='format-row';const name=document.createElement('div');name.className='format-name';name.textContent=dial.name;
    const direction=document.createElement('small');direction.textContent=dial.direction==='ccw'?'CCW':'CW';name.append(direction);
    const savedDial=mapping.get(dial.index);
    const scale=input('format-value-'+dial.index,dial.name+' value per revolution',savedDial?.value_per_revolution,0,null);
-   const error=input('format-error-'+dial.index,dial.name+' assumed position error',savedDial?.position_error??defaultPositionError,0,.499999);
-   error.setAttribute('aria-describedby','format-error-help');
-   for(const field of [scale,error])field.addEventListener('focus',()=>highlight(dial.index));
+   positionErrors.set(dial.index,savedDial?.position_error??defaultPositionError);
+   scale.addEventListener('focus',()=>highlight(dial.index));
    row.append(name,scale);$('format-dials').append(row);
-   const errorRow=document.createElement('div');errorRow.className='format-error-row';
-   const errorLabel=document.createElement('label');errorLabel.htmlFor=error.id;errorLabel.textContent=dial.name;
-   errorRow.append(errorLabel,error);$('format-errors').append(errorRow);
   }
   dirty=false;loaded=true;
   if(!pipeline||!dials.length)status('Save the dial calibration before setting the number format.');
@@ -76,17 +72,11 @@ async function load(force=false){
 $('format-max-rate').addEventListener('input',changed);
 $('format-unit').addEventListener('change',()=>{labelUnits();changed();});
 $('reload-format').onclick=()=>load(true);
-// Interactive browser validation runs before submit, even in a closed details.
-form.addEventListener('invalid',event=>{
- if($('format-errors').contains(event.target))$('format-advanced').open=true;
-},true);
 form.onsubmit=async event=>{
- event.preventDefault();if(busy||!pipeline)return;
- // Reveal an invalid override before the browser tries to focus it.
- if([...$('format-errors').querySelectorAll('input')].some(field=>!field.checkValidity()))$('format-advanced').open=true;
- if(!form.reportValidity())return;
- const values=dials.map(d=>({index:d.index,value_per_revolution:Number($('format-value-'+d.index).value),position_error:Number($('format-error-'+d.index).value)})).sort((a,b)=>b.value_per_revolution-a.value_per_revolution);
- if(values.some(d=>!Number.isFinite(d.value_per_revolution)||d.value_per_revolution<=0||!Number.isFinite(d.position_error)||d.position_error<0||d.position_error>=.5)){status(messages.invalid_reading_scale_or_error,true);return;}
+ event.preventDefault();if(busy||!pipeline||!form.reportValidity())return;
+ const values=dials.map(d=>({index:d.index,value_per_revolution:Number($('format-value-'+d.index).value),position_error:positionErrors.get(d.index)})).sort((a,b)=>b.value_per_revolution-a.value_per_revolution);
+ if(values.some(d=>!Number.isFinite(d.value_per_revolution)||d.value_per_revolution<=0)){status('Enter positive values per revolution.',true);return;}
+ if(values.some(d=>!Number.isFinite(d.position_error)||d.position_error<0||d.position_error>=.5)){status('Saved reader uncertainty is invalid. Reload the format.',true);return;}
  const rateText=$('format-max-rate').value;const rate=rateText===''?null:Number(rateText)/60;
  if(rate!==null&&(!Number.isFinite(rate)||rate<0)){status(messages.invalid_maximum_rate,true);return;}
  const candidate={version:1,pipeline_id:pipeline,unit:$('format-unit').value,dials:values};

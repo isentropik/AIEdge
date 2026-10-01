@@ -28,8 +28,7 @@ function fixture(format=savedFormat){
  const field=(id,tag)=>{const e=new Element(tag,elements);e.id=id;return e;};
  const unit=field('format-unit','select');unit.required=true;
  const rate=field('format-max-rate','input');rate.type='number';rate.min='0';
- get('format-advanced').append(get('format-errors'));
- get('reading-form').append(unit,rate,get('format-dials'),get('format-advanced'));
+ get('reading-form').append(unit,rate,get('format-dials'));
  const posts=[],events={};
  const window={addEventListener(name,fn){events[name]=fn;},dispatchEvent(){}};
  const fetch=async(url,options={})=>{
@@ -45,53 +44,31 @@ function change(app,id,value){app.get(id).value=value;app.get(id).fire('input');
 
 test('new formats save without choosing provisional errors; ordinary rows contain only values',async()=>{
  const app=fixture(null);await app.window.openReadingFormat();
- assert.equal(app.get('format-advanced').open,false);
  assert.equal(app.get('format-dials').querySelectorAll('input').length,2);
- assert.equal(app.get('format-errors').querySelectorAll('input').length,2);
  app.get('format-unit').value='ft3';app.get('format-unit').fire('change');
  change(app,'format-value-0',1000);change(app,'format-value-1',5);
  await submit(app);
  assert.equal(app.posts.length,1);
  assert.deepEqual(app.posts[0].format.dials,[{index:0,value_per_revolution:1000,position_error:.1},{index:1,value_per_revolution:5,position_error:.1}]);
- assert.equal(app.get('format-advanced').open,false);
 });
 
-test('editing a scale preserves saved zero and custom error bounds with Advanced closed',async()=>{
+test('editing a scale preserves saved zero and custom internal error bounds',async()=>{
  const app=fixture();await app.window.openReadingFormat();
- assert.equal(app.get('format-error-0').value,'0');assert.equal(app.get('format-error-1').value,'0.2');
  change(app,'format-value-0',10000);await submit(app);
  assert.deepEqual(app.posts[0].format.dials,[{index:0,value_per_revolution:10000,position_error:0},{index:1,value_per_revolution:5,position_error:.2}]);
- assert.equal(app.get('format-advanced').open,false);
-});
-
-test('invalid collapsed overrides open Advanced and prevent a write',async()=>{
- for(const value of ['',-.01,.5,'NaN']){
-  const app=fixture();await app.window.openReadingFormat();change(app,'format-error-1',value);
-  app.get('format-advanced').open=false;await submit(app);
-  assert.equal(app.get('format-advanced').open,true,value);assert.equal(app.posts.length,0,value);
- }
 });
 
 test('a changed pipeline never inherits old dial scales or custom error bounds',async()=>{
  const app=fixture({...savedFormat,pipeline_id:'b'.repeat(64)});await app.window.openReadingFormat();
  assert.equal(app.get('format-value-0').value,'');assert.equal(app.get('format-value-1').value,'');
- assert.equal(app.get('format-error-0').value,'0.1');assert.equal(app.get('format-error-1').value,'0.1');
  assert.match(app.get('format-status').textContent,/Calibration or the model changed/);
  await submit(app);assert.equal(app.posts.length,0);
 });
 
-test('native validation reveals a hidden invalid override before the submit event',async()=>{
+test('the optional rate preserves reader assumptions and the existing API contract',async()=>{
  const app=fixture();await app.window.openReadingFormat();
- change(app,'format-error-1',.5);app.get('reading-form').fire('invalid',app.get('format-error-1'));
- assert.equal(app.get('format-advanced').open,true);assert.equal(app.posts.length,0);
- app.get('format-advanced').open=false;app.get('reading-form').fire('invalid',app.get('format-value-1'));
- assert.equal(app.get('format-advanced').open,false);
-});
-
-test('manual overrides and the optional rate retain the existing API contract',async()=>{
- const app=fixture();await app.window.openReadingFormat();
- change(app,'format-error-0',.15);change(app,'format-max-rate',30);await submit(app);
+ change(app,'format-max-rate',30);await submit(app);
  assert.equal(app.posts[0].format.maximum_rate_per_second,.5);
- assert.deepEqual(app.posts[0].format.dials.map(d=>d.position_error),[.15,.2]);
+ assert.deepEqual(app.posts[0].format.dials.map(d=>d.position_error),[0,.2]);
  assert.equal(app.posts[0].revision,'original');assert.equal(app.posts[0].format.pipeline_id,pipeline);
 });
