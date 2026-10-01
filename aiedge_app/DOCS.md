@@ -7,11 +7,12 @@ External storage is a future optional feature.
 ## Install for a first Home Assistant test
 
 This is an experimental **amd64** build for Home Assistant OS. One Linux amd64
-installation has built, processed a saved reference image and retained its six-dial
-calibration and number format after an app restart. Full Linux regressions and live
-camera/MQTT integration remain unverified. Installation builds the app on your HA
-host and can take several minutes; check the app logs if it fails. Keep your
-existing meter installation running during this test.
+installation has built, processed saved images and retained six-dial calibration
+and number format after restarts. A September 30 dev8 trial received three photos
+about 30 seconds apart with no transfer failures. This short trial does not verify
+sustained operation or reading accuracy. Full Linux regressions and MQTT integration
+remain unverified. Installation builds the app on your HA host and can take several
+minutes; check the app logs if it fails.
 
 1. Open **Settings → Apps → Install app**. From the three-dot menu, choose
    **Repositories** and add this complete URL, including the branch after `#`:
@@ -30,8 +31,8 @@ existing meter installation running during this test.
    remain. If startup or a page fails, use the app's **Log** tab for the error.
 
 This first test checks installation, the interface and persistence. It does not
-verify meter accuracy. Do not enable capture against the existing r60 meter:
-that firmware does not implement this app's new camera API. The old HA entities
+verify meter accuracy. Live capture requires a camera running AIEdge's remote-camera
+API; stock AI-on-the-edge firmware does not provide it. Existing HA entities
 are unchanged with MQTT disabled. An amd64 host is currently required; ARM/Raspberry
 Pi builds are not provided.
 
@@ -39,6 +40,11 @@ Pi builds are not provided.
 [Development source](https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app)
 
 ## Current development build
+
+The server app samples each dial at full resolution. It uses the same trained
+needle models; edge detection is not the production reader. New processing versions
+have distinct identities, so an old number format cannot silently publish values
+for changed processing. Review and save Number format when the app requests it.
 
 The interface includes capture history, reference-image calibration and a number-format
 editor. The overview refreshes while it is open, shows local storage health and clears

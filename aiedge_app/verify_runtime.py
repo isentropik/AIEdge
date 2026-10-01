@@ -9,6 +9,8 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--library',required=True);p.add_argument('--accounting-library');a=p.parse_args()
     assets=Path(__file__).parent/'assets';verify(assets)
     reader=Reader(a.library,assets/'models',PROFILE)
+    if reader.sampling_sparse or reader.pipeline_id!=reader.pipeline_ids[False] or reader.pipeline_ids[False]==reader.pipeline_ids[True]:
+        raise ValueError('full_sampling_identity_contract')
     if not hasattr(reader.native.lib,'aiedge_prepare_profile_reuse'):raise ValueError('changed_dial_runtime_missing')
     assert len(reader.networks)==2
     for net,inp,out in reader.networks.values():

@@ -8,6 +8,10 @@ ARCHIVE_CHECKS=frozenset(('test_capture_pipeline.CapturePipelineTests.test_remot
     'test_native_profile.Tests.test_owns_candidate_and_rejects_closed_handle',
     'test_native_profile.Tests.test_reordered_subset','test_native_profile.Tests.test_blank_image_rejected'))
 PACKAGED_CHECK='test_container_runtime.ContainerRuntimeTests.test_packaged_service_startup_and_persistent_restart'
+SAMPLING_CHECKS=frozenset((
+    'test_changed_dials.ChangedDialTests.test_camera_jpeg_defaults_to_full_sampling_with_separate_sparse_identity',
+    'test_changed_dials.ChangedDialTests.test_explicit_sparse_reader_and_invalid_sampling_inputs',
+    'test_recognition.Tests.test_different_sampling_pipeline_cannot_be_relabelled_as_current'))
 
 def coverage_errors(result,allow_archive,packaged):
     errors=[]
@@ -33,6 +37,8 @@ def inventory_errors(identifiers,allow_archive,packaged):
             errors.append('Required test coverage is missing: '+prefix)
     if packaged and PACKAGED_CHECK not in identifiers:
         errors.append('Packaged-service startup check is missing.')
+    if not SAMPLING_CHECKS<=identifiers:
+        errors.append('Required sampling identity coverage is missing.')
     if not allow_archive and not ARCHIVE_CHECKS<=identifiers:
         errors.append('Requested archived-image replay checks are missing.')
     return errors

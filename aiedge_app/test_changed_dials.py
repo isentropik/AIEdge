@@ -72,6 +72,28 @@ class ChangedDialTests(unittest.TestCase):
     def test_disabled_reuse_runs_full_path_and_has_separate_pipeline_identity(self):
         cached=self.reader(True);full=self.reader(False);self.assertNotEqual(cached.pipeline_id,full.pipeline_id)
         for _ in range(2):self.assertEqual(full.read_rgb(self.rgb)['work'],{'dials':2,'preprocessing_reused':0,'inference_reused':0})
+    def test_camera_jpeg_defaults_to_full_sampling_with_separate_sparse_identity(self):
+        reader=self.reader(True)
+        full=reader.read_jpeg(self.blob)
+        sparse=reader.read_rgb(self.rgb,sparse=True)
+        self.assertEqual(full['sampling'],'full')
+        self.assertEqual(full['pipeline_id'],reader.pipeline_id)
+        self.assertEqual(sparse['sampling'],'sparse')
+        self.assertNotEqual(full['pipeline_id'],sparse['pipeline_id'])
+        self.assertEqual(full['model_hashes'],sparse['model_hashes'])
+        repeated=reader.read_jpeg(self.blob)
+        self.assertEqual(repeated['pipeline_id'],full['pipeline_id'])
+        self.assertEqual(repeated['dial_positions'],full['dial_positions'])
+    def test_explicit_sparse_reader_and_invalid_sampling_inputs(self):
+        reader=Reader(os.environ['AIEDGE_NATIVE_LIBRARY'],os.environ['AIEDGE_MODELS_FIXTURE'],
+                      self.document,sampling_sparse=True)
+        self.addCleanup(reader.runtime.close)
+        result=reader.read_jpeg(self.blob)
+        self.assertEqual(result['sampling'],'sparse')
+        self.assertEqual(result['pipeline_id'],reader.pipeline_id)
+        self.assertNotEqual(result['pipeline_id'],reader.read_rgb(self.rgb,sparse=False)['pipeline_id'])
+        for value in (0,1,'false'):
+            with self.assertRaisesRegex(ValueError,'invalid_sampling_mode'):reader.read_rgb(self.rgb,sparse=value)
     def test_failed_model_call_clears_partial_frame_outputs(self):
         r=self.reader(True);r.read_rgb(self.rgb)
         image=self.image.copy();ImageDraw.Draw(image).line((145,155,195,155),fill='black',width=5);changed=image.tobytes()

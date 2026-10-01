@@ -1,7 +1,7 @@
 """Prevent a green validation result when required native coverage is skipped."""
 import unittest
 from types import SimpleNamespace
-from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKAGED_CHECK
+from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKAGED_CHECK,SAMPLING_CHECKS
 
 def result(skips=(),count=1):
     return SimpleNamespace(testsRun=count,skipped=[(SimpleNamespace(id=lambda name=name:name),'fixture missing') for name in skips])
@@ -14,7 +14,7 @@ NEW_COVERAGE={*(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
               *(f'test_startup_shutdown.StartupTests.test_{i}' for i in range(3)),
               *(f'test_startup_shutdown.RuntimeTests.test_{i}' for i in range(5)),
               *(f'test_runtime_copy.RuntimeCopyTests.test_{i}' for i in range(4)),
-              *(f'test_lifecycle.LifecycleTests.test_{i}' for i in range(2))}
+              *(f'test_lifecycle.LifecycleTests.test_{i}' for i in range(2)),*SAMPLING_CHECKS}
 class ValidationCoverageTests(unittest.TestCase):
     def test_archive_omission_requires_explicit_permission(self):
         value=result(ARCHIVE_CHECKS)

@@ -2,6 +2,12 @@
 
 ## 0.2.0-dev9 (review candidate)
 
+- Use full-resolution dial sampling in the server app. Sparse sampling remains
+  available for diagnostics with a distinct pipeline identity. Four saved frames
+  retained feasible ranges with full sampling; sparse sampling rejected one.
+  This does not verify their reading accuracy. The trained models stay unchanged.
+- Reject a reader result whose sampling/pipeline identity differs from the active
+  reader instead of relabeling it as the current pipeline.
 - Check passive camera readiness before each scheduled capture and distinguish
   missing hardware, unavailable settings, unsynchronized clocks and busy cameras.
 - Show feasible total ranges and the register digits shared by every current
