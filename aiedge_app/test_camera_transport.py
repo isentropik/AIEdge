@@ -25,6 +25,10 @@ def fixture(mode='ok',tls=False):
                     self.connection.sendall(b'HTTP/1.0 200 OK\r\nX-Slow: ')
                     for _ in range(50):self.connection.sendall(b'a');time.sleep(.04)
                     self.connection.sendall(b'\r\nContent-Length: 5\r\n\r\n'+JPEG)
+                elif mode=='delayed_body':
+                    self.connection.sendall(wire+b'\r\n')
+                    time.sleep(5.2)
+                    self.connection.sendall(blob)
                 elif mode in ('body','error_body'):
                     self.connection.sendall(wire+b'\r\n')
                     for byte in blob:self.connection.sendall(bytes([byte]));time.sleep(.06)
@@ -39,6 +43,13 @@ def fixture(mode='ok',tls=False):
     finally:server.shutdown();thread.join(2);server.server_close()
 
 class TransportTests(unittest.TestCase):
+    def test_body_pause_over_five_seconds_still_within_total_deadline(self):
+        with fixture('delayed_body') as url:
+            start=time.monotonic();blob,metadata=Camera(url).capture()
+            self.assertEqual(blob,JPEG)
+            self.assertGreater(time.monotonic()-start,5)
+            self.assertLess(time.monotonic()-start,8)
+
     def slow_failure(self,mode,tls=False,reason='camera_timeout'):
         with fixture(mode,tls) as url:
             camera=Camera(url)

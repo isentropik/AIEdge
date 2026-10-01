@@ -1,5 +1,14 @@
 # Changes
 
+## 0.2.0-dev6
+
+- Camera transfers use the complete 20-second capture deadline. A separate
+  five-second idle timeout no longer cuts off an otherwise valid response.
+- Connection setup stays bounded to five seconds; redirects, malformed images
+  and capture metadata checks retain their existing behavior.
+- Capture, MQTT, calibration, number formatting and saved images are preserved.
+  This update does not change camera firmware or start automatic capture.
+
 ## 0.2.0-dev5
 
 - Unchanged dial regions can reuse preprocessing and model output after alignment.

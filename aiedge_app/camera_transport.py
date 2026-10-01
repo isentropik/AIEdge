@@ -12,7 +12,9 @@ class DeadlineStream:
     def _check(self):
         remaining=self.deadline-time.monotonic()
         if remaining<=0:raise TimeoutError('camera_io_deadline')
-        self.socket.settimeout(min(5,remaining))
+        # The capture already has one absolute deadline. A separate five-second
+        # idle cap rejected otherwise valid responses before that deadline.
+        self.socket.settimeout(remaining)
     def read1(self,size=-1):
         self._check()
         if self.buffer:
