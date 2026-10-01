@@ -703,7 +703,7 @@ canvas{
 }
 .format-heading,.format-row{
   display:grid;
-  grid-template-columns:minmax(90px,1fr) minmax(125px,1fr) 88px;
+  grid-template-columns:minmax(90px,1fr) minmax(125px,1fr);
   gap:12px;
   padding:10px 14px;
   align-items:center
@@ -738,6 +738,44 @@ canvas{
   color:var(--muted);
   padding:12px 14px;
   margin:0
+}
+.format-advanced{
+  border-top:1px solid var(--line)
+}
+.format-advanced summary{
+  cursor:pointer;
+  padding:13px 14px;
+  font-size:12px;
+  color:var(--muted)
+}
+.format-advanced summary:hover{
+  color:var(--text)
+}
+.format-advanced summary:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:-3px
+}
+.format-error-heading,.format-error-row{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 88px;
+  gap:12px;
+  align-items:center;
+  padding:8px 14px
+}
+.format-error-heading{
+  font-size:11px;
+  color:var(--muted)
+}
+.format-error-row label{
+  overflow-wrap:anywhere;
+  font-size:12px
+}
+.format-error-row input{
+  padding:7px;
+  font-variant-numeric:tabular-nums
+}
+.format-error-row:last-child{
+  padding-bottom:14px
 }
 .format-preview{
   position:sticky;
@@ -787,7 +825,7 @@ canvas{
     gap:6px
   }
   .format-heading,.format-row{
-    grid-template-columns:minmax(65px,1fr) minmax(100px,1.2fr) 72px;
+    grid-template-columns:minmax(65px,1fr) minmax(100px,1.2fr);
     gap:8px;
     padding:10px
   }
@@ -881,7 +919,7 @@ canvas{
     font-size:11px
   }
   .format-heading,.format-row{
-    grid-template-columns:minmax(55px,1fr) minmax(90px,1.2fr) 62px;
+    grid-template-columns:minmax(55px,1fr) minmax(90px,1.2fr);
     gap:6px;
     padding:9px 8px
   }

@@ -106,9 +106,11 @@ lookup uses the operating system and can take longer than the response deadline.
    The default interval is 30 seconds. **Captures** shows original saved images, while
    **Overview** shows the latest processed result and current capture/storage status.
 
-The current **Tolerance** field is an explicit engineering assumption on the 0–10
-position scale, not a measured accuracy figure. Validated bounds still need to replace
-manual assumptions in the normal setup workflow. The app refuses contradictory or
+**Advanced error bounds** contains optional overrides on the 0–10 position scale.
+Saved bounds are preserved, including zero. New formats start at ±0.1: this is a
+provisional engineering assumption, not measured model accuracy. Validated bounds
+still need to replace that assumption; increasing it can conceal disagreement
+between dials. Normal setup does not require choosing these bounds. The app refuses contradictory or
 ambiguous dial combinations. In particular, a small wheel can complete several turns
 inside the uncertainty of a larger dial: a single image cannot resolve those turns.
 It will show no total rather than invent one. Leading zeros and displayed precision
