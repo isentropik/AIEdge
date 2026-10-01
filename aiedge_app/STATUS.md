@@ -1,4 +1,28 @@
-# Current checkpoint â€” September 30, 2026
+# UI candidate - October 1, 2026
+
+The dev10 review candidate adds guided Image, Alignment, Dials, Number format,
+Data and Finish steps plus Settings. Compact desktop panes and mobile layouts
+keep the image visible while editing controls. An unchanged reference is retained,
+navigation cannot be overwritten by a stale save, and selecting the sixth dial
+survives route updates.
+
+Setup photos are explicit asynchronous jobs, separate from scheduled-capture
+observations, inference and training. Navigation reads only local app data and
+cached camera configuration. Camera LED/exposure/orientation controls remain on
+the camera website because the capture protocol has no settings-management
+contract; full camera-management parity is not complete. See UI-PARITY.md.
+
+Local validation: 282 host checks passed with one Linux-only check skipped; all
+56 UI checks passed. Host replay includes protected archived images and is not an
+accuracy claim. Models, native cores and physical calculations are unchanged by
+this UI candidate. The prior dev9 Linux package check succeeded; this candidate
+needs its own Linux package check.
+
+This is a review candidate, not a live Home Assistant update. The installed app
+remains at the dev8 checkpoint below. No camera firmware, lighting settings,
+capture/MQTT options or live data were changed.
+
+# Previous installed checkpoint - September 30, 2026
 
 September 30 dev8 checkpoint: experimental `0.2.0-dev8` is installed and
 started in Home Assistant after explicit chat approval, a fresh verified Time

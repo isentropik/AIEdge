@@ -1,5 +1,17 @@
 # Changes
 
+## 0.2.0-dev10 (review candidate)
+
+- Add a compact guided setup: Image, Alignment, Dials, Number format, Data and Finish. Next validates and applies the relevant step; finishing does not restart the camera or enable capture/MQTT.
+- Separate the three alignment markers from dial editing. Keep all dials in one selector with X/Y controls, proportion locking, rim landmarks and a separate needle pivot.
+- Keep the reference beside controls on desktop and visible while scrolling controls on mobile. Add grid, zoom and fit icons without altering image pixels.
+- Reuse an unchanged reference and calibration. A different reference requires fresh geometry. Failed image loads retain the old reference.
+- Add explicit, asynchronous camera checks and setup photos. Page navigation never probes or captures from the camera. Verified photos become reference candidates, not reading events or training labels.
+- Add Settings for camera status, local HA storage and diagnostics. Lighting, exposure and camera-side orientation remain on the camera website because the capture API has no management endpoints.
+- Fix stale navigation, legacy calibration bookmarks and selection resets. Use one specific setup error instead of duplicate notifications.
+- Preserve trained models, native cores, physical calculation, saved reader assumptions and application options.
+
+
 ## 0.2.0-dev9 (review candidate)
 
 - Remove position-error controls from Number format, including Advanced. Editing

@@ -5,7 +5,8 @@ ESP32 supplies pictures; the app aligns the image, estimates the analog dial pos
 and calculates a reading from the dial values you configure.
 
 - Images, readings and calibration stay in the app's local storage.
-- The interface includes capture history, manual image review, calibration and number formatting.
+- Guided setup covers reference images, three alignment markers, analog dials,
+  number format and local data. Capture history, review and Settings use the same UI.
 - Optional MQTT output sends recent register readings to Home Assistant.
 - Relative consumption and average rate retain uncertain intervals without guessing
   missed turns; they are not yet published as HA sensors.
@@ -17,7 +18,7 @@ image, six-dial calibration and number format survived an app restart. Full Linu
 regressions and live camera/MQTT integration still require validation.
 This branch is not ready to replace a working meter installation.
 
-[Install the development app](DOCS.md#install-for-a-first-home-assistant-test) · [User guide](DOCS.md) · [Current status](STATUS.md) · [Build notes](PACKAGING.md)
+[Install the development app](DOCS.md#install-for-a-first-home-assistant-test) · [User guide](DOCS.md) · [UI features and remaining camera controls](UI-PARITY.md) · [Current status](STATUS.md) · [Build notes](PACKAGING.md)
 
 AIEdge builds on [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device)
 by jomjol and its contributors. Original notices and the project license are preserved

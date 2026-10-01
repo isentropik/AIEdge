@@ -28,8 +28,13 @@ function fixture(fetch,physical=false){
  const context=vm.createContext({document,window,fetch,location:{hash:'#overview'},localStorage:{getItem(){return null;},setItem(){}},AbortSignal,setTimeout,clearTimeout,Date,console,CustomEvent:class{}});
  vm.runInContext(source,context);
  if(physical)vm.runInContext(fs.readFileSync(path.join(__dirname,'reading-format.js'),'utf8'),context);
- return {get,window};
+ return {get,window,location:context.location};
 }
+
+test('Setup navigation uses the guided route instead of the legacy calibration alias',async()=>{
+ const app=fixture(async url=>response(url.includes('capture-history')?page:state));await tick();app.get('setup-tab').onclick();
+ assert.equal(app.location.hash,'setup');
+});
 test('failed history does not clear a successful current reading',async()=>{
  const app=fixture(async url=>{if(url.includes('capture-history'))throw new TypeError('network');return response(state);});
  await tick();

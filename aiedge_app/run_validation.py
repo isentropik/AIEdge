@@ -32,7 +32,7 @@ def inventory_errors(identifiers,allow_archive,packaged):
                            ('test_temporal_reading.TemporalTests.',10),('test_temporal_reading.PublicationTests.',4),
                            ('test_reading_consistency.ConsistencyTests.',5),('test_reading_consistency.IntegrationTests.',1),
                            ('test_startup_shutdown.RuntimeTests.',5),('test_runtime_copy.RuntimeCopyTests.',4),
-                           ('test_lifecycle.LifecycleTests.',2)):
+                           ('test_lifecycle.LifecycleTests.',2),('test_camera_setup.CameraSetupTests.',8)):
         if sum(name.startswith(prefix) for name in identifiers)<minimum:
             errors.append('Required test coverage is missing: '+prefix)
     if packaged and PACKAGED_CHECK not in identifiers:

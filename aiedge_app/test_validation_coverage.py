@@ -14,7 +14,8 @@ NEW_COVERAGE={*(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
               *(f'test_startup_shutdown.StartupTests.test_{i}' for i in range(3)),
               *(f'test_startup_shutdown.RuntimeTests.test_{i}' for i in range(5)),
               *(f'test_runtime_copy.RuntimeCopyTests.test_{i}' for i in range(4)),
-              *(f'test_lifecycle.LifecycleTests.test_{i}' for i in range(2)),*SAMPLING_CHECKS}
+              *(f'test_lifecycle.LifecycleTests.test_{i}' for i in range(2)),
+              *(f'test_camera_setup.CameraSetupTests.test_{i}' for i in range(8)),*SAMPLING_CHECKS}
 class ValidationCoverageTests(unittest.TestCase):
     def test_archive_omission_requires_explicit_permission(self):
         value=result(ARCHIVE_CHECKS)
@@ -43,7 +44,7 @@ class ValidationCoverageTests(unittest.TestCase):
         complete|=NEW_COVERAGE
         self.assertEqual(inventory_errors(complete,True,False),[])
         for prefix in ('test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
-                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.'):
+                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
         self.assertTrue(inventory_errors(['test_consumption.AccountingTests.test_one']*23,True,False))

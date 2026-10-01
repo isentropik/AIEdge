@@ -6,7 +6,7 @@ const units={ft3:'ft³',m3:'m³',L:'L',gal_us:'US gal',kWh:'kWh'};
 const defaultPositionError=.1;
 let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0,imageGeneration=0,referenceDigest=null,positionErrors=new Map();
 const messages={invalid_maximum_rate:'Enter a maximum rate of zero or greater, or leave it empty.',reading_scale_too_small:'That revolution value is too small to represent in the selected units.',reading_pipeline_changed:'Calibration or the model changed. Reload the format and check each dial.',reading_format_changed_reload:'The format was changed in another session. Reload saved values before trying again.',reading_dial_mapping_mismatch:'The dial list changed. Reload the format.',reading_scales_must_be_nested:'Dial values must have whole-number revolution ratios, such as 1000 and 5.',invalid_reading_scale_or_error:'The dial values or saved reader configuration are invalid. Reload the format.'};
-function status(message,error=false){$('format-status').textContent=message;$('format-status').dataset.error=String(error);}
+function status(message,error=false){$('format-status').textContent=message;$('format-status').dataset.error=String(error);$('format-status').hidden=!message;}
 function controls(){
  for(const input of form.querySelectorAll('input,select'))input.disabled=busy||!pipeline;
  $('save-format').disabled=busy||!pipeline||!dials.length||!dirty;
@@ -72,20 +72,22 @@ async function load(force=false){
 $('format-max-rate').addEventListener('input',changed);
 $('format-unit').addEventListener('change',()=>{labelUnits();changed();});
 $('reload-format').onclick=()=>load(true);
-form.onsubmit=async event=>{
- event.preventDefault();if(busy||!pipeline||!form.reportValidity())return;
+async function saveFormat(event){
+ event?.preventDefault();if(busy||!pipeline){status('Apply dial calibration before setting the number format.',true);return false;}if(!form.reportValidity())return false;
+ if(!dirty&&revision)return true;
  const values=dials.map(d=>({index:d.index,value_per_revolution:Number($('format-value-'+d.index).value),position_error:positionErrors.get(d.index)})).sort((a,b)=>b.value_per_revolution-a.value_per_revolution);
- if(values.some(d=>!Number.isFinite(d.value_per_revolution)||d.value_per_revolution<=0)){status('Enter positive values per revolution.',true);return;}
- if(values.some(d=>!Number.isFinite(d.position_error)||d.position_error<0||d.position_error>=.5)){status('Saved reader uncertainty is invalid. Reload the format.',true);return;}
+ if(values.some(d=>!Number.isFinite(d.value_per_revolution)||d.value_per_revolution<=0)){status('Enter positive values per revolution.',true);return false;}
+ if(values.some(d=>!Number.isFinite(d.position_error)||d.position_error<0||d.position_error>=.5)){status('Saved reader uncertainty is invalid. Reload the format.',true);return false;}
  const rateText=$('format-max-rate').value;const rate=rateText===''?null:Number(rateText)/60;
- if(rate!==null&&(!Number.isFinite(rate)||rate<0)){status(messages.invalid_maximum_rate,true);return;}
+ if(rate!==null&&(!Number.isFinite(rate)||rate<0)){status(messages.invalid_maximum_rate,true);return false;}
  const candidate={version:1,pipeline_id:pipeline,unit:$('format-unit').value,dials:values};
  if(rate!==null)candidate.maximum_rate_per_second=rate;
  busy=true;controls();status('Saving…');
- try{const saved=await request('api/reading-format',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':token},body:JSON.stringify({revision,format:candidate})});revision=saved.revision;dirty=false;status('Format saved');window.dispatchEvent(new Event('aiedge-reading-format-saved'));}
- catch(e){status(e.message,true);}
+ try{const saved=await request('api/reading-format',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':token},body:JSON.stringify({revision,format:candidate})});revision=saved.revision;dirty=false;status('');window.dispatchEvent(new Event('aiedge-reading-format-saved'));return true;}
+ catch(e){status(e.message,true);return false;}
  finally{busy=false;controls();}
-};
+}
+form.onsubmit=saveFormat;window.AIEdgeFormat={save:saveFormat};
 window.addEventListener('aiedge-calibration-saved',()=>{pipeline=null;loaded=false;controls();status('Calibration changed. Reopen Number format to check the current dials.',true);});
 window.openReadingFormat=()=>load();
 window.addEventListener('aiedge-refresh-images',event=>{if(event.detail==='format'&&!picture&&!busy&&loaded)loadPreview(referenceDigest);});

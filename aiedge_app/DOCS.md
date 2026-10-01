@@ -24,8 +24,8 @@ minutes; check the app logs if it fails.
 2. Refresh the store, choose **AIEdge**, and select **Install**.
 3. Leave `capture_enabled` and `mqtt_enabled` off and the camera address blank.
    Select **Start**, then **Open Web UI**. Enable **Show in sidebar** if desired.
-4. Check that Overview, Captures, Calibration and Number format open. For the
-   initial test, upload a saved reference image in Calibration; no live camera is
+4. Check that Overview, Captures, Setup, Number format and Settings open. For the
+   initial test, choose a saved reference image in Setup; no live camera is
    needed. Images and app settings stay in HA app storage.
 5. Restart only the AIEdge app and verify your saved calibration and number format
    remain. If startup or a page fails, use the app's **Log** tab for the error.
@@ -46,8 +46,9 @@ needle models; edge detection is not the production reader. New processing versi
 have distinct identities, so an old number format cannot silently publish values
 for changed processing. Review and save Number format when the app requests it.
 
-The interface includes capture history, reference-image calibration and a number-format
-editor. The overview refreshes while it is open, shows local storage health and clears
+The interface includes guided setup, capture history, reference-image calibration,
+number formatting and Settings. Next applies the relevant setup step; there is no
+camera restart when setup finishes. The overview refreshes while it is open, shows local storage health and clears
 the displayed reading if the app stops responding. A dark, light or system theme can
 be selected at the top of every page. Reloading keeps the selected page.
 Use **Refresh** to retry an image that previously could not be loaded. A reference
@@ -90,21 +91,33 @@ lookup uses the operating system and can take longer than the response deadline.
 1. In the app configuration, enter the compatible camera's address. Use its token
    **or** its username and password, depending on its firmware. Keep capture disabled
    while preparing calibration. Changing app options currently requires an app restart.
-2. Open **Calibration** and choose a 640 × 480 reference image. Place three separated
-   marker boxes on fixed markings, away from needles. Add each dial and mark its rim
-   clockwise from zero, then its needle pivot. Up to 16 dials are supported by the
-   current physical-reading calculation. **Save calibration** validates the entire
-   candidate before replacing the active calibration; it does not restart the camera.
-   Drag a crop corner to resize it or drag inside the crop to move it. **Lock proportions**
-   keeps its width-to-height ratio while resizing. The editor shows the image alongside
-   the controls on desktop; smaller screens place the image above them.
-3. Open **Number format**, choose the units printed on the meter and enter the value
+2. Open **Setup → Image**. Choose a saved 640 × 480 image or use the latest stored
+   capture. With a compatible camera configured, **Take picture** requests one photo.
+   Opening a page does not take a photo. An unchanged reference carries forward;
+   replacing it with a different image requires new markers and dial geometry.
+3. Select **Next** to open **Alignment**. Place all three markers on fixed print,
+   spread across the image and away from needles or reflections. Use X/Y and size
+   fields, or drag a box. Marker suggestions are available once dial crops exist.
+4. In **Dials**, use the selector to edit every dial, including the small wheel.
+   Draw a crop, mark four rim points clockwise from zero, then place the needle pivot.
+   Select CW or CCW to match the printed scale. **Lock width / height** preserves
+   proportions while resizing. Next validates the whole calibration before replacing
+   the active one. Up to 16 dials are supported.
+5. In **Number format**, choose the units printed on the meter and enter the value
    represented by one full revolution of each dial. Focusing a value highlights that
-   dial in the reference image. Direction comes from Calibration. All dials participate;
+   dial in the reference image. Direction comes from Dials. All dials participate;
    there are no separate main/secondary roles or per-dial inclusion switches.
-4. Save the format, then enable capture when compatible camera firmware is available.
+6. **Data** shows local storage and MQTT state. **Finish** summarizes saved choices.
+   Open Overview when finished; the camera does not restart. Enable capture in app
+   configuration when compatible camera firmware is available.
    The default interval is 30 seconds. **Captures** shows original saved images, while
    **Overview** shows the latest processed result and current capture/storage status.
+
+Desktop setup keeps the image beside its controls. Mobile places it above them and
+keeps it visible while you scroll the controls. Grid, zoom and fit change only the
+view. LED channels, exposure and sensor orientation remain on the camera's website;
+open it from **Settings → Camera and lighting controls**. The capture API does not
+yet allow the app to change those settings. See [UI parity](UI-PARITY.md).
 
 There is no tolerance or accuracy control in setup. Editing physical dial values
 preserves the saved reader's uncertainty assumptions. New formats currently use
@@ -114,7 +127,7 @@ The app refuses contradictory or
 ambiguous dial combinations. In particular, a small wheel can complete several turns
 inside the uncertainty of a larger dial: a single image cannot resolve those turns.
 It will show no total rather than invent one. Leading zeros and displayed precision
-come from the dial scales, angular resolution and supplied tolerances.
+come from the dial scales, angular resolution and internal error assumptions.
 
 ## Review saved images
 
@@ -144,7 +157,7 @@ app data and are not included in the diagnostics download.
 
 **Consumption** on Overview is the change since a capture anchor, in the configured
 meter units. **Average rate** is that change divided by the actual capture interval,
-shown per minute. These are estimates under your tolerance and rate assumptions;
+shown per minute. These are estimates under internal error and configured rate assumptions;
 they are not a lifetime meter total or independently verified accuracy. Display
 precision accounts for uncertainty in both endpoint readings; raw estimates remain
 saved separately from their rounded text.

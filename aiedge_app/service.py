@@ -5,7 +5,7 @@ from pathlib import Path
 from capture import Store,Camera,Collector
 from options import load as load_options
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None):
     from review_store import ReviewConflict
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
@@ -22,7 +22,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.send_error(403);return
             if setup is None:self.reply({'error':'Calibration runtime is not configured.'},503);return
             route=urllib.parse.urlsplit(self.path).path
-            if route not in ('/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/reading-format','/api/reviews'):self.send_error(404);return
+            if route not in ('/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/reading-format','/api/reviews','/api/camera-setup'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -34,7 +34,11 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     digest=setup.add_reference(body);self.reply({'reference_sha256':digest});return
                 if self.headers.get_content_type()!='application/json':raise ValueError('JSON request required.')
                 data=json.loads(body)
-                if route=='/api/setup/suggest-markers':
+                if route=='/api/camera-setup':
+                    if camera_setup is None:self.reply({'error':'camera_not_configured'},503);return
+                    if not isinstance(data,dict) or set(data)!={'action'}:raise ValueError('invalid_camera_setup_action')
+                    result=camera_setup.start(data['action'])
+                elif route=='/api/setup/suggest-markers':
                     from marker_suggestions import propose
                     result=propose(setup.reference(data['reference_sha256']),data['crops'])
                 elif route=='/api/reviews':
@@ -81,6 +85,9 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from reading_format import reconcile_reading
                 state['reading']=reconcile_reading(state['reading'],state['consumption'])
                 body=json.dumps(state).encode();kind='application/json'
+            elif route=='/api/camera-setup':
+                state=camera_setup.status() if camera_setup else {'configured':False,'state':'idle','camera_settings_supported':False}
+                body=json.dumps(state).encode();kind='application/json'
             elif route=='/api/reading-format':
                 state=reading_format.status() if reading_format else {'revision':None,'format':None}
                 if recognition:
@@ -91,11 +98,11 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             elif route=='/api/setup':
                 state=setup.status() if setup else {'revision':None,'calibration':None}
                 state.update(available=setup is not None,token=token);body=json.dumps(state).encode();kind='application/json'
-            elif route=='/app.css':
-                body=(Path(__file__).parent/'app.css').read_bytes();kind='text/css; charset=utf-8'
+            elif route in ('/app.css','/parity.css'):
+                body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js'):
+            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -175,8 +182,11 @@ def run_service(stop_signals):
         try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval)
         except (OSError,ValueError,UnicodeError):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
+    camera=None
+    if store and configuration.get('state')=='ready' and options.get('camera_url'):
+        camera=Camera(options['camera_url'],options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password',''))
     if enabled:
-        collector=Collector(store,Camera(options.get('camera_url',''),options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password','')),interval)
+        collector=Collector(store,camera,interval)
     consumption=None;consumption_error=None
     if args.accounting_library and recognition and reading_format:
         try:
@@ -188,10 +198,12 @@ def run_service(stop_signals):
         from review_store import Reviews
         try:reviews=Reviews(store,recognition)
         except (OSError,sqlite3.Error):pass
+    from camera_setup import CameraSetup
+    preview=CameraSetup(camera,setup,interval,enabled) if store and configuration.get('state')=='ready' else None
     stop_signals.checkpoint()
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews))
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption),signals=stop_signals).run():
+    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption,preview),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
 def main():
     from lifecycle import StartupSignals,StartupStopped,lifecycle_event

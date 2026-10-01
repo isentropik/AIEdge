@@ -44,13 +44,15 @@ let activePage='overview';
 function page(name){
   activePage=name;
   $('error').hidden=!$('error').textContent||$('error').dataset.owner===name;
-  for(const id of ['overview','captures','setup','format']){
+  for(const id of ['overview','captures','setup','format','settings']){
     $(id).hidden=id!==name;$(id+'-tab').setAttribute('aria-current',id===name?'page':'false');
   }
-  $('title').textContent={overview:'Overview',captures:'Captures',setup:'Calibration',format:'Number format'}[name];
+  $('title').textContent={overview:'Overview',captures:'Captures',setup:'Setup',format:'Number format',settings:'Settings'}[name];
 }
-const routes={overview:'overview',captures:'captures',calibration:'setup',format:'format'};
+window.showAppPage=page;
+const routes={setup:'setup',settings:'settings',overview:'overview',captures:'captures',calibration:'setup',format:'format'};
 function route(){
+ if(window.AIEdgeFlow?.route(location.hash))return;
  const review=/^#captures\/([1-9][0-9]*)$/.exec(location.hash);
  const name=review?'captures':routes[location.hash.slice(1)]||'overview';page(name);
  if(review){$('title').textContent='Review capture';window.AIEdgeReview?.open(Number(review[1]));}
@@ -58,7 +60,7 @@ function route(){
  if(name==='setup')window.openCalibration();
  if(name==='format')window.openReadingFormat();
 }
-for(const [hash,name] of Object.entries(routes))$(name+'-tab').onclick=()=>{
+for(const [hash,name] of Object.entries(routes).filter(([hash])=>hash!=='calibration'))$(name+'-tab').onclick=()=>{
  if(location.hash==='#'+hash)route();else location.hash=hash;
 };
 window.addEventListener('hashchange',route);
@@ -193,6 +195,7 @@ function render(s,rows){
     s.capture_enabled&&s.storage?.state==='low_space'?'Capture paused: local storage is low on space. Existing images are kept.':'';
   $('error').dataset.owner=configIssue?'':s.setup_recovery?'setup':s.format_recovery?'format':'';
   $('error').hidden=!issue||$('error').dataset.owner===activePage;$('error').textContent=issue;
+  window.AIEdgeFlow?.renderStatus(s);
   $('checked-at').textContent='Checked '+new Date().toLocaleTimeString();
 }
 async function refresh(){
@@ -207,6 +210,7 @@ async function refresh(){
     render(state,historyPage?.items||[]);
   } catch(error){
     // Keep historical images visible, but do not leave an old value looking live.
+    window.AIEdgeFlow?.statusUnavailable();
     renderConsumption({state:'unavailable',value:null});
     $('consumption-status').textContent='Status unavailable.';
     window.latestReading={state:'unavailable',value:null};

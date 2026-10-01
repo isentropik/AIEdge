@@ -202,7 +202,7 @@ class ProcessRecoveryTests(unittest.TestCase):
                 self.assertFalse(status['capture_enabled'])
                 self.assertEqual(status['mqtt']['state'],'disabled')
                 with urllib.request.urlopen(f'http://127.0.0.1:{port}/') as r:
-                    self.assertIn(b'Calibration',r.read())
+                        self.assertIn(b'id="setup-tab"',r.read())
                 self.assertEqual((root/'calibration.json').read_bytes(),b'{broken calibration')
                 self.assertEqual((root/'reading-format.json').read_bytes(),b'{broken format')
             finally:
