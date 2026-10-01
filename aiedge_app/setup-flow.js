@@ -8,6 +8,7 @@ const form=$('reading-form'),formatHome=$('format');
 let step='image',active=false,busy=false,navigating=false,camera=null,polling=false,viewGeneration=0,routeGeneration=0,statusSnapshot=null;
 const messages={camera_not_configured:'Set the camera address in AIEdge app configuration, or choose a saved image.',camera_not_ready:'The camera is not ready. Check its connection and saved settings.',camera_setup_busy:'A camera request is already running. Wait for it to finish.',camera_authentication_failed:'Camera login was rejected. Check its credentials in app configuration.',camera_api_unavailable:'This firmware does not support remote capture.',camera_connection_failed:'Could not reach the camera. Check its power and network connection.',camera_timeout:'The camera did not respond in time.',camera_setup_failed:'The picture could not be verified. Your current reference has been kept.',camera_certificate_invalid:'The camera certificate could not be verified.',reference_must_be_640x480:'Choose a 640 × 480 reference image.'};
 Object.assign(messages,{camera_busy:'The camera is busy. Wait for the current request to finish.',camera_lighting_unsupported:'This camera does not support app lighting controls.',camera_lighting_config_unsupported:'The saved lighting configuration is unsupported or ambiguous. Check it on the camera.',camera_lighting_pin_unavailable:'That pin is unavailable. Choose a free lighting pin.',camera_lighting_conflict:'Camera settings changed. Load the current settings before applying your choices.',camera_lighting_choice_invalid:'Check the light source, pin, LED count and channel values.',camera_lighting_unverified:'Lighting activation is unverified. Load and activate the saved lighting before taking a picture.',camera_lighting_connection_failed:'The camera connection failed. Load the saved settings to check the result; the request was not retried.',camera_lighting_activation_unverified:'Settings were saved, but activation is unverified. Load and activate the saved lighting before taking a picture.',camera_lighting_save_unverified:'The lighting save is unverified. Load the current settings before continuing.',camera_lighting_rejected:'The camera rejected the lighting request. Load the current settings before continuing.',camera_lighting_response_invalid:'The camera returned an invalid lighting response. Load the current settings before continuing.',camera_lighting_storage_unavailable:'The app could not save its lighting operation record. No further camera changes can be made until storage is repaired.'});
+Object.assign(messages,{camera_image_unsupported:'This camera firmware does not support app image controls.',camera_image_config_unsupported:'The saved image settings are incomplete or ambiguous. Check them on the camera.',camera_image_conflict:'Camera settings changed. Load them again before applying.',camera_image_unverified:'Image settings could not be verified. Load and activate the saved settings before taking a picture.',camera_image_reference_required:'Take a picture in the new orientation and save its calibration before resuming scheduled capture.',camera_image_orientation_unverified:'The picture orientation could not be verified. Your saved calibration has been kept.',camera_image_choice_invalid:'Check the exposure and gain values.',camera_image_storage_unavailable:'The app could not save the image-settings operation. Repair app storage before changing the camera.',camera_image_activation_unverified:'Image settings were saved, but activation could not be verified. Load and activate the saved settings.',camera_image_save_unverified:'The image settings save could not be verified. Load the settings before continuing.',camera_image_connection_failed:'Could not reach the camera. The image-settings request was not retried.',camera_image_response_invalid:'The camera returned an invalid image-settings response.',camera_image_rejected:'The camera rejected the image settings.'});
 function note(message,error=false,target='setup-status'){
  const element=$(target);element.textContent=message;element.hidden=!message;element.dataset.error=String(error);
 }
@@ -37,7 +38,7 @@ function controls(){
  $('take-reference').disabled=busy||!!state.busy||!camera?.configured;
  $('take-reference').hidden=true;
  $('check-camera').disabled=busy||!camera?.configured;
- const stale=!!window.AIEdgeCameraControls?.requiresPicture();
+ const stale=!!window.AIEdgeCameraControls?.requiresPicture()||!!window.AIEdgeImageControls?.requiresPicture();
  $('reference-stage').classList.toggle('reference-stale',image&&stale);
  $('image-take-picture').hidden=(image&&!stale)||!camera?.configured||step!=='image';$('image-take-picture').disabled=busy;
  $('image-choose-file').hidden=!!camera?.configured;
@@ -60,6 +61,7 @@ async function show(next,updateHash=false){
  $('setup-lighting').hidden=step!=='lighting';
  $('setup-editor').hidden=!['image','alignment','dials'].includes(step);
  $('image-controls').hidden=step!=='image';$('placement-controls').hidden=step==='image';
+ window.AIEdgeImageControls?.setStep(step);
  $('selected-label').firstChild.textContent=step==='alignment'?'Marker':'Dial';
  for(const id of ['format','data','finish'])$('setup-'+(id==='format'?'format-host':id)).hidden=step!==id;
  moveFormat(step==='format');
@@ -78,7 +80,7 @@ function fail(message){note(message,true);return false;}
 async function leave(){
  const state=editor();
  if(step==='lighting')return await window.AIEdgeCameraControls?.apply()??true;
- if(step==='image')return (state.has_image&&!window.AIEdgeCameraControls?.requiresPicture())||fail(state.has_image?'Take a picture with the new lighting before continuing.':'Take a picture or choose an image before continuing.');
+ if(step==='image')return (state.has_image&&!window.AIEdgeCameraControls?.requiresPicture()&&!window.AIEdgeImageControls?.requiresPicture())||fail(state.has_image?'Take a picture with the changed camera settings before continuing.':'Take a picture or choose an image before continuing.');
  if(step==='alignment')return state.markers_complete||fail('Place all three markers on fixed markings.');
  if(step==='dials')return await window.AIEdgeCalibration.save();
  if(step==='format')return await window.AIEdgeFormat.save();
@@ -108,8 +110,12 @@ async function go(target){
 function paintCamera(value){
  camera=value;
  window.AIEdgeCameraControls?.configure(value.configured);
+ window.AIEdgeImageControls?.configure(value.configured);
+ window.AIEdgeImageControls?.markAttention(!!value.image_needs_attention);
  if(value.lighting_needs_attention)window.AIEdgeCameraControls?.markAttention();
  if(value.state==='ready'&&value.action?.startsWith('lighting-'))window.AIEdgeCameraControls?.receive(value);
+ if(value.state==='ready'&&value.action?.startsWith('image-'))window.AIEdgeImageControls?.receive(value);
+ if(value.state==='error'&&value.error==='camera_image_unsupported')window.AIEdgeImageControls?.unavailable();
  $('settings-camera-address').textContent=value.camera_url||'Not configured';
  $('settings-capture').textContent=value.capture_enabled?'On':'Off';
  $('settings-interval').textContent=Number.isInteger(value.interval_seconds)?value.interval_seconds+' seconds':'—';
@@ -120,6 +126,7 @@ function paintCamera(value){
   if(['http:','https:'].includes(origin.protocol)&&!origin.username&&!origin.password&&origin.pathname==='/'&&!origin.search&&!origin.hash){link.href=origin.href;link.hidden=false;}
  }catch{}
  $('camera-setup-note').textContent=value.configured?'Camera configured. Pictures are taken only when requested.':'No camera configured. You can use a saved 640 × 480 image.';
+ $('camera-setup-note').hidden=!!value.configured;
  controls();
 }
 async function loadCamera(){
@@ -129,11 +136,12 @@ async function loadCamera(){
 async function cameraAction(action,details={}){
  if(polling||busy)return false;
  if(action==='picture'){
-  try{if(!await(window.AIEdgeCameraControls?.apply()??true))return false;}
+  try{if(!await(window.AIEdgeCameraControls?.apply()??true)||!await(window.AIEdgeImageControls?.apply()??true))return false;}
   catch(error){note(error.message,true);return false;}
  }
  polling=true;busy=true;controls();
  window.AIEdgeCameraControls?.setBusy(true);
+ window.AIEdgeImageControls?.setBusy(true);
  const target=active?'setup-status':'camera-action-status';note('',false,target);
  $('reference-working').hidden=action!=='picture';$('check-camera').disabled=true;
  try{
@@ -147,12 +155,13 @@ async function cameraAction(action,details={}){
   }
   paintCamera(result);
   if(result.state==='error')throw Error(messages[result.error]||'The camera request failed. Your current reference has been kept.');
-  if(action==='picture'){await window.AIEdgeCalibration.useReference(result.reference_sha256);window.AIEdgeCameraControls?.pictureTaken();}
+  if(action==='picture'){await window.AIEdgeCalibration.useReference(result.reference_sha256);window.AIEdgeCameraControls?.pictureTaken();window.AIEdgeImageControls?.pictureTaken(result.image_orientation);}
   else if(action==='lighting-apply')note(result.settings?.active_verified?'Lighting applied.': 'Lighting settings are unchanged.',false,target);
+  else if(action==='image-apply')note(result.image_settings?.active_verified?'Image settings applied.':'Image settings are unchanged.',false,target);
   else if(action==='check')note('Camera: '+(result.readiness?.state||'unknown').replaceAll('_',' '),result.readiness?.state!=='ready',target);
   return true;
  }catch(error){note(error.message,true,target);return false;}
- finally{polling=false;busy=false;window.AIEdgeCameraControls?.setBusy(false);$('reference-working').hidden=true;$('check-camera').disabled=false;controls();}
+ finally{polling=false;busy=false;window.AIEdgeCameraControls?.setBusy(false);window.AIEdgeImageControls?.setBusy(false);$('reference-working').hidden=true;$('check-camera').disabled=false;controls();}
 }
 async function latest(){
  if(busy)return;busy=true;controls();note('Loading latest capture…');
@@ -210,5 +219,6 @@ window.AIEdgeFlow={route,renderStatus,statusUnavailable(){statusSnapshot=null;fo
 window.addEventListener('aiedge-calibration-saved',()=>{if(active)controls();});
 window.addEventListener('resize',()=>{if(active)controls();});
 window.AIEdgeCameraControls?.connect(cameraAction);
+window.AIEdgeImageControls?.connect(cameraAction);
 route(location.hash);loadCamera();
 })();

@@ -1,5 +1,14 @@
 # Changes
 
+## 0.2.0-dev13 (local candidate)
+
+- Add saved exposure, gain and flip controls to Image when the camera advertises the matching activation contract. Keep the camera model visible; automatic exposure/gain mode hides manual controls and brightness.
+- Keep edits local until an explicit picture or activation request. Apply lighting and image choices in order, carry only verified matching revisions between them, and preserve drafts during repeated status polls. Unchanged choices do not write to SD.
+- Persist uncertain activation and block captures across restart. Require a verified orientation receipt, new reference and saved calibration after a flip before scheduled capture can resume. Preview flips immediately relative to a proven camera picture; do not guess the orientation of uploaded images.
+- Keep a stale picture dimmed with one centered capture button. Capture masking stays inside the image. Use compact controls with accessible names and a pinned image on mobile.
+- Shorten temporary reference filenames so valid Windows data paths do not fail at the ordinary filename-length limit.
+- Models, native reading/accounting libraries and saved calculation assumptions are unchanged. This candidate is undeployed; matching camera firmware and physical behavior require separate validation and approval. Automatic exposure/gain is not automatic lighting calibration.
+
 ## 0.2.0-dev12 (review candidate)
 
 - Add optional original-image archives to SMB/NFS shares mounted by Home Assistant under /media. Keep local app storage as the default and preserve all local images.

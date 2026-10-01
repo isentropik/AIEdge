@@ -120,3 +120,23 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .archive-card .setup-status{margin:.75rem 0 0}
 .archive-card .actions:has(button:not([hidden])){margin-top:.75rem}
 @media(max-width:600px){.archive-path{grid-template-columns:1fr;gap:.375rem}.archive-card .panel-title{align-items:flex-start}.archive-card a{overflow-wrap:anywhere}}
+
+/* Sensor controls scroll independently of the reference on desktop. */
+#sensor-controls,#image-manual-controls{display:grid;gap:10px}
+.sensor-auto{padding-bottom:10px;border-bottom:1px solid var(--line);font-size:12px}
+.sensor-section{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:4px;font-size:12px;font-weight:600}
+.sensor-section .check-label{font-size:11px;color:var(--muted);font-weight:400}
+.sensor-range{display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;font-size:12px}
+.sensor-range input{grid-column:1/-1;width:100%;min-height:24px;padding:0;accent-color:var(--accent);cursor:pointer}
+.sensor-range output{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px}
+.sensor-limit{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px}
+.sensor-limit select{width:90px;min-height:34px}
+.image-sources{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+.image-sources button,.image-sources .file-label{font-size:11px!important;padding:7px 5px;min-width:0}
+#image-controls .camera-sensor{padding-bottom:4px;color:var(--muted)}
+#image-controls .camera-sensor span{font-weight:600;color:var(--text)}
+#image-controls .check-label input{margin:0;width:16px;height:16px;accent-color:var(--accent)}
+#image-controls-note{font-size:11px!important}
+#camera-control-link{justify-self:start}
+@media(max-width:760px){#image-controls{margin-top:12px}#image-manual-controls{grid-template-columns:1fr 1fr;column-gap:20px}.sensor-section{grid-column:1/-1}.sensor-range{min-width:0}.sensor-range input{min-height:36px}#sensor-controls .check-label{min-height:30px}}
+@media(max-width:360px){#image-manual-controls{grid-template-columns:1fr}.image-sources button,.image-sources .file-label{min-height:42px!important}}

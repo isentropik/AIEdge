@@ -14,6 +14,7 @@ captures or publish readings.
 | Analog dials | One selector for every dial, including a small wheel. Crop, rename, CW/CCW, four rim landmarks and a separate needle pivot. |
 | Number format | Physical value per revolution, units and highlighted dial locations. No sample digits, display-digit count, inclusion controls or adjustable tolerance. |
 | Image viewing | Grid, zoom and fit icons. The image stays beside controls on desktop and visible while scrolling controls on mobile. |
+| Sensor controls | Explicitly load exposure/gain controls on supported camera firmware. Automatic exposure and gain hides manual controls. The camera model stays visible. |
 | Data | Original images and readings stay in Home Assistant app storage. Storage health and MQTT state are shown. |
 | Overview and history | Physical reading, individual estimates, consumption state, capture history and manual review. Unknown or ambiguous data stays explicit. |
 
@@ -35,6 +36,29 @@ review them, then explicitly activate them. The app does not blindly retry a wri
 or silently roll it back. A successful handler response verifies saved configuration
 and reported activation, not physical brightness or reading accuracy.
 
+## Exposure, gain and orientation
+
+Load camera controls reads settings without taking a picture. The camera must
+advertise the exact supported contract. Unknown or older firmware remains usable
+for saved-image setup; unavailable sensor controls cannot claim activation.
+
+Automatic exposure and gain delegates those two controls to the sensor. It keeps
+the selected lighting level; it does not search for ideal lighting or verify noise.
+Manual mode exposes separate automatic exposure/gain switches, exposure, exposure
+correction, extra sensor exposure correction, gain and its limit. Applicable
+controls are shown together rather than behind a second advanced section.
+
+Editing sliders does not capture or write. Take picture applies changed choices
+without a restart, checks exact saved bytes and activation, then takes one photo.
+Brightness and sensor changes dim the current photo until that explicit capture.
+Changing a choice back before applying it does not require another picture.
+
+Flip icons preview immediately after a photo whose orientation has been verified.
+An uploaded or legacy image has no assumed orientation. Changing sensor orientation
+requires a matching new photo and calibration before scheduled captures resume.
+The flip preview disappears on Alignment so coordinates refer to actual pixels.
+Replacing the reference clears old landmarks and its preview orientation baseline.
+
 ## Remaining camera controls
 
 The app integrates the installed camera's lighting-capabilities, configuration-save
@@ -42,11 +66,11 @@ and apply-lighting handlers. A camera without them shows an unsupported message.
 External PWM lighting and ambiguous configurations are not converted automatically.
 No camera firmware update is included.
 
-Exposure, gain and sensor orientation remain on the camera website pending a
-tested app management contract. Rotation, flips and sensor cropping must affect
-subsequent pictures as well as the reference. Editing only the reference would
-give alignment a different coordinate system from incoming captures. Grid, zoom
-and fit are view controls; dial crop edits affect recognition calibration.
+Other sensor adjustments, JPEG quality, whole-frame rotation and sensor cropping
+remain outside this app contract. Any future crop/rotation must affect subsequent
+pictures as well as the reference. Grid, zoom and fit are view controls; dial crop
+edits affect recognition calibration. Physical sensor/lighting verification and
+production firmware startup recovery remain prerequisites to a live firmware update.
 
 ## Setup photos
 

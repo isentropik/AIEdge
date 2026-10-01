@@ -68,4 +68,14 @@ class Tests(unittest.TestCase):
         self.assertEqual(self.setup.status()['calibration']['dials'][0]['name'],'Dial 1')
         (self.setup.references/(self.ref+'.image')).write_bytes(b'corrupt')
         with self.assertRaisesRegex(ValueError,'reference_corrupt'):self.setup.save(self.ref,DESIGN,saved['revision'])
+    def test_reference_save_with_long_windows_data_path(self):
+        # The final reference path fits Windows' ordinary limit, but appending
+        # another UUID to its hash filename would make the temporary path fail.
+        base=Path(self.temp.name).resolve()
+        root=base/('d'*max(1,142-len(str(base))))
+        root.mkdir()
+        setup=Setup(root,Candidate,Recognition(Store(root)))
+        blob=reference();digest=setup.add_reference(blob)
+        self.assertEqual(setup.reference(digest),blob)
+        self.assertEqual(list(setup.references.glob('*.tmp')),[])
 if __name__=='__main__':unittest.main()

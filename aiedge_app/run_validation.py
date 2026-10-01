@@ -37,6 +37,8 @@ def inventory_errors(identifiers,allow_archive,packaged):
                            ('test_startup_shutdown.RuntimeTests.',5),('test_runtime_copy.RuntimeCopyTests.',4),
                            ('test_lifecycle.LifecycleTests.',2),('test_camera_setup.CameraSetupTests.',8),
                            ('test_camera_lighting.ConfigTests.',7),('test_camera_lighting.LightingTransactions.',12),
+                           ('test_camera_image.ImageConfigTests.',5),('test_camera_image.ImageTransactions.',10),
+                           ('test_camera_setup.ImageSetupTests.',3),
                            ('test_archive.ArchiveTests.',15),('test_archive.ArchiveCopyTests.',6),
                            ('test_archive.ArchiveLinuxTests.',2),('test_archive_http.ArchiveHttpTests.',3)):
         if sum(name.startswith(prefix) for name in identifiers)<minimum:

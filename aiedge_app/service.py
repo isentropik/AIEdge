@@ -52,8 +52,9 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     else:raise ValueError('archive_action_invalid')
                 elif route=='/api/camera-setup':
                     if camera_setup is None:self.reply({'error':'camera_not_configured'},503);return
-                    if not isinstance(data,dict) or set(data) != ({'action','revision','lighting'} if data.get('action')=='lighting-apply' else {'action'}):raise ValueError('invalid_camera_setup_action')
-                    result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'))
+                    expected={'action','revision','lighting'} if isinstance(data,dict) and data.get('action')=='lighting-apply' else {'action','revision','controls'} if isinstance(data,dict) and data.get('action')=='image-apply' else {'action'}
+                    if not isinstance(data,dict) or set(data) != expected:raise ValueError('invalid_camera_setup_action')
+                    result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'),data.get('controls'))
                 elif route=='/api/setup/suggest-markers':
                     from marker_suggestions import propose
                     result=propose(setup.reference(data['reference_sha256']),data['crops'])
@@ -63,7 +64,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 elif route=='/api/reading-format':
                     if reading_format is None:self.reply({'error':'Reading format is not configured.'},503);return
                     result=reading_format.save(data['format'],data['revision'])
-                else:result=setup.save(data['reference_sha256'],data['design'],data['revision'])
+                else:
+                    result=setup.save(data['reference_sha256'],data['design'],data['revision'])
+                    image=getattr(camera_setup,'image_controls',None)
+                    if image:image.calibration_saved(result['calibration']['reference_sha256'])
                 self.reply(result)
             except ReviewConflict as exc:self.reply({'error':str(exc),'code':'review_conflict'},409)
             except ArchiveConflict as exc:self.reply({'error':str(exc),'code':'archive_conflict'},409)
@@ -122,7 +126,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/archive.js'):
+            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -225,9 +229,14 @@ def run_service(stop_signals):
         except (OSError,sqlite3.Error,ValueError):pass
     from camera_setup import CameraSetup
     from camera_lighting import CameraLighting
+    from camera_image import CameraImage
     lighting=CameraLighting(camera,args.data) if camera else None
-    if camera:camera.lighting=lighting
-    preview=CameraSetup(camera,setup,interval,enabled,lighting) if store and configuration.get('state')=='ready' else None
+    image_controls=CameraImage(camera,args.data) if camera else None
+    if camera:camera.lighting=lighting;camera.image_controls=image_controls
+    if image_controls and setup:
+        saved=setup.status().get('calibration')
+        if saved:image_controls.calibration_saved(saved.get('reference_sha256'))
+    preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls) if store and configuration.get('state')=='ready' else None
     stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive))
     from lifecycle import ServiceRuntime

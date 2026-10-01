@@ -46,7 +46,9 @@ class Setup:
         return digest
     @staticmethod
     def _atomic(path,blob):
-        temp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+        # Reference filenames already contain a 64-character hash. Keep the
+        # temporary sibling short enough for ordinary Windows data paths.
+        temp=path.with_name('.setup-'+uuid.uuid4().hex+'.tmp')
         try:
             with temp.open('xb') as f:f.write(blob);f.flush();os.fsync(f.fileno())
             if temp.read_bytes()!=blob:raise OSError('setup_write_verification_failed')

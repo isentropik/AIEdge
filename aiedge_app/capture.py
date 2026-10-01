@@ -187,7 +187,7 @@ class Camera:
         if token and (username or password):raise ValueError('choose_one_camera_auth_method')
         if bool(username)!=bool(password) or ':' in username or any(c in username+password for c in ('\r','\n')):raise ValueError('invalid_camera_credentials')
         self.origin=url.rstrip('/');self.token=token
-        self.operation_lock=threading.RLock();self.lighting=None
+        self.operation_lock=threading.RLock();self.lighting=None;self.image_controls=None
         self.basic=base64.b64encode((username+':'+password).encode('utf-8')).decode('ascii') if username else None
         self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),DeadlineHTTPHandler(),DeadlineHTTPSHandler())
     @contextmanager
@@ -195,13 +195,16 @@ class Camera:
         if not self.operation_lock.acquire(blocking=False):raise ValueError('camera_busy')
         try:yield
         finally:self.operation_lock.release()
-    def require_capture(self):
+    def require_capture(self,reference=False):
         if self.lighting is not None:self.lighting.require_capture()
+        if self.image_controls is not None:self.image_controls.require_capture(reference=reference)
     def readiness(self):
         from camera_status import probe
         return probe(self)
-    def capture(self):
-        self.require_capture()
+    def reference_capture(self):
+        return self.capture(reference=True)
+    def capture(self,reference=False):
+        self.require_capture(reference=reference)
         headers={'Content-Type':'application/json'}
         if self.token:headers['Authorization']='Bearer '+self.token
         elif self.basic:headers['Authorization']='Basic '+self.basic
@@ -253,7 +256,7 @@ class Collector:
                 if hasattr(self.camera,'require_capture'):self.camera.require_capture()
                 self._once()
         except ValueError as error:
-            self.last_error={'error':str(error) if str(error) in ('camera_busy','camera_lighting_unverified') else 'camera_connection_failed'}
+            self.last_error={'error':str(error) if str(error) in ('camera_busy','camera_lighting_unverified','camera_image_unverified','camera_image_reference_required') else 'camera_connection_failed'}
             try:self.store.fail(self.last_error['error'])
             except (AttributeError,OSError,sqlite3.Error):pass
     def _once(self):
