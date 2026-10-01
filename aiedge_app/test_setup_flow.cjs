@@ -9,7 +9,7 @@ class Element{
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,configured=false,openCalibration=async()=>{},saveCalibration=null}={}){
  const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
- const buttons=['image','alignment','dials','format','data','finish'].map(step=>{const e=new Element();e.dataset.step=step;return e;});
+ const buttons=['lighting','image','alignment','dials','format','data','finish'].map(step=>{const e=new Element();e.dataset.step=step;return e;});
  const editor={has_image:hasImage,markers_complete:markers,dial_count:6,busy:false},calls=[],posts=[];
  const location={hash};
  const window={showAppPage(name){calls.push('page:'+name);},openCalibration,openReadingFormat:async()=>{},
@@ -21,7 +21,7 @@ function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,confi
 }
 test('opening setup reads app metadata but never automatically requests a photo',async()=>{
  const app=fixture();await tick();assert.deepEqual(app.posts,[]);assert.equal(app.get('take-reference').disabled,true);
- assert.equal(app.get('step-count').textContent,'Step 1 of 6');
+ assert.equal(app.get('step-count').textContent,'Step 2 of 7');
 });
 test('existing calibration bookmarks open the working image step',async()=>{
  const app=fixture({hash:'#calibration'});await tick();
@@ -35,7 +35,7 @@ test('step tabs stay disabled while the saved reference is loading',async()=>{
 });
 test('unchanged reference advances and returns without requiring another picture',async()=>{
  const app=fixture();await tick();await app.get('setup-next').onclick();await tick();
- assert.equal(app.location.hash,'setup/alignment');assert.equal(app.get('step-count').textContent,'Step 2 of 6');
+ assert.equal(app.location.hash,'setup/alignment');assert.equal(app.get('step-count').textContent,'Step 3 of 7');
  await app.get('setup-back').onclick();assert.equal(app.location.hash,'setup/image');assert.equal(app.posts.length,0);
 });
 test('missing image blocks both Next and a future step with one specific error',async()=>{
@@ -57,7 +57,7 @@ test('failed calibration save stays on dials instead of opening format',async()=
 test('successful dial save opens format and updates the current step',async()=>{
  const app=fixture({hash:'#setup/dials'});await tick();await app.get('setup-next').onclick();
  assert.equal(app.calls.filter(c=>c==='save').length,1);assert.equal(app.location.hash,'setup/format');
- assert.equal(app.get('step-count').textContent,'Step 4 of 6');
+ assert.equal(app.get('step-count').textContent,'Step 5 of 7');
 });
 test('data fields become unknown after status loss rather than retaining success',async()=>{
  const app=fixture();await tick();app.window.AIEdgeFlow.renderStatus({storage:{state:'ready',free_bytes:1024**3},mqtt:{state:'connected'}});

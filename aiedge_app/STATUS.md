@@ -1,26 +1,47 @@
-# UI candidate - October 1, 2026
+# Lighting controls candidate - October 1, 2026
 
-The dev10 review candidate adds guided Image, Alignment, Dials, Number format,
-Data and Finish steps plus Settings. Compact desktop panes and mobile layouts
-keep the image visible while editing controls. An unchanged reference is retained,
-navigation cannot be overwritten by a stale save, and selecting the sixth dial
-survives route updates.
+The dev11 candidate adds Lighting before Image, using the installed camera's
+existing bounded save/activation handlers. Dedicated white, RGB and custom mix
+share one brightness control on Image. Exact baseline/readback checks preserve
+unrelated configuration bytes. Unchanged choices cause no SD write. An uncertain
+transaction survives app restart and blocks new captures until explicitly resolved.
 
-Setup photos are explicit asynchronous jobs, separate from scheduled-capture
-observations, inference and training. Navigation reads only local app data and
-cached camera configuration. Camera LED/exposure/orientation controls remain on
-the camera website because the capture protocol has no settings-management
-contract; full camera-management parity is not complete. See UI-PARITY.md.
+The compact app setup retains Alignment, Dials, Number format, Data and Finish.
+Exposure, gain and sensor orientation still use the camera website. See UI-PARITY.md
+for the implemented controls and remaining gaps. Models, native cores, physical
+calculation, calibration and number format identities are unchanged.
 
-Local validation: 282 host checks passed with one Linux-only check skipped; all
-56 UI checks passed. Host replay includes protected archived images and is not an
-accuracy claim. Models, native cores and physical calculations are unchanged by
-this UI candidate. The prior dev9 Linux package check succeeded; this candidate
-needs its own Linux package check.
+Local validation: 301 host checks passed with one Linux-only packaged-runtime
+check skipped; all 66 UI checks passed. Protected archive replay was included.
+Real-browser checks covered a 1440 × 900 desktop pane, 390 × 844 and 320 × 740
+mobile layouts, light/dark themes, W/custom mode controls, a stale photo, reverting
+unchanged brightness and continuing without another capture. No browser console
+errors were observed. This head still needs its required Linux package check.
 
-This is a review candidate, not a live Home Assistant update. The installed app
-remains at the dev8 checkpoint below. No camera firmware, lighting settings,
-capture/MQTT options or live data were changed.
+This is a local review candidate, not a live HA update. Read-only compatibility
+checks found an OV2640 camera and 19 SK6812 RGBW pixels on the installed meter.
+No photos, camera settings or firmware changed. Physical brightness behavior and
+activation on that hardware remain unverified. The live app's camera URL is blank;
+configuring it needs a separate reviewed change while capture and MQTT remain off.
+
+# Installed checkpoint - October 1, 2026
+
+Dev10 is installed and started after explicit chat approval, a fresh verified
+Time Machine backup and an AIEdge-only cold backup. Smart Backup was restored
+and verified. The four saved image hashes, reference, six-dial calibration,
+physical values, app options, reviews and history were preserved. Capture and
+MQTT remain off; experimental automatic updates remain disabled.
+
+Its required Linux CI passed: 277 checks passed and six private archive checks
+were explicitly omitted. Packaged startup, persistence, corrupt-state handling
+and SIGTERM shutdown were exercised; all 56 browser-logic checks passed. Local
+real-browser responsive checks passed. Live HA UI bytes matched the tested source,
+but direct live rendering was blocked by the browser and remains unverified.
+These checks do not establish reading accuracy or sustained capture reliability.
+
+Rollback: AIEdge-only cold backup e64bf067 and Time Machine backup
+/media/timemachine/2026/10/2026-10-01-114836. Evidence and app restore limitations:
+app-ui-parity-20261001/deployment-dev10/ in the local validation workspace.
 
 # Previous installed checkpoint - September 30, 2026
 

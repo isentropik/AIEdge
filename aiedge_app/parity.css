@@ -98,3 +98,14 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 #reference-empty{display:grid;justify-items:center;gap:12px}#reference-empty p{margin:0}#reference-empty .primary,#reference-empty .file-label{min-width:130px}
 @media(max-width:540px){.editor-stage,.format-preview,.review-photo{position:sticky;top:0;z-index:2}#reference-stage{max-height:34dvh}.editor-stage .panel-title{min-height:40px;padding:8px 12px}.image-tools{min-height:42px}}
+
+.lighting-card{max-width:620px;padding:18px}.lighting-card .panel-title{padding:0 0 14px}.lighting-card h3{font-size:14px;margin:0}
+#lighting-fields,#lighting-strip-fields{display:grid;gap:14px}.lighting-card label{display:grid;grid-template-columns:minmax(110px,1fr) 220px;align-items:center;gap:14px;font-size:13px}
+.lighting-card input,.lighting-card select{width:100%;min-height:38px}.lighting-card input[type=color]{width:46px;height:38px;padding:4px;cursor:pointer}
+#lighting-custom{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}#lighting-custom label{display:grid;grid-template-columns:1fr;gap:6px}
+#apply-saved-lighting{margin-top:14px}.camera-sensor{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:var(--muted)}
+#image-brightness{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;color:var(--text);font-size:13px}#image-brightness input{grid-column:1/-1;width:100%;cursor:pointer;accent-color:var(--accent)}
+#lighting-percent{font-variant-numeric:tabular-nums;color:var(--muted)}.image-capture-button{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:1;min-width:130px}
+.image-capture-button:active{transform:translate(-50%,-50%)}.reference-stale canvas{opacity:.3}
+@media(max-width:540px){.lighting-card{padding:15px}.lighting-card .panel-title{flex-wrap:wrap;gap:12px}.lighting-card label{grid-template-columns:1fr minmax(0,150px)}#lighting-custom{grid-template-columns:repeat(4,minmax(0,1fr))}#lighting-custom label{grid-template-columns:1fr}}
+@media(max-width:540px){.setup-steps{display:flex;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none}.setup-steps button{flex:none;white-space:nowrap;min-height:36px;padding:6px 8px}}

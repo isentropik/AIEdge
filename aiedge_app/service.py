@@ -36,8 +36,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 data=json.loads(body)
                 if route=='/api/camera-setup':
                     if camera_setup is None:self.reply({'error':'camera_not_configured'},503);return
-                    if not isinstance(data,dict) or set(data)!={'action'}:raise ValueError('invalid_camera_setup_action')
-                    result=camera_setup.start(data['action'])
+                    if not isinstance(data,dict) or set(data) != ({'action','revision','lighting'} if data.get('action')=='lighting-apply' else {'action'}):raise ValueError('invalid_camera_setup_action')
+                    result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'))
                 elif route=='/api/setup/suggest-markers':
                     from marker_suggestions import propose
                     result=propose(setup.reference(data['reference_sha256']),data['crops'])
@@ -102,7 +102,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js'):
+            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -199,7 +199,10 @@ def run_service(stop_signals):
         try:reviews=Reviews(store,recognition)
         except (OSError,sqlite3.Error):pass
     from camera_setup import CameraSetup
-    preview=CameraSetup(camera,setup,interval,enabled) if store and configuration.get('state')=='ready' else None
+    from camera_lighting import CameraLighting
+    lighting=CameraLighting(camera,args.data) if camera else None
+    if camera:camera.lighting=lighting
+    preview=CameraSetup(camera,setup,interval,enabled,lighting) if store and configuration.get('state')=='ready' else None
     stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview))
     from lifecycle import ServiceRuntime
