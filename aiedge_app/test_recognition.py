@@ -40,6 +40,18 @@ class Tests(unittest.TestCase):
         self.reader.read_jpeg=fail;self.worker.once()
         self.assertEqual(self.worker.latest()['error'],'alignment_rejected');self.assertEqual(self.store.status()['captures'],1)
         self.assertFalse(self.worker.once())
+    def test_different_sampling_pipeline_cannot_be_relabelled_as_current(self):
+        self.store.add('camera',JPEG,headers())
+        self.reader.read_jpeg=lambda blob:{'state':'estimated','pipeline_id':'other-sampling-mode',
+                                         'dial_positions':[{'position':2.5}]}
+        self.assertTrue(self.worker.once())
+        result=self.worker.latest()
+        self.assertEqual(result['state'],'rejected')
+        self.assertEqual(result['error'],'reader_pipeline_mismatch')
+        self.assertEqual(result['dial_positions'],[])
+        self.assertEqual(result['pipeline_id'],self.reader.pipeline_id)
+        self.assertFalse(self.worker.once())
+        self.assertEqual(self.store.image(result['source_sha256']),JPEG)
     def test_damaged_result_is_preserved_and_not_shown_as_a_reading(self):
         self.store.add('camera',JPEG,headers());self.worker.once()
         original=self.worker.latest()

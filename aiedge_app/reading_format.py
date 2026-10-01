@@ -60,6 +60,31 @@ def display_quantity(value,document,register=False,resolution_factor=1):
 
 def display_reading(value,document):return display_quantity(value,document,register=True)
 
+
+def reconcile_reading(reading,consumption):
+    """Expose a current temporal refinement only for the same image and format.
+
+    No fallback to an older total when consumption is pending, rejected or
+    recovering. Native single-image estimates keep their original provenance.
+    """
+    if reading.get('state')!='ambiguous' or not isinstance(consumption,dict):return reading
+    if consumption.get('state') not in ('anchored','estimated','within_noise','bounded','ambiguous'):return reading
+    for key in ('format_id','source_sha256'):
+        value=reading.get(key)
+        if not isinstance(value,str) or not re.fullmatch('[a-f0-9]{64}',value) or value!=consumption.get(key):return reading
+    absolute=consumption.get('absolute')
+    if not isinstance(absolute,dict) or absolute.get('accuracy_verified') is not False or absolute.get('training_allowed') is not False:return reading
+    if absolute.get('unit')!=reading.get('unit') or absolute.get('provenance')!='temporal_consumption_bounds':return reading
+    bounds=absolute.get('bounds')
+    if not isinstance(bounds,dict) or bounds.get('state')!='bounded':return reading
+    result={**reading,'bounds':bounds,'provenance':absolute['provenance'],
+            'anchor_captured_at':consumption.get('anchor_captured_at'),'accuracy_verified':False,'training_allowed':False}
+    value=absolute.get('value');ranges=bounds.get('ranges')
+    if absolute.get('state')=='estimated' and finite_number(value) and value>=0 and isinstance(absolute.get('text'),str):
+        if isinstance(ranges,list) and len(ranges)==1 and isinstance(ranges[0],dict) and all(finite_number(ranges[0].get(k)) for k in ('lower','upper')) and ranges[0]['lower']<=value<=ranges[0]['upper']:
+            result.update(state='estimated',value=value,text=absolute['text'])
+    return result
+
 class ReadingFormat:
     def __init__(self,native,document):
         self.native=native;self.document,self.identity=validate(document)
@@ -84,6 +109,14 @@ class ReadingFormat:
         result.update(self.native.reading([d['value_per_revolution'] for d in self.document['dials']],positions,
                                          [d['position_error'] for d in self.document['dials']]))
         if result['state']=='estimated':result['text']=display_reading(result['value'],self.document)
+        elif result['state']=='ambiguous':
+            from reading_bounds import display_bounds
+            result['bounds']=display_bounds(self.document,positions)
+            if result['bounds']['state']=='inconsistent':
+                result.update(state='inconsistent',reason='dial_bounds_disagree')
+        if result['state']=='inconsistent':
+            from reading_bounds import diagnose_inconsistency
+            result['consistency']=diagnose_inconsistency(self.document,positions)
         return result
 
 

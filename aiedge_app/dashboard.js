@@ -16,6 +16,7 @@ const captureErrors={
  invalid_capture_clock_id:'Camera returned an invalid clock identifier. That image was rejected.',
  invalid_capture_clock_tick:'Camera returned an invalid capture clock. That image was rejected.',
  camera_settings_unavailable:'Camera settings could not be applied. Check the device setup.',
+ camera_startup_recovery:'Camera startup was interrupted or its recovery guard failed. Automatic initialization is paused; check device diagnostics.',
  camera_lighting_failed:'Camera lighting failed. The image was rejected.',
  camera_demo_mode:'The camera is in demo mode. Live capture is unavailable.',
  camera_worker_unavailable:'The camera could not start a capture. The next scheduled capture will try again.',
@@ -24,6 +25,8 @@ const captureErrors={
  camera_name_unresolved:'Camera name could not be resolved. Check its address.',
  camera_connection_failed:'Could not connect to the camera. Check its power and network address.',
  camera_http_error:'Camera returned an unexpected response.',
+ camera_status_invalid:'Camera returned invalid readiness information. No picture was requested.',
+ camera_protocol_unsupported:'Camera firmware uses an unsupported capture protocol. No picture was requested.',
  stored_image_corrupt:'A saved image failed its integrity check. The original file has been kept.',
  stored_image_missing:'A saved image is missing from app storage.',
  storage_low_space:'Capture paused: local storage is low on space. Existing images are kept.',
@@ -41,13 +44,15 @@ let activePage='overview';
 function page(name){
   activePage=name;
   $('error').hidden=!$('error').textContent||$('error').dataset.owner===name;
-  for(const id of ['overview','captures','setup','format']){
+  for(const id of ['overview','captures','setup','format','settings']){
     $(id).hidden=id!==name;$(id+'-tab').setAttribute('aria-current',id===name?'page':'false');
   }
-  $('title').textContent={overview:'Overview',captures:'Captures',setup:'Calibration',format:'Number format'}[name];
+  $('title').textContent={overview:'Overview',captures:'Captures',setup:'Setup',format:'Number format',settings:'Settings'}[name];
 }
-const routes={overview:'overview',captures:'captures',calibration:'setup',format:'format'};
+window.showAppPage=page;
+const routes={setup:'setup',settings:'settings',overview:'overview',captures:'captures',calibration:'setup',format:'format'};
 function route(){
+ if(window.AIEdgeFlow?.route(location.hash))return;
  const review=/^#captures\/([1-9][0-9]*)$/.exec(location.hash);
  const name=review?'captures':routes[location.hash.slice(1)]||'overview';page(name);
  if(review){$('title').textContent='Review capture';window.AIEdgeReview?.open(Number(review[1]));}
@@ -55,7 +60,7 @@ function route(){
  if(name==='setup')window.openCalibration();
  if(name==='format')window.openReadingFormat();
 }
-for(const [hash,name] of Object.entries(routes))$(name+'-tab').onclick=()=>{
+for(const [hash,name] of Object.entries(routes).filter(([hash])=>hash!=='calibration'))$(name+'-tab').onclick=()=>{
  if(location.hash==='#'+hash)route();else location.hash=hash;
 };
 window.addEventListener('hashchange',route);
@@ -163,7 +168,8 @@ function render(s,rows){
   $('mqtt-state').textContent=({disabled:'Not connected',starting:'Connecting',connected:'Connected',publishing:'Publishing',waiting_for_format:'Needs number format',waiting_for_reading:'Waiting for reading',disconnected:'Disconnected',error:'Connection failed'})[s.mqtt?.state]||'Not connected';
   $('count').textContent=s.captures;$('unique').textContent=s.unique_images;$('failures').textContent=s.failures;
   $('schedule').textContent=s.capture_enabled?'Every '+s.interval_seconds+' seconds':'Disabled';
-  $('camera-status').textContent=s.capture_enabled?'Capture enabled':'Capture disabled';
+  const cameraLabels={not_checked:'Waiting for camera check',checking:'Checking camera',ready:'Camera ready',busy:'Camera busy',camera_unavailable:'Camera unavailable',settings_unavailable:'Camera settings unavailable',startup_recovery:'Camera startup recovery',clock_unsynchronized:'Waiting for camera clock',demo_mode:'Camera in demo mode',unavailable:'Camera unreachable'};
+  $('camera-status').textContent=s.capture_enabled?(cameraLabels[s.camera?.state]||'Waiting for camera check'):'Capture disabled';
   $('missed').textContent=s.missed_slots;$('received').textContent=date(s.latest?.received_at);
   $('storage-state').textContent=({ready:'Ready',low_space:'Low space',unavailable:'Unavailable'})[s.storage?.state]||'Unavailable';
   $('storage-free').textContent=Number.isFinite(s.storage?.free_bytes)?(s.storage.free_bytes/(1024**3)).toFixed(1)+' GiB':'—';
@@ -189,6 +195,7 @@ function render(s,rows){
     s.capture_enabled&&s.storage?.state==='low_space'?'Capture paused: local storage is low on space. Existing images are kept.':'';
   $('error').dataset.owner=configIssue?'':s.setup_recovery?'setup':s.format_recovery?'format':'';
   $('error').hidden=!issue||$('error').dataset.owner===activePage;$('error').textContent=issue;
+  window.AIEdgeFlow?.renderStatus(s);
   $('checked-at').textContent='Checked '+new Date().toLocaleTimeString();
 }
 async function refresh(){
@@ -203,6 +210,7 @@ async function refresh(){
     render(state,historyPage?.items||[]);
   } catch(error){
     // Keep historical images visible, but do not leave an old value looking live.
+    window.AIEdgeFlow?.statusUnavailable();
     renderConsumption({state:'unavailable',value:null});
     $('consumption-status').textContent='Status unavailable.';
     window.latestReading={state:'unavailable',value:null};

@@ -1,0 +1,32 @@
+name: AIEdge app Linux validation
+on:
+  push:
+    branches: [codex/aiedge-ha-app, 'codex/aiedge-ha-review-*']
+    paths: [aiedge_app/**, .github/workflows/aiedge-app.yml]
+  pull_request:
+    paths: [aiedge_app/**, .github/workflows/aiedge-app.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  linux-amd64:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build app and verify native model contracts
+        run: docker build --pull --progress=plain -t aiedge-app:test aiedge_app
+      - name: Test browser interface logic
+        run: node --test aiedge_app/test_*.cjs
+      - name: Test required native and packaged coverage
+        run: >-
+          docker run --rm --network none
+          --mount type=bind,src="$PWD/aiedge_app",dst=/tests,readonly
+          --entrypoint python aiedge-app:test
+          /tests/run_validation.py --container
+          --library /opt/aiedge/libaiedge_native.so
+          --accounting-library /opt/aiedge/libaiedge_accounting.so
+          --models /opt/aiedge/assets/models
+          --allow-missing-archive-replay

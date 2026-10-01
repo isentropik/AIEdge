@@ -108,6 +108,11 @@ class Tests(unittest.TestCase):
         class Fixture(BaseHTTPRequestHandler):
             mode='ok';calls=0
             def log_message(self,*args):pass
+            def do_GET(self):
+                from test_camera_status import READY
+                body=json.dumps(READY).encode()
+                self.send_response(200);self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
             def do_POST(self):
                 Fixture.calls+=1
                 self.rfile.read(int(self.headers.get("Content-Length","0")))

@@ -1,16 +1,49 @@
 # Changes
 
+## 0.2.0-dev10 (review candidate)
+
+- Add a compact guided setup: Image, Alignment, Dials, Number format, Data and Finish. Next validates and applies the relevant step; finishing does not restart the camera or enable capture/MQTT.
+- Separate the three alignment markers from dial editing. Keep all dials in one selector with X/Y controls, proportion locking, rim landmarks and a separate needle pivot.
+- Keep the reference beside controls on desktop and visible while scrolling controls on mobile. Add grid, zoom and fit icons without altering image pixels.
+- Reuse an unchanged reference and calibration. A different reference requires fresh geometry. Failed image loads retain the old reference.
+- Add explicit, asynchronous camera checks and setup photos. Page navigation never probes or captures from the camera. Verified photos become reference candidates, not reading events or training labels.
+- Add Settings for camera status, local HA storage and diagnostics. Lighting, exposure and camera-side orientation remain on the camera website because the capture API has no management endpoints.
+- Fix stale navigation, legacy calibration bookmarks and selection resets. Use one specific setup error instead of duplicate notifications.
+- Preserve trained models, native cores, physical calculation, saved reader assumptions and application options.
+
+
+## 0.2.0-dev9 (review candidate)
+
+- Remove position-error controls from Number format, including Advanced. Editing
+  physical dial values preserves saved reader assumptions. New formats retain
+  the provisional ±0.1 default until model/calibration error is validated; this
+  is not a claim of measured model accuracy or a user-adjustable accuracy setting.
+- Use full-resolution dial sampling in the server app. Sparse sampling remains
+  available for diagnostics with a distinct pipeline identity. Four saved frames
+  retained feasible ranges with full sampling; sparse sampling rejected one.
+  This does not verify their reading accuracy. The trained models stay unchanged.
+- Reject a reader result whose sampling/pipeline identity differs from the active
+  reader instead of relabeling it as the current pipeline.
+- Check passive camera readiness before each scheduled capture and distinguish
+  missing hardware, unavailable settings, unsynchronized clocks and busy cameras.
+- Show feasible total ranges and the register digits shared by every current
+  range. Inconsistent estimates identify a conflicting dial group without
+  guessing which individual dial is wrong or publishing a replacement total.
+- Reconcile absolute offsets with existing cumulative-consumption bounds and
+  replay the decisions after restart. Unbounded intervals retain possible whole
+  turns. Changed interpretation starts a separate segment and retains old records.
+- Current source and format identities gate status and optional MQTT output;
+  pending or rejected captures cannot publish an earlier temporal estimate.
+- Preserve reference, calibration, model and native-core contracts. This candidate
+  does not flash the camera, change its settings or enable capture or MQTT.
+
 ## 0.2.0-dev8
 
-- Stop requests are handled during initialization, before capture workers start.
-- An app stop gives in-flight requests and workers a shared 35-second drain
-  deadline; Supervisor allows 45 seconds before a forced stop.
-- Startup, clean stops and drain timeouts produce structured app log events.
-- Coverage checks verify that imported runtime modules are packaged and require
-  startup/shutdown regressions. The Linux packaged-runtime test now checks a
-  successful SIGTERM exit as well as persistent storage.
-- Recognition, physical calculations, dependencies, calibration, saved images
-  and capture/MQTT options retain their dev7 behavior. No camera firmware change.
+- Handle stop requests during initialization and drain active requests and
+  workers within a shared 35-second deadline. Supervisor stop grace is 45 seconds.
+- Emit bounded readiness and shutdown events. A timed-out stop remains a failure.
+- Recognition models, calibration, physical calculations and native cores remain
+  unchanged. The approved three-image trial and two clean stops were verified.
 
 ## 0.2.0-dev7
 

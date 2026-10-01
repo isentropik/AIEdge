@@ -189,6 +189,9 @@ class Camera:
         self.origin=url.rstrip('/');self.token=token
         self.basic=base64.b64encode((username+':'+password).encode('utf-8')).decode('ascii') if username else None
         self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),DeadlineHTTPHandler(),DeadlineHTTPSHandler())
+    def readiness(self):
+        from camera_status import probe
+        return probe(self)
     def capture(self):
         headers={'Content-Type':'application/json'}
         if self.token:headers['Authorization']='Bearer '+self.token
@@ -232,10 +235,27 @@ class Camera:
 
 class Collector:
     def __init__(self,store,camera,interval):
-        self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None
+        self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None;self.camera_state={'state':'not_checked'}
     def once(self):
         try:
             self.store.require_space()
+            # One passive check per scheduled cycle. It is an admission snapshot,
+            # not a promise that the following capture cannot fail or become busy.
+            self.camera_state={'state':'checking','checked_at':now()}
+            try:
+                readiness=self.camera.readiness()
+            except Exception:
+                self.camera_state={'state':'unavailable','checked_at':now()}
+                raise
+            self.camera_state=dict(readiness,checked_at=now())
+            state=readiness.get('state')
+            if state!='ready':
+                code={'busy':'camera_busy','camera_unavailable':'camera_unavailable',
+                      'settings_unavailable':'camera_settings_unavailable',
+                      'startup_recovery':'camera_startup_recovery',
+                      'clock_unsynchronized':'camera_clock_unsynchronized',
+                      'demo_mode':'camera_demo_mode'}.get(state,'camera_status_invalid')
+                raise ValueError(code)
             blob,headers=self.camera.capture();self.store.add(self.camera.origin,blob,headers)
             self.last_error=None
         except Exception as e:

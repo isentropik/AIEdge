@@ -23,9 +23,9 @@ def missing_runtime_modules(dockerfile):
 class RuntimeCopyTests(unittest.TestCase):
     def test_all_local_runtime_dependencies_are_copied(self):
         self.assertEqual(missing_runtime_modules((ROOT/'Dockerfile').read_text()),[])
-    def test_a_missing_clock_module_is_rejected(self):
-        docker=(ROOT/'Dockerfile').read_text().replace(' capture_clock.py ',' ')
-        self.assertIn('capture_clock.py',missing_runtime_modules(docker))
+    def test_a_missing_ambiguity_module_is_rejected(self):
+        docker=(ROOT/'Dockerfile').read_text().replace(' reading_bounds.py ',' ')
+        self.assertIn('reading_bounds.py',missing_runtime_modules(docker))
     def test_a_missing_shutdown_module_is_rejected(self):
         docker=(ROOT/'Dockerfile').read_text().replace(' lifecycle.py ',' ')
         self.assertIn('lifecycle.py',missing_runtime_modules(docker))

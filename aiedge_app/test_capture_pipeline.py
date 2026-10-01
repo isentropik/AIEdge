@@ -15,6 +15,11 @@ class CapturePipelineTests(unittest.TestCase):
         class Fixture(BaseHTTPRequestHandler):
             count=0;bad_hash=False
             def log_message(self,*args):pass
+            def do_GET(self):
+                from test_camera_status import READY
+                body=json.dumps(READY).encode()
+                self.send_response(200);self.send_header('Content-Type','application/json')
+                self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
             def do_POST(self):
                 self.rfile.read(int(self.headers.get('Content-Length','0')));Fixture.count+=1
                 self.send_response(200);self.send_header('Content-Type','image/jpeg');self.send_header('Content-Length',str(len(blob)))

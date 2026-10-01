@@ -219,4 +219,39 @@ class AccountingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'tracker_closed'):tracker.observe([0,0],1,'boot')
         finally:tracker.close()
 
+    def test_temporal_offset_refinement_is_durable_and_replays_after_restart(self):
+        from reading_format import ReadingFormat,reconcile_reading
+        from native import Native
+        self.event(109.5)
+        with self.store.connect() as db:
+            row=db.execute('SELECT sha256,result FROM inference').fetchone()
+            inference=json.loads(row[1]);inference['dial_positions'][0]['position']=1.194
+            db.execute('UPDATE inference SET result=? WHERE sha256=?',(json.dumps(inference),row[0]))
+        first=self.consume();self.assertEqual(first['absolute']['state'],'ambiguous')
+        digest=self.event(110.5)
+        with self.store.connect() as db:
+            row=db.execute('SELECT result FROM inference WHERE sha256=?',(digest,)).fetchone()
+            inference=json.loads(row[0]);inference['dial_positions'][0]['position']=1.006
+            db.execute('UPDATE inference SET result=? WHERE sha256=?',(json.dumps(inference),digest))
+        state=self.consume()
+        self.assertEqual(state['absolute']['state'],'estimated')
+        self.assertAlmostEqual(state['absolute']['value'],110.5)
+        self.assertEqual(self.restart(),state)
+        single=ReadingFormat(Native(os.environ['AIEDGE_READING_LIBRARY']),document()).evaluate(inference)
+        self.assertEqual(single['state'],'ambiguous')
+        resolved=reconcile_reading(single,state)
+        self.assertEqual(resolved['state'],'estimated');self.assertAlmostEqual(resolved['value'],110.5)
+        self.event(111.5,pending=True)
+        pending=self.worker.status()
+        self.assertEqual(pending['absolute']['state'],'pending');self.assertIsNone(pending['absolute']['value'])
+        self.assertEqual(reconcile_reading(single,pending),single)
+
+    def test_temporal_anchor_does_not_cross_a_camera_clock_reset(self):
+        self.event(109.5);self.consume();self.event(110.5);before=self.consume()
+        self.event(111.5,boot='new-clock',tick=1000000);after=self.consume()
+        self.assertNotEqual(before['segment_id'],after['segment_id'])
+        self.assertEqual(after['absolute']['observations'],1)
+        self.assertEqual(after['absolute']['provenance'],'single_image')
+        self.assertEqual(self.restart(),after)
+
 if __name__=='__main__':unittest.main()

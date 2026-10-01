@@ -17,6 +17,14 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
     for name in PACKAGES:
         try:report['dependencies'][name]=importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:report['dependencies'][name]=None
+    from camera_status import STATES
+    snapshot=getattr(collector,'camera_state',{}) if collector else {}
+    state=snapshot.get('state','not_checked')
+    report['camera']={'state':state if state in STATES|{'not_checked','checking','unavailable'} else 'unknown'}
+    mode=snapshot.get('mode')
+    if mode in ('remote-camera','full-reader'):report['camera']['mode']=mode
+    for key in ('camera_available','settings_ready','clock_synchronized'):
+        if type(snapshot.get(key)) is bool:report['camera'][key]=snapshot[key]
     if store:
         try:
             status=store.status()

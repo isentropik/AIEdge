@@ -13,7 +13,9 @@ MODELS={'main':('polar-main-int8.tflite','9c145e67e9008bf1e17567cd69baa48ce54af3
 NAMES=('main.10000k','main.1000k','main.100k','main.10k','main.1k','secondary.5')
 
 class Reader:
-    def __init__(self,library,models,profile,reference_kernels=False,reuse_unchanged=True):
+    def __init__(self,library,models,profile,reference_kernels=False,reuse_unchanged=True,sampling_sparse=False):
+        if type(sampling_sparse) is not bool:raise ValueError('invalid_sampling_mode')
+        self.sampling_sparse=sampling_sparse
         self.native=Native(library);self.lock=threading.Lock();self.networks={}
         self.runtime=None;self.reuse_unchanged=reuse_unchanged;self.last_dials={}
         if isinstance(profile,dict):
@@ -36,14 +38,19 @@ class Reader:
             if out['quantization']!=(1/256,-128):raise ValueError('model_output_quantization_contract:'+role)
             self.networks[role]=(net,inp,out);self.hashes[role]=actual
         contract={'profile':self.profile,'models':self.hashes,'native':hashlib.sha256(Path(library).read_bytes()).hexdigest(),
-                  'reader':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'sparse':True,
+                  'reader':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                   'litert':importlib.metadata.version('ai-edge-litert'),'pillow':importlib.metadata.version('Pillow'),
                   'numpy':np.__version__,'reference_kernels':reference_kernels,
                   'dial_reuse':'exact-source-region-v1' if reuse_unchanged else 'disabled'}
-        self.pipeline_id=hashlib.sha256(json.dumps(contract,sort_keys=True).encode()).hexdigest()
-    def read_rgb(self,rgb,sparse=True):
+        self.pipeline_ids={mode:hashlib.sha256(json.dumps(dict(contract,sparse=mode),sort_keys=True).encode()).hexdigest()
+                           for mode in (False,True)}
+        self.pipeline_id=self.pipeline_ids[self.sampling_sparse]
+    def read_rgb(self,rgb,sparse=None):
+        if sparse is None:sparse=self.sampling_sparse
+        if type(sparse) is not bool:raise ValueError('invalid_sampling_mode')
         start=time.perf_counter()
         result={'state':'rejected','profile':self.profile,'model_hashes':self.hashes,'dial_positions':[],
+                'pipeline_id':self.pipeline_ids[sparse],'sampling':'sparse' if sparse else 'full',
                 'accuracy_verified':False,'training_allowed':False,'physical_value':None,
                 'work':{'preprocessing_reused':0,'inference_reused':0,'dials':len(self.dials)}}
         with self.lock:

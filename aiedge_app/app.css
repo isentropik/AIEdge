@@ -296,6 +296,29 @@ h2{
   max-width:250px;
   margin:0
 }
+.reading-bounds{
+  margin:10px 0 12px;
+  font-size:12px
+}
+.reading-bounds summary{
+  cursor:pointer;
+  color:var(--accent);
+  padding:5px 0
+}
+.reading-bounds ul{
+  list-style:none;
+  padding:0;
+  margin:4px 0 7px;
+  font-variant-numeric:tabular-nums;
+  overflow-wrap:anywhere
+}
+.reading-bounds li{
+  padding:3px 0
+}
+.reading-bounds summary:focus-visible{
+  outline:2px solid var(--accent);
+  outline-offset:3px
+}
 .details h2{
   margin-bottom:9px
 }
@@ -680,7 +703,7 @@ canvas{
 }
 .format-heading,.format-row{
   display:grid;
-  grid-template-columns:minmax(90px,1fr) minmax(125px,1fr) 88px;
+  grid-template-columns:minmax(90px,1fr) minmax(125px,1fr);
   gap:12px;
   padding:10px 14px;
   align-items:center
@@ -764,7 +787,7 @@ canvas{
     gap:6px
   }
   .format-heading,.format-row{
-    grid-template-columns:minmax(65px,1fr) minmax(100px,1.2fr) 72px;
+    grid-template-columns:minmax(65px,1fr) minmax(100px,1.2fr);
     gap:8px;
     padding:10px
   }
@@ -858,7 +881,7 @@ canvas{
     font-size:11px
   }
   .format-heading,.format-row{
-    grid-template-columns:minmax(55px,1fr) minmax(90px,1.2fr) 62px;
+    grid-template-columns:minmax(55px,1fr) minmax(90px,1.2fr);
     gap:6px;
     padding:9px 8px
   }

@@ -37,6 +37,8 @@ class Recognition:
             digest=row[0];start=time.perf_counter()
             try:
                 result=self.reader.read_jpeg(self.store.image(digest))
+                if result.get('pipeline_id',self.reader.pipeline_id)!=self.reader.pipeline_id:
+                    raise ValueError('reader_pipeline_mismatch')
             except Exception as exc:
                 result={'state':'rejected','error':str(exc) if isinstance(exc,ValueError) else type(exc).__name__,
                         'dial_positions':[],'physical_value':None}

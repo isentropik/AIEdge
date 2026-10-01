@@ -35,7 +35,7 @@ values must be reviewed and rebound to that identity before readings are enabled
 These checks do not prove recognition accuracy.
 The default command requires HA Ingress; direct network access is intentionally
 rejected. Standalone remote authentication and a standalone Docker launch workflow
-remain pending. The development container built and started on one Home Assistant Linux amd64 host
+remain pending. The dev5 development container built and started on one Home Assistant Linux amd64 host
 on September 30. UI/API checks and an approved saved-image calibration/persistence
 test pass. The actual container accepted all six dials and retained the reference hash,
 calibration and ft³ format after an app restart, with capture/MQTT disabled. The full
