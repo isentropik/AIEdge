@@ -2,7 +2,51 @@
 
 AIEdge stores camera images, dial estimates and calibration inside the app's
 persistent `/data` directory. No separate storage server or credentials are needed.
-External storage is a future optional feature.
+Optional archive copies use an SMB or NFS share mounted by Home Assistant.
+
+## Optional network archive
+
+You can leave this off. Images, readings and calibration continue to use AIEdge's
+local app storage.
+
+1. In Home Assistant, open **Settings → System → Storage → Add network storage**.
+   Give it a name such as `meter_archive` and choose **Media** for usage.
+2. Enter the storage server's IP address or hostname. For a Windows/SMB share,
+   choose **CIFS**, enter its share name, username and password, then connect.
+   NFS shares are supported too. Home Assistant manages the connection and login;
+   no extra receiver, access token or Docker service is needed.
+3. Open **AIEdge → Setup → Data**, enable **Copy to network storage**, and enter
+   the mounted folder, for example `/media/meter_archive`. To use a folder within
+   that share, append it, for example `/media/meter_archive/aiedge`.
+4. Select **Next**. Stored captures and subsequent captures are queued for copying.
+   The page shows verified copies, waiting captures and any connection problem.
+
+For `\\unraid\backups\aiedge`, the Home Assistant server is `unraid`, the share
+is `backups`, and the AIEdge folder is `/media/<storage-name>/aiedge`.
+The app accepts only mounted network filesystems below `/media`; it does not open
+a Windows UNC path directly or fall back to writing in an unmounted local folder.
+
+Archive files are stored under `<folder>/aiedge/<app-instance>/`. `objects/`
+contains original JPEGs keyed by SHA-256; `events/` retains each capture's frame
+identity, capture and receipt timestamps, and any camera monotonic-clock metadata.
+Identical JPEGs share an object while keeping separate capture events. Credentials,
+model predictions and human labels are excluded. These copies are not permission
+to train: `training_allowed` and `accuracy_verified` remain false, and their split
+status is unchecked. Keep existing held-out and near-duplicate protections when
+later importing them into a training dataset.
+
+Copies run separately from capture, inference and HTTP requests. A slow or absent
+share causes bounded retries; a conflicting remote file or corrupt local image
+requires inspection and an explicit **Retry copies**. Disabling copies stops new
+work, but an in-progress remote write can finish. Local and remote images are
+never deleted by archiving. Restarting resumes from verified acknowledgements;
+an interrupted copy is rechecked rather than counted as successful. NAS power-loss
+durability still depends on the server and storage honoring flush requests.
+
+[Home Assistant network-storage instructions](https://www.home-assistant.io/common-tasks/os/#network-storage)
+
+Development status: the archive implementation is prepared locally. A real SMB/NFS
+mount and deployed end-to-end copy have not yet been verified.
 
 ## Install for a first Home Assistant test
 

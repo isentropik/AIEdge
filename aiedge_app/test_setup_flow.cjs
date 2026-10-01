@@ -14,7 +14,7 @@ function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,confi
  const location={hash};
  const window={showAppPage(name){calls.push('page:'+name);},openCalibration,openReadingFormat:async()=>{},
   AIEdgeCalibration:{status:()=>editor,setMode(mode){calls.push(mode);},save:async()=>{calls.push('save');return saveCalibration?await saveCalibration():save;},draw(){},setGrid(){}},
-  AIEdgeFormat:{save:async()=>{calls.push('format-save');return save;}},addEventListener(){}};
+  AIEdgeFormat:{save:async()=>{calls.push('format-save');return save;}},AIEdgeArchive:{load:async()=>true,save:async()=>{calls.push('archive-save');return save;}},addEventListener(){}};
  const fetch=async(url,options={})=>{if(options.method==='POST')posts.push({url,body:options.body});return {ok:true,json:async()=>url==='api/camera-setup'?{configured,state:'idle',capture_enabled:false,interval_seconds:30}:url==='api/setup'?{token:'fixture-only'}:{format:null}};};
  vm.runInContext(source,vm.createContext({document:{getElementById:get,querySelectorAll:()=>buttons,createElement:()=>new Element()},window,location,fetch,AbortSignal,URL,Date,setTimeout:fn=>setImmediate(fn)}));
  return {get,buttons,window,location,posts,calls,editor};

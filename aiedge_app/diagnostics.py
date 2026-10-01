@@ -4,7 +4,7 @@ from datetime import datetime,timezone
 
 PACKAGES=('ai-edge-litert','numpy','Pillow','paho-mqtt')
 
-def build(store,collector=None,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None):
+def build(store,collector=None,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,archive=None):
     report={'schema_version':1,'generated_at':datetime.now(timezone.utc).isoformat(),
             'runtime':{'python':platform.python_version(),'system':platform.system(),'architecture':platform.machine()},
             'dependencies':{},'configuration_valid':not configuration or configuration.get('state')=='ready',
@@ -53,4 +53,10 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
         state=consumption.status().get('state')
         report['consumption']['state']=state if state in ('not_configured','unavailable','waiting_for_image','recovering','pending','anchored','estimated','within_noise','bounded','ambiguous') else 'unknown'
         report['consumption']['current_failure']=consumption.last_error is not None
+    report['archive']={'state':'unavailable'}
+    if archive:
+        try:
+            state=archive.status()
+            report['archive']={key:state[key] for key in ('state','copied_events','pending_events','error','in_progress')}
+        except (OSError,sqlite3.Error):pass
     return report

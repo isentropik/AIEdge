@@ -10,12 +10,13 @@ import re
 import stat
 import sys
 import uuid
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 MAX_IMAGE = 4*1024*1024
 MAX_METADATA = 16384
 ERRORS = {'archive_mount_unavailable', 'archive_unsupported', 'archive_conflict',
-          'archive_source_invalid', 'archive_io_failed', 'archive_request_invalid'}
+          'archive_source_invalid', 'archive_io_failed', 'archive_request_invalid', 'archive_worker_busy'}
 
 
 class ArchiveError(ValueError):
@@ -139,10 +140,17 @@ def publish(fs, parent, name, files):
         try: verify_directory(fs, existing, files)
         finally: fs.close(existing)
         return
-    temporary = '.pending-' + uuid.uuid4().hex
+    # Reuse only an exact content-addressed staging directory. Repeated outages
+    # cannot create a fresh 4 MiB orphan on every retry. Never replace old bytes.
+    temporary = '.pending-' + digest(canonical({key: digest(value) for key, value in files.items()}))
     staging = fs.directory(parent, temporary)
     try:
-        for filename, body in files.items(): fs.write(staging, filename, body)
+        present = fs.names(staging)
+        if present - set(files): raise ArchiveError('archive_conflict')
+        for filename, body in files.items():
+            if filename in present:
+                if fs.read(staging, filename, len(body)) != body: raise ArchiveError('archive_conflict')
+            else: fs.write(staging, filename, body)
         fs.sync(staging); verify_directory(fs, staging, files)
     finally:
         fs.close(staging)
@@ -170,7 +178,9 @@ def validate_request(request):
                 'monotonic_us', 'training_allowed', 'split_status', 'accuracy_verified'}
     if not isinstance(metadata, dict) or set(metadata) != expected:
         raise ArchiveError('archive_request_invalid')
-    if (metadata['schema_version'] != 1 or type(metadata['event_id']) is not int or metadata['event_id'] < 1
+    if any(not isinstance(metadata[field],str) for field in ('source_instance','image_sha256','camera_key')):
+        raise ArchiveError('archive_request_invalid')
+    if (type(metadata['schema_version']) is not int or metadata['schema_version'] != 1 or type(metadata['event_id']) is not int or not 1 <= metadata['event_id'] <= 9223372036854775807
             or not re.fullmatch('[0-9a-f]{32}', str(metadata['source_instance']))
             or not re.fullmatch('[0-9a-f]{64}', str(metadata['image_sha256']))
             or not re.fullmatch('[0-9a-f]{64}', str(metadata['camera_key']))
@@ -178,13 +188,29 @@ def validate_request(request):
             or metadata['training_allowed'] is not False or metadata['accuracy_verified'] is not False
             or metadata['split_status'] != 'unchecked' or len(canonical(metadata)) > MAX_METADATA):
         raise ArchiveError('archive_request_invalid')
-    if not isinstance(request['source'], str): raise ArchiveError('archive_request_invalid')
+    if not isinstance(metadata['frame_id'], str) or not re.fullmatch('[A-Za-z0-9_.-]{1,128}', metadata['frame_id']):
+        raise ArchiveError('archive_request_invalid')
+    for field in ('captured_at', 'received_at'):
+        try:
+            value = metadata[field]
+            if not isinstance(value, str) or len(value) > 64 or datetime.fromisoformat(value.replace('Z', '+00:00')).tzinfo is None:
+                raise ValueError()
+        except ValueError:
+            raise ArchiveError('archive_request_invalid') from None
+    clock, tick = metadata['clock_id'], metadata['monotonic_us']
+    if not (clock is None and tick is None):
+        if not isinstance(clock, str) or not re.fullmatch('[A-Za-z0-9_.-]{1,128}', clock) or type(tick) is not int or not 0 <= tick <= 9223372036854775807:
+            raise ArchiveError('archive_request_invalid')
+    if not isinstance(request['source'], str) or not Path(request['source']).is_absolute(): raise ArchiveError('archive_request_invalid')
     return metadata
 
 
 def copy(request, filesystem=MountedFilesystem):
     metadata = validate_request(request)
-    with Path(request['source']).open('rb') as stream: blob = stream.read(MAX_IMAGE+1)
+    fd = os.open(request['source'], os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+    with os.fdopen(fd, 'rb') as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode): raise ArchiveError('archive_source_invalid')
+        blob = stream.read(MAX_IMAGE+1)
     if (len(blob) != metadata['image_bytes'] or digest(blob) != metadata['image_sha256']
             or not blob.startswith(b'\xff\xd8') or not blob.endswith(b'\xff\xd9')):
         raise ArchiveError('archive_source_invalid')
@@ -204,10 +230,30 @@ def copy(request, filesystem=MountedFilesystem):
         for fd in reversed(opened): fs.close(fd)
 
 
+def child_guard(lock_path, parent_pid):
+    """One NAS child, including across a parent crash or an unkillable syscall."""
+    if sys.platform != 'linux': raise ArchiveError('archive_unsupported')
+    import ctypes, fcntl, signal
+    if type(parent_pid) is not int or parent_pid < 1: raise ArchiveError('archive_request_invalid')
+    if ctypes.CDLL(None, use_errno=True).prctl(1, signal.SIGKILL, 0, 0, 0) != 0:
+        raise ArchiveError('archive_unsupported')
+    if os.getppid() != parent_pid: raise ArchiveError('archive_worker_busy')
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode): raise ArchiveError('archive_request_invalid')
+        try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError: raise ArchiveError('archive_worker_busy') from None
+    except BaseException:
+        os.close(fd); raise
+    return fd
+
+
 def main():
     result = {'state': 'error', 'code': 'archive_request_invalid'}
+    guard = None
     try:
-        if len(sys.argv) != 3: raise ArchiveError('archive_request_invalid')
+        if len(sys.argv) != 5: raise ArchiveError('archive_request_invalid')
+        guard = child_guard(sys.argv[3], int(sys.argv[4]))
         with Path(sys.argv[1]).open('rb') as stream: raw = stream.read(MAX_METADATA+4097)
         if len(raw) > MAX_METADATA+4096: raise ArchiveError('archive_request_invalid')
         result = copy(json.loads(raw))
@@ -215,9 +261,10 @@ def main():
         result = {'state': 'error', 'code': str(error) if str(error) in ERRORS else 'archive_io_failed'}
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
         result = {'state': 'error', 'code': 'archive_io_failed'}
-    if len(sys.argv) == 3:
+    if len(sys.argv) == 5:
         # Result is local app storage, not on the NAS. Never expose exception text.
         Path(sys.argv[2]).write_bytes(canonical(result))
+    if guard is not None: os.close(guard)
 
 
 if __name__ == '__main__': main()

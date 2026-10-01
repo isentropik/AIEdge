@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev11
+version: 0.2.0-dev12
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -17,6 +17,9 @@ backup: cold
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:gauge
+map:
+  - type: media
+    read_only: false
 services:
   - mqtt:want
 options:

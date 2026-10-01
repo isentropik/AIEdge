@@ -1,5 +1,15 @@
 # Changes
 
+## 0.2.0-dev12 (review candidate)
+
+- Add optional original-image archives to SMB/NFS shares mounted by Home Assistant under /media. Keep local app storage as the default and preserve all local images.
+- Run NAS filesystem work in a separate, bounded process. Keep a durable capture-event cursor, verify file/hash readback, reuse interrupted staging files and retain duplicate acquisition events without duplicating JPEG objects.
+- Preserve capture timestamps and monotonic-clock provenance. Exclude credentials, model estimates and labels; do not admit archive images to training or count them as verified accuracy.
+- Add compact Data controls, copy counts, readable failures and explicit retries. Save through Next with optimistic revision checks; status polling retains unsaved edits and validation errors.
+- Keep the current setup tab visible when switching screen sizes. Drain small rejected POST bodies briefly so an access rejection does not appear as a connection reset.
+- Request the media directory mapping for the app. Do not add Supervisor administration privileges, SMB credentials, an external receiver or new dependencies.
+- Models, recognition, physical calculations and camera configuration are unchanged. Real SMB/NFS operation remains unverified; this candidate is not deployed.
+
 ## 0.2.0-dev11 (review candidate)
 
 - Add a separate Lighting step with explicit camera-settings loading, built-in or addressable lighting, GPIO, pixel format/count, dedicated white, RGB and custom channel mix. Brightness belongs on Image and scales the selected light.

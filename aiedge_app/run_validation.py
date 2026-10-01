@@ -12,12 +12,15 @@ SAMPLING_CHECKS=frozenset((
     'test_changed_dials.ChangedDialTests.test_camera_jpeg_defaults_to_full_sampling_with_separate_sparse_identity',
     'test_changed_dials.ChangedDialTests.test_explicit_sparse_reader_and_invalid_sampling_inputs',
     'test_recognition.Tests.test_different_sampling_pipeline_cannot_be_relabelled_as_current'))
+NAS_LINUX_CHECKS=frozenset(('test_archive.ArchiveLinuxTests.test_nofollow_directory_files_and_nonregular_rejection',
+    'test_archive.ArchiveLinuxTests.test_child_lock_admits_one_process_and_parent_death_stops_it'))
 
 def coverage_errors(result,allow_archive,packaged):
     errors=[]
     if result.testsRun==0:errors.append('No tests ran.')
     allowed=set(ARCHIVE_CHECKS if allow_archive else ())
     if not packaged:allowed.add(PACKAGED_CHECK)
+    if platform.system()!='Linux' and not packaged:allowed.update(NAS_LINUX_CHECKS)
     for test,reason in result.skipped:
         if test.id() not in allowed:errors.append('Required check skipped: '+test.id()+': '+reason)
     return errors
@@ -33,7 +36,9 @@ def inventory_errors(identifiers,allow_archive,packaged):
                            ('test_reading_consistency.ConsistencyTests.',5),('test_reading_consistency.IntegrationTests.',1),
                            ('test_startup_shutdown.RuntimeTests.',5),('test_runtime_copy.RuntimeCopyTests.',4),
                            ('test_lifecycle.LifecycleTests.',2),('test_camera_setup.CameraSetupTests.',8),
-                           ('test_camera_lighting.ConfigTests.',7),('test_camera_lighting.LightingTransactions.',12)):
+                           ('test_camera_lighting.ConfigTests.',7),('test_camera_lighting.LightingTransactions.',12),
+                           ('test_archive.ArchiveTests.',15),('test_archive.ArchiveCopyTests.',6),
+                           ('test_archive.ArchiveLinuxTests.',2),('test_archive_http.ArchiveHttpTests.',3)):
         if sum(name.startswith(prefix) for name in identifiers)<minimum:
             errors.append('Required test coverage is missing: '+prefix)
     if packaged and PACKAGED_CHECK not in identifiers:
