@@ -28,7 +28,7 @@ def coverage_errors(result,allow_archive,packaged):
 
 def inventory_errors(identifiers,allow_archive,packaged):
     identifiers=set(identifiers);errors=[]
-    for prefix,minimum in (('test_delivery_timing.DeliveryTimingTests.',9),('test_consumption.AccountingTests.',20),('test_consumption.FormatBoundTests.',3),
+    for prefix,minimum in (('test_mqtt_semantic_dedup.SemanticDedupTests.',14),('test_delivery_timing.DeliveryTimingTests.',9),('test_consumption.AccountingTests.',20),('test_consumption.FormatBoundTests.',3),
                            ('test_synthetic_pipeline.GeneratedPipelineTests.',3),
                            ('test_meter_profile.MeterTests.',8),('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5),
                            ('test_changed_dials.ChangedDialTests.',12),('test_reading_bounds.BoundTests.',8),

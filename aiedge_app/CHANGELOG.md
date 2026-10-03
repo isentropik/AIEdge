@@ -1,5 +1,16 @@
 # Changes
 
+## 0.2.0-dev26 (local candidate; not deployed)
+
+- Suppress equal numeric MQTT readings across new image hashes/timestamps, while
+  publishing changed physical interpretation or consumption segment immediately.
+- Preserve numeric expiry with fresh-evidence refreshes; unavailable, recovery,
+  reconnect and Home Assistant rediscovery still send their required updates.
+- Commit dedup state only after all reading messages are acknowledged. Suppressed
+  captures remain in local history and do not acquire invented publication timings.
+- Keep recognition, physical accounting, calibration, model identities and camera
+  behavior unchanged. The two-dial image gate remains a separate local experiment.
+
 ## 0.2.0-dev25 (local candidate; not deployed)
 
 - Add read-only per-frame trial results from existing durable inference records.
