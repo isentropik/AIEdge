@@ -1,5 +1,13 @@
 # Changes
 
+## 0.2.0-dev24 (local candidate; not deployed)
+
+- Measure current-session admission-to-recognition waiting, actual consumption work and MQTT acknowledgement attempts separately.
+- Correlate at most 64 private capture events in memory to measure app-host capture-request start through all required reading/attribute/availability broker acknowledgements.
+- Reject stale, ambiguous and failed publications from successful end-to-end samples; deduplicate acknowledgement samples and do not reconstruct missing timings after restart.
+- Preserve stored quantities, physical algorithms and model weights. Changed recognition/consumption source fingerprints require a reviewed relative-segment transition on deployment.
+- Broker acknowledgement is not Home Assistant entity receipt, independent accuracy or camera-internal capture timing.
+
 ## 0.2.0-dev23 (local candidate; not deployed)
 
 - Add bounded, in-memory monotonic stage durations to the existing diagnostic download.

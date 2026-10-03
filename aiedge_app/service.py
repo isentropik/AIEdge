@@ -16,6 +16,22 @@ def capture_trial_context(setup,recognition,reading_format):
                     pipeline_id=reader.pipeline_id if reader else None,
                     format_revision=saved['revision'])
 
+def publication_state(store,recognition,reading_format,consumption):
+    # Capture events can share a JPEG. Match the exact accounting event, then
+    # recheck admission so an older decision cannot borrow a newer timestamp.
+    event,latest=store.publication_frame()
+    inference=recognition.latest();reading=reading_format.evaluate(inference);saved=reading_format.status()
+    if reading.get('format_id')!=saved['revision']:reading={'state':'unavailable','value':None}
+    from reading_format import reconcile_reading
+    accounted=consumption.status() if consumption else None
+    reading=reconcile_reading(reading,accounted)
+    after,_=store.publication_frame()
+    if after!=event or (consumption and accounted.get('event_id')!=event):
+        reading={'state':'pending','value':None}
+    elif consumption and accounted.get('state') not in ('anchored','estimated','within_noise','bounded','ambiguous'):
+        reading={'state':'pending' if accounted.get('state') in ('pending','recovering') else 'unavailable','value':None}
+    return {'latest':latest,'reading':reading,'format':saved['format'],'_timing_event_id':event}
+
 def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None):
     from review_store import ReviewConflict
     from archive import ArchiveConflict
@@ -250,13 +266,8 @@ def run_service(stop_signals):
         mqtt_enabled=False;enabled=False
     if mqtt_enabled:
         from mqtt_output import MqttOutput
-        def publication_snapshot():
-            inference=recognition.latest();reading=reading_format.evaluate(inference);saved=reading_format.status()
-            if reading.get('format_id')!=saved['revision']:reading={'state':'unavailable','value':None}
-            from reading_format import reconcile_reading
-            reading=reconcile_reading(reading,consumption.status() if consumption else None)
-            return {'latest':store.status()['latest'],'reading':reading,'format':saved['format']}
-        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval)
+        def publication_snapshot():return publication_state(store,recognition,reading_format,consumption)
+        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval,performance=store.performance)
         except (OSError,ValueError,UnicodeError):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     camera=None

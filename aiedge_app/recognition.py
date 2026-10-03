@@ -34,6 +34,7 @@ class Recognition:
             with self.store.connect() as db:
                 row=db.execute('SELECT f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id WHERE NOT EXISTS (SELECT 1 FROM inference i WHERE i.sha256=f.sha256 AND i.pipeline=?) ORDER BY (e.event_id=(SELECT MAX(event_id) FROM capture_events)) DESC,e.event_id LIMIT 1',(self.reader.pipeline_id,)).fetchone()
             if not row:return False
+            self.store.performance.begin_recognition(row[0])
             with self.store.performance.measure('recognition') as sample:
                 state=self._process(row[0])
                 sample.outcome='success' if state=='estimated' else 'rejected'

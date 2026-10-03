@@ -4,6 +4,7 @@ from datetime import datetime,timezone
 from pathlib import Path
 import paho.mqtt.client as mqtt
 from capture import NoRedirect
+from performance import Timings
 from setup_store import Setup
 from reading_format import validate
 
@@ -82,7 +83,8 @@ def fresh_state(snapshot,max_age,clock=None):
             'format_id':reading['format_id'],'accuracy_verified':False}
 
 class MqttOutput:
-    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client):
+    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None):
+        self.performance=performance if performance is not None else Timings()
         self.identity=instance_id(directory);self.snapshot=snapshot;self.interval=interval
         self.provider=provider;self.client_factory=client_factory;self.stop=threading.Event()
         self.connected=threading.Event();self.rediscover=threading.Event();self.state='starting';self.error=None
@@ -116,10 +118,13 @@ class MqttOutput:
         self._publish(self.base+'/availability','offline',True)
         self.state='connected';self.last_payload=None
     def publish_snapshot(self,snapshot):
+        with self.performance.measure('mqtt_publication') as sample:
+            sample.outcome=self._publish_snapshot(snapshot)
+    def _publish_snapshot(self,snapshot):
         document=snapshot.get('format')
         if not document:
             if self.client and self.connected.is_set():self._publish(self.base+'/availability','offline',True)
-            self.state='waiting_for_format';return
+            self.state='waiting_for_format';return 'rejected'
         target,base,config=discovery(self.identity,document,self.interval)
         if not self.client or target!=self.configuration or not self.connected.is_set():
             self.close();self.connect(document)
@@ -131,14 +136,18 @@ class MqttOutput:
         payload=json.dumps(state,sort_keys=True,allow_nan=False) if state else None
         if payload is None:
             if self.last_payload!='offline':self._publish(self.base+'/availability','offline',True)
-            self.last_payload='offline';self.state='waiting_for_reading';return
+            self.last_payload='offline';self.state='waiting_for_reading';return 'rejected'
+        outcome='duplicate'
         if payload!=self.last_payload:
             # Ack the new value before advertising availability. Never retain a reading.
             self._publish(self.base+'/state',payload)
             self._publish(self.base+'/attributes',json.dumps({k:v for k,v in state.items() if k!='value'}))
             self._publish(self.base+'/availability','online',True)
             self.last_payload=payload
+            outcome='success'
+            self.performance.publication_ack(snapshot.get('_timing_event_id'),state['source_sha256'])
         self.state='publishing';self.error=None
+        return outcome
     def close(self):
         client=self.client
         if client:

@@ -89,12 +89,12 @@ class Store:
         state=self.storage_status()
         if state['state']=='unavailable':raise ValueError('storage_unavailable')
         if state['free_bytes']<MIN_FREE_BYTES+incoming:raise ValueError('storage_low_space')
-    def add(self,camera,blob,headers):
+    def add(self,camera,blob,headers,*,request_started=None):
         with self.performance.measure('storage') as sample:
-            added=self._add(camera,blob,headers)
+            added=self._add(camera,blob,headers,request_started=request_started)
             sample.outcome='success' if added else 'duplicate'
             return added
-    def _add(self,camera,blob,headers):
+    def _add(self,camera,blob,headers,*,request_started=None):
         with self.performance.measure('image_validation'):
             frame,stamp,digest=validate(blob,headers)
             clock=capture_clock.parse(headers)
@@ -120,8 +120,9 @@ class Store:
             # Persist the image directory entry before committing its ledger row.
             sync_directory(target.parent)
             db.execute('INSERT INTO frames VALUES(?,?,?,?,?,?,0)',(camera,frame,stamp,now(),digest,len(blob)))
-            db.execute('INSERT INTO capture_events(camera,frame_id) VALUES(?,?)',(camera,frame))
+            event=db.execute('INSERT INTO capture_events(camera,frame_id) VALUES(?,?)',(camera,frame)).lastrowid
             if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
+        self.performance.admit(event,digest,request_started)
         return True
     def fail(self,error):
         with self.lock,self.connect() as db:db.execute('INSERT INTO failures VALUES(?,?)',(now(),error))
@@ -146,6 +147,12 @@ class Store:
         for item in items:item['duplicate_image']=bool(item['duplicate_image']);item['training_allowed']=False
         return {'items':items,'next_before':rows[-1][0] if more else None}
 
+    def publication_frame(self):
+        # One coherent private publication snapshot; no extra persistent state.
+        with self.lock,self.connect() as db:
+            row=db.execute('SELECT e.event_id,f.captured_at,f.received_at,f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
+        if not row:return None,None
+        return row[0],dict(zip(('captured_at','received_at','sha256'),row[1:]))
     def capture_timing(self):
         """Newest acquisition and immediately preceding acquisition of that camera.
 
@@ -306,7 +313,9 @@ class Collector:
                       'clock_unsynchronized':'camera_clock_unsynchronized',
                       'demo_mode':'camera_demo_mode'}.get(state,'camera_status_invalid')
                 raise ValueError(code)
-            blob,headers=self.camera.capture();self.store.add(self.camera.origin,blob,headers)
+            request_started=self.store.performance.clock()
+            blob,headers=self.camera.capture()
+            self.store.add(self.camera.origin,blob,headers,request_started=request_started)
             self.last_error=None
         except Exception as e:
             self.last_error={'at':now(),'error':str(e) if isinstance(e,ValueError) else type(e).__name__}
