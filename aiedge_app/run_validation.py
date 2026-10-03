@@ -79,7 +79,7 @@ def main():
     if all(archive):files.update(zip(('archive_calibration','archive_rgb','archive_jpeg'),archive))
     for name,path in files.items():
         if not path.is_file():parser.error(name+' file is unavailable.')
-    for model in ('polar-main-int8.tflite','polar-int8.tflite'):
+    for model in ('polar-main-float.tflite','polar-int8.tflite'):
         if not (args.models/model).is_file():parser.error('Required model is unavailable: '+model)
     os.environ.update(AIEDGE_NATIVE_LIBRARY=str(args.library.resolve()),AIEDGE_READING_LIBRARY=str(args.library.resolve()),
                       AIEDGE_ACCOUNTING_LIBRARY=str(args.accounting_library.resolve()),AIEDGE_MODELS_FIXTURE=str(args.models.resolve()))

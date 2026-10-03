@@ -27,7 +27,7 @@ docker build -t aiedge-app:development aiedge_app
 ```
 
 The image build checks all 24 packaged-file hashes, loads recognition ABI 2 and
-accounting ABI 1, verifies tensor shapes and quantization, invokes both models, and
+accounting ABI 1, verifies tensor shapes and the float-main/int8-secondary contracts, invokes both models, and
 checks a synthetic two-dial interval. Accounting remains separate from recognition. The changed-dial cache is an additive
 ABI 2 entry point; it preserves the full path for changed or rejected regions. Its new
 recognition binary and reader source produce a new pipeline identity. Existing dial
@@ -38,7 +38,7 @@ rejected. Standalone remote authentication and a standalone Docker launch workfl
 remain pending. The dev5 development container built and started on one Home Assistant Linux amd64 host
 on September 30. UI/API checks and an approved saved-image calibration/persistence
 test pass. The actual container accepted all six dials and retained the reference hash,
-calibration and ft³ format after an app restart, with capture/MQTT disabled. The full
+calibration and ftÂ³ format after an app restart, with capture/MQTT disabled. The full
 Linux regression suite has not run. A first experimental HA test
 can build it through the app store using the branch-specific repository URL in
 DOCS.md, with capture and MQTT disabled. This is not a validated release or a
@@ -115,3 +115,15 @@ whether archive replay and packaged startup were required.
 The prepared workflow now uses this runner and the accounting library. It remains
 unpublished because workflow permission is unavailable. Neither the runner's
 Windows results nor the workflow file establishes Linux or Supervisor execution.
+
+
+### Dev20 model assets
+
+The main model is `polar-main-float.tflite`; the secondary model remains
+`polar-int8.tflite`. Only these two selected models are included in the release.
+The frozen native feature tensor is dequantized for main inference without
+resampling, and floating-point probabilities are validated before the existing
+circular decoder. `stage_assets.py` reads the selected names and exact hashes
+from `reader.py`; use a verified folder containing both selected model files.
+Model precision changes invalidate the saved reader identity. The documented
+number-format rebind starts a separate consumption segment, preserving history.

@@ -24,7 +24,7 @@
     "include/RevolutionAccounting.h": "f60b31e10f700162f8c78a15bb8106051512ac02a27ce619002dcdb6efc6817b",
     "include/RevolutionReading.h": "f9ceb66ec951537edff5985c4eb296a871119ae9500a1c75df621a8d1c664ba3",
     "models/polar-int8.tflite": "b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0",
-    "models/polar-main-int8.tflite": "9c145e67e9008bf1e17567cd69baa48ce54af3b1d6b7fa0e1aeeb6b5ce9ec6a5"
+    "models/polar-main-float.tflite": "8c0d63fbe8c3cbc7bd854c464d9cd342b46f766a107d2cbd6d93026c49601016"
   },
   "model_source": "Exact models pinned in reader.py. Headers retain the legacy frozen calibration for parity tests; it is never activated by default. No capture archives or credentials are packaged."
 }

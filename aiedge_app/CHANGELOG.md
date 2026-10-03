@@ -1,5 +1,13 @@
 # Changes
 
+## 0.2.0-dev20 (draft; not deployed)
+
+- Use the existing floating-point main-dial model to avoid large jumps seen in saved-image tone tests. The secondary model is unchanged.
+- Validate the separate model input/output contracts while preserving native alignment, needle pivots and rejection checks.
+- Keep old model results and reviews in history. A model change requires saving the number format against the new reader before current readings or consumption resume.
+- Begin a separate consumption segment after the format is rebound; do not silently carry an old model's consumption anchor forward.
+
+
 ## 0.2.0-dev19 (local candidate)
 
 - Keep the unchecked camera status readable in the compact Auto layout.
@@ -88,7 +96,7 @@
 
 - Remove position-error controls from Number format, including Advanced. Editing
   physical dial values preserves saved reader assumptions. New formats retain
-  the provisional ±0.1 default until model/calibration error is validated; this
+  the provisional Â±0.1 default until model/calibration error is validated; this
   is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames
