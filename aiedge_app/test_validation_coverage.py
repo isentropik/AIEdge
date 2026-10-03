@@ -8,6 +8,7 @@ def result(skips=(),count=1):
 NEW_COVERAGE={*(f'test_delivery_timing.DeliveryTimingTests.test_{i}' for i in range(9)),
               *(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
               *(f'test_capture_trial.TrialTests.test_{i}' for i in range(26)),
+              *(f'test_trial_results.ResultsTests.test_{i}' for i in range(12)),
               *(f'test_meter_profile.MeterTests.test_{i}' for i in range(8)),
               *(f'test_reading_consistency.ConsistencyTests.test_{i}' for i in range(5)),
               'test_reading_consistency.IntegrationTests.test_0',
@@ -58,7 +59,7 @@ class ValidationCoverageTests(unittest.TestCase):
         complete|=NEW_COVERAGE
         self.assertEqual(inventory_errors(complete,True,False),[])
         for prefix in ('test_delivery_timing.','test_meter_profile.','test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
-                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.','test_capture_trial.'):
+                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.','test_capture_trial.','test_trial_results.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
         self.assertTrue(inventory_errors(['test_consumption.AccountingTests.test_one']*23,True,False))

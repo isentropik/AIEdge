@@ -1,6 +1,15 @@
 # Changes
 
-## 0.2.0-dev24 (local candidate; not deployed)
+## 0.2.0-dev25 (local candidate; not deployed)
+
+- Add read-only per-frame trial results from existing durable inference records.
+  Reconnecting after a trial can recover each frame's original pipeline result,
+  including rejected/pending results, without new photos or model calls.
+- Preserve repeated capture identities while counting distinct images separately.
+  Missing or damaged results stay explicit; model estimates remain excluded from
+  training and never count as verified accuracy.
+
+## 0.2.0-dev24
 
 - Measure current-session admission-to-recognition waiting, actual consumption work and MQTT acknowledgement attempts separately.
 - Correlate at most 64 private capture events in memory to measure app-host capture-request start through all required reading/attribute/availability broker acknowledgements.

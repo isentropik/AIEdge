@@ -19,6 +19,7 @@ COPY --from=native-build /build/libaiedge_native.so /build/libaiedge_accounting.
 COPY assets ./assets
 COPY camera_auto.py auto_capture.py auto_preview.py ./
 COPY capture_trial.py capture-trial.js ./
+COPY trial_results.py ./
 COPY image_edit.py image-editor.js ./
 COPY meter_profile.py meter-profile.js ./
 COPY notices.js ./
