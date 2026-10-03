@@ -1,4 +1,11 @@
-# Image editor candidate - October 2, 2026
+# Route-polish candidate - October 2, 2026
+
+Local dev16 widens manual-review fields and keeps the photo visible while
+scrolling phone controls. Saved-image browser checks passed at 320 px in both
+themes; all 123 UI regressions passed. The dev15 base passed
+417 Windows backend checks, 414 Linux package/backend checks and 123 UI checks.
+Only presentation and version/documentation files change in this candidate;
+recognition, calculations and stored-data contracts remain intact.
 
 Dev15 adds crop, quarter-turn rotation and straightening to the scene-aware
 Auto candidate. Framing updates immediately from the existing image. Next saves

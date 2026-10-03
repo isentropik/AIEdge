@@ -1,5 +1,11 @@
 # Changes
 
+## 0.2.0-dev16 (local candidate)
+
+- Keep the manual-review photo visible while scrolling phone dial inputs.
+- Widen position fields so the Unknown placeholder fits on narrow screens.
+- Preserve the dev15 recognition, framing and persistence behavior.
+
 ## 0.2.0-dev15 (local candidate)
 
 - Add immediate crop, rotation and straightening, saved with Next.
