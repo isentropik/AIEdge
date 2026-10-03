@@ -35,6 +35,7 @@ class Tests(unittest.TestCase):
             import re
             with urllib.request.urlopen(origin+'/') as response:html=response.read().decode('utf-8')
             scripts=re.findall(r'<script src="([^"]+)"',html)
+            self.assertEqual(len(scripts),len(set(scripts)), 'Load each script only once')
             self.assertLess(scripts.index('notices.js'),scripts.index('dashboard.js'))
             for script in scripts:
                 with urllib.request.urlopen(origin+'/'+script) as response:

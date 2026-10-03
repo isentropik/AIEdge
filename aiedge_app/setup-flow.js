@@ -131,6 +131,8 @@ function paintCamera(value){
  if(value.state==='ready'&&(value.action?.startsWith('image-')||value.action==='auto-picture'||value.action==='auto-recover'))window.AIEdgeImageControls?.receive(value);
  if(value.state==='error'&&value.error==='camera_image_unsupported')window.AIEdgeImageControls?.unavailable();
  if(value.state==='error'&&(value.action?.startsWith('auto-')||value.action?.startsWith('image-')))window.AIEdgeImageControls?.markReload?.();
+ const imageState=window.AIEdgeImageControls?.status?.()||{};
+ $('settings-device-note').textContent=!value.configured?'Configure a camera or choose a saved image in Setup.':value.error==='camera_image_unsupported'?'This firmware requires the camera website for exposure and gain settings.':imageState.auto_attention||imageState.needs_activation?'Restore saved camera settings in Setup → Image before taking pictures.':imageState.loaded?'Exposure and gain controls are available in Setup → Image.':'Load camera controls in Setup to check available settings.';
  $('settings-camera-address').textContent=value.camera_url||'Not configured';
  $('settings-capture').textContent=value.capture_enabled?'On':'Off';
  $('settings-interval').textContent=Number.isInteger(value.interval_seconds)?value.interval_seconds+' seconds':'—';
