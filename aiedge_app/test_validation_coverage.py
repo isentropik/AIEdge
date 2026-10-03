@@ -56,9 +56,9 @@ class ValidationCoverageTests(unittest.TestCase):
                   *('test_review_http.HttpReviewTests.test_'+str(i) for i in range(3)),
                   *('test_marker_suggestions.SuggestionTests.test_'+str(i) for i in range(5)),
                   *('test_changed_dials.ChangedDialTests.test_'+str(i) for i in range(12))}
-        complete|=NEW_COVERAGE
+        complete|=NEW_COVERAGE|{f'test_mqtt_semantic_dedup.SemanticDedupTests.test_{i}' for i in range(14)}
         self.assertEqual(inventory_errors(complete,True,False),[])
-        for prefix in ('test_delivery_timing.','test_meter_profile.','test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
+        for prefix in ('test_mqtt_semantic_dedup.','test_delivery_timing.','test_meter_profile.','test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
                        'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.','test_capture_trial.','test_trial_results.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
@@ -72,7 +72,7 @@ class ValidationCoverageTests(unittest.TestCase):
                   *('test_review_http.HttpReviewTests.test_'+str(i) for i in range(3)),
                   *('test_marker_suggestions.SuggestionTests.test_'+str(i) for i in range(5)),
                   *('test_changed_dials.ChangedDialTests.test_'+str(i) for i in range(12))}
-        complete|=NEW_COVERAGE
+        complete|=NEW_COVERAGE|{f'test_mqtt_semantic_dedup.SemanticDedupTests.test_{i}' for i in range(14)}
         self.assertEqual(len(inventory_errors(complete,True,True)),1)
         self.assertEqual(len(inventory_errors(complete,False,False)),1)
         self.assertEqual(inventory_errors(complete|ARCHIVE_CHECKS|{PACKAGED_CHECK},False,True),[])

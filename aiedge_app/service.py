@@ -30,7 +30,8 @@ def publication_state(store,recognition,reading_format,consumption):
         reading={'state':'pending','value':None}
     elif consumption and accounted.get('state') not in ('anchored','estimated','within_noise','bounded','ambiguous'):
         reading={'state':'pending' if accounted.get('state') in ('pending','recovering') else 'unavailable','value':None}
-    return {'latest':latest,'reading':reading,'format':saved['format'],'_timing_event_id':event}
+    return {'latest':latest,'reading':reading,'format':saved['format'],'_timing_event_id':event,
+            '_publication_segment_id':accounted.get('segment_id') if accounted else None}
 
 def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None):
     from review_store import ReviewConflict

@@ -83,12 +83,18 @@ def fresh_state(snapshot,max_age,clock=None):
             'format_id':reading['format_id'],'accuracy_verified':False}
 
 class MqttOutput:
-    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None):
+    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None,clock=time.monotonic):
         self.performance=performance if performance is not None else Timings()
         self.identity=instance_id(directory);self.snapshot=snapshot;self.interval=interval
         self.provider=provider;self.client_factory=client_factory;self.stop=threading.Event()
         self.connected=threading.Event();self.rediscover=threading.Event();self.state='starting';self.error=None
         self.client=None;self.base=None;self.configuration=None;self.last_payload=None
+        self.clock=clock;self.last_key=None;self.last_state_ack=None
+        # HA numeric expiry is separate from availability. Refresh equal values
+        # from current evidence, leaving one capture interval of headroom.
+        self.refresh_after=max(90,interval*3)-interval
+    def _reset_dedup(self):
+        self.last_payload=None;self.last_key=None;self.last_state_ack=None
     def status(self):return {'state':self.state,'error':self.error}
     def _on_connect(self,client,userdata,flags,reason,properties):
         if reason.is_failure:self.error='mqtt_connection_rejected';return
@@ -116,7 +122,7 @@ class MqttOutput:
         client.connect_async(credentials['host'],credentials['port'],keepalive=30);client.loop_start()
         if not self.connected.wait(8):raise ValueError('mqtt_connection_timeout')
         self._publish(self.base+'/availability','offline',True)
-        self.state='connected';self.last_payload=None
+        self.state='connected';self._reset_dedup()
     def publish_snapshot(self,snapshot):
         with self.performance.measure('mqtt_publication') as sample:
             sample.outcome=self._publish_snapshot(snapshot)
@@ -124,31 +130,48 @@ class MqttOutput:
         document=snapshot.get('format')
         if not document:
             if self.client and self.connected.is_set():self._publish(self.base+'/availability','offline',True)
+            self._reset_dedup()
             self.state='waiting_for_format';return 'rejected'
         target,base,config=discovery(self.identity,document,self.interval)
         if not self.client or target!=self.configuration or not self.connected.is_set():
             self.close();self.connect(document)
         if self.rediscover.is_set():
             self._publish(self.configuration,json.dumps(self.config,ensure_ascii=False),True)
-            self.rediscover.clear();self.last_payload=None
+            self.rediscover.clear();self._reset_dedup()
         state=fresh_state(snapshot,max(90,self.interval*3))
         if state and state['format_id']!=validate(document)[1]:state=None
         payload=json.dumps(state,sort_keys=True,allow_nan=False) if state else None
         if payload is None:
             if self.last_payload!='offline':self._publish(self.base+'/availability','offline',True)
+            self.last_key=None;self.last_state_ack=None
             self.last_payload='offline';self.state='waiting_for_reading';return 'rejected'
         outcome='duplicate'
-        if payload!=self.last_payload:
+        # Format identity includes the reader/calibration pipeline and physical
+        # interpretation. Segment changes also require a new publication, even
+        # at the same value. Timestamps/hashes stay in evidence/published payload,
+        # but do not by themselves make equal numeric readings different.
+        key=(state['value'],state['format_id'],snapshot.get('_publication_segment_id'))
+        now=self.clock()
+        if not math.isfinite(now):raise ValueError('invalid_publication_clock')
+        refresh=(self.last_state_ack is None or now<self.last_state_ack or
+                 now-self.last_state_ack>=self.refresh_after)
+        if key!=self.last_key or refresh:
             # Ack the new value before advertising availability. Never retain a reading.
-            self._publish(self.base+'/state',payload)
-            self._publish(self.base+'/attributes',json.dumps({k:v for k,v in state.items() if k!='value'}))
-            self._publish(self.base+'/availability','online',True)
+            try:
+                self._publish(self.base+'/state',payload)
+                self._publish(self.base+'/attributes',json.dumps({k:v for k,v in state.items() if k!='value'}))
+                self._publish(self.base+'/availability','online',True)
+            except Exception:
+                # Partial delivery is uncertain; never suppress the retry.
+                self._reset_dedup();raise
             self.last_payload=payload
+            self.last_key=key;self.last_state_ack=self.clock()
             outcome='success'
             self.performance.publication_ack(snapshot.get('_timing_event_id'),state['source_sha256'])
         self.state='publishing';self.error=None
         return outcome
     def close(self):
+        self._reset_dedup()
         client=self.client
         if client:
             try:

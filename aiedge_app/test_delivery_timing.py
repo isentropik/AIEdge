@@ -179,7 +179,7 @@ class DeliveryTimingTests(unittest.TestCase):
             result=publication_state(store,recognition,formats,consumption)
             self.assertNotEqual(result['reading']['state'],'estimated')
             self.assertIsNone(result['reading']['value'])
-    def test_identical_jpeg_new_capture_can_publish_once_without_another_inference(self):
+    def test_identical_jpeg_new_capture_equal_value_is_suppressed_without_fake_ack(self):
         clock=Clock()
         with tempfile.TemporaryDirectory() as directory:
             store=Store(directory);store.performance=Timings(clock)
@@ -197,7 +197,13 @@ class DeliveryTimingTests(unittest.TestCase):
                 self.assertEqual(reader.calls,1)
                 report=store.performance.snapshot()['stages']
                 self.assertEqual(report['recognition_queue_wait']['counts_since_start']['success'],1)
-                self.assertEqual(report['capture_request_to_broker_ack']['counts_since_start']['success'],2)
+                # A newer capture is retained but equal-value suppression must
+                # not invent an end-to-end acknowledgement for that event.
+                self.assertEqual(report['capture_request_to_broker_ack']['counts_since_start']['success'],1)
+                snapshot['reading']['value']=121
+                worker.publish_snapshot(snapshot)
+                self.assertEqual(store.performance.snapshot()['stages']['capture_request_to_broker_ack']['counts_since_start']['success'],2)
+                self.assertEqual(reader.calls,1)
             finally:worker.close()
     @unittest.skipUnless(os.environ.get('AIEDGE_ACCOUNTING_LIBRARY'),'accounting native library required')
     def test_accounting_idle_rejected_decisions_and_failed_commit_stay_separate(self):
