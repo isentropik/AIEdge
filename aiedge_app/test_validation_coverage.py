@@ -6,6 +6,7 @@ from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKA
 def result(skips=(),count=1):
     return SimpleNamespace(testsRun=count,skipped=[(SimpleNamespace(id=lambda name=name:name),'fixture missing') for name in skips])
 NEW_COVERAGE={*(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
+              *(f'test_capture_trial.TrialTests.test_{i}' for i in range(26)),
               *(f'test_meter_profile.MeterTests.test_{i}' for i in range(8)),
               *(f'test_reading_consistency.ConsistencyTests.test_{i}' for i in range(5)),
               'test_reading_consistency.IntegrationTests.test_0',
@@ -32,7 +33,7 @@ class ValidationCoverageTests(unittest.TestCase):
     def test_archive_omission_requires_explicit_permission(self):
         value=result(ARCHIVE_CHECKS)
         self.assertEqual(coverage_errors(value,True,False),[])
-        self.assertEqual(len(coverage_errors(value,False,False)),6)
+        self.assertEqual(len(coverage_errors(value,False,False)),len(ARCHIVE_CHECKS))
     def test_accounting_and_generated_model_skips_are_never_accepted(self):
         for name in ('test_consumption.AccountingTests.test_unique_intervals_and_many_turns_survive_restart',
                      'test_synthetic_pipeline.GeneratedPipelineTests.test_both_model_routes_estimate_without_accuracy_or_label_claims',
@@ -56,7 +57,7 @@ class ValidationCoverageTests(unittest.TestCase):
         complete|=NEW_COVERAGE
         self.assertEqual(inventory_errors(complete,True,False),[])
         for prefix in ('test_meter_profile.','test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
-                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.'):
+                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.','test_capture_trial.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
         self.assertTrue(inventory_errors(['test_consumption.AccountingTests.test_one']*23,True,False))

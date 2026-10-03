@@ -14,7 +14,7 @@ class Tests(unittest.TestCase):
     def test_dense_and_sparse_match_frozen(self):
         p=Profile(self.native,self.document)
         try:
-            for sparse in (False,True):self.assertEqual(p.prepare(self.rgb,sparse),self.native.prepare(self.rgb,sparse))
+            for sparse in (False,True):self.assert_prepared_equal(p.prepare(self.rgb,sparse),self.native.prepare(self.rgb,sparse))
         finally:p.close()
     def test_geometry_and_markers_rejected(self):
         for kind in ('off_frame','singular','pivot_outside','marker_overlap','marker_target_duplicate','template_hash'):
@@ -30,7 +30,7 @@ class Tests(unittest.TestCase):
     def test_owns_candidate_and_rejects_closed_handle(self):
         candidate=copy.deepcopy(self.document);p=Profile(self.native,candidate)
         candidate['dials'][0]['inverse']=[0]*9;candidate['markers'][0]['pixels']=''
-        self.assertEqual(p.prepare(self.rgb),self.native.prepare(self.rgb))
+        self.assert_prepared_equal(p.prepare(self.rgb),self.native.prepare(self.rgb))
         p.close();p.close()
         with self.assertRaisesRegex(ValueError,'closed'):p.prepare(self.rgb)
     def test_reordered_subset(self):
@@ -38,11 +38,22 @@ class Tests(unittest.TestCase):
         p=Profile(self.native,candidate)
         try:
             expected=self.native.prepare(self.rgb)
-            self.assertEqual(p.prepare(self.rgb),[expected[4],expected[1]])
+            self.assert_prepared_equal(p.prepare(self.rgb),[expected[4],expected[1]])
         finally:p.close()
     def test_blank_image_rejected(self):
         p=Profile(self.native,self.document)
         try:
             with self.assertRaisesRegex(ValueError,'alignment_rejected'):p.prepare(bytes(640*480*3))
         finally:p.close()
+
+    def assert_prepared_equal(self,actual,expected):
+        # Preserve exact state, visibility and every feature byte. Do not run
+        # unittest's expensive recursive diff over six escaped binary arrays.
+        self.assertEqual(len(actual),len(expected))
+        for index,(left,right) in enumerate(zip(actual,expected)):
+            self.assertEqual(set(left),set(right))
+            self.assertEqual(left['state'],right['state'],f'dial {index} state')
+            self.assertEqual(left['visibility'],right['visibility'],f'dial {index} visibility')
+            self.assertEqual(len(left['features']),len(right['features']),f'dial {index} feature length')
+            self.assertTrue(left['features']==right['features'],f'dial {index} feature bytes differ')
 if __name__=='__main__':unittest.main()

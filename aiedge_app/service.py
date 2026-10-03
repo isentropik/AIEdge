@@ -5,7 +5,18 @@ from pathlib import Path
 from capture import Store,Camera,Collector
 from options import load as load_options
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None):
+def capture_trial_context(setup,recognition,reading_format):
+    # An active reader exists before the first photo. A latest-result state does
+    # not reliably identify it while storage is empty or inference is pending.
+    calibration=setup.status()
+    with recognition.lock:
+        reader=recognition.reader
+        saved=reading_format.status()
+        return dict(calibration_revision=calibration.get('revision'),
+                    pipeline_id=reader.pipeline_id if reader else None,
+                    format_revision=saved['revision'])
+
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None):
     from review_store import ReviewConflict
     from archive import ArchiveConflict
     token=secrets.token_urlsafe(32)
@@ -32,7 +43,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.reject_post();return
             if setup is None:self.reply({'error':'Calibration runtime is not configured.'},503);return
             route=urllib.parse.urlsplit(self.path).path
-            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive'):self.send_error(404);return
+            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/capture-trial'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -61,7 +72,14 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                                        'X-AIEdge-Preview-SHA256':hashlib.sha256(preview).hexdigest()}.items():self.send_header(name,value)
                     self.end_headers();self.wfile.write(preview);return
                 data=json.loads(body)
-                if route=='/api/setup/meter':
+                if route=='/api/capture-trial':
+                    if trial is None:self.reply({'error':'trial_unavailable'},503);return
+                    if not isinstance(data,dict):raise ValueError('trial_action_invalid')
+                    if set(data)=={'action','request_id','max_attempts','duration_seconds','interval_seconds'} and data['action']=='start':
+                        result=trial.start(data['request_id'],data['max_attempts'],data['duration_seconds'],data['interval_seconds'])
+                    elif set(data)=={'action','request_id'} and data['action']=='cancel':result=trial.cancel(data['request_id'])
+                    else:raise ValueError('trial_action_invalid')
+                elif route=='/api/setup/meter':
                     if not isinstance(data,dict) or set(data)!={'profile','revision'}:raise ValueError('meter_profile_invalid')
                     result=setup.meter.save(data['profile'],data['revision'])
                 elif route=='/api/archive':
@@ -114,6 +132,16 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Disposition','attachment; filename="aiedge-diagnostics.json"');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             if store is None and (route.startswith('/api/') or route.startswith('/image/') or route.startswith('/reference/')):
                 self.reply({'error':'App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.','code':'storage_startup_failed'},503);return
+            if route=='/api/capture-trial':
+                query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True)
+                if set(query)-{'request_id'} or ('request_id' in query and len(query['request_id'])!=1):
+                    self.reply({'error':'trial_request_id_invalid'},400);return
+                try:
+                    result=trial.status(query.get('request_id',[None])[0]) if trial else {'state':'unavailable','training_allowed':False,'accuracy_verified':False}
+                except ValueError:
+                    self.reply({'error':'trial_request_id_invalid'},400);return
+                result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
+                self.reply(result);return
             if route=='/api/status':
                 state=store.status();state.update(capture_enabled=collector is not None,missed_slots=collector.missed_slots if collector else 0)
                 state['configuration']=configuration or {'state':'ready'}
@@ -151,7 +179,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
+            elif route in ('/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -264,10 +292,22 @@ def run_service(stop_signals):
         saved=setup.status().get('calibration')
         if saved:image_controls.calibration_saved(saved.get('reference_sha256'))
     preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls,auto_control) if store and configuration.get('state')=='ready' else None
+    trial=None
+    if store and camera and setup and recognition and reading_format:
+        from capture_trial import CaptureTrial
+        def trial_allowed():
+            if enabled or mqtt_enabled or configuration.get('state')!='ready':return False
+            if archive is None or archive.status()['config']['enabled']:return False
+            saved=reading_format.status()['format']
+            return bool(saved and recognition.reader and saved['pipeline_id']==recognition.reader.pipeline_id)
+        def trial_context():
+            return capture_trial_context(setup,recognition,reading_format)
+        try:trial=CaptureTrial(store,camera,trial_allowed,context=trial_context)
+        except (OSError,sqlite3.Error):pass
     stop_signals.checkpoint()
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive))
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption,preview,archive),signals=stop_signals).run():
+    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption,preview,archive,trial),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
 def main():
     from lifecycle import StartupSignals,StartupStopped,lifecycle_event

@@ -1,5 +1,14 @@
 # Changes
 
+## 0.2.0-dev21 (draft; not deployed)
+
+- Add a short capture trial to Captures, with progress, unique/repeated image counts and Stop. It makes at most three acquisition attempts without enabling automatic capture or changing options.
+- Keep the request ID across page reloads. Resolve lost replies through status checks; an explicit retry reuses the same ID rather than starting another trial.
+- Preserve verified images when cancelling or rejecting capture timing. Interrupted trials stay stopped after an app restart.
+- Reject damaged trial records without replacing them, and keep the rest of the website available. Models, calibration and number format are unchanged from dev20.
+- Check the active reader before the first image; pending recognition no longer falsely changes trial identity.
+- Document trial limits and correct stale Linux packaging notes.
+
 ## 0.2.0-dev20 (draft; not deployed)
 
 - Use the existing floating-point main-dial model to avoid large jumps seen in saved-image tone tests. The secondary model is unchanged.

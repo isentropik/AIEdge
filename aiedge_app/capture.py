@@ -1,5 +1,5 @@
 """Remote camera transport and capture provenance. Never infers training labels."""
-import base64,hashlib,json,os,re,shutil,sqlite3,threading,time,urllib.request,urllib.parse,urllib.error,uuid,socket,ssl
+import base64,hashlib,json,os,re,shutil,sqlite3,threading,time,urllib.request,urllib.parse,urllib.error,uuid,socket,ssl,math
 from datetime import datetime,timezone
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,6 +11,13 @@ CAPTURE_IO_DEADLINE=20
 MIN_FREE_BYTES=512*1024*1024
 
 def now():return datetime.now(timezone.utc).isoformat()
+
+def io_deadline(limit,deadline=None):
+    current=time.monotonic()
+    if deadline is None:return current+limit
+    if type(deadline) not in (int,float) or not math.isfinite(deadline):raise ValueError('camera_deadline_invalid')
+    if deadline<=current:raise ValueError('capture_deadline_exceeded')
+    return min(current+limit,deadline)
 
 def verified_image(path,digest):
     with path.open('rb') as stream:blob=stream.read(MAX_IMAGE+1)
@@ -199,18 +206,20 @@ class Camera:
         if getattr(self,'auto_control',None) is not None:self.auto_control.require_capture(reference=reference)
         if self.lighting is not None:self.lighting.require_capture()
         if self.image_controls is not None:self.image_controls.require_capture(reference=reference)
-    def readiness(self):
+    def readiness(self,deadline=None):
         from camera_status import probe
-        return probe(self)
+        return probe(self,deadline=deadline)
     def reference_capture(self):
         return self.capture(reference=True)
-    def capture(self,reference=False):
+    def capture(self,reference=False,*,deadline=None):
+        absolute=io_deadline(CAPTURE_IO_DEADLINE,deadline)
         self.require_capture(reference=reference)
         headers={'Content-Type':'application/json'}
         if self.token:headers['Authorization']='Bearer '+self.token
         elif self.basic:headers['Authorization']='Basic '+self.basic
         request=urllib.request.Request(self.origin+'/api/v1/capture',data=b'{}',headers=headers,method='POST');start=time.monotonic()
-        request.aiedge_deadline=start+CAPTURE_IO_DEADLINE
+        request.aiedge_deadline=absolute
+        if time.monotonic()>=absolute:raise ValueError('capture_deadline_exceeded')
         try:
             with self.opener.open(request,timeout=5) as r:
                 camera_header(r.headers,'Content-Type')
