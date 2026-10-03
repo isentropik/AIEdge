@@ -10,7 +10,7 @@ class AssetTests(unittest.TestCase):
     def test_complete_package(self):
         result=verify(self.root)
         self.assertIn('include/PolarPipeline.h',result['files'])
-        self.assertIn('models/polar-main-int8.tflite',result['files'])
+        self.assertIn('models/polar-main-float.tflite',result['files'])
         self.assertIn('Licence.md',result['files'])
     def test_modified_asset_rejected(self):
         (self.root/'models/polar-int8.tflite').write_bytes(b'wrong')

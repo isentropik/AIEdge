@@ -3,9 +3,13 @@ import argparse
 import numpy as np
 from pathlib import Path
 from package_assets import verify
-from reader import Reader,PROFILE
+from reader import Reader,PROFILE,network_input,decoder_scores
 
 def main():
+    from performance import Timings
+    from capture import Camera,Store
+    from recognition import Recognition
+    assert Timings().snapshot()["state"]=="not_measured"
     p=argparse.ArgumentParser();p.add_argument('--library',required=True);p.add_argument('--accounting-library');a=p.parse_args()
     assets=Path(__file__).parent/'assets';verify(assets)
     reader=Reader(a.library,assets/'models',PROFILE)
@@ -13,9 +17,11 @@ def main():
         raise ValueError('full_sampling_identity_contract')
     if not hasattr(reader.native.lib,'aiedge_prepare_profile_reuse'):raise ValueError('changed_dial_runtime_missing')
     assert len(reader.networks)==2
-    for net,inp,out in reader.networks.values():
-        net.set_tensor(inp["index"],np.zeros((1,384,40),dtype=np.int8));net.invoke()
-        assert net.get_tensor(out["index"]).shape==(1,360)
+    for role,(net,inp,out) in reader.networks.items():
+        net.set_tensor(inp["index"],network_input(bytes(384*40),role));net.invoke()
+        scores=decoder_scores(net.get_tensor(out["index"]),role)
+        assert len(scores)==360
+        assert 0<=reader.native.decode(scores,False)<10
     reading=reader.native.reading([1000,100,10],[1.234,2.34,3.4],[.01,.01,.01])
     if reading['state']!='estimated' or abs(reading['value']-123.4)>1e-8:raise ValueError('reading_runtime_contract')
     from reading_format import ReadingFormat

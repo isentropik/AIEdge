@@ -106,65 +106,67 @@ class Consumption:
             event,camera,stamp,digest,clock,tick,encoded,inferred=row
             if inferred is None:
                 self.state={**self._base(event,digest),'state':'pending','reason':'consumption_waiting_for_recognition'};return False
-            current={'camera':camera,'captured_at':stamp,'clock_id':clock,'monotonic_us':tick}
-            timing=capture_clock.interval(self.previous,current)
-            # A gap starts a separate relative segment; never stitch two clocks.
-            if self.anchor and timing['state']!='continuous':
-                self._create(identity,document,event,timing['reason'],self.segment['segment_id']);cached=None
-            output=self._base(event,digest)
-            try:inference=decode_result(encoded,digest,reader.pipeline_id)
-            except (ValueError,TypeError,RecursionError):inference={'state':'unavailable'}
-            if inference.get('state')!='estimated':
-                self.tracker.stale();output.update(state='unavailable',reason='consumption_image_rejected')
-            elif clock is None or tick is None:
-                self.tracker.stale();output.update(state='unavailable',reason='capture_clock_missing')
-            elif not self._clock_valid(current):
-                self.tracker.stale();output.update(state='unavailable',reason='capture_clock_invalid')
-            else:
-                rows=inference.get('dial_positions');indices=[d['index'] for d in document['dials']]
-                if not isinstance(rows,list) or sorted(indices)!=list(range(len(rows))):
-                    self.tracker.stale();output.update(state='unavailable',reason='reading_dial_mapping_mismatch')
+            with self.store.performance.measure('accounting') as sample:
+                current={'camera':camera,'captured_at':stamp,'clock_id':clock,'monotonic_us':tick}
+                timing=capture_clock.interval(self.previous,current)
+                # A gap starts a separate relative segment; never stitch two clocks.
+                if self.anchor and timing['state']!='continuous':
+                    self._create(identity,document,event,timing['reason'],self.segment['segment_id']);cached=None
+                output=self._base(event,digest)
+                try:inference=decode_result(encoded,digest,reader.pipeline_id)
+                except (ValueError,TypeError,RecursionError):inference={'state':'unavailable'}
+                if inference.get('state')!='estimated':
+                    self.tracker.stale();output.update(state='unavailable',reason='consumption_image_rejected')
+                elif clock is None or tick is None:
+                    self.tracker.stale();output.update(state='unavailable',reason='capture_clock_missing')
+                elif not self._clock_valid(current):
+                    self.tracker.stale();output.update(state='unavailable',reason='capture_clock_invalid')
                 else:
-                    positions=[rows[index].get('position') for index in indices]
-                    if any(rows[index].get('state')!='estimated' or not finite_number(value) or not 0<=value<10 for index,value in zip(indices,positions)):
-                        self.tracker.stale();output.update(state='unavailable',reason='dial_unavailable')
+                    rows=inference.get('dial_positions');indices=[d['index'] for d in document['dials']]
+                    if not isinstance(rows,list) or sorted(indices)!=list(range(len(rows))):
+                        self.tracker.stale();output.update(state='unavailable',reason='reading_dial_mapping_mismatch')
                     else:
-                        native=self.tracker.observe(positions,tick,clock)
-                        if not native['accepted']:output.update(state='unavailable',reason='consumption_positions_contradict_bounds')
+                        positions=[rows[index].get('position') for index in indices]
+                        if any(rows[index].get('state')!='estimated' or not finite_number(value) or not 0<=value<10 for index,value in zip(indices,positions)):
+                            self.tracker.stale();output.update(state='unavailable',reason='dial_unavailable')
                         else:
-                            if self.anchor is None:self.anchor={'captured_at':stamp,'monotonic_us':tick,'camera':camera}
-                            output.update({key:native[key] for key in ('state','minimum','maximum','value','upper_unbounded')})
-                            output['absolute']=self.absolute.observe(positions,native)
-                            output.update(anchor_captured_at=self.anchor['captured_at'],through_captured_at=stamp,
-                                          elapsed_seconds=(native['through_us']-native['anchor_us'])/1e6)
-                            if native['through_us']==native['anchor_us']:output.update(state='anchored',value=0)
-                            if output['value'] is not None:
-                                output['text']=display_quantity(output['value'],document,resolution_factor=2)
-                                if output['elapsed_seconds']>0:
-                                    rate=output['value']/output['elapsed_seconds']
-                                    if finite_number(rate):output['average_rate_per_second']=rate
-                                    ratio=60/output['elapsed_seconds'];lowest=document['dials'][-1]
-                                    scaled=lowest['value_per_revolution']*ratio
-                                    if finite_number(rate*60) and finite_number(scaled) and scaled>0:
-                                        rate_document={'dials':[{**lowest,'value_per_revolution':scaled}]}
-                                        output['average_rate_per_minute_text']=display_quantity(rate*60,rate_document,resolution_factor=2)
-            encoded_output=json.dumps(output,sort_keys=True,separators=(',',':'),allow_nan=False)
-            if len(encoded_output.encode())>MAX_RECORD_BYTES:raise ValueError('consumption_result_too_large')
-            if cached and (cached[0] is None or json.loads(cached[0])!=output):raise ValueError('consumption_saved_result_invalid')
-            with self.store.connect() as db:
-                db.execute('BEGIN IMMEDIATE')
-                active_segment=db.execute('SELECT segment_id FROM consumption_active WHERE singleton=1').fetchone()
-                if not active_segment or active_segment[0]!=self.segment['segment_id']:raise SegmentChanged()
-                if not cached:
-                    # A second worker may have written this event while native
-                    # calculation ran. Accept only the identical durable decision.
-                    prior=db.execute('SELECT CASE WHEN length(CAST(result AS BLOB))<=? THEN result ELSE NULL END FROM consumption_records WHERE segment_id=? AND event_id=?',(MAX_RECORD_BYTES,self.segment['segment_id'],event)).fetchone()
-                    if prior:
-                        if prior[0] is None or json.loads(prior[0])!=output:raise ValueError('consumption_saved_result_invalid')
-                    else:db.execute('INSERT INTO consumption_records VALUES(?,?,?)',(self.segment['segment_id'],event,encoded_output))
-            # State becomes public only after the durable decision is saved.
-            self.previous=current;self.cursor=event;self.state=output;self.last_error=None
-            return True
+                            native=self.tracker.observe(positions,tick,clock)
+                            if not native['accepted']:output.update(state='unavailable',reason='consumption_positions_contradict_bounds')
+                            else:
+                                if self.anchor is None:self.anchor={'captured_at':stamp,'monotonic_us':tick,'camera':camera}
+                                output.update({key:native[key] for key in ('state','minimum','maximum','value','upper_unbounded')})
+                                output['absolute']=self.absolute.observe(positions,native)
+                                output.update(anchor_captured_at=self.anchor['captured_at'],through_captured_at=stamp,
+                                              elapsed_seconds=(native['through_us']-native['anchor_us'])/1e6)
+                                if native['through_us']==native['anchor_us']:output.update(state='anchored',value=0)
+                                if output['value'] is not None:
+                                    output['text']=display_quantity(output['value'],document,resolution_factor=2)
+                                    if output['elapsed_seconds']>0:
+                                        rate=output['value']/output['elapsed_seconds']
+                                        if finite_number(rate):output['average_rate_per_second']=rate
+                                        ratio=60/output['elapsed_seconds'];lowest=document['dials'][-1]
+                                        scaled=lowest['value_per_revolution']*ratio
+                                        if finite_number(rate*60) and finite_number(scaled) and scaled>0:
+                                            rate_document={'dials':[{**lowest,'value_per_revolution':scaled}]}
+                                            output['average_rate_per_minute_text']=display_quantity(rate*60,rate_document,resolution_factor=2)
+                encoded_output=json.dumps(output,sort_keys=True,separators=(',',':'),allow_nan=False)
+                if len(encoded_output.encode())>MAX_RECORD_BYTES:raise ValueError('consumption_result_too_large')
+                if cached and (cached[0] is None or json.loads(cached[0])!=output):raise ValueError('consumption_saved_result_invalid')
+                with self.store.connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    active_segment=db.execute('SELECT segment_id FROM consumption_active WHERE singleton=1').fetchone()
+                    if not active_segment or active_segment[0]!=self.segment['segment_id']:raise SegmentChanged()
+                    if not cached:
+                        # A second worker may have written this event while native
+                        # calculation ran. Accept only the identical durable decision.
+                        prior=db.execute('SELECT CASE WHEN length(CAST(result AS BLOB))<=? THEN result ELSE NULL END FROM consumption_records WHERE segment_id=? AND event_id=?',(MAX_RECORD_BYTES,self.segment['segment_id'],event)).fetchone()
+                        if prior:
+                            if prior[0] is None or json.loads(prior[0])!=output:raise ValueError('consumption_saved_result_invalid')
+                        else:db.execute('INSERT INTO consumption_records VALUES(?,?,?)',(self.segment['segment_id'],event,encoded_output))
+                # State becomes public only after the durable decision is saved.
+                self.previous=current;self.cursor=event;self.state=output;self.last_error=None
+                sample.outcome='success' if output['absolute'].get('state')=='estimated' else 'rejected'
+                return True
     def status(self):
         with self.recognition.lock,self.formats.lock,self.lock:
             reader=self.recognition.reader;configured=self.formats.active

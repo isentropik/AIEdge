@@ -37,6 +37,12 @@ class ContainerRuntimeTests(unittest.TestCase):
                     self.assertTrue(setup['available']);self.assertIsNone(setup['calibration'])
                     with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/camera-setup') as r:camera=json.load(r)
                     self.assertFalse(camera['configured']);self.assertFalse(camera['capture_enabled']);self.assertEqual(camera['state'],'idle')
+                    with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/capture-trial') as r:trial=json.load(r)
+                    self.assertEqual(trial['state'],'unavailable');self.assertFalse(trial['can_start'])
+                    self.assertFalse(trial['training_allowed']);self.assertFalse(trial['accuracy_verified'])
+                    with urllib.request.urlopen(f'http://127.0.0.1:{port}/capture-trial.js') as r:
+                        self.assertEqual(r.headers.get_content_type(),'text/javascript')
+                        self.assertIn(b'X-AIEdge-Setup',r.read())
                     for route,needle in [('/',b'Number format'),('/reading-format.js',b'openReadingFormat'),('/dashboard.js',b'visibilitychange'),('/favicon.svg',b'<svg'),('/editor-geometry.js',b'AIEdgeGeometry'),('/reference-image.js',b'AIEdgeReferenceImage'),('/setup-flow.js',b'AIEdgeFlow'),('/parity.css',b'setup-steps')]:
                         with urllib.request.urlopen(f'http://127.0.0.1:{port}'+route) as r:self.assertIn(needle,r.read())
                     self.assertTrue((pathlib.Path(directory)/'captures.sqlite3').is_file())

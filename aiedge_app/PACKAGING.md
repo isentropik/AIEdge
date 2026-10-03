@@ -1,117 +1,81 @@
 # App packaging (development)
 
-The Home Assistant app directory is a complete Docker build context. The container
-compiles separate native recognition and accounting libraries, installs hash-locked CPython 3.14 Linux
-amd64 wheels, verifies both models and starts the calibration/recognition service.
-Capture is off by default. No meter-specific calibration is activated on startup.
-The shared headers still contain the explicit legacy replay calibration; it is not
-a generic calibration for other meters. These models are not independently verified
-for arbitrary needle designs or lighting.
+The Home Assistant app directory is a complete Docker build context for Linux
+amd64. It compiles separate recognition ABI 2 and accounting ABI 1 libraries,
+installs hash-locked CPython 3.14 wheels, checks both model tensor contracts and
+starts the app service. Capture is off by default. No meter-specific calibration
+is activated on startup. Legacy replay geometry in the shared headers exists
+only for explicit tests; it is not a default for other meters.
 
-Maintainers: after changing shared Polar headers or the pinned models, refresh the
-asset snapshot from the repository root:
+The dev20 draft passed Linux CI at commit
+`401d2d6b942b37cd9414ad4710d9ab298800e58f`, including filesystem/process and
+packaged startup/restart checks. [Verified run](https://github.com/isentropik/AIEdge/actions/runs/37109202136).
+Dev21 adds the short trial; its exact draft must pass its own CI before release.
+Neither CI nor a saved-image test proves actual camera behavior, sustained cadence
+or population reading accuracy. Supervisor deployment and real-camera validation
+are separate checks. Standalone Docker access/authentication remains pending;
+the packaged default uses Home Assistant Ingress.
 
+## Build and check
+
+From the repository root on Linux amd64:
+
+```sh
+docker build --pull -t aiedge-app:development aiedge_app
+node --test aiedge_app/test_*.cjs
+docker run --rm --network none --mount type=bind,src="$PWD/aiedge_app",dst=/tests,readonly --entrypoint python aiedge-app:development /tests/run_validation.py --container --library /opt/aiedge/libaiedge_native.so --accounting-library /opt/aiedge/libaiedge_accounting.so --models /opt/aiedge/assets/models --allow-missing-archive-replay
 ```
+
+The checked runner rejects unexpected skips and missing required tests. The
+container check launches the packaged service, checks HTTP assets/API, restarts
+it with the same data, preserves damaged configuration and tests Linux SIGTERM
+draining. It also checks the packaged trial script and unavailable-camera status.
+The CI workflow is `.github/workflows/aiedge-app.yml`.
+
+`--allow-missing-archive-replay` permits seven explicit private archived-image/
+profile checks. For authorized private replay, omit it and supply matching
+`--archive-calibration`, `--archive-rgb` and `--archive-jpeg` files. Keep photos
+and private calibration outside public source and CI artifacts. Generated scenes,
+simulated transports and ledger trajectories are not real-image accuracy tests.
+The JSON report lists each skip and whether packaged/private replay was required.
+
+Windows host checks use the separately compiled native libraries and documented
+fixture paths. Linux filesystem/process and packaged-service checks cannot be
+inferred from Windows results. C++ interval checks use
+`python aiedge_app/check_accounting_core.py` with a C++17 compiler; the Docker
+native stage also runs them. They verify quantities, not needle recognition.
+
+## Model and shared-header assets
+
+Only `polar-main-float.tflite` and `polar-int8.tflite` are selected. The main model
+uses dequantized frozen features; the secondary keeps its int8 contract. Pinned
+hashes in `reader.py` must match the assets. Changing reader/model identity requires
+an explicit number-format rebind and starts a separate consumption segment;
+history retains the previous identities. The models are not independently
+validated for arbitrary needle designs or lighting.
+
+After changing shared Polar headers or models, regenerate from the repository root:
+
+```sh
 python aiedge_app/stage_assets.py --models PATH_TO_VERIFIED_MODELS
 python aiedge_app/stage_assets.py --models PATH_TO_VERIFIED_MODELS --check
 ```
 
-Model SHA-256 values must match reader.py. The snapshot retains upstream attribution
-and license. It contains no capture archives, Wi-Fi passwords or device credentials.
-Do not edit assets/include directly; update the shared firmware source and regenerate.
+Do not edit `assets/include` directly. The snapshot retains upstream license and
+attribution, with no photos or credentials. The image build verifies all 24 asset
+hashes, loads both native libraries, invokes both pinned models and checks a
+synthetic two-dial interval. The trial uses the existing guarded camera path;
+see [trial instructions](CAPTURE-TRIAL.md).
 
-On a Linux amd64 Docker host, build from the repository root:
+## Base image and dependencies
 
-```
-docker build -t aiedge-app:development aiedge_app
-```
-
-The image build checks all 24 packaged-file hashes, loads recognition ABI 2 and
-accounting ABI 1, verifies tensor shapes and quantization, invokes both models, and
-checks a synthetic two-dial interval. Accounting remains separate from recognition. The changed-dial cache is an additive
-ABI 2 entry point; it preserves the full path for changed or rejected regions. Its new
-recognition binary and reader source produce a new pipeline identity. Existing dial
-values must be reviewed and rebound to that identity before readings are enabled.
-These checks do not prove recognition accuracy.
-The default command requires HA Ingress; direct network access is intentionally
-rejected. Standalone remote authentication and a standalone Docker launch workflow
-remain pending. The dev5 development container built and started on one Home Assistant Linux amd64 host
-on September 30. UI/API checks and an approved saved-image calibration/persistence
-test pass. The actual container accepted all six dials and retained the reference hash,
-calibration and ft³ format after an app restart, with capture/MQTT disabled. The full
-Linux regression suite has not run. A first experimental HA test
-can build it through the app store using the branch-specific repository URL in
-DOCS.md, with capture and MQTT disabled. This is not a validated release or a
-replacement for the existing meter. MQTT is implemented locally; its Supervisor
-integration and the camera firmware still need end-to-end validation. External archives are deferred; images
-stay in app storage. Windows packaged-header compilation and the local app suite
-pass. A Linux Docker build and packaged-service startup workflow is prepared locally in
-`.github/workflows/aiedge-app.yml`; it is not published. A successful full run is still required for Linux regression coverage.
-
-
-The September 29 attempt to push the CI workflow was rejected by GitHub because the
-current OAuth connection lacks workflow permission. No Linux CI run occurred. The
-workflow remains prepared locally; do not treat its presence as a successful build.
-
-## Base image pin
-
-Both stages use `python:3.14.7-slim-trixie` at OCI index digest
-`sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d`.
-The official registry's Linux amd64 manifest is
-`sha256:7bf6c3111fe094f8ee1a1cbcdc63c4cfb345b0e3df42d5aa9a90b3b4b022ab6d`.
-The manifest and configuration hashes, platform and Python version were checked on
-September 29, 2026. This pins the selected base; it is not evidence of a successful
-Linux build or Supervisor run. Update the digest deliberately when taking base-image
-security updates, then repeat the container build and service checks.
-
-## Local regression checks
-
-From the repository root, use the project's Python environment and Node.js:
-
-```
-python -m unittest discover -s aiedge_app -p "test_*.py"
-node --test aiedge_app/test_editor_geometry.cjs aiedge_app/test_reference_image.cjs aiedge_app/test_dashboard.cjs
-```
-
-Native/model fixture checks require the paths documented in their test modules.
-Set `AIEDGE_ACCOUNTING_LIBRARY` to the separately compiled accounting library to
-run the durable consumption regressions. The shared C++ interval-oracle checks are
-run with `python aiedge_app/check_accounting_core.py` using an existing C++17
-compiler. Windows development can use `--zig-python PATH_TO_PYTHON_WITH_ZIG`.
-The Docker build runs these checks in its native build stage. They cover synthetic quantities, not model accuracy.
-A run with skipped fixtures does not establish native recognition compatibility.
-The Linux-only packaged-runtime check needs `AIEDGE_CONTAINER_TEST=1` inside the
-built container; it is intentionally skipped on the Windows development host.
-
-## Required native coverage
-
-Use the checked runner instead of interpreting a green test command with skipped
-native fixtures as a complete result:
-
-```
-python aiedge_app/run_validation.py --library PATH_TO_RECOGNITION_LIBRARY --accounting-library PATH_TO_ACCOUNTING_LIBRARY --models PATH_TO_MODELS --allow-missing-archive-replay --report validation.json
-```
-
-It loads both native ABIs and both pinned models, requires the durable-accounting,
-number-format and generated-image checks, and rejects unexpected skipped tests or
-missing test files. The generated scene exercises both needle-model routes and
-stationary capture persistence. It is synthetic coverage, not reading accuracy.
-
-For the packaged Linux amd64 service, mount the source tests read-only and require
-its startup/restart check:
-
-```
-docker run --rm --network none --mount type=bind,src="$PWD/aiedge_app",dst=/tests,readonly --entrypoint python aiedge-app:development /tests/run_validation.py --container --library /opt/aiedge/libaiedge_native.so --accounting-library /opt/aiedge/libaiedge_accounting.so --models /opt/aiedge/assets/models --allow-missing-archive-replay
-```
-
-`--allow-missing-archive-replay` explicitly permits six archived-image/profile checks
-to remain unrun. It does not turn generated images into real-image validation.
-For authorized private replay, omit that flag and supply `--archive-calibration`,
-`--archive-rgb` and `--archive-jpeg` together. Those files must match the frozen
-replay profile. Keep photographs and private calibration fixtures outside public
-source and CI artifacts. The JSON report lists every skipped check and identifies
-whether archive replay and packaged startup were required.
-
-The prepared workflow now uses this runner and the accounting library. It remains
-unpublished because workflow permission is unavailable. Neither the runner's
-Windows results nor the workflow file establishes Linux or Supervisor execution.
+Both stages pin `python:3.14.8-slim-trixie` to OCI index
+`sha256:89fb7d3da20043c370643435258bdd7ab755d326d359001d02988ed15ae5219e`.
+The selected Linux amd64 manifest is
+`sha256:65a94bb37b630c482dfd31e5fb9b449cb26c31eab1b7a125cd6bd624acfe3b30`.
+Official registry metadata inspected October 3, 2026 identifies Python 3.14.8
+in its image configuration. A digest check does not prove startup or native
+compatibility; the exact-head Linux build and packaged restart suite must pass
+before release. Dependency locks and notices are documented in
+`DEPENDENCIES.md`. Network-share archiving is optional and uses HA-managed mounts;
+its real deployment and storage behavior require their own verified results.

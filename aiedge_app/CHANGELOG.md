@@ -1,5 +1,44 @@
 # Changes
 
+## 0.2.0-dev24 (local candidate; not deployed)
+
+- Measure current-session admission-to-recognition waiting, actual consumption work and MQTT acknowledgement attempts separately.
+- Correlate at most 64 private capture events in memory to measure app-host capture-request start through all required reading/attribute/availability broker acknowledgements.
+- Reject stale, ambiguous and failed publications from successful end-to-end samples; deduplicate acknowledgement samples and do not reconstruct missing timings after restart.
+- Preserve stored quantities, physical algorithms and model weights. Changed recognition/consumption source fingerprints require a reviewed relative-segment transition on deployment.
+- Broker acknowledgement is not Home Assistant entity receipt, independent accuracy or camera-internal capture timing.
+
+## 0.2.0-dev23 (local candidate; not deployed)
+
+- Add bounded, in-memory monotonic stage durations to the existing diagnostic download.
+- Separate normal/reference captures, response headers, JPEG download, storage, recognition and inference commit.
+- Keep success, failed operations, rejected estimates and duplicate frame admission separate; no telemetry files or SD writes.
+- Preserve model/calibration/number-format logic. The changed recognition source fingerprint starts a separate consumption segment on a later reviewed update; existing records are retained.
+- Do not present these stages as end-to-end publication, verified accuracy or camera-internal profiling.
+
+## 0.2.0-dev22 (draft; not deployed)
+
+- Update both container stages to Python 3.14.8 using a verified OCI digest.
+- Keep the current eleven-package Linux wheel lock, models and application behavior.
+- Refresh dependency and package documentation; Linux build/startup validation is required for this draft.
+
+## 0.2.0-dev21 (draft; not deployed)
+
+- Add a short capture trial to Captures, with progress, unique/repeated image counts and Stop. It makes at most three acquisition attempts without enabling automatic capture or changing options.
+- Keep the request ID across page reloads. Resolve lost replies through status checks; an explicit retry reuses the same ID rather than starting another trial.
+- Preserve verified images when cancelling or rejecting capture timing. Interrupted trials stay stopped after an app restart.
+- Reject damaged trial records without replacing them, and keep the rest of the website available. Models, calibration and number format are unchanged from dev20.
+- Check the active reader before the first image; pending recognition no longer falsely changes trial identity.
+- Document trial limits and correct stale Linux packaging notes.
+
+## 0.2.0-dev20 (draft; not deployed)
+
+- Use the existing floating-point main-dial model to avoid large jumps seen in saved-image tone tests. The secondary model is unchanged.
+- Validate the separate model input/output contracts while preserving native alignment, needle pivots and rejection checks.
+- Keep old model results and reviews in history. A model change requires saving the number format against the new reader before current readings or consumption resume.
+- Begin a separate consumption segment after the format is rebound; do not silently carry an old model's consumption anchor forward.
+
+
 ## 0.2.0-dev19 (local candidate)
 
 - Keep the unchecked camera status readable in the compact Auto layout.
@@ -88,7 +127,7 @@
 
 - Remove position-error controls from Number format, including Advanced. Editing
   physical dial values preserves saved reader assumptions. New formats retain
-  the provisional ±0.1 default until model/calibration error is validated; this
+  the provisional Ã‚Â±0.1 default until model/calibration error is validated; this
   is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames

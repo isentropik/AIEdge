@@ -34,20 +34,27 @@ class Recognition:
             with self.store.connect() as db:
                 row=db.execute('SELECT f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id WHERE NOT EXISTS (SELECT 1 FROM inference i WHERE i.sha256=f.sha256 AND i.pipeline=?) ORDER BY (e.event_id=(SELECT MAX(event_id) FROM capture_events)) DESC,e.event_id LIMIT 1',(self.reader.pipeline_id,)).fetchone()
             if not row:return False
-            digest=row[0];start=time.perf_counter()
-            try:
-                result=self.reader.read_jpeg(self.store.image(digest))
-                if result.get('pipeline_id',self.reader.pipeline_id)!=self.reader.pipeline_id:
-                    raise ValueError('reader_pipeline_mismatch')
-            except Exception as exc:
-                result={'state':'rejected','error':str(exc) if isinstance(exc,ValueError) else type(exc).__name__,
-                        'dial_positions':[],'physical_value':None}
-            result.update(source_sha256=digest,pipeline_id=self.reader.pipeline_id,training_allowed=False,accuracy_verified=False)
-            result['total_processing_seconds']=time.perf_counter()-start
-            encoded=json.dumps(result,allow_nan=False)
-            with self.store.connect() as db:
-                db.execute('INSERT INTO inference VALUES(?,?,?,?)',(digest,self.reader.pipeline_id,now(),encoded))
+            self.store.performance.begin_recognition(row[0])
+            with self.store.performance.measure('recognition') as sample:
+                state=self._process(row[0])
+                sample.outcome='success' if state=='estimated' else 'rejected'
             return True
+    def _process(self,digest):
+        start=time.perf_counter()
+        try:
+            with self.store.performance.measure('read_and_infer'):
+                result=self.reader.read_jpeg(self.store.image(digest))
+            if result.get('pipeline_id',self.reader.pipeline_id)!=self.reader.pipeline_id:
+                raise ValueError('reader_pipeline_mismatch')
+        except Exception as exc:
+            result={'state':'rejected','error':str(exc) if isinstance(exc,ValueError) else type(exc).__name__,
+                    'dial_positions':[],'physical_value':None}
+        result.update(source_sha256=digest,pipeline_id=self.reader.pipeline_id,training_allowed=False,accuracy_verified=False)
+        result['total_processing_seconds']=time.perf_counter()-start
+        encoded=json.dumps(result,allow_nan=False)
+        with self.store.performance.measure('inference_commit'),self.store.connect() as db:
+            db.execute('INSERT INTO inference VALUES(?,?,?,?)',(digest,self.reader.pipeline_id,now(),encoded))
+        return result['state']
     def latest(self):
         # Snapshot the active pipeline while holding the same lock as activation.
         with self.lock:

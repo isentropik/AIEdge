@@ -9,13 +9,13 @@ Optional archive copies use an SMB or NFS share mounted by Home Assistant.
 You can leave this off. Images, readings and calibration continue to use AIEdge's
 local app storage.
 
-1. In Home Assistant, open **Settings → System → Storage → Add network storage**.
+1. In Home Assistant, open **Settings â†’ System â†’ Storage â†’ Add network storage**.
    Give it a name such as `meter_archive` and choose **Media** for usage.
 2. Enter the storage server's IP address or hostname. For a Windows/SMB share,
    choose **CIFS**, enter its share name, username and password, then connect.
    NFS shares are supported too. Home Assistant manages the connection and login;
    no extra receiver, access token or Docker service is needed.
-3. Open **AIEdge → Setup → Data**, enable **Copy to network storage**, and enter
+3. Open **AIEdge â†’ Setup â†’ Data**, enable **Copy to network storage**, and enter
    the mounted folder, for example `/media/meter_archive`. To use a folder within
    that share, append it, for example `/media/meter_archive/aiedge`.
 4. Select **Next**. Stored captures and subsequent captures are queued for copying.
@@ -59,7 +59,7 @@ startup checks passed; end-to-end MQTT integration remains unverified.
 Installation builds the app on your HA host and can take several
 minutes; check the app logs if it fails.
 
-1. Open **Settings → Apps → Install app**. From the three-dot menu, choose
+1. Open **Settings â†’ Apps â†’ Install app**. From the three-dot menu, choose
    **Repositories** and add this complete URL, including the branch after `#`:
 
    ```text
@@ -81,7 +81,7 @@ API; stock AI-on-the-edge firmware does not provide it. Existing HA entities
 are unchanged with MQTT disabled. An amd64 host is currently required; ARM/Raspberry
 Pi builds are not provided.
 
-[Home Assistant app installation](https://www.home-assistant.io/apps) ·
+[Home Assistant app installation](https://www.home-assistant.io/apps) Â·
 [Development source](https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app)
 
 ## Current development build
@@ -140,11 +140,11 @@ requires an app restart. Saved-image setup does not need a camera address.
 
 1. In **Meter**, select Gas, Water or Electric and the units printed on the meter.
    You can revisit these choices later. Existing units do not identify the meter type.
-2. Open **Setup → Lighting** and explicitly **Load camera settings** if a camera is
+2. Open **Setup â†’ Lighting** and explicitly **Load camera settings** if a camera is
    configured. Select the installed light, strip type/count and white or RGB mode.
    Next saves changed lighting and activates it without restarting the camera.
    With no camera configured, continue using saved images.
-3. In **Image**, choose a saved 640 × 480 image or use the latest stored
+3. In **Image**, choose a saved 640 Ã— 480 image or use the latest stored
    capture. With a compatible camera configured, **Take picture** requests one photo.
    Opening a page does not take a photo. An unchanged reference carries forward;
    replacing it with a different image requires new markers and dial geometry.
@@ -182,7 +182,7 @@ See [UI parity](UI-PARITY.md) for supported handlers and remaining controls.
 
 There is no tolerance or accuracy control in setup. Editing physical dial values
 preserves the saved reader's uncertainty assumptions. New formats currently use
-an internal provisional ±0.1 bound on the 0–10 position scale. This is not measured
+an internal provisional Â±0.1 bound on the 0â€“10 position scale. This is not measured
 model accuracy; validated model/calibration error still needs to replace it.
 The app refuses contradictory or
 ambiguous dial combinations. In particular, a small wheel can complete several turns
@@ -192,7 +192,15 @@ come from the dial scales, angular resolution and internal error assumptions.
 
 ## Review saved images
 
-Open **Captures** and select a photo. Enter each dial position on its 0–10 scale,
+For a short batch from a configured camera, open **Captures → Start trial**.
+The app makes up to three attempts, 30 seconds apart. Progress shows unique
+images and repeats separately. Select **Stop** to prevent the next capture;
+a picture already being transferred can still finish. A page reload does not
+restart the trial. Review the resulting photos in the capture library.
+Automatic capture, MQTT and network copying must be off, and calibration and
+number format must be ready. [Trial details and limits](CAPTURE-TRIAL.md).
+
+Open **Captures** and select a photo. Enter each dial position on its 0â€“10 scale,
 using zero for the wrap point. Leave a dial blank when you cannot read it. The form
 starts without model estimates filled in, so those estimates cannot become labels
 just by clicking Save.
@@ -232,8 +240,8 @@ outside the configured reading uncertainty; clearing the field removes the bound
 
 All dials constrain the same physical movement. The calculation carries through
 rollovers and uses the finest resolved position without adding overlapping dial
-fractions twice. For example, a 5 ft³ wheel makes 20 turns for one numbered step
-of a 1,000 ft³/revolution dial. Individual phases can wrap from 9.9 to 0 normally.
+fractions twice. For example, a 5 ftÂ³ wheel makes 20 turns for one numbered step
+of a 1,000 ftÂ³/revolution dial. Individual phases can wrap from 9.9 to 0 normally.
 Contradictory backward movement produces no value. Small jitter is compared with a
 fixed anchor rather than added as positive consumption; a decreasing point inside
 an overlapping error range is withheld, retaining the range instead of clamping it.
@@ -356,3 +364,20 @@ save is reported. If that flush fails after a settings rename, the file may alre
 have changed: reload or restart to read it back before retrying. An error is not a
 promise that the old file remains active on disk. Windows tests cannot establish
 Linux power-loss durability, and physical power-loss recovery remains unverified.
+
+
+## Updating from dev19 to dev20
+
+This update changes the main-dial model. Your original images, reference, dial
+regions, alignment markers, units and saved history are retained. Old model
+results and reviews keep their original identity in history.
+
+After updating, open **Number format**, check the existing dial values and unit,
+then save it to use the new reader. Until that save, current readings and
+consumption are unavailable. Saving starts a separate consumption segment;
+previous consumption history remains available, but an old anchor is not carried
+across the model change. A reading that is still ambiguous stays ambiguous.
+
+The update does not enable scheduled capture, MQTT or network archiving. It does
+not change the camera firmware, lighting or exposure. Saved-image tests do not
+establish accuracy for unseen meters or lighting conditions.

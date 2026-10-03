@@ -1,4 +1,4 @@
-"""Current routed int8 models with shared preprocessing; no training or label inference."""
+"""Routed server models with shared preprocessing; no training or label inference."""
 import hashlib,io,json,threading,time
 from pathlib import Path
 import importlib.metadata
@@ -8,9 +8,26 @@ from ai_edge_litert.interpreter import Interpreter,OpResolverType
 from native import Native,Profile
 
 PROFILE='frozen-gas-six-dial-v1'
-MODELS={'main':('polar-main-int8.tflite','9c145e67e9008bf1e17567cd69baa48ce54af3b1d6b7fa0e1aeeb6b5ce9ec6a5'),
+MODELS={'main':('polar-main-float.tflite','8c0d63fbe8c3cbc7bd854c464d9cd342b46f766a107d2cbd6d93026c49601016'),
         'secondary':('polar-int8.tflite','b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0')}
 NAMES=('main.10000k','main.1000k','main.100k','main.10k','main.1k','secondary.5')
+FEATURE_SCALE=0.006855103187263012
+FEATURE_ZERO=-53
+
+def network_input(features,role):
+    """The native ABI still supplies the exact frozen int8 feature tensor."""
+    value=np.frombuffer(features,dtype=np.int8).reshape(1,384,40)
+    return (value.astype(np.float32)-FEATURE_ZERO)*FEATURE_SCALE if role=='main' else value
+
+def decoder_scores(value,role):
+    if role=='main':
+        # Preserve the native circular decoder's probability-bin contract.
+        # Float weights avoid catastrophic near-tied peaks in the int8 main
+        # export; preprocessing, guards and secondary weights stay unchanged.
+        if value.dtype!=np.float32 or value.shape!=(1,360) or not np.isfinite(value).all() or np.any(value<0) or np.any(value>1) or abs(float(value.sum())-1)>2e-5:
+            raise ValueError('model_probability_contract:main')
+        value=np.clip(np.rint(value*256)-128,-128,127).astype(np.int8)
+    return value.tobytes()
 
 class Reader:
     def __init__(self,library,models,profile,reference_kernels=False,reuse_unchanged=True,sampling_sparse=False):
@@ -32,10 +49,14 @@ class Reader:
             kwargs={'experimental_op_resolver_type':OpResolverType.BUILTIN_REF} if reference_kernels else {}
             net=Interpreter(model_content=blob,num_threads=1,**kwargs);net.allocate_tensors()
             inp,out=net.get_input_details()[0],net.get_output_details()[0]
-            if inp['shape'].tolist()!=[1,384,40] or out['shape'].tolist()!=[1,360] or inp['dtype']!=np.int8 or out['dtype']!=np.int8:raise ValueError('model_tensor_contract:'+role)
+            dtype=np.float32 if role=='main' else np.int8
+            if inp['shape'].tolist()!=[1,384,40] or out['shape'].tolist()!=[1,360] or inp['dtype']!=dtype or out['dtype']!=dtype:raise ValueError('model_tensor_contract:'+role)
             scale,zero=inp['quantization']
-            if abs(scale-0.006855103187263012)>1e-10 or zero!=-53:raise ValueError('model_quantization_contract:'+role)
-            if out['quantization']!=(1/256,-128):raise ValueError('model_output_quantization_contract:'+role)
+            if role=='main':
+                if (scale,zero)!=(0.,0) or out['quantization']!=(0.,0):raise ValueError('model_float_contract:'+role)
+            else:
+                if abs(scale-FEATURE_SCALE)>1e-10 or zero!=FEATURE_ZERO:raise ValueError('model_quantization_contract:'+role)
+                if out['quantization']!=(1/256,-128):raise ValueError('model_output_quantization_contract:'+role)
             self.networks[role]=(net,inp,out);self.hashes[role]=actual
         contract={'profile':self.profile,'models':self.hashes,'native':hashlib.sha256(Path(library).read_bytes()).hexdigest(),
                   'reader':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -71,8 +92,8 @@ class Reader:
                     else:
                         try:
                             role=dial['model'];net,inp,out=self.networks[role]
-                            net.set_tensor(inp['index'],np.frombuffer(row['features'],dtype=np.int8).reshape(1,384,40));net.invoke()
-                            scores=net.get_tensor(out['index']).tobytes()
+                            net.set_tensor(inp['index'],network_input(row['features'],role));net.invoke()
+                            scores=decoder_scores(net.get_tensor(out['index']),role)
                             item.update(state='estimated',position=self.native.decode(scores,dial['direction']=='ccw'),scores_sha256=hashlib.sha256(scores).hexdigest())
                         except Exception:
                             # A partial failed frame cannot leave successful dial outputs reusable.

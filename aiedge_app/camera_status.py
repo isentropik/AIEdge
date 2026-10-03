@@ -31,13 +31,14 @@ def validate(payload):
     # Never echo unsolicited fields, device addresses or credential-like payloads.
     return {k:payload[k] for k in FIELDS}
 
-def probe(camera):
-    from capture import camera_header
+def probe(camera,*,deadline=None):
+    from capture import camera_header,io_deadline
+    absolute=io_deadline(5,deadline)
     headers={}
     if camera.token:headers['Authorization']='Bearer '+camera.token
     elif camera.basic:headers['Authorization']='Basic '+camera.basic
     request=urllib.request.Request(camera.origin+'/api/v1/camera',headers=headers,method='GET')
-    request.aiedge_deadline=time.monotonic()+5
+    request.aiedge_deadline=absolute
     try:
         with camera.opener.open(request,timeout=5) as response:
             camera_header(response.headers,'Content-Type')
