@@ -32,7 +32,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.reject_post();return
             if setup is None:self.reply({'error':'Calibration runtime is not configured.'},503);return
             route=urllib.parse.urlsplit(self.path).path
-            if route not in ('/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive'):self.send_error(404);return
+            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -61,7 +61,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                                        'X-AIEdge-Preview-SHA256':hashlib.sha256(preview).hexdigest()}.items():self.send_header(name,value)
                     self.end_headers();self.wfile.write(preview);return
                 data=json.loads(body)
-                if route=='/api/archive':
+                if route=='/api/setup/meter':
+                    if not isinstance(data,dict) or set(data)!={'profile','revision'}:raise ValueError('meter_profile_invalid')
+                    result=setup.meter.save(data['profile'],data['revision'])
+                elif route=='/api/archive':
                     if archive is None:self.reply({'error':'archive_unavailable'},503);return
                     if not isinstance(data,dict):raise ValueError('archive_action_invalid')
                     if set(data)=={'action','config','revision'} and data['action']=='save':result=archive.save(data['config'],data['revision'])
@@ -148,7 +151,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
+            elif route in ('/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -209,7 +212,7 @@ def run_service(stop_signals):
             setup=Setup(args.data,lambda document:Reader(args.native_library,args.models,document),recognition)
             stop_signals.checkpoint()
             from reading_format import FormatStore
-            reading_format=FormatStore(args.data,recognition)
+            reading_format=FormatStore(args.data,recognition,setup.meter)
         except (OSError,sqlite3.Error):
             recognition=None;setup=None;reading_format=None;enabled=False
             configuration={'state':'invalid','code':'setup_storage_unavailable'}

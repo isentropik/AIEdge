@@ -23,7 +23,7 @@ class Element {
  getContext(){return {};}
 }
 const reply=body=>({ok:true,json:async()=>body});
-function fixture(format=savedFormat){
+function fixture(format=savedFormat,meter=null){
  const elements=new Map(),get=id=>{if(!elements.has(id)){const e=new Element('div',elements);e.id=id;}return elements.get(id);};
  const field=(id,tag)=>{const e=new Element(tag,elements);e.id=id;return e;};
  const unit=field('format-unit','select');unit.required=true;
@@ -33,7 +33,7 @@ function fixture(format=savedFormat){
  const window={addEventListener(name,fn){events[name]=fn;},dispatchEvent(){}};
  const fetch=async(url,options={})=>{
   if(options.method==='POST'){posts.push(JSON.parse(options.body));return reply({revision:'saved'});}
-  if(url==='api/setup')return reply({token:'test-token',calibration:{dials:[]}});
+  if(url==='api/setup')return reply({token:'test-token',calibration:{dials:[]},meter});
   return reply({pipeline_id:pipeline,revision:'original',format,dials});
  };
  vm.runInContext(source,vm.createContext({document:{getElementById:get,createElement:tag=>new Element(tag,elements)},window,fetch,AbortSignal,Event}));
@@ -41,6 +41,31 @@ function fixture(format=savedFormat){
 }
 const submit=app=>app.get('reading-form').onsubmit({preventDefault(){}});
 function change(app,id,value){app.get(id).value=value;app.get(id).fire('input');}
+
+test('changed meter units cannot silently reuse saved physical scales or rate',async()=>{
+ const app=fixture({...savedFormat,maximum_rate_per_second:1},{profile:{type:'gas',unit:'m3'}});
+ await app.window.openReadingFormat();
+ assert.equal(app.get('format-unit').value,'m3');assert.equal(app.get('format-unit').disabled,true);
+ assert.equal(app.get('format-unit-select').hidden,true);assert.equal(app.get('format-unit-summary').hidden,false);
+ assert.equal(app.get('format-value-0').value,'');assert.equal(app.get('format-value-1').value,'');assert.equal(app.get('format-max-rate').value,'');
+ assert.match(app.get('format-status').textContent,/Units changed from ft³ to m³/);
+ await submit(app);assert.equal(app.posts.length,0);
+ change(app,'format-value-0',1000);change(app,'format-value-1',5);await submit(app);
+ assert.equal(app.posts.length,1);assert.equal(app.posts[0].format.unit,'m3');
+ assert.deepEqual(app.posts[0].format.dials.map(d=>d.position_error),[0,.2]);
+});
+
+test('matching meter units preserve existing values and allow unchanged Next',async()=>{
+ const app=fixture(savedFormat,{profile:{type:'gas',unit:'ft3'}});await app.window.openReadingFormat();
+ assert.equal(app.get('format-value-0').value,'1000');assert.equal(app.get('format-value-1').value,'5');
+ assert.equal(await submit(app),true);assert.equal(app.posts.length,0);
+});
+
+test('a meter change invalidates the open form before it can submit old values',async()=>{
+ const app=fixture();await app.window.openReadingFormat();app.events['aiedge-meter-saved']();
+ change(app,'format-value-0',10000);assert.equal(await submit(app),false);assert.equal(app.posts.length,0);
+ assert.equal(app.get('save-format').disabled,true);
+});
 
 test('new formats save without choosing provisional errors; ordinary rows contain only values',async()=>{
  const app=fixture(null);await app.window.openReadingFormat();

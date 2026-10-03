@@ -1,12 +1,13 @@
 # App interface and camera controls
 
 The app uses a compact sidebar and a theme selector at the top. Setup contains
-Lighting, Image, Alignment, Dials, Number format, Data and Finish. Next applies
+Meter, Lighting, Image, Alignment, Dials, Number format, Data and Finish. Next applies
 the relevant choices. Finishing does not restart the camera, enable scheduled
 captures or publish readings.
 
 | Previous setup feature | App behavior |
 | --- | --- |
+| Meter and units | Gas, Water or Electric with supported units. Metadata saves without a camera or reference; new units require reviewing the number format before affecting readings. |
 | Lighting | Explicitly load saved lighting. Select the built-in LED or a supported strip, GPIO, pixel type and count. RGBW offers dedicated white, RGB or a custom channel mix. |
 | Brightness | One 0–100% control on Image scales the selected light. White mode hides RGB controls; custom mix shows numeric channels without a color chooser. |
 | Reference image | Choose a saved 640 × 480 image, use the latest stored capture, or explicitly take a picture. An unchanged reference is retained. |

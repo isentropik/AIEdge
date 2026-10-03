@@ -133,9 +133,13 @@ lookup uses the operating system and can take longer than the response deadline.
 
 ## Set up a reading
 
-1. In the app configuration, enter the compatible camera's address. Use its token
-   **or** its username and password, depending on its firmware. Keep capture disabled
-   while preparing calibration. Changing app options currently requires an app restart.
+Before starting, enter the compatible camera's address in app configuration.
+Use its token **or** its username and password, depending on its firmware. Keep
+capture disabled while preparing calibration. Changing app options currently
+requires an app restart. Saved-image setup does not need a camera address.
+
+1. In **Meter**, select Gas, Water or Electric and the units printed on the meter.
+   You can revisit these choices later. Existing units do not identify the meter type.
 2. Open **Setup → Lighting** and explicitly **Load camera settings** if a camera is
    configured. Select the installed light, strip type/count and white or RGB mode.
    Next saves changed lighting and activates it without restarting the camera.
@@ -152,23 +156,28 @@ lookup uses the operating system and can take longer than the response deadline.
    Select CW or CCW to match the printed scale. **Lock width / height** preserves
    proportions while resizing. Next validates the whole calibration before replacing
    the active one. Up to 16 dials are supported.
-6. In **Number format**, choose the units printed on the meter and enter the value
+6. In **Number format**, enter the value in your selected units
    represented by one full revolution of each dial. Focusing a value highlights that
    dial in the reference image. Direction comes from Dials. All dials participate;
    there are no separate main/secondary roles or per-dial inclusion switches.
-7. **Data** shows local storage and MQTT state. **Finish** summarizes saved choices.
+7. **Data** shows local storage, optional network copying and MQTT state.
+8. **Finish** summarizes saved choices.
    Open Overview when finished; the camera does not restart. Enable capture in app
    configuration when compatible camera firmware is available.
    The default interval is 30 seconds. **Captures** shows original saved images, while
    **Overview** shows the latest processed result and current capture/storage status.
+
+Changing units keeps the current readings in their original units until you apply
+a new number format. AIEdge clears the dial-value fields for the new units so you
+can enter them explicitly. It does not convert or relabel old readings automatically.
 
 Desktop setup keeps the image beside its controls. Mobile places it above them and
 keeps it visible while you scroll the controls. Grid, zoom and fit change only the
 view. Image contains one brightness control for the selected light. A lighting
 change grays the previous photo and highlights Take picture; unchanged choices
 retain the existing reference. Failed or uncertain lighting activation blocks new
-captures until you load and explicitly activate the saved choices. Exposure, gain
-and sensor orientation remain on the camera website; open it from Settings.
+captures until you load and explicitly activate the saved choices. Compatible
+firmware also exposes exposure, gain and sensor orientation in Image.
 See [UI parity](UI-PARITY.md) for supported handlers and remaining controls.
 
 There is no tolerance or accuracy control in setup. Editing physical dial values
@@ -266,6 +275,7 @@ fixture, not the user's Home Assistant broker.
 - `captures.sqlite3`: capture timestamps, receipt times, errors, model estimates and
   relative consumption segments/decisions.
 - `references/` and `calibration.json`: reference images and saved calibration.
+- `meter-profile.json`: meter type and preferred units, independent of calibration.
 - `instance-id`: stable identity used for MQTT discovery, if MQTT is enabled.
 - `recovery/`: hash-verified copies of damaged setup files replaced through the editor.
 - `reading-format.json`: optional physical scales and uncertainty bounds, tied to

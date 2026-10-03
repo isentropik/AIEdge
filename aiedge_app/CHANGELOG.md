@@ -1,5 +1,12 @@
 # Changes
 
+## 0.2.0-dev17 (local candidate)
+
+- Start setup with gas, water or electric meter type and supported units.
+- Keep existing readings in their saved units until an explicit new number format is applied. A unit change requires entering each dial value again.
+- Store meter choices independently of images and calibration; preserve invalid files before replacement and reject stale saves.
+- Keep the first step compact on mobile and desktop, with one error and a reload action after a failed request.
+
 ## 0.2.0-dev16 (local candidate)
 
 - Keep the manual-review photo visible while scrolling phone dial inputs.

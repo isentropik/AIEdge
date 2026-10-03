@@ -29,7 +29,7 @@ def inventory_errors(identifiers,allow_archive,packaged):
     identifiers=set(identifiers);errors=[]
     for prefix,minimum in (('test_consumption.AccountingTests.',20),('test_consumption.FormatBoundTests.',3),
                            ('test_synthetic_pipeline.GeneratedPipelineTests.',3),
-                           ('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5),
+                           ('test_meter_profile.MeterTests.',8),('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5),
                            ('test_changed_dials.ChangedDialTests.',12),('test_reading_bounds.BoundTests.',8),
                            ('test_reading_bounds.IntegrationTests.',3),('test_startup_shutdown.StartupTests.',3),
                            ('test_temporal_reading.TemporalTests.',10),('test_temporal_reading.PublicationTests.',4),

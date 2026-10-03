@@ -122,11 +122,12 @@ class ReadingFormat:
 
 class FormatStore:
     """Saved interpretation, bound to the complete reader pipeline identity."""
-    def __init__(self,directory,recognition):
+    def __init__(self,directory,recognition,meter=None):
         from pathlib import Path
         import threading
         self.path=Path(directory)/'reading-format.json'
         self.recognition=recognition;self.lock=threading.Lock();self.active=None
+        self.meter=meter
         from saved_file import SavedFile
         self.saved=SavedFile(self.path)
         try:
@@ -144,7 +145,9 @@ class FormatStore:
         from setup_store import Setup
         candidate,identity=validate(document)
         # Same lock as calibration activation: no save can bind to half an update.
-        with self.recognition.lock,self.lock:
+        from contextlib import nullcontext
+        with (self.meter.lock if self.meter else nullcontext()),self.recognition.lock,self.lock:
+            if self.meter:self.meter.require_unit(candidate['unit'])
             reader=self.recognition.reader
             if reader is None or candidate['pipeline_id']!=reader.pipeline_id:raise ValueError('reading_pipeline_changed')
             if sorted(d['index'] for d in candidate['dials'])!=list(range(len(reader.dials))):

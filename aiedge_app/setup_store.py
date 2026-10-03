@@ -14,6 +14,8 @@ class Setup:
         self.factory=reader_factory;self.recognition=recognition;self.lock=threading.Lock();self.active=None
         self.path=self.root/'calibration.json'
         self.saved=SavedFile(self.path);self.draft=None
+        from meter_profile import MeterProfile
+        self.meter=MeterProfile(self.root,self._atomic)
         from image_edit import EditStore
         self.edits=EditStore(self.root,self.reference,self._atomic)
         try:
@@ -60,10 +62,10 @@ class Setup:
             if temp.exists():temp.unlink()
     def status(self):
         with self.lock:
-            if self.active is None:return {'revision':self.saved.revision,'calibration':json.loads(json.dumps(self.draft)),'image_editor':self.edits.status(),**self.saved.recovery()}
+            if self.active is None:return {'revision':self.saved.revision,'calibration':json.loads(json.dumps(self.draft)),'image_editor':self.edits.status(),'meter':self.meter.status(),**self.saved.recovery()}
             document,revision=self.active
             # Return a copy: callers cannot modify the active profile in place.
-            return {'revision':revision,'calibration':json.loads(json.dumps(document)),'image_editor':self.edits.status()}
+            return {'revision':revision,'calibration':json.loads(json.dumps(document)),'image_editor':self.edits.status(),'meter':self.meter.status()}
     def save_image_edit(self,reference_id,value,expected_revision):
         with self.lock:
             calibration=self.active[0] if self.active else self.draft

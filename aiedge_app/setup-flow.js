@@ -2,8 +2,8 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id);
-const steps=['lighting','image','alignment','dials','format','data','finish'];
-const headings={lighting:'Lighting',image:'Image',alignment:'Alignment markers',dials:'Analog dials',format:'Number format',data:'Data',finish:'Finish setup'};
+const steps=['meter','lighting','image','alignment','dials','format','data','finish'];
+const headings={meter:'Meter and units',lighting:'Lighting',image:'Image',alignment:'Alignment markers',dials:'Analog dials',format:'Number format',data:'Data',finish:'Finish setup'};
 const form=$('reading-form'),formatHome=$('format');
 let step='image',active=false,busy=false,navigating=false,camera=null,polling=false,viewGeneration=0,routeGeneration=0,statusSnapshot=null;
 const messages={camera_not_configured:'Set the camera address in AIEdge app configuration, or choose a saved image.',camera_not_ready:'The camera is not ready. Check its connection and saved settings.',camera_setup_busy:'A camera request is already running. Wait for it to finish.',camera_authentication_failed:'Camera login was rejected. Check its credentials in app configuration.',camera_api_unavailable:'This firmware does not support remote capture.',camera_connection_failed:'Could not reach the camera. Check its power and network connection.',camera_timeout:'The camera did not respond in time.',camera_setup_failed:'The picture could not be verified. Your current reference has been kept.',camera_certificate_invalid:'The camera certificate could not be verified.',reference_must_be_640x480:'Choose a 640 × 480 reference image.'};
@@ -57,11 +57,12 @@ function moveFormat(inWizard){
  $('reload-format').hidden=inWizard;
 }
 async function show(next,updateHash=false){
- if(!steps.includes(next))next='image';
+ if(!steps.includes(next))next='meter';
  const generation=++viewGeneration;
  active=true;step=next;window.showAppPage('setup');
  if(updateHash&&location.hash!=='#setup/'+step){location.hash='setup/'+step;return;}
  $('setup-heading').textContent=headings[step];
+ $('setup-meter').hidden=step!=='meter';
  $('setup-lighting').hidden=step!=='lighting';
  $('setup-editor').hidden=!['image','alignment','dials'].includes(step);
  $('image-controls').hidden=step!=='image';$('placement-controls').hidden=step==='image';
@@ -75,6 +76,7 @@ async function show(next,updateHash=false){
   if(!active||generation!==viewGeneration)return;
   window.AIEdgeCalibration?.setMode(next==='alignment'?'markers':next==='dials'?'dials':'image');
  }
+ if(next==='meter')await window.AIEdgeMeter.load();
  if(next==='format')await window.openReadingFormat();
  if(next==='data')await window.AIEdgeArchive.load();
  if(next==='finish')await summary();
@@ -83,6 +85,7 @@ async function show(next,updateHash=false){
 function fail(message){note(message,true);return false;}
 async function leave(){
  const state=editor();
+ if(step==='meter')return await window.AIEdgeMeter.save();
  if(step==='lighting')return await window.AIEdgeCameraControls?.apply()??true;
  if(step==='image'){
   if(!(state.has_image&&!window.AIEdgeCameraControls?.requiresPicture()&&!window.AIEdgeImageControls?.requiresPicture()))return fail(state.has_image?'Take a picture with the changed camera settings before continuing.':'Take a picture or choose an image before continuing.');
@@ -209,9 +212,11 @@ async function summary(){
  try{
   const [calibration,format]=await Promise.all([json('api/setup'),json('api/reading-format')]);
   const ready=!!calibration.calibration&&!calibration.recovery;
-  const bound=!!format.format&&!format.recovery&&format.format.pipeline_id===format.pipeline_id;
+  const profile=calibration.meter?.profile;
+  const bound=!!format.format&&!format.recovery&&!calibration.meter?.recovery&&format.format.pipeline_id===format.pipeline_id&&(!profile||format.format.unit===profile.unit);
   const mqtt=statusSnapshot?.mqtt?.state;
-  const rows=[['Reference and dials',ready?'Saved':'Incomplete'],['Number format',bound?'Saved':'Needs review'],['Capture',camera?(camera.capture_enabled?'On':'Off'):'Unknown'],['MQTT',mqtt?(mqtt==='disabled'?'Off':mqtt.replaceAll('_',' ')):'Unknown']];
+  const types={gas:'Gas',water:'Water',electric:'Electric'};
+  const rows=[['Meter',profile&&!calibration.meter.recovery?types[profile.type]:'Needs review'],['Reference and dials',ready?'Saved':'Incomplete'],['Number format',bound?'Saved':'Needs review'],['Capture',camera?(camera.capture_enabled?'On':'Off'):'Unknown'],['MQTT',mqtt?(mqtt==='disabled'?'Off':mqtt.replaceAll('_',' ')):'Unknown']];
   $('setup-summary').replaceChildren();
   for(const [name,value] of rows){const row=document.createElement('div'),key=document.createElement('dt'),text=document.createElement('dd');if(name==='MQTT')text.id='setup-summary-mqtt';key.textContent=name;text.textContent=value;row.append(key,text);$('setup-summary').append(row);}
  }catch(error){note(error.message,true);}
@@ -219,7 +224,7 @@ async function summary(){
 function route(hash){
  routeGeneration++;viewGeneration++;
  if(hash==='#settings'){active=false;moveFormat(false);window.showAppPage('settings');loadCamera();return true;}
- if(hash==='#calibration'||hash==='#setup'||hash.startsWith('#setup/')){show(hash==='#calibration'?'image':hash.split('/')[1]||'lighting');return true;}
+ if(hash==='#calibration'||hash==='#setup'||hash.startsWith('#setup/')){show(hash==='#calibration'?'image':hash.split('/')[1]||'meter');return true;}
  if(active){active=false;moveFormat(false);}
  return false;
 }

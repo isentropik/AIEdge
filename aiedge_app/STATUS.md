@@ -1,4 +1,17 @@
-# Route-polish candidate - October 2, 2026
+# Meter-setup candidate - October 2, 2026
+
+Local dev17 adds Meter and units before Lighting, making eight setup steps.
+Gas supports ft³/m³; Water also supports litres and US gallons; Electric supports
+kWh. Existing units suggest a choice without inferring the meter type. Meter
+metadata has its own conflict-checked, recoverable app file and needs no camera,
+reference image or dial calibration to save.
+
+Changing units does not alter the active number format, stored readings or
+calibration. Number format clears physical dial values and the optional rate
+when the chosen units differ, and requires an explicit replacement save. The
+server rejects a stale format save in the wrong selected units. The same-unit
+path preserves existing values and unchanged Next does not invalidate drafts.
+Remaining full-route failure-state review and live deployment are pending.
 
 Local dev16 widens manual-review fields and keeps the photo visible while
 scrolling phone controls. Saved-image browser checks passed at 320 px in both

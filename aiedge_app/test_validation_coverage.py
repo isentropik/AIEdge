@@ -6,6 +6,7 @@ from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKA
 def result(skips=(),count=1):
     return SimpleNamespace(testsRun=count,skipped=[(SimpleNamespace(id=lambda name=name:name),'fixture missing') for name in skips])
 NEW_COVERAGE={*(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
+              *(f'test_meter_profile.MeterTests.test_{i}' for i in range(8)),
               *(f'test_reading_consistency.ConsistencyTests.test_{i}' for i in range(5)),
               'test_reading_consistency.IntegrationTests.test_0',
               *(f'test_temporal_reading.TemporalTests.test_{i}' for i in range(10)),
@@ -54,7 +55,7 @@ class ValidationCoverageTests(unittest.TestCase):
                   *('test_changed_dials.ChangedDialTests.test_'+str(i) for i in range(12))}
         complete|=NEW_COVERAGE
         self.assertEqual(inventory_errors(complete,True,False),[])
-        for prefix in ('test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
+        for prefix in ('test_meter_profile.','test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
                        'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):

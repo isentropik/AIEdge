@@ -1162,3 +1162,10 @@ canvas{
     min-height:44px;
   }
 }
+/* Meter choices stay compact on both the first setup step and return visits. */
+.meter-card{max-width:520px;padding:20px}
+.meter-card form{display:grid;gap:18px}
+.meter-card label{display:grid;gap:8px}
+.meter-card .setup-status{margin:0}
+.format-unit-summary{display:flex;gap:12px;align-items:center}
+.format-unit-summary a{font-size:13px}
