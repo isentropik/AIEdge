@@ -69,12 +69,13 @@ see [trial instructions](CAPTURE-TRIAL.md).
 
 ## Base image and dependencies
 
-Both stages pin `python:3.14.7-slim-trixie` to OCI index
-`sha256:51dafde81dbdb6ebde285137a295cf18a47ca95234fe388a343719cb97305b3d`.
+Both stages pin `python:3.14.8-slim-trixie` to OCI index
+`sha256:89fb7d3da20043c370643435258bdd7ab755d326d359001d02988ed15ae5219e`.
 The selected Linux amd64 manifest is
-`sha256:7bf6c3111fe094f8ee1a1cbcdc63c4cfb345b0e3df42d5aa9a90b3b4b022ab6d`.
-These were inspected September 29, 2026; a pin is not a claim of being eternally
-current. Change versions/digests deliberately and repeat build, dependency,
-startup and recovery checks. Dependency locks and notices are documented in
+`sha256:65a94bb37b630c482dfd31e5fb9b449cb26c31eab1b7a125cd6bd624acfe3b30`.
+Official registry metadata inspected October 3, 2026 identifies Python 3.14.8
+in its image configuration. A digest check does not prove startup or native
+compatibility; the exact-head Linux build and packaged restart suite must pass
+before release. Dependency locks and notices are documented in
 `DEPENDENCIES.md`. Network-share archiving is optional and uses HA-managed mounts;
 its real deployment and storage behavior require their own verified results.

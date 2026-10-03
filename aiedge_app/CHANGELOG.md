@@ -1,5 +1,11 @@
 # Changes
 
+## 0.2.0-dev22 (draft; not deployed)
+
+- Update both container stages to Python 3.14.8 using a verified OCI digest.
+- Keep the current eleven-package Linux wheel lock, models and application behavior.
+- Refresh dependency and package documentation; Linux build/startup validation is required for this draft.
+
 ## 0.2.0-dev21 (draft; not deployed)
 
 - Add a short capture trial to Captures, with progress, unique/repeated image counts and Stop. It makes at most three acquisition attempts without enabling automatic capture or changing options.
@@ -105,7 +111,7 @@
 
 - Remove position-error controls from Number format, including Advanced. Editing
   physical dial values preserves saved reader assumptions. New formats retain
-  the provisional Â±0.1 default until model/calibration error is validated; this
+  the provisional Ã‚Â±0.1 default until model/calibration error is validated; this
   is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames

@@ -1,11 +1,16 @@
 # Dependency baseline
 
-Dependency pins refreshed September 30, 2026 against official PyPI metadata.
-All four direct pins still match the registry's current versions. Matching
-CPython 3.14 Linux amd64 wheels (or universal wheels) are available; metadata
-alone does not prove runtime compatibility.
-Container base: python:3.14.7-slim-trixie, pinned to the verified OCI index digest
-listed in PACKAGING.md on September 29.
+Official PyPI metadata checked October 3, 2026: all eleven Linux lock pins
+are the latest stable releases with compatible CPython 3.14 Linux amd64
+wheels. Exact wheel hashes and Python version requirements were verified.
+The newer backports.strenum 1.3.1 requires Python below 3.11; keep compatible
+1.2.8. Matching metadata is availability evidence, not runtime proof.
+
+Container base: Python 3.14.8 slim trixie, pinned to the official OCI index
+and Linux amd64 manifest in PACKAGING.md. The official Python release page
+lists this patch release on September 30. Debian packages and bundled native
+libraries are not covered by this registry audit.
+
 Inference requirements pinned in requirements.txt: ai-edge-litert 2.2.0,
 numpy 2.5.3, Pillow 12.3.0 and paho-mqtt 2.1.0. Installed into an isolated Python 3.12 Windows environment;
 the older training environment was not modified. The dev5 container built and
@@ -71,3 +76,8 @@ Sources:
 - https://github.com/google-ai-edge/LiteRT/blob/v2.2.0/LICENSE
 - https://github.com/google/flatbuffers/blob/v25.12.19/LICENSE
 - https://osv.dev/
+
+October 3 sources:
+- https://www.python.org/downloads/release/python-3148/
+- https://hub.docker.com/_/python
+- https://pypi.org/pypi/backports.strenum/json
