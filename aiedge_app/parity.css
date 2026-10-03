@@ -136,7 +136,8 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #image-controls[data-automatic="true"] .camera-sensor{grid-column:1;align-self:center;gap:8px}
 #image-controls[data-automatic="true"] #sensor-controls{grid-column:2;grid-row:1}
 #image-controls[data-automatic="true"] .sensor-auto{padding:0;border:0;margin:0}
-#image-controls[data-automatic="true"] .image-sources,#image-controls[data-automatic="true"] #camera-setup-note,#image-controls[data-automatic="true"] #camera-control-link{grid-column:1/-1}
+#image-controls[data-automatic="true"] :is(#load-image-controls,#image-controls-note,#image-brightness,#apply-saved-image-controls,.image-sources,#camera-setup-note,#camera-control-link){grid-column:1/-1}
+#image-controls .camera-sensor span{white-space:nowrap}
 .sensor-section{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:4px;font-size:12px;font-weight:600}
 .sensor-section .check-label{font-size:11px;color:var(--muted);font-weight:400}
 .sensor-range{display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;font-size:12px}

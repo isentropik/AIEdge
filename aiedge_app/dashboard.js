@@ -172,7 +172,7 @@ function render(s,rows){
   renderConsumption(s.consumption);
   renderRecognition(s.recognition);window.latestReading=s.reading;window.latestRecognition=s.recognition;
   window.renderPhysicalReading?.(s.reading,s.recognition);
-  $('mqtt-state').textContent=({disabled:'Not connected',starting:'Connecting',connected:'Connected',publishing:'Publishing',waiting_for_format:'Needs number format',waiting_for_reading:'Waiting for reading',disconnected:'Disconnected',error:'Connection failed'})[s.mqtt?.state]||'Not connected';
+  $('mqtt-state').textContent=({disabled:'Off',starting:'Connecting',connected:'Connected',publishing:'Publishing',waiting_for_format:'Needs number format',waiting_for_reading:'Waiting for reading',disconnected:'Disconnected',error:'Connection failed'})[s.mqtt?.state]||'Not connected';
   $('count').textContent=s.captures;$('unique').textContent=s.unique_images;$('failures').textContent=s.failures;
   $('schedule').textContent=s.capture_enabled?'Every '+s.interval_seconds+' seconds':'Disabled';
   const cameraLabels={not_checked:'Waiting for camera check',checking:'Checking camera',ready:'Camera ready',busy:'Camera busy',camera_unavailable:'Camera unavailable',settings_unavailable:'Camera settings unavailable',startup_recovery:'Camera startup recovery',clock_unsynchronized:'Waiting for camera clock',demo_mode:'Camera in demo mode',unavailable:'Camera unreachable'};

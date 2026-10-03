@@ -7,7 +7,7 @@ class Element{
  append(...elements){for(const e of elements){e.parentElement=this;this.children.push(e);}}replaceChildren(){this.children=[];}
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,configured=false,openCalibration=async()=>{},saveCalibration=null,imageControls=null,lightingControls=null,imageEditor=null,pictureError=false,meterUnit=null,formatUnit=null}={}){
+function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,configured=false,openCalibration=async()=>{},saveCalibration=null,imageControls=null,lightingControls=null,imageEditor=null,pictureError=false,meterUnit=null,formatUnit=null,cameraState={}}={}){
  const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
  const buttons=['meter','lighting','image','alignment','dials','format','data','finish'].map(step=>{const e=new Element();e.dataset.step=step;return e;});
  const editor={has_image:hasImage,markers_complete:markers,dial_count:6,busy:false},calls=[],posts=[];
@@ -19,7 +19,7 @@ function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,confi
  if(imageControls)window.AIEdgeImageControls={connect(){},configure(){},receive(){},markAttention(){},setStep(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...imageControls};
  if(lightingControls)window.AIEdgeCameraControls={connect(){},configure(){},receive(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...lightingControls};
  if(imageEditor)window.AIEdgeImageEditor={setBusy(){},...imageEditor};
- const fetch=async(url,options={})=>{if(options.method==='POST')posts.push({url,body:options.body});return {ok:true,json:async()=>url==='api/camera-setup'?(options.method==='POST'?{configured,state:pictureError?'error':'ready',error:pictureError?'camera_image_orientation_unverified':undefined,action:JSON.parse(options.body).action,reference_sha256:'b'.repeat(64),image_orientation:1}:{configured,state:'idle',capture_enabled:false,interval_seconds:30}):url==='api/setup'?{token:'fixture-only',calibration:formatUnit?{}:null,meter:{profile:meterUnit?{type:'gas',unit:meterUnit}:null}}:{format:formatUnit?{pipeline_id:'fixture',unit:formatUnit}:null,pipeline_id:'fixture'}};};
+ const fetch=async(url,options={})=>{if(options.method==='POST')posts.push({url,body:options.body});return {ok:true,json:async()=>url==='api/camera-setup'?(options.method==='POST'?{configured,state:pictureError?'error':'ready',error:pictureError?'camera_image_orientation_unverified':undefined,action:JSON.parse(options.body).action,reference_sha256:'b'.repeat(64),image_orientation:1}:{configured,state:'idle',capture_enabled:false,interval_seconds:30,...cameraState}):url==='api/setup'?{token:'fixture-only',calibration:formatUnit?{}:null,meter:{profile:meterUnit?{type:'gas',unit:meterUnit}:null}}:{format:formatUnit?{pipeline_id:'fixture',unit:formatUnit}:null,pipeline_id:'fixture'}};};
  vm.runInContext(source,vm.createContext({document:{getElementById:get,querySelectorAll:()=>buttons,createElement:()=>new Element()},window,location,fetch,AbortSignal,URL,Date,setTimeout:fn=>setImmediate(fn)}));
  return {get,buttons,window,location,posts,calls,editor};
 }
@@ -153,4 +153,30 @@ test('unsupported Auto prevents a picture request and shows one error',async()=>
  await tick();await app.get('image-take-picture').onclick();
  assert.deepEqual(app.posts,[]);assert.equal(app.get('setup-status').textContent,'Auto setup is unavailable.');
  assert.equal(app.get('setup-status').dataset.error,'true');
+});
+
+test('Settings describes camera controls only after their availability is checked',async()=>{
+ const unchecked=fixture({configured:true});await tick();
+ assert.equal(unchecked.get('settings-device-note').textContent,'Load camera controls in Setup to check available settings.');
+ const loaded=fixture({configured:true,imageControls:{status:()=>({loaded:true})}});await tick();
+ assert.equal(loaded.get('settings-device-note').textContent,'Exposure and gain controls are available in Setup → Image.');
+ assert.deepEqual(unchecked.posts,[]);assert.deepEqual(loaded.posts,[]);
+});
+test('Settings gives a camera-website fallback when image controls are unsupported',async()=>{
+ const app=fixture({configured:true,cameraState:{state:'error',error:'camera_image_unsupported',camera_url:'http://camera.local/'},imageControls:{unavailable(){}}});await tick();
+ assert.equal(app.get('settings-device-note').textContent,'This firmware requires the camera website for exposure and gain settings.');
+ assert.equal(app.get('device-settings').href,'http://camera.local/');assert.equal(app.get('device-settings').hidden,false);assert.deepEqual(app.posts,[]);
+});
+test('Settings without a camera offers the saved-image route without a website link',async()=>{
+ const app=fixture();await tick();
+ assert.equal(app.get('settings-device-note').textContent,'Configure a camera or choose a saved image in Setup.');
+ assert.equal(app.get('device-settings').hidden,true);assert.deepEqual(app.posts,[]);
+});
+
+test('Settings directs unverified activation and Auto trials to recovery before pictures',async()=>{
+ for(const attention of ['auto_attention','needs_activation']){
+  const app=fixture({configured:true,imageControls:{status:()=>({loaded:true,[attention]:true})}});await tick();
+  assert.equal(app.get('settings-device-note').textContent,'Restore saved camera settings in Setup → Image before taking pictures.');
+  assert.deepEqual(app.posts,[]);
+ }
 });

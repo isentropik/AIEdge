@@ -1,5 +1,12 @@
 # Changes
 
+## 0.2.0-dev19 (local candidate)
+
+- Keep the unchecked camera status readable in the compact Auto layout.
+- Explain image-control availability in Settings and link to the camera website when needed.
+- Label MQTT output correctly and show Off when publication is disabled.
+- Load the notification script once.
+
 ## 0.2.0-dev18 (local candidate)
 
 - Keep connection failures on the visible form instead of stacking global and setup errors.

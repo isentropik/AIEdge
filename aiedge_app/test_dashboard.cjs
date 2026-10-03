@@ -248,3 +248,10 @@ test('camera admission states distinguish readiness from an enabled schedule',as
  const disabled=fixture(async url=>response(url.includes('capture-history')?page:{...state,capture_enabled:false,camera:{state:'ready'}}));
  await tick();assert.equal(disabled.get('camera-status').textContent,'Capture disabled');
 });
+
+test('Overview reports disabled MQTT as Off rather than a Home Assistant disconnection',async()=>{
+ const app=fixture(async url=>response(url==='api/status'?{...state,mqtt:{state:'disabled'}}:page));await tick();
+ assert.equal(app.get('mqtt-state').textContent,'Off');
+ const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+ assert.ok(html.includes('<dt>MQTT output</dt><dd id="mqtt-state">'));
+});
