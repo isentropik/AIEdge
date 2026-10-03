@@ -21,6 +21,24 @@ test('selecting another dial survives duplicate route rendering',async()=>{
  const app=await fixture();app.window.AIEdgeCalibration.setMode('dials');app.get('selected-item').value='1';app.get('selected-item').onchange();
  app.window.AIEdgeCalibration.setMode('dials');assert.equal(app.get('selected-item').value,'1');assert.equal(app.get('dial-name').value,'Dial 2');
 });
+
+test('typed dial names and valid coordinates survive mode changes before blur and do not save',async()=>{
+ const app=await fixture();app.window.AIEdgeCalibration.setMode('dials');
+ app.get('dial-name').value='Register draft';app.get('dial-name').oninput();
+ app.get('box-x').value='21';app.get('box-x').oninput();
+ app.window.AIEdgeCalibration.setMode('markers');app.window.AIEdgeCalibration.setMode('dials');
+ assert.equal(app.get('dial-name').value,'Register draft');assert.equal(String(app.get('box-x').value),'21');
+ assert.equal(app.window.AIEdgeCalibration.status().dirty,true);assert.equal(app.posts.length,0);
+ assert.equal(app.get('box-y').value,20);assert.equal(app.get('box-w').value,100);
+});
+
+test('incomplete coordinate typing never replaces valid geometry or shows an error until blur',async()=>{
+ const app=await fixture();app.window.AIEdgeCalibration.setMode('dials');
+ app.get('box-w').value='';app.get('box-w').oninput();assert.equal(app.get('setup-status').textContent,'');
+ assert.equal(app.window.AIEdgeCalibration.status().dirty,false);
+ app.get('box-w').onchange();assert.match(app.get('setup-status').textContent,/inside the image/);
+ assert.equal(app.get('box-w').value,100);assert.equal(app.posts.length,0);
+});
 test('reusing the same reference keeps geometry and avoids a redundant save',async()=>{
  const app=await fixture();await app.window.AIEdgeCalibration.useReference(app.digest);
  const state=app.window.AIEdgeCalibration.status();assert.equal(state.dial_count,2);assert.equal(state.markers_complete,true);assert.equal(state.dirty,false);

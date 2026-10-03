@@ -29,6 +29,16 @@ class Tests(unittest.TestCase):
             with urllib.request.urlopen(origin+'/reference-image.js') as response:
                 self.assertEqual(response.headers.get_content_type(),'text/javascript')
                 self.assertIn(b'AIEdgeReferenceImage',response.read())
+            with urllib.request.urlopen(origin+'/notices.js') as response:
+                self.assertEqual(response.headers.get_content_type(),'text/javascript')
+                self.assertIn(b'AIEdgeNotices',response.read())
+            import re
+            with urllib.request.urlopen(origin+'/') as response:html=response.read().decode('utf-8')
+            scripts=re.findall(r'<script src="([^"]+)"',html)
+            self.assertLess(scripts.index('notices.js'),scripts.index('dashboard.js'))
+            for script in scripts:
+                with urllib.request.urlopen(origin+'/'+script) as response:
+                    self.assertEqual(response.headers.get_content_type(),'text/javascript')
             with urllib.request.urlopen(origin+'/app.css') as response:
                 self.assertEqual(response.headers.get_content_type(),'text/css')
                 self.assertIn(b'color-scheme',response.read())

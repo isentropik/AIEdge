@@ -3,7 +3,7 @@
 const $=id=>document.getElementById(id);
 const drafts=new Map();let current=null,token=null,request=0,saving=false,conflicted=false,imageReady=false,referencePicture=null,mapMode=false,selected=0,imageTimer=null;
 const time=value=>new Date(value).toLocaleString();
-function notice(message,error=false){$('review-status').textContent=message;$('review-status').dataset.error=String(error);}
+function notice(message,error=false,connection=false){if(window.AIEdgeNotices){window.AIEdgeNotices.show('review-status',message,error,connection);return;}$('review-status').textContent=message;$('review-status').dataset.error=String(error);}
 function values(){return [...$('review-dials').querySelectorAll('input')].map(input=>input.value.trim()===''?null:Number(input.value));}
 function key(){return current?current.capture.sha256+':'+current.context?.id:null;}
 function remembered(){
@@ -66,7 +66,7 @@ async function open(eventId,reload=false){
   changed();
   if(review&&JSON.stringify(entries)===JSON.stringify(review.positions))notice('Review saved · '+review.positions.filter(v=>v!==null).length+' of '+context.dials.length+' dials');
   else if(result.other_context_reviews)notice('Earlier reviews used a different calibration or model. Enter a new review for this setup.');
- }catch(error){if(serial!==request)return;notice(error.message||'Review could not be loaded.',true);$('review-empty').textContent='Image unavailable';$('review-reload').hidden=false;}
+ }catch(error){if(serial!==request)return;notice(window.AIEdgeNotices?.message(error)||error.message||'Review could not be loaded.',true,window.AIEdgeNotices?.connection(error));$('review-empty').textContent='Image unavailable';$('review-reload').hidden=false;}
 }
 function close(){clearTimeout(imageTimer);remembered();++request;current=null;$('capture-list').hidden=false;$('capture-detail').hidden=true;}
 $('review-image').onload=()=>{clearTimeout(imageTimer);imageReady=true;$('review-image').hidden=mapMode;if(!mapMode)$('review-empty').hidden=true;if(current?.context)changed(false);};
@@ -89,7 +89,7 @@ $('review-form').onsubmit=async event=>{
   if(serial!==request)return;
   // A lost response may follow a successful write. Read saved state before another save.
   conflicted=true;$('review-reload').hidden=false;
-  notice((error.message||'Save could not be verified.')+' Reload the review before retrying.',true);
+  notice((window.AIEdgeNotices?.message(error)||error.message||'Save could not be verified.')+' Reload the review before retrying.',true,window.AIEdgeNotices?.connection(error));
  }finally{
   if(serial===request){saving=false;$('review-save').textContent='Save review';const edited=JSON.stringify(values())!==JSON.stringify(current?.review?.positions||[]);$('review-save').disabled=conflicted||!imageReady||!!current?.review&&!edited;}
  }
@@ -114,7 +114,7 @@ $('review-map-view').onclick=async()=>{
  try{
   if(!referencePicture)referencePicture=await window.AIEdgeReferenceImage.load('reference/'+current.context.calibration.reference_sha256);
   if(serial!==request||!mapMode)return;drawMap();$('review-map').hidden=false;$('review-empty').hidden=true;
- }catch(error){if(serial===request&&mapMode){$('review-map').hidden=true;$('review-empty').textContent='Dial map unavailable';notice(error.message,true);}}
+ }catch(error){if(serial===request&&mapMode){$('review-map').hidden=true;$('review-empty').textContent='Dial map unavailable';notice(window.AIEdgeNotices?.message(error)||error.message,true,window.AIEdgeNotices?.connection(error));}}
 };
 window.addEventListener('aiedge-refresh-images',event=>{const match=/^#captures\/([1-9][0-9]*)$/.exec(location.hash);if(event.detail==='captures'&&match&&!saving)open(Number(match[1]));});
 window.AIEdgeReview={open,close};

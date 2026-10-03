@@ -20,6 +20,8 @@ class Element {
  querySelectorAll(selector){const tags=selector.split(',');return this.children.flatMap(child=>[...(tags.includes(child.tag)?[child]:[]),...child.querySelectorAll(selector)]);}
  checkValidity(){if(this.disabled)return true;if(this.required&&this.value==='')return false;if(this.type!=='number'||this.value==='')return true;const n=Number(this.value);return Number.isFinite(n)&&(this.min===undefined||n>=Number(this.min))&&(this.max===undefined||n<=Number(this.max));}
  reportValidity(){return this.querySelectorAll('input,select').every(field=>field.checkValidity());}
+ focus(){this.focused=true;}
+ focus(){this.focused=true;}
  getContext(){return {};}
 }
 const reply=body=>({ok:true,json:async()=>body});
@@ -41,6 +43,19 @@ function fixture(format=savedFormat,meter=null){
 }
 const submit=app=>app.get('reading-form').onsubmit({preventDefault(){}});
 function change(app,id,value){app.get(id).value=value;app.get(id).fire('input');}
+
+test('missing revolution values have one inline error and focus the field without a native popup',async()=>{
+ const app=fixture();await app.window.openReadingFormat();change(app,'format-value-1','');
+ assert.equal(app.get('reading-form').noValidate,true);
+ app.get('reading-form').reportValidity=()=>{throw Error('Native popup must not run');};
+ assert.equal(await submit(app),false);assert.equal(app.posts.length,0);
+ assert.equal(app.get('format-value-1').focused,true);assert.equal(app.get('format-status').textContent,'Enter a value per revolution for Wheel.');
+});
+
+test('reopening a loaded number format preserves unsaved scales and performs no write',async()=>{
+ const app=fixture();await app.window.openReadingFormat();change(app,'format-value-0','1234');
+ await app.window.openReadingFormat();assert.equal(app.get('format-value-0').value,'1234');assert.equal(app.posts.length,0);
+});
 
 test('changed meter units cannot silently reuse saved physical scales or rate',async()=>{
  const app=fixture({...savedFormat,maximum_rate_per_second:1},{profile:{type:'gas',unit:'m3'}});

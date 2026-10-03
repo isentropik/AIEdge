@@ -1,5 +1,14 @@
 # Changes
 
+## 0.2.0-dev18 (local candidate)
+
+- Keep connection failures on the visible form instead of stacking global and setup errors.
+- Cancel pending capture reviews when leaving for setup; preserve unsaved review and configuration drafts.
+- Retain typed dial names and valid coordinates immediately, including when switching editor modes before blur.
+- Show missing revolution values inline and focus the field without a browser validation popup.
+- Keep failed loads from advancing setup and show unavailable MQTT status after an app outage.
+- Keep browser route fragments separate from page IDs so navigation opens at the top without anchor jumps.
+
 ## 0.2.0-dev17 (local candidate)
 
 - Start setup with gas, water or electric meter type and supported units.

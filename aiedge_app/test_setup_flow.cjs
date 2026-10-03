@@ -103,6 +103,7 @@ test('data fields become unknown after status loss rather than retaining success
  assert.equal(app.get('settings-storage').textContent,'Available');app.window.AIEdgeFlow.statusUnavailable();
  assert.equal(app.get('settings-storage').textContent,'Unknown');assert.equal(app.get('settings-free-space').textContent,'—');
  assert.equal(app.get('settings-mqtt').textContent,'Unknown');
+ assert.equal(app.get('setup-mqtt-note').textContent,'MQTT status unavailable.');
 });
 test('leaving during calibration load cannot restore the old editor or step',async()=>{
  let resolve;const loading=new Promise(r=>resolve=r),app=fixture({openCalibration:()=>loading});

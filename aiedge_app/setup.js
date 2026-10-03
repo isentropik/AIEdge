@@ -5,7 +5,7 @@ const $=id=>document.getElementById(id),canvas=$('calibration-canvas'),ctx=canva
 let state={markers:[null,null,null],dials:[]},revision=null,reference=null,token=null,available=false,loaded=false,mode='markers',selected=0,picture=null,pendingReference=null,drag=null,busy=false,dirty=false,markerUndo=null,grid=false,editorState=null;
 const errorText={reference_image_not_found:'The reference image is missing. Choose the image again before saving.',reference_image_unreadable:'This image could not be opened. Choose a complete JPEG or PNG file.',reference_must_be_640x480:'Choose a 640 × 480 JPEG or PNG image.',invalid_landmark:'Keep each landmark inside the image.',invalid_dial_geometry:'Check the dial geometry.',setup_changed_reload_before_saving:'Calibration changed in another session. Reload before saving.',reference_recognition_rejected:'The reference did not pass alignment or needle visibility. Check the markers and dial landmarks.',three_markers_required:'Place all three markers.',invalid_dial_count:'Use between 1 and 16 dials.'};
 const recoveryText={saved_calibration_invalid:'Saved calibration could not be read. Rebuild it here; the original file will be kept.',calibration_file_unavailable:'The calibration file is not readable. Check app storage and restart before saving.',saved_reference_unavailable:'The saved reference is missing or damaged. Choose a replacement image before saving.',recognition_runtime_unavailable:'The recognition engine could not load this calibration. Check the installed model and runtime files.'};
-function status(message,error=false){$('setup-status').textContent=message;$('setup-status').dataset.error=String(error);$('setup-status').hidden=!message;}
+function status(message,error=false,connection=false){if(window.AIEdgeNotices){window.AIEdgeNotices.show('setup-status',message,error,connection,'editor');return;}$('setup-status').textContent=message;$('setup-status').dataset.error=String(error);$('setup-status').hidden=!message;}
 function changed(message='Unsaved changes'){dirty=true;status(message);controls();}
 function currentBox(){return mode==='markers'?state.markers[selected]:mode==='dials'?state.dials[selected]?.crop:null;}
 function setBox(b){if(mode==='markers')state.markers[selected]=b;else if(state.dials[selected])state.dials[selected].crop=b;}
@@ -50,7 +50,7 @@ canvas.onpointermove=e=>{if(!picture)return;if(mode==='image'){if(!window.AIEdge
  const box=geometry.resizeBox(drag,p,mode==='markers'?128:148);
  if(box){setBox(box);controls();}};
 canvas.onpointerup=e=>{if(window.AIEdgeImageEditor?.pointerUp(e))return;if(drag){const modified=JSON.stringify(currentBox())!==JSON.stringify(drag.box||null);drag=null;if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);if(modified)changed();}};canvas.onpointercancel=()=>{window.AIEdgeImageEditor?.cancel();if(drag){setBox(drag.box||null);drag=null;controls();}};
-async function request(path,body,raw=false){const response=await fetch(path,{method:'POST',headers:{'X-AIEdge-Setup':token,'Content-Type':raw?'application/octet-stream':'application/json'},body:raw?body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});let data;try{data=await response.json();}catch{throw Error('The server did not return a valid response. Reload before retrying.');}if(!response.ok){const key=String(data.error).split(':')[0];throw Error(errorText[key]||String(data.error).replaceAll('_',' '));}return data;}
+async function request(path,body,raw=false){const response=await fetch(path,{method:'POST',headers:{'X-AIEdge-Setup':token,'Content-Type':raw?'application/octet-stream':'application/json'},body:raw?body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});let data;try{data=await response.json();}catch{throw Error('The server did not return a valid response. Reload before retrying.');}if(!response.ok){const key=String(data.error).split(':')[0];const error=Error(errorText[key]||String(data.error).replaceAll('_',' '));error.status=response.status;throw error;}return data;}
 async function showReference(digest,newState){const img=await window.AIEdgeReferenceImage.load('reference/'+digest);if(reference!==digest)window.AIEdgeImageControls?.referenceChanged();picture=img;reference=digest;pendingReference=digest;window.AIEdgeImageEditor?.bind(digest,editorState);if(newState){markerUndo=null;state=newState;selected=0;}canvas.hidden=false;$('reference-empty').hidden=true;$('reference-size').textContent='640 × 480';controls();}
 window.addEventListener('aiedge-refresh-images',async event=>{
  if(event.detail!=='setup'||picture||busy)return;
@@ -58,14 +58,14 @@ window.addEventListener('aiedge-refresh-images',async event=>{
  if(!pendingReference)return;
  busy=true;controls();status('Loading reference…');
  try{await showReference(pendingReference);status(dirty?'Unsaved changes':'');}
- catch(e){status(e.message,true);}
+ catch(e){status(window.AIEdgeNotices?.message(e)||e.message,true,window.AIEdgeNotices?.connection(e));}
  finally{busy=false;controls();}
 });
 window.openCalibration=async()=>{
  if(loaded||busy)return;busy=true;controls();status('Loading calibration…');
  try{
   const r=await fetch('api/setup',{cache:'no-store',signal:AbortSignal.timeout(10000)});
-  if(!r.ok)throw Error('Could not load calibration.');
+  if(!r.ok){const error=Error('Could not load calibration.');error.status=r.status;throw error;}
   const s=await r.json();let referenceError=null;token=s.token;available=s.available;revision=s.revision;editorState=s.image_editor;
   if(s.calibration){
    const c=s.calibration;
@@ -74,10 +74,10 @@ window.openCalibration=async()=>{
   }
   loaded=true;dirty=!!s.recovery;
   status(s.recovery?(recoveryText[s.recovery.code]||'Saved calibration needs recovery.'):editorState?.recovery?'Saved image framing needs recovery. The original file has been kept.':referenceError||(available?'':'Calibration runtime is not configured.'),!!s.recovery||!!editorState?.recovery||!!referenceError||!available);
- }catch(e){status(e.message,true);}
+ }catch(e){status(window.AIEdgeNotices?.message(e)||e.message,true,window.AIEdgeNotices?.connection(e));}
  finally{busy=false;controls();}
 };
-$('reference-file').onchange=async()=>{const file=$('reference-file').files[0];if(!file)return;if(file.size>4*1024*1024){status('Choose an image smaller than 4 MB.',true);return;}busy=true;controls();status('Loading reference…');try{const r=await request('api/setup/reference',await file.arrayBuffer(),true);if(r.reference_sha256!==reference){await showReference(r.reference_sha256,{markers:[null,null,null],dials:[]});changed('');}else status('');}catch(e){status(e.message,true);}finally{busy=false;controls();$('reference-file').value='';}};
+$('reference-file').onchange=async()=>{const file=$('reference-file').files[0];if(!file)return;if(file.size>4*1024*1024){status('Choose an image smaller than 4 MB.',true);return;}busy=true;controls();status('Loading reference…');try{const r=await request('api/setup/reference',await file.arrayBuffer(),true);if(r.reference_sha256!==reference){await showReference(r.reference_sha256,{markers:[null,null,null],dials:[]});changed('');}else status('');}catch(e){status(window.AIEdgeNotices?.message(e)||e.message,true,window.AIEdgeNotices?.connection(e));}finally{busy=false;controls();$('reference-file').value='';}};
 $('suggest-markers').onclick=async()=>{
  if(busy||!reference||!state.dials.length)return;
  if(markerUndo){state.markers=markerUndo;markerUndo=null;selected=0;changed();return;}
@@ -85,7 +85,7 @@ $('suggest-markers').onclick=async()=>{
  try{const result=await request('api/setup/suggest-markers',{reference_sha256:reference,crops:state.dials.map(d=>d.crop)});
   if(result.markers.length===3){markerUndo=state.markers.map(box=>box?[...box]:null);state.markers=result.markers;selected=0;dirty=true;status(result.reason);}
   else status(result.reason);
- }catch(error){status(error.message,true);}
+ }catch(error){status(window.AIEdgeNotices?.message(error)||error.message,true,window.AIEdgeNotices?.connection(error));}
  finally{busy=false;controls();}
 };
 async function saveCalibration(){
@@ -97,7 +97,7 @@ async function saveCalibration(){
  if(!dirty&&revision)return true;
  busy=true;controls();status('Validating calibration…');
  try{const s=await request('api/setup/save',{reference_sha256:reference,design:state,revision});revision=s.revision;dirty=false;markerUndo=null;status('');window.dispatchEvent(new Event('aiedge-calibration-saved'));return true;}
- catch(e){status(e.message,true);return false;}
+ catch(e){status(window.AIEdgeNotices?.message(e)||e.message,true,window.AIEdgeNotices?.connection(e));return false;}
  finally{busy=false;controls();}
 }
 $('save-calibration').onclick=saveCalibration;
@@ -118,11 +118,15 @@ window.AIEdgeCalibration={
 $('edit-markers').onclick=()=>{mode='markers';window.AIEdgeImageEditor?.setMode(mode);selected=0;controls();};$('edit-dials').onclick=()=>{mode='dials';window.AIEdgeImageEditor?.setMode(mode);selected=0;controls();};$('selected-item').onchange=()=>{selected=Number($('selected-item').value);controls();};
 $('add-dial').onclick=()=>{let n=state.dials.length+1;while(state.dials.some(d=>d.name==='Dial '+n))n++;state.dials.push({name:'Dial '+n,model:'main',direction:'cw',crop:[0,0,140,140],rim_points:[null,null,null,null],needle_pivot:null});selected=state.dials.length-1;changed('Draw a crop around the dial.');};$('remove-dial').onclick=()=>{state.dials.splice(selected,1);selected=Math.max(0,selected-1);changed();};
 for(const [id,key] of [['dial-name','name'],['dial-direction','direction'],['dial-model','model']])$(id).onchange=()=>{if(state.dials[selected]){state.dials[selected][key]=$(id).value;changed();}};
-for(const [i,k] of ['x','y','w','h'].entries())$('box-'+k).onchange=()=>{
+$('dial-name').oninput=$('dial-name').onchange;
+for(const [i,k] of ['x','y','w','h'].entries()){
+ const update=final=>{
  const raw=$('box-'+k).value;
  const b=raw.trim()?geometry.resizeDimension(currentBox(),i,Number(raw),mode==='markers'?128:148,$('lock-proportions').checked):null;
- if(!b){status('Keep the box inside the image and supported size.',true);controls();return;}
+ if(!b){if(final){status('Keep the box inside the image and supported size.',true);controls();}return;}
  if(JSON.stringify(b)!==JSON.stringify(currentBox())){setBox(b);changed();}
-};
+ };
+ $('box-'+k).oninput=()=>update(false);$('box-'+k).onchange=()=>update(true);
+}
 controls();
 })();

@@ -151,7 +151,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
+            elif route in ('/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
