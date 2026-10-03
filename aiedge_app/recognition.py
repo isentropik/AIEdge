@@ -1,5 +1,5 @@
 """Durable, deduplicated inference on immutable captures. Results are never labels."""
-import json,sqlite3,threading,time
+import json,re,sqlite3,threading,time
 from capture import now
 
 MAX_RESULT_BYTES=262144
@@ -63,13 +63,30 @@ class Recognition:
         with self.store.connect() as db:
             row=db.execute('SELECT f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
             if not row:return {'state':'waiting_for_image'}
-            result=db.execute('SELECT CASE WHEN length(CAST(result AS BLOB))<=? THEN result ELSE NULL END FROM inference WHERE sha256=? AND pipeline=?',(MAX_RESULT_BYTES,row[0],pipeline)).fetchone()
-        if not result:return {'state':'pending','source_sha256':row[0]}
-        try:return decode_result(result[0],row[0],pipeline)
+        return self.stored(row[0],pipeline)['result']
+    def stored(self,digest,pipeline):
+        """Read an existing result under its original pipeline; never run a model.
+
+        A trial can outlive the active reader and browser. Keep historical results
+        addressable without relabelling them as current or replacing rejected ones.
+        """
+        if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest):raise ValueError('invalid_result_identity')
+        if not isinstance(pipeline,str) or not re.fullmatch('[A-Za-z0-9_.-]{1,128}',pipeline):raise ValueError('invalid_result_identity')
+        with self.store.connect() as db:
+            row=db.execute('SELECT processed_at,CASE WHEN length(CAST(result AS BLOB))<=? THEN result ELSE NULL END FROM inference WHERE sha256=? AND pipeline=?',
+                           (MAX_RESULT_BYTES,digest,pipeline)).fetchone()
+        identity=dict(source_sha256=digest,pipeline_id=pipeline,training_allowed=False,accuracy_verified=False)
+        if not row:return {'processed_at':None,'result':dict(identity,state='pending')}
+        try:
+            result=decode_result(row[1],digest,pipeline)
+            from datetime import datetime
+            if not isinstance(row[0],str):raise ValueError('invalid_processed_time')
+            stamp=datetime.fromisoformat(row[0].replace('Z','+00:00'))
+            if stamp.tzinfo is None or stamp.year<2020:raise ValueError('invalid_processed_time')
+            return {'processed_at':row[0],'result':result}
         except (ValueError,TypeError,RecursionError):
             # Preserve the evidence; never substitute a previous image's result.
-            return {'state':'unavailable','error':'stored_result_invalid','source_sha256':row[0],
-                    'pipeline_id':pipeline,'training_allowed':False,'accuracy_verified':False}
+            return {'processed_at':None,'result':dict(identity,state='unavailable',error='stored_result_invalid')}
     def run(self):
         while not self.stop.is_set():
             try:

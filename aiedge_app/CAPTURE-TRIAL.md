@@ -18,6 +18,21 @@ Progress separates attempts, unique images and repeats. Three attempts can yield
 fewer than three saved photos or different needle positions. Repeated images are
 not additional accuracy evidence. Counts may be incomplete after interrupted work.
 
+The app also keeps each image's model result in local storage. A trial report can
+be read later without requesting another picture or processing the images again.
+It preserves the model identity used for that trial, even after the active model
+changes. Missing, rejected or damaged results remain explicit. A processed image
+is still a model estimate, not a confirmed meter reading.
+
+For diagnostic tools, `GET api/capture-trial/results?request_id=REQUEST_ID` returns
+the original frame identities, saved processing timestamps and results for one
+trial. The request ID is required. Each frame stays visible; repeated JPEGs share
+one inference result and count once in the processing summary. `processing_complete`
+means the saved frames have stored results, including rejections. Check the
+separate acquisition state, uncertainty flags and rejected/unavailable counts
+before calling a trial successful. This endpoint performs no capture, inference,
+database write or training admission.
+
 ## If something goes wrong
 
 The app checks the saved request after a lost connection; it does not silently

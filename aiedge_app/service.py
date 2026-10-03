@@ -148,6 +148,15 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Disposition','attachment; filename="aiedge-diagnostics.json"');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
             if store is None and (route.startswith('/api/') or route.startswith('/image/') or route.startswith('/reference/')):
                 self.reply({'error':'App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.','code':'storage_startup_failed'},503);return
+            if route=='/api/capture-trial/results':
+                from trial_results import build
+                try:
+                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=1)
+                    if set(query)!={'request_id'} or len(query['request_id'])!=1:raise ValueError('trial_request_id_invalid')
+                    result=build(trial,recognition,query['request_id'][0])
+                except (ValueError,TypeError,RecursionError):
+                    self.reply({'error':'trial_results_invalid'},400);return
+                self.reply(result);return
             if route=='/api/capture-trial':
                 query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True)
                 if set(query)-{'request_id'} or ('request_id' in query and len(query['request_id'])!=1):
