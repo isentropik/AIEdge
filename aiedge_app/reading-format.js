@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id),form=$('reading-form'),canvas=$('format-
 const units={ft3:'ft³',m3:'m³',L:'L',gal_us:'US gal',kWh:'kWh'};
 // Provisional until held-out calibration/model error has been measured.
 const defaultPositionError=.1;
-let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0,imageGeneration=0,referenceDigest=null,positionErrors=new Map();
+let loaded=false,busy=false,dirty=false,revision=null,pipeline=null,token=null,dials=[],geometry=[],picture=null,selected=0,imageGeneration=0,referenceDigest=null,positionErrors=new Map(),framing=null;
 const messages={invalid_maximum_rate:'Enter a maximum rate of zero or greater, or leave it empty.',reading_scale_too_small:'That revolution value is too small to represent in the selected units.',reading_pipeline_changed:'Calibration or the model changed. Reload the format and check each dial.',reading_format_changed_reload:'The format was changed in another session. Reload saved values before trying again.',reading_dial_mapping_mismatch:'The dial list changed. Reload the format.',reading_scales_must_be_nested:'Dial values must have whole-number revolution ratios, such as 1000 and 5.',invalid_reading_scale_or_error:'The dial values or saved reader configuration are invalid. Reload the format.'};
 function status(message,error=false){$('format-status').textContent=message;$('format-status').dataset.error=String(error);$('format-status').hidden=!message;}
 function controls(){
@@ -16,10 +16,11 @@ function changed(){dirty=true;status('Unsaved changes');controls();}
 function highlight(index){selected=index;draw();}
 function draw(){
  if(!picture)return;
- ctx.clearRect(0,0,640,480);ctx.drawImage(picture,0,0,640,480);
+ ctx.clearRect(0,0,640,480);const frame=window.AIEdgeImageFraming?.drawImage(ctx,picture,framing||window.AIEdgeImageFraming.identity());if(!frame)ctx.drawImage(picture,0,0,640,480);
+ ctx.save();if(frame)ctx.transform(frame.m[0],frame.m[3],frame.m[1],frame.m[4],frame.m[2],frame.m[5]);
  geometry.forEach((dial,i)=>{const b=dial.crop;if(!b)return;ctx.strokeStyle=i===selected?'#d6bdff':'#67d6cf';ctx.lineWidth=i===selected?3:1;ctx.strokeRect(...b);
  const text=dials[i]?.name||'Dial '+(i+1);ctx.font='12px system-ui';const width=ctx.measureText(text).width+10,x=Math.min(b[0],640-width),y=Math.max(0,b[1]-21);ctx.fillStyle='#101115e8';ctx.fillRect(x,y,width,20);ctx.fillStyle='#fff';ctx.fillText(text,x+5,y+14);});
- $('format-selected').textContent=dials[selected]?.name||'Reference image';
+ ctx.restore();$('format-selected').textContent=dials[selected]?.name||'Reference image';
 }
 function labelUnits(){const unit=units[$('format-unit').value];$('format-scale-label').textContent=unit?`Value (${unit}/rev)`:'Value per revolution';$('format-rate-unit').textContent=(unit||'units')+'/min';}
 async function request(path,options={}){
@@ -65,7 +66,8 @@ async function load(force=false){
   else if(saved.recovery)status('The saved number format could not be loaded. Enter replacement values; the original file will be kept.',true);
   else if(stale)status('Calibration or the model changed. Enter the values for the current dials.',true);
   else status('');
-  selected=0;referenceDigest=setup.calibration?.reference_sha256;loadPreview(referenceDigest);
+  selected=0;referenceDigest=setup.calibration?.reference_sha256;
+  framing=referenceDigest&&setup.image_editor?.image_edit?.reference_sha256===referenceDigest?setup.image_editor.image_edit.edit:null;loadPreview(referenceDigest);
  }catch(e){status(e.message,true);loaded=false;}
  finally{busy=false;controls();}
 }
@@ -89,6 +91,7 @@ async function saveFormat(event){
 }
 form.onsubmit=saveFormat;window.AIEdgeFormat={save:saveFormat};
 window.addEventListener('aiedge-calibration-saved',()=>{pipeline=null;loaded=false;controls();status('Calibration changed. Reopen Number format to check the current dials.',true);});
+window.addEventListener('aiedge-image-edit-saved',event=>{if(event.detail?.reference_sha256===referenceDigest){framing=event.detail.edit;draw();}});
 window.openReadingFormat=()=>load();
 window.addEventListener('aiedge-refresh-images',event=>{if(event.detail==='format'&&!picture&&!busy&&loaded)loadPreview(referenceDigest);});
 window.renderPhysicalReading=(reading,recognition)=>{

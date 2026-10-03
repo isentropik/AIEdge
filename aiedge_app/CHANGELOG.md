@@ -1,5 +1,13 @@
 # Changes
 
+## 0.2.0-dev15 (local candidate)
+
+- Add immediate crop, rotation and straightening, saved with Next.
+- Keep original images and source calibration unchanged by framing.
+- Use the framing map for alignment, dial placement and number-format previews.
+- Keep crop handles anchored, enlarge touch targets and follow rotated resize cursors.
+- Fit the desktop editor in one pane and keep mobile toolbars within the screen.
+
 ## 0.2.0-dev14 (local candidate)
 
 - Auto chooses light intensity and exposure with gain held at zero, using at most eight temporary pictures. Keep the camera model visible and collapse manual controls. The preference survives app restart independently of the sensor's exposure/gain switches.

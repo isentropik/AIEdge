@@ -23,6 +23,7 @@ async function json(path,options={}){
 function editor(){return window.AIEdgeCalibration?.status()||{};}
 function controls(){
  const state=editor(),index=steps.indexOf(step);
+ window.AIEdgeImageEditor?.setBusy(busy||navigating||!!state.busy);
  $('setup-back').disabled=busy||navigating||index===0;$('setup-next').disabled=busy||navigating||!!state.busy;
  $('setup-next').hidden=step==='finish';$('setup-next').textContent=busy?'Applying…':'Next';
  $('setup-next').setAttribute('aria-busy',String(busy));
@@ -47,6 +48,7 @@ function controls(){
  $('retake-reference').hidden=!image||stale||step!=='image';$('retake-reference').disabled=busy||!camera?.configured;
  $('use-latest').disabled=busy||!!state.busy;
  for(const id of ['reference-grid','reference-zoom-in','reference-zoom-out','reference-fit'])$(id).disabled=!image;
+ for(const id of ['image-mirror','image-flip'])$(id).disabled=busy||navigating||!!state.busy||!image;
 }
 function moveFormat(inWizard){
  const host=inWizard?$('setup-format-host'):formatHome;
@@ -82,7 +84,10 @@ function fail(message){note(message,true);return false;}
 async function leave(){
  const state=editor();
  if(step==='lighting')return await window.AIEdgeCameraControls?.apply()??true;
- if(step==='image')return (state.has_image&&!window.AIEdgeCameraControls?.requiresPicture()&&!window.AIEdgeImageControls?.requiresPicture())||fail(state.has_image?'Take a picture with the changed camera settings before continuing.':'Take a picture or choose an image before continuing.');
+ if(step==='image'){
+  if(!(state.has_image&&!window.AIEdgeCameraControls?.requiresPicture()&&!window.AIEdgeImageControls?.requiresPicture()))return fail(state.has_image?'Take a picture with the changed camera settings before continuing.':'Take a picture or choose an image before continuing.');
+  return window.AIEdgeImageEditor?await window.AIEdgeImageEditor.save():true;
+ }
  if(step==='alignment')return state.markers_complete||fail('Place all three markers on fixed markings.');
  if(step==='dials')return await window.AIEdgeCalibration.save();
  if(step==='format')return await window.AIEdgeFormat.save();

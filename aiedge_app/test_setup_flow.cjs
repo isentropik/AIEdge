@@ -7,7 +7,7 @@ class Element{
  append(e){e.parentElement=this;this.children.push(e);}replaceChildren(){this.children=[];}
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
-function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,configured=false,openCalibration=async()=>{},saveCalibration=null,imageControls=null,lightingControls=null,pictureError=false}={}){
+function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,configured=false,openCalibration=async()=>{},saveCalibration=null,imageControls=null,lightingControls=null,imageEditor=null,pictureError=false}={}){
  const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
  const buttons=['lighting','image','alignment','dials','format','data','finish'].map(step=>{const e=new Element();e.dataset.step=step;return e;});
  const editor={has_image:hasImage,markers_complete:markers,dial_count:6,busy:false},calls=[],posts=[];
@@ -17,6 +17,7 @@ function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,confi
   AIEdgeFormat:{save:async()=>{calls.push('format-save');return save;}},AIEdgeArchive:{load:async()=>true,save:async()=>{calls.push('archive-save');return save;}},addEventListener(){}};
  if(imageControls)window.AIEdgeImageControls={connect(){},configure(){},receive(){},markAttention(){},setStep(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...imageControls};
  if(lightingControls)window.AIEdgeCameraControls={connect(){},configure(){},receive(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...lightingControls};
+ if(imageEditor)window.AIEdgeImageEditor={setBusy(){},...imageEditor};
  const fetch=async(url,options={})=>{if(options.method==='POST')posts.push({url,body:options.body});return {ok:true,json:async()=>url==='api/camera-setup'?(options.method==='POST'?{configured,state:pictureError?'error':'ready',error:pictureError?'camera_image_orientation_unverified':undefined,action:JSON.parse(options.body).action,reference_sha256:'b'.repeat(64),image_orientation:1}:{configured,state:'idle',capture_enabled:false,interval_seconds:30}):url==='api/setup'?{token:'fixture-only'}:{format:null}};};
  vm.runInContext(source,vm.createContext({document:{getElementById:get,querySelectorAll:()=>buttons,createElement:()=>new Element()},window,location,fetch,AbortSignal,URL,Date,setTimeout:fn=>setImmediate(fn)}));
  return {get,buttons,window,location,posts,calls,editor};
@@ -39,6 +40,15 @@ test('unchanged reference advances and returns without requiring another picture
  const app=fixture();await tick();await app.get('setup-next').onclick();await tick();
  assert.equal(app.location.hash,'setup/alignment');assert.equal(app.get('step-count').textContent,'Step 3 of 7');
  await app.get('setup-back').onclick();assert.equal(app.location.hash,'setup/image');assert.equal(app.posts.length,0);
+});
+test('Next saves image framing before alignment without a camera request',async()=>{
+ const order=[],app=fixture({imageEditor:{save:async()=>{order.push('framing');return true;}}});
+ await tick();await app.get('setup-next').onclick();await tick();
+ assert.deepEqual(order,['framing']);assert.equal(app.location.hash,'setup/alignment');assert.deepEqual(app.posts,[]);
+});
+test('failed framing save stays on Image and never requests a replacement photo',async()=>{
+ const app=fixture({imageEditor:{save:async()=>false}});await tick();await app.get('setup-next').onclick();
+ assert.equal(app.location.hash,'#setup/image');assert.deepEqual(app.posts,[]);
 });
 test('missing image blocks both Next and a future step with one specific error',async()=>{
  const app=fixture({hasImage:false});await tick();await app.get('setup-next').onclick();

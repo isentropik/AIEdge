@@ -42,7 +42,7 @@ function update(){
  const x=draft&&photoControls&&draft.mirror!==photoControls.mirror?-1:1,y=draft&&photoControls&&draft.flip!==photoControls.flip?-1:1;
  $('calibration-canvas').style.transform=imageStep&&draft&&photoControls?`scale(${x},${y})`:'';
  root.AIEdgeCameraControls?.setAutomatic?.(auto);
- root.updateSetupFlow?.();
+ root.AIEdgeImageEditor?.refresh();root.updateSetupFlow?.();
 }
 function change(name,value){if(!draft||working)return;draft={...draft,[name]:value};update();}
 function receive(result){
@@ -88,7 +88,7 @@ root.AIEdgeImageControls={receive,apply,receiveAuto(value){
  requiresPicture(){return photoStale||requiresReference&&!orientationReady||!!draft&&(autoMode?draft.mirror!==saved.mirror||draft.flip!==saved.flip:!equal(saved,draft))||needsActivation||autoAttention;},
  referenceChanged(){photoControls=null;orientationReady=false;update();},
  pictureTaken(orientation=null){photoControls=Number.isInteger(orientation)&&orientation>=0&&orientation<=3?{mirror:!!(orientation&1),flip:!!(orientation&2)}:null;orientationReady=photoControls!==null;photoStale=false;update();},
- status(){return {loaded:!!draft,dirty:!!draft&&!equal(saved,draft),needs_activation:needsActivation,requires_reference:requiresReference,automatic:autoMode===true,auto_attention:autoAttention,revision};}
+ status(){return {loaded:!!draft,dirty:!!draft&&!equal(saved,draft),orientation_pending:!!draft&&!!photoControls&&(draft.mirror!==photoControls.mirror||draft.flip!==photoControls.flip),needs_activation:needsActivation,requires_reference:requiresReference,automatic:autoMode===true,auto_attention:autoAttention,revision};}
 };
 update();
 })(typeof window==='object'?window:globalThis);

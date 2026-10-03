@@ -1,6 +1,15 @@
-# Auto capture candidate - October 2, 2026
+# Image editor candidate - October 2, 2026
 
-Dev14 connects scene-aware Auto to the Image step. This is a local candidate;
+Dev15 adds crop, quarter-turn rotation and straightening to the scene-aware
+Auto candidate. Framing updates immediately from the existing image. Next saves
+it in app storage without another photo or camera configuration write. Alignment,
+dials and the Number format preview use the same source-coordinate mapping.
+The original image, native sampling pixels, calibration and separate fixed needle
+pivot remain intact. Crops that hide saved markers or dials cannot be activated.
+Corner dragging uses a fixed map and anchored opposite corner; touch targets are
+larger. Desktop framing stays in one pane; mobile has no horizontal overflow.
+
+This is a local candidate;
 it has not changed the installed HA app, camera firmware, settings or photos.
 The previously verified live app checkpoint is dev12, recorded separately.
 
@@ -32,5 +41,5 @@ validation artifacts, not a live accuracy claim.
 Linux packaged validation, physical light/exposure behavior and exact-build
 production startup/recovery validation remain open. No firmware update belongs
 to this app candidate. Scheduled capture, MQTT and archiving are not enabled by
-setup. Other sensor tunables and whole-frame crop/rotation remain outside the
-current camera contract.
+setup. Other sensor tunables remain outside the camera contract. App framing
+does not change sensor orientation, resolution or JPEG settings.

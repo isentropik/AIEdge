@@ -14,11 +14,16 @@ captures or publish readings.
 | Analog dials | One selector for every dial, including a small wheel. Crop, rename, CW/CCW, four rim landmarks and a separate needle pivot. |
 | Number format | Physical value per revolution, units and highlighted dial locations. No sample digits, display-digit count, inclusion controls or adjustable tolerance. |
 | Image viewing | Grid, zoom and fit icons. The image stays beside controls on desktop and visible while scrolling controls on mobile. |
+| Crop and rotation | Drag crop corners, rotate by quarter turns and straighten immediately. Next saves the app framing; no replacement picture is required. Original pixels and source landmarks are preserved. |
 | Auto | The Auto switch hides manual controls and brightness. Take picture searches for a usable light/exposure pair on supported firmware. The camera type stays visible beside the switch. |
 | Data | Original images and readings stay in Home Assistant app storage. Storage health and MQTT state are shown. |
 | Overview and history | Physical reading, individual estimates, consumption state, capture history and manual review. Unknown or ambiguous data stays explicit. |
 
 ## Applying lighting
+
+Crop and rotation belong to app framing. They do not write camera settings.
+Saved framing is used by Image, Alignment, Dials and the Number format reference
+preview. Stored captures and manual reviews retain their original images.
 
 Load camera settings is a read-only action; opening a page does not contact the
 camera. Next on Lighting saves changed choices and activates them without a
@@ -71,10 +76,11 @@ and apply-lighting handlers. A camera without them shows an unsupported message.
 External PWM lighting and ambiguous configurations are not converted automatically.
 No camera firmware update is included.
 
-Other sensor adjustments, JPEG quality, whole-frame rotation and sensor cropping
-remain outside this app contract. Any future crop/rotation must affect subsequent
-pictures as well as the reference. Grid, zoom and fit are view controls; dial crop
-edits affect recognition calibration. Physical sensor/lighting verification and
+Other sensor adjustments, JPEG quality and sensor cropping remain outside this
+app contract. App framing changes how the reference is displayed; recognition
+continues using original pixels and source coordinates. Stored captures and manual
+review show their originals. Grid, zoom and fit are view controls; dial crop edits
+affect recognition calibration. Physical sensor/lighting verification and
 production firmware startup recovery remain prerequisites to a live firmware update.
 
 ## Failed Auto operations
