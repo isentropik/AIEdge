@@ -59,4 +59,5 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
             state=archive.status()
             report['archive']={key:state[key] for key in ('state','copied_events','pending_events','error','in_progress')}
         except (OSError,sqlite3.Error):pass
+    report['performance']=store.performance.snapshot() if store and hasattr(store,'performance') else {'state':'unavailable'}
     return report

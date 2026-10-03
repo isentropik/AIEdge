@@ -261,7 +261,7 @@ def run_service(stop_signals):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     camera=None
     if store and configuration.get('state')=='ready' and options.get('camera_url'):
-        camera=Camera(options['camera_url'],options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password',''))
+        camera=Camera(options['camera_url'],options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password',''),performance=store.performance)
     if enabled:
         collector=Collector(store,camera,interval)
     consumption=None;consumption_error=None

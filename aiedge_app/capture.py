@@ -4,6 +4,7 @@ from datetime import datetime,timezone
 from contextlib import contextmanager
 from pathlib import Path
 import capture_clock
+from performance import Timings
 from camera_transport import DeadlineHTTPHandler,DeadlineHTTPSHandler
 from durable_file import sync_directory
 MAX_IMAGE=4*1024*1024
@@ -48,6 +49,7 @@ def validate(blob,headers):
 class Store:
     def __init__(self,directory):
         self.root=Path(directory);(self.root/'images').mkdir(parents=True,exist_ok=True);self.lock=threading.Lock()
+        self.performance=Timings()
         sync_directory(self.root)
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -88,8 +90,14 @@ class Store:
         if state['state']=='unavailable':raise ValueError('storage_unavailable')
         if state['free_bytes']<MIN_FREE_BYTES+incoming:raise ValueError('storage_low_space')
     def add(self,camera,blob,headers):
-        frame,stamp,digest=validate(blob,headers)
-        clock=capture_clock.parse(headers)
+        with self.performance.measure('storage') as sample:
+            added=self._add(camera,blob,headers)
+            sample.outcome='success' if added else 'duplicate'
+            return added
+    def _add(self,camera,blob,headers):
+        with self.performance.measure('image_validation'):
+            frame,stamp,digest=validate(blob,headers)
+            clock=capture_clock.parse(headers)
         with self.lock,self.connect() as db:
             # Serialize file+ledger admission even if another process opened this store.
             db.execute('BEGIN IMMEDIATE')
@@ -187,7 +195,8 @@ CAMERA_FAILURES={
 }
 
 class Camera:
-    def __init__(self,url,token='',username='',password=''):
+    def __init__(self,url,token='',username='',password='',*,performance=None):
+        self.performance=performance if performance is not None else Timings()
         p=urllib.parse.urlsplit(url)
         if p.scheme not in ('http','https') or not p.hostname or p.username or p.password or p.query or p.fragment or p.path not in ('','/') or any(c.isspace() or ord(c)<32 for c in url) or (p.port is not None and not 1<=p.port<=65535):raise ValueError('camera_url_must_be_an_http_origin')
         if any(ord(c)<33 or ord(c)>126 for c in token):raise ValueError('invalid_camera_token')
@@ -212,16 +221,22 @@ class Camera:
     def reference_capture(self):
         return self.capture(reference=True)
     def capture(self,reference=False,*,deadline=None):
+        stage='reference_capture' if reference else 'capture'
+        with self.performance.measure(stage):
+            return self._capture(reference=reference,deadline=deadline)
+    def _capture(self,reference=False,*,deadline=None):
         absolute=io_deadline(CAPTURE_IO_DEADLINE,deadline)
         self.require_capture(reference=reference)
         headers={'Content-Type':'application/json'}
         if self.token:headers['Authorization']='Bearer '+self.token
         elif self.basic:headers['Authorization']='Basic '+self.basic
-        request=urllib.request.Request(self.origin+'/api/v1/capture',data=b'{}',headers=headers,method='POST');start=time.monotonic()
+        request=urllib.request.Request(self.origin+'/api/v1/capture',data=b'{}',headers=headers,method='POST')
         request.aiedge_deadline=absolute
         if time.monotonic()>=absolute:raise ValueError('capture_deadline_exceeded')
         try:
-            with self.opener.open(request,timeout=5) as r:
+            with self.performance.measure('reference_headers' if reference else 'camera_headers'):
+                response=self.opener.open(request,timeout=5)
+            with response as r:
                 camera_header(r.headers,'Content-Type')
                 if r.status!=200 or r.headers.get_content_type()!='image/jpeg':raise ValueError('invalid_camera_response')
                 raw_length=camera_header(r.headers,'Content-Length')
@@ -229,13 +244,14 @@ class Camera:
                     raise ValueError('invalid_image_length')
                 length=int(raw_length)
                 if not 4<=length<=MAX_IMAGE:raise ValueError('invalid_image_length')
-                parts=[];remaining=length
-                while remaining:
-                    if time.monotonic()>=request.aiedge_deadline:raise ValueError('capture_deadline_exceeded')
-                    block=r.read1(min(65536,remaining))
-                    if not block:raise ValueError('truncated_image')
-                    parts.append(block);remaining-=len(block)
-                return b''.join(parts),r.headers
+                with self.performance.measure('reference_download' if reference else 'camera_download'):
+                    parts=[];remaining=length
+                    while remaining:
+                        if time.monotonic()>=request.aiedge_deadline:raise ValueError('capture_deadline_exceeded')
+                        block=r.read1(min(65536,remaining))
+                        if not block:raise ValueError('truncated_image')
+                        parts.append(block);remaining-=len(block)
+                    return b''.join(parts),r.headers
         except urllib.error.HTTPError as exc:
             try:
                 try:body=exc.read(257).decode('utf-8',errors='replace').strip()
@@ -276,7 +292,8 @@ class Collector:
             # not a promise that the following capture cannot fail or become busy.
             self.camera_state={'state':'checking','checked_at':now()}
             try:
-                readiness=self.camera.readiness()
+                with self.store.performance.measure('camera_readiness'):
+                    readiness=self.camera.readiness()
             except Exception:
                 self.camera_state={'state':'unavailable','checked_at':now()}
                 raise
