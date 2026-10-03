@@ -154,3 +154,13 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #camera-control-link{justify-self:start}
 @media(max-width:760px){#image-controls{margin-top:12px}#image-manual-controls{grid-template-columns:1fr 1fr;column-gap:20px}.sensor-section{grid-column:1/-1}.sensor-range{min-width:0}.sensor-range input{min-height:36px}#sensor-controls .check-label{min-height:30px}}
 @media(max-width:360px){#image-manual-controls{grid-template-columns:1fr}.image-sources button,.image-sources .file-label{min-height:42px!important}}
+
+/* A short manual trial shares the capture library's compact layout. */
+.trial-card{padding:14px 16px;margin-bottom:16px;max-width:64rem}
+.trial-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.trial-heading h2{font-size:14px;margin:0}.trial-heading span{font-size:12px}
+.trial-body{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:6px}
+.trial-summary{flex:1;min-width:0}.trial-summary p{font-size:12px;color:var(--muted);margin:0}
+.trial-summary progress{display:block;width:100%;max-width:25rem;height:5px;accent-color:var(--accent);margin-top:8px}
+.trial-card .actions{flex-wrap:wrap}.trial-card .setup-status{margin:10px 0 0}
+@media(max-width:600px){.trial-body{align-items:flex-start;flex-direction:column;gap:12px}.trial-card{padding:12px}.trial-card button{min-height:42px}.trial-card .actions{width:100%}.trial-summary{width:100%}.trial-heading span{text-align:right}}

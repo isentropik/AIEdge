@@ -192,6 +192,14 @@ come from the dial scales, angular resolution and internal error assumptions.
 
 ## Review saved images
 
+For a short batch from a configured camera, open **Captures → Start trial**.
+The app makes up to three attempts, 30 seconds apart. Progress shows unique
+images and repeats separately. Select **Stop** to prevent the next capture;
+a picture already being transferred can still finish. A page reload does not
+restart the trial. Review the resulting photos in the capture library.
+Automatic capture, MQTT and network copying must be off, and calibration and
+number format must be ready. [Trial details and limits](CAPTURE-TRIAL.md).
+
 Open **Captures** and select a photo. Enter each dial position on its 0â€“10 scale,
 using zero for the wrap point. Leave a dial blank when you cannot read it. The form
 starts without model estimates filled in, so those estimates cannot become labels
