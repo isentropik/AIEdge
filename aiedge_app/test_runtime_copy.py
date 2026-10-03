@@ -36,4 +36,6 @@ class RuntimeCopyTests(unittest.TestCase):
         # A camera call and SQLite's existing ten-second lock wait can occur
         # consecutively. This does not claim filesystem writes cannot stall.
         self.assertGreaterEqual(SHUTDOWN_TIMEOUT_SECONDS,CAPTURE_IO_DEADLINE+10+5)
+        from camera_auto import PROBE_SECONDS
+        self.assertGreaterEqual(SHUTDOWN_TIMEOUT_SECONDS,PROBE_SECONDS+10)
         self.assertGreaterEqual(timeout,SHUTDOWN_TIMEOUT_SECONDS+10)

@@ -21,6 +21,8 @@ NEW_COVERAGE={*(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
               *(f'test_camera_image.ImageConfigTests.test_{i}' for i in range(5)),
               *(f'test_camera_image.ImageTransactions.test_{i}' for i in range(10)),
               *(f'test_camera_setup.ImageSetupTests.test_{i}' for i in range(3)),
+              *(f'test_camera_auto.AutoTransactions.test_{i}' for i in range(23)),
+              *(f'test_camera_auto.AutoSetupTests.test_{i}' for i in range(7)),
               *(f'test_archive.ArchiveTests.test_{i}' for i in range(15)),
               *(f'test_archive.ArchiveCopyTests.test_{i}' for i in range(6)),
               *(f'test_archive.ArchiveLinuxTests.test_{i}' for i in range(2)),
@@ -53,7 +55,7 @@ class ValidationCoverageTests(unittest.TestCase):
         complete|=NEW_COVERAGE
         self.assertEqual(inventory_errors(complete,True,False),[])
         for prefix in ('test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
-                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.'):
+                       'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
         self.assertTrue(inventory_errors(['test_consumption.AccountingTests.test_one']*23,True,False))

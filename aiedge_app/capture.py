@@ -196,6 +196,7 @@ class Camera:
         try:yield
         finally:self.operation_lock.release()
     def require_capture(self,reference=False):
+        if getattr(self,'auto_control',None) is not None:self.auto_control.require_capture(reference=reference)
         if self.lighting is not None:self.lighting.require_capture()
         if self.image_controls is not None:self.image_controls.require_capture(reference=reference)
     def readiness(self):
@@ -256,7 +257,7 @@ class Collector:
                 if hasattr(self.camera,'require_capture'):self.camera.require_capture()
                 self._once()
         except ValueError as error:
-            self.last_error={'error':str(error) if str(error) in ('camera_busy','camera_lighting_unverified','camera_image_unverified','camera_image_reference_required') else 'camera_connection_failed'}
+            self.last_error={'error':str(error) if str(error) in ('camera_busy','camera_lighting_unverified','camera_image_unverified','camera_image_reference_required','auto_restore_unverified') else 'camera_connection_failed'}
             try:self.store.fail(self.last_error['error'])
             except (AttributeError,OSError,sqlite3.Error):pass
     def _once(self):

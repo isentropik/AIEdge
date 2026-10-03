@@ -10,7 +10,8 @@ function fixture(){
  const window={updateSetupFlow(){},AIEdgeCameraControls:{setAutomatic(value){automatic.push(value);}}};
  vm.runInContext(source,vm.createContext({window,document:{getElementById:get,querySelectorAll:()=>[]}}));
  const image=window.AIEdgeImageControls;
- image.connect(async(action,details)=>{calls.push({action,details});return true;});image.configure(true);image.setStep('image');
+ image.connect(async(action,details)=>{calls.push({action,details});if(action==='auto-mode')image.receiveAuto({automatic:details.automatic,needs_attention:false,supported:true});return true;});image.configure(true);image.setStep('image');
+ image.receiveAuto({automatic:false,needs_attention:false,supported:true});
  const result={action:'image-load',job:'initial',image_settings:{revision:'a'.repeat(64),controls:{...controls},capabilities:{model:'OV2640',compensation_limit:2},needs_activation:false,requires_reference:false}};
  image.receive(result);return {image,get,calls,result,automatic};
 }
@@ -19,11 +20,13 @@ test('sensor ranges reject invalid types, unknown sensors and unknown fields',()
  for(const patch of [{exposure:1201},{gain:31},{gain:true},{gain_limit:7},{compensation:3},{flip:1},{extra:3}])assert.equal(logic.validate({...controls,...patch},'OV2640'),false);
  assert.equal(logic.validate({...controls,compensation:5},'OV5640'),true);assert.equal(logic.validate(controls,'unknown'),false);
 });
-test('automatic exposure and gain collapse manual settings while retaining camera type',()=>{
- const {image,get,calls,automatic}=fixture();get('image-auto').checked=true;get('image-auto').onchange();
+test('persistent Auto mode collapses manual settings without changing sensor AEC or AGC',async()=>{
+ const {image,get,calls,automatic}=fixture();get('image-auto').checked=true;await get('image-auto').onchange();
  assert.equal(get('image-manual-controls').hidden,true);assert.equal(get('image-sensor').textContent,'OV2640');
- assert.equal(image.status().automatic,true);assert.equal(automatic.at(-1),true);assert.deepEqual(calls,[]);
- get('image-auto').checked=false;get('image-auto').onchange();assert.equal(get('image-manual-controls').hidden,false);
+ assert.equal(image.status().automatic,true);assert.equal(automatic.at(-1),true);
+ assert.equal(get('image-auto-exposure').checked,false);assert.equal(get('image-auto-gain').checked,false);
+ assert.equal(calls.length,1);assert.equal(calls[0].action,'auto-mode');assert.equal(calls[0].details.automatic,true);
+ get('image-auto').checked=false;await get('image-auto').onchange();assert.equal(get('image-manual-controls').hidden,false);
 });
 test('manual and automatic modes show only applicable exposure and gain inputs',()=>{
  const {get}=fixture();assert.equal(get('image-exposure-row').hidden,false);assert.equal(get('image-compensation-row').hidden,true);
@@ -74,4 +77,40 @@ test('reloaded pending orientation requires a verified photo and cannot use a le
 test('choosing a different reference clears its old orientation preview baseline',()=>{
  const {image,get}=fixture();image.pictureTaken(0);image.referenceChanged();get('image-mirror').onclick();
  assert.equal(get('calibration-canvas').style.transform,'');assert.equal(image.requiresPicture(),true);
+});
+
+test('selected fixed exposure and zero gain do not switch Auto off',()=>{
+ const {image,get,result}=fixture();image.receiveAuto({automatic:true,needs_attention:false,supported:true});
+ image.receive({...result,job:'auto',action:'auto-picture',image_settings:{...result.image_settings,changed:true,controls:{...controls,exposure:300,gain:0}}});
+ image.pictureTaken(0);
+ assert.equal(image.status().automatic,true);assert.equal(get('image-manual-controls').hidden,true);
+ assert.equal(get('image-auto-exposure').checked,false);assert.equal(get('image-auto-gain').checked,false);
+ assert.equal(image.requiresPicture(),false);
+});
+
+test('Auto picture sends only the saved revision and requested orientation',()=>{
+ const {image,get}=fixture();image.receiveAuto({automatic:true,needs_attention:false,supported:true});get('image-flip').onclick();
+ const details=image.autoDetails();assert.equal(details.revision,'a'.repeat(64));assert.equal(details.orientation,2);
+ assert.deepEqual(Object.keys(details).sort(),['orientation','revision']);
+});
+
+test('uncertain Auto restoration uses explicit saved-setting recovery and survives read-only status',async()=>{
+ const {image,get,calls}=fixture();image.receiveAuto({automatic:true,needs_attention:true,supported:true});
+ assert.equal(get('apply-saved-image-controls').hidden,false);assert.equal(get('apply-saved-image-controls').textContent,'Restore saved settings');
+ assert.throws(()=>image.autoDetails(),/Restore/);await image.apply();assert.equal(calls[0].action,'auto-recover');
+ assert.equal(image.status().auto_attention,true);assert.equal(image.requiresPicture(),true);
+ assert.equal(get('load-image-controls').hidden,false);
+ assert.equal(get('load-image-controls').textContent,'Reload saved settings');
+});
+
+test('failed Auto setup offers a read-only settings reload and keeps the photo stale',()=>{
+ const {image,get}=fixture();image.markReload();
+ assert.equal(get('load-image-controls').hidden,false);assert.equal(image.requiresPicture(),true);
+ assert.equal(get('load-image-controls').textContent,'Reload saved settings');
+});
+
+test('unsupported Auto firmware is visible and never becomes a sensor-only fallback',()=>{
+ const {image,get}=fixture();image.receiveAuto({automatic:true,needs_attention:false,supported:false});
+ assert.equal(get('auto-capture-note').hidden,false);assert.throws(()=>image.autoDetails(),/unavailable/);
+ assert.equal(get('image-auto-exposure').checked,false);assert.equal(get('image-auto-gain').checked,false);
 });

@@ -124,6 +124,11 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* Sensor controls scroll independently of the reference on desktop. */
 #sensor-controls,#image-manual-controls{display:grid;gap:10px}
 .sensor-auto{padding-bottom:10px;border-bottom:1px solid var(--line);font-size:12px}
+#image-controls[data-automatic="true"]{grid-template-columns:minmax(0,1fr) auto;align-items:start}
+#image-controls[data-automatic="true"] .camera-sensor{grid-column:1;align-self:center;gap:8px}
+#image-controls[data-automatic="true"] #sensor-controls{grid-column:2;grid-row:1}
+#image-controls[data-automatic="true"] .sensor-auto{padding:0;border:0;margin:0}
+#image-controls[data-automatic="true"] .image-sources,#image-controls[data-automatic="true"] #camera-setup-note,#image-controls[data-automatic="true"] #camera-control-link{grid-column:1/-1}
 .sensor-section{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:4px;font-size:12px;font-weight:600}
 .sensor-section .check-label{font-size:11px;color:var(--muted);font-weight:400}
 .sensor-range{display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;font-size:12px}

@@ -15,8 +15,8 @@ function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,confi
  const window={showAppPage(name){calls.push('page:'+name);},openCalibration,openReadingFormat:async()=>{},
   AIEdgeCalibration:{status:()=>editor,setMode(mode){calls.push(mode);},save:async()=>{calls.push('save');return saveCalibration?await saveCalibration():save;},useReference:async digest=>{calls.push('reference:'+digest);editor.has_image=true;},draw(){},setGrid(){}},
   AIEdgeFormat:{save:async()=>{calls.push('format-save');return save;}},AIEdgeArchive:{load:async()=>true,save:async()=>{calls.push('archive-save');return save;}},addEventListener(){}};
- if(imageControls)window.AIEdgeImageControls={connect(){},configure(){},markAttention(){},setStep(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...imageControls};
- if(lightingControls)window.AIEdgeCameraControls={connect(){},configure(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...lightingControls};
+ if(imageControls)window.AIEdgeImageControls={connect(){},configure(){},receive(){},markAttention(){},setStep(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...imageControls};
+ if(lightingControls)window.AIEdgeCameraControls={connect(){},configure(){},receive(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...lightingControls};
  const fetch=async(url,options={})=>{if(options.method==='POST')posts.push({url,body:options.body});return {ok:true,json:async()=>url==='api/camera-setup'?(options.method==='POST'?{configured,state:pictureError?'error':'ready',error:pictureError?'camera_image_orientation_unverified':undefined,action:JSON.parse(options.body).action,reference_sha256:'b'.repeat(64),image_orientation:1}:{configured,state:'idle',capture_enabled:false,interval_seconds:30}):url==='api/setup'?{token:'fixture-only'}:{format:null}};};
  vm.runInContext(source,vm.createContext({document:{getElementById:get,querySelectorAll:()=>buttons,createElement:()=>new Element()},window,location,fetch,AbortSignal,URL,Date,setTimeout:fn=>setImmediate(fn)}));
  return {get,buttons,window,location,posts,calls,editor};
@@ -98,4 +98,21 @@ test('failed picture verification never clears the stale gate or replaces the re
  await tick();await app.get('image-take-picture').onclick();assert.equal(app.posts.length,1);
  assert.equal(app.calls.some(c=>c.startsWith('reference:')),false);assert.equal(app.get('image-take-picture').hidden,false);
  assert.match(app.get('setup-status').textContent,/orientation could not be verified/);
+});
+
+test('Auto picture skips intermediate setting saves and binds its normal reference',async()=>{
+ const order=[],app=fixture({configured:true,imageControls:{status:()=>({automatic:true}),autoDetails:()=>({revision:'a'.repeat(64),orientation:1}),
+  apply:async()=>assert.fail('No intermediate image save'),pictureTaken:orientation=>order.push('orientation:'+orientation)},
+  lightingControls:{apply:async()=>assert.fail('No intermediate lighting save'),pictureTaken:()=>order.push('lighting-photo')}});
+ await tick();await app.get('image-take-picture').onclick();
+ assert.equal(app.posts.length,1);const body=JSON.parse(app.posts[0].body);
+ assert.deepEqual(body,{action:'auto-picture',revision:'a'.repeat(64),orientation:1});
+ assert.deepEqual(order,['lighting-photo','orientation:1']);assert.equal(app.get('reference-working').hidden,true);
+});
+
+test('unsupported Auto prevents a picture request and shows one error',async()=>{
+ const app=fixture({configured:true,imageControls:{status:()=>({automatic:true}),autoDetails(){throw Error('Auto setup is unavailable.');}}});
+ await tick();await app.get('image-take-picture').onclick();
+ assert.deepEqual(app.posts,[]);assert.equal(app.get('setup-status').textContent,'Auto setup is unavailable.');
+ assert.equal(app.get('setup-status').dataset.error,'true');
 });

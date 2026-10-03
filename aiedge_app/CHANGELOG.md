@@ -1,5 +1,13 @@
 # Changes
 
+## 0.2.0-dev14 (local candidate)
+
+- Auto chooses light intensity and exposure with gain held at zero, using at most eight temporary pictures. Keep the camera model visible and collapse manual controls. The preference survives app restart independently of the sensor's exposure/gain switches.
+- Require the camera's temporary-capture contract. Check request, image, time, orientation and restoration receipts; never fall back to older capture APIs. Block captures after an uncertain operation, including across app restart, until saved settings are explicitly reactivated and verified.
+- Save the selected light/exposure pair once, activate both without restarting, and take a normal reference picture. Reject an unusable final picture while keeping the current reference. After a flip, require a new reference and saved calibration before scheduled capture.
+- Keep original trial JPEGs and their hashes in a bounded separate archive. Trials never enter readings or training. Picture statistics describe image quality, not recognition accuracy or measured sensor noise.
+- Show progress inside the image and offer a saved-settings reload after failures. Camera startup recovery and physical light/sensor behavior remain unverified; this candidate is undeployed.
+
 ## 0.2.0-dev13 (local candidate)
 
 - Add saved exposure, gain and flip controls to Image when the camera advertises the matching activation contract. Keep the camera model visible; automatic exposure/gain mode hides manual controls and brightness.

@@ -52,9 +52,14 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     else:raise ValueError('archive_action_invalid')
                 elif route=='/api/camera-setup':
                     if camera_setup is None:self.reply({'error':'camera_not_configured'},503);return
-                    expected={'action','revision','lighting'} if isinstance(data,dict) and data.get('action')=='lighting-apply' else {'action','revision','controls'} if isinstance(data,dict) and data.get('action')=='image-apply' else {'action'}
+                    action=data.get('action') if isinstance(data,dict) else None
+                    if not isinstance(action,str):raise ValueError('invalid_camera_setup_action')
+                    expected={'lighting-apply':{'action','revision','lighting'},'image-apply':{'action','revision','controls'},
+                              'auto-mode':{'action','automatic'},'auto-picture':{'action','revision','orientation'},
+                              'auto-recover':{'action','revision'}}.get(action,{'action'})
                     if not isinstance(data,dict) or set(data) != expected:raise ValueError('invalid_camera_setup_action')
-                    result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'),data.get('controls'))
+                    result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'),data.get('controls'),
+                                             data.get('automatic'),data.get('orientation'))
                 elif route=='/api/setup/suggest-markers':
                     from marker_suggestions import propose
                     result=propose(setup.reference(data['reference_sha256']),data['crops'])
@@ -230,13 +235,15 @@ def run_service(stop_signals):
     from camera_setup import CameraSetup
     from camera_lighting import CameraLighting
     from camera_image import CameraImage
+    from camera_auto import CameraAuto
     lighting=CameraLighting(camera,args.data) if camera else None
     image_controls=CameraImage(camera,args.data) if camera else None
-    if camera:camera.lighting=lighting;camera.image_controls=image_controls
+    auto_control=CameraAuto(camera,args.data,lighting,image_controls) if camera else None
+    if camera:camera.lighting=lighting;camera.image_controls=image_controls;camera.auto_control=auto_control
     if image_controls and setup:
         saved=setup.status().get('calibration')
         if saved:image_controls.calibration_saved(saved.get('reference_sha256'))
-    preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls) if store and configuration.get('state')=='ready' else None
+    preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls,auto_control) if store and configuration.get('state')=='ready' else None
     stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive))
     from lifecycle import ServiceRuntime

@@ -39,7 +39,8 @@
         <button id="load-image-controls" type="button">Load camera controls</button>
         <p id="image-controls-note" class="muted">Camera controls have not been loaded.</p>
         <div id="sensor-controls" hidden>
-          <label class="check-label sensor-auto"><input id="image-auto" type="checkbox"> Automatic exposure and gain</label>
+          <label class="check-label sensor-auto"><input id="image-auto" type="checkbox"> Auto</label>
+          <p id="auto-capture-note" class="muted" hidden></p>
           <div id="image-manual-controls">
             <div class="sensor-section"><span>Exposure</span><label class="check-label"><input id="image-auto-exposure" aria-label="Automatic exposure" type="checkbox"> Auto</label></div>
             <label id="image-exposure-row" class="sensor-range" for="image-exposure">Exposure <output id="image-exposure-value" for="image-exposure"></output><input id="image-exposure" aria-label="Exposure" type="range" min="0" max="1200" step="1"></label>
@@ -82,7 +83,7 @@
         <canvas id="calibration-canvas" width="640" height="480" aria-label="Reference image calibration editor" hidden></canvas>
         <div id="reference-empty" class="empty"><p>No reference image</p><label id="image-choose-file" class="file-label" for="reference-file">Choose image</label></div>
         <button id="image-take-picture" class="primary image-capture-button" type="button" hidden>Take picture</button>
-        <div id="reference-working" class="image-working" role="status" hidden><span class="spinner" aria-hidden="true"></span><span>Taking picture…</span></div>
+        <div id="reference-working" class="image-working" role="status" hidden><span class="spinner" aria-hidden="true"></span><span id="reference-working-text">Taking picture…</span></div>
       </div>
       <div class="image-tools" aria-label="Image view controls">
         <button id="image-mirror" class="icon-button" type="button" aria-label="Flip horizontally" title="Flip horizontally" aria-pressed="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M9 5 3 18h6ZM15 5l6 13h-6Z"/></svg></button>

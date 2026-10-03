@@ -1,36 +1,36 @@
-# Image-controls candidate - October 1, 2026
+# Auto capture candidate - October 2, 2026
 
-Dev13 adds compact Image controls to the separate app candidate. The latest
-verified installed checkpoint is dev11. Dev12 network archiving was merged,
-but installation remains pending exact approval for writable /media access.
-No live HA option, camera setting, firmware or photo changed in this work.
+Dev14 connects scene-aware Auto to the Image step. This is a local candidate;
+it has not changed the installed HA app, camera firmware, settings or photos.
+The previously verified live app checkpoint is dev12, recorded separately.
 
-Exposure/gain/orientation edits require a camera advertising the matching
-activation contract. Only nine supported saved fields can change; other bytes
-remain intact. No-op submissions avoid SD writes. Exact saved/readback hashes
-and activation receipts must agree. Uncertain results persist a capture gate
-across restart, without blind retries. Verified lighting/image updates share
-only a matching baseline revision; independent changes still cause a conflict.
+Auto is a durable app preference rather than an alias for sensor AEC/AGC. It hides
+manual controls and brightness, keeps the camera type visible, and remains selected
+after choosing a fixed exposure. An explicit Take picture action tests a bounded
+set of light/exposure choices with gain zero. The selected light and image settings
+are saved together once, activated with exact readback, then checked with a normal
+reference picture. An unusable final picture leaves the current reference intact.
 
-The camera model stays visible. Automatic exposure and gain hides manual fields
-and brightness; it delegates AEC/AGC to the sensor and is not automatic lighting
-calibration. Slider changes do not capture or write. A stale photo is dimmed with
-one centered Take picture button; the busy mask covers only the image. Proven
-photo orientation supports immediate flip previews. Uploaded/legacy images have
-no guessed orientation. A sensor flip requires a verified photo and new saved
-calibration before scheduled capture resumes. Old reference landmarks are cleared.
+Firmware must advertise the exact temporary-capture contract. Each trial uses
+RAM-only settings and proves restoration before the response. Lost, invalid or
+unverified replies leave a durable capture block across app restart. Loading
+settings or disabling Auto does not clear it. Explicit recovery activates only a
+known saved revision on the same camera; it does not retry a probe or uncertain
+save. Orientation changes retain the separate reference/calibration guard.
 
-Windows validation: 347 checks passed; two Linux filesystem/process checks and
-the Linux packaged-runtime check are explicitly skipped. All 96 Node UI checks
-passed. Local Chrome covered the normal desktop viewport and 390/320 px mobile
-widths, both themes, keyboard controls, pinned mobile image, simultaneous lighting
-and exposure edits, exact orientation receipts, single errors and current-step
-navigation. No page-width overflow or browser console errors were observed.
-Camera/network behavior in browser QA is simulated using a protected saved image.
+Trial JPEGs, hashes and redacted metadata remain outside reading history under
+`auto-trials`. Storage is bounded, with no automatic deletion. The quality scorer
+is a heuristic, not a measurement of sensor noise or recognition accuracy.
+Models, native recognition/accounting code and saved meter math are unchanged.
 
-Models, native recognition/accounting cores and saved reader assumptions are
-unchanged. Archived-image replay is behavior validation, not accuracy evidence.
-Linux packaged validation for this candidate, physical dimming/sensor behavior,
-automatic lighting calibration, other sensor tunables and crop/rotation remain
-open. A separately reviewed firmware build must satisfy tested production startup
-recovery before any flash. This candidate is not deployed.
+Regression checks use loopback camera substitutes and protected archived images.
+Browser checks cover desktop and 320 px mobile layouts, Auto/manual mode,
+progress inside the image and retention of the final reference. Exact counts,
+input hashes, retained failures and screenshots belong to the candidate's
+validation artifacts, not a live accuracy claim.
+
+Linux packaged validation, physical light/exposure behavior and exact-build
+production startup/recovery validation remain open. No firmware update belongs
+to this app candidate. Scheduled capture, MQTT and archiving are not enabled by
+setup. Other sensor tunables and whole-frame crop/rotation remain outside the
+current camera contract.

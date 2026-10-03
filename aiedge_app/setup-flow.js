@@ -9,9 +9,11 @@ let step='image',active=false,busy=false,navigating=false,camera=null,polling=fa
 const messages={camera_not_configured:'Set the camera address in AIEdge app configuration, or choose a saved image.',camera_not_ready:'The camera is not ready. Check its connection and saved settings.',camera_setup_busy:'A camera request is already running. Wait for it to finish.',camera_authentication_failed:'Camera login was rejected. Check its credentials in app configuration.',camera_api_unavailable:'This firmware does not support remote capture.',camera_connection_failed:'Could not reach the camera. Check its power and network connection.',camera_timeout:'The camera did not respond in time.',camera_setup_failed:'The picture could not be verified. Your current reference has been kept.',camera_certificate_invalid:'The camera certificate could not be verified.',reference_must_be_640x480:'Choose a 640 × 480 reference image.'};
 Object.assign(messages,{camera_busy:'The camera is busy. Wait for the current request to finish.',camera_lighting_unsupported:'This camera does not support app lighting controls.',camera_lighting_config_unsupported:'The saved lighting configuration is unsupported or ambiguous. Check it on the camera.',camera_lighting_pin_unavailable:'That pin is unavailable. Choose a free lighting pin.',camera_lighting_conflict:'Camera settings changed. Load the current settings before applying your choices.',camera_lighting_choice_invalid:'Check the light source, pin, LED count and channel values.',camera_lighting_unverified:'Lighting activation is unverified. Load and activate the saved lighting before taking a picture.',camera_lighting_connection_failed:'The camera connection failed. Load the saved settings to check the result; the request was not retried.',camera_lighting_activation_unverified:'Settings were saved, but activation is unverified. Load and activate the saved lighting before taking a picture.',camera_lighting_save_unverified:'The lighting save is unverified. Load the current settings before continuing.',camera_lighting_rejected:'The camera rejected the lighting request. Load the current settings before continuing.',camera_lighting_response_invalid:'The camera returned an invalid lighting response. Load the current settings before continuing.',camera_lighting_storage_unavailable:'The app could not save its lighting operation record. No further camera changes can be made until storage is repaired.'});
 Object.assign(messages,{camera_image_unsupported:'This camera firmware does not support app image controls.',camera_image_config_unsupported:'The saved image settings are incomplete or ambiguous. Check them on the camera.',camera_image_conflict:'Camera settings changed. Load them again before applying.',camera_image_unverified:'Image settings could not be verified. Load and activate the saved settings before taking a picture.',camera_image_reference_required:'Take a picture in the new orientation and save its calibration before resuming scheduled capture.',camera_image_orientation_unverified:'The picture orientation could not be verified. Your saved calibration has been kept.',camera_image_choice_invalid:'Check the exposure and gain values.',camera_image_storage_unavailable:'The app could not save the image-settings operation. Repair app storage before changing the camera.',camera_image_activation_unverified:'Image settings were saved, but activation could not be verified. Load and activate the saved settings.',camera_image_save_unverified:'The image settings save could not be verified. Load the settings before continuing.',camera_image_connection_failed:'Could not reach the camera. The image-settings request was not retried.',camera_image_response_invalid:'The camera returned an invalid image-settings response.',camera_image_rejected:'The camera rejected the image settings.'});
+Object.assign(messages,{auto_contract_unsupported:'Auto setup is unavailable on this camera firmware. Choose manual controls.',auto_restore_unverified:'The last camera trial could not be verified. Restore the saved settings before taking another picture.',auto_receipt_unverified:'The camera trial receipt could not be verified. Restore the saved settings before taking another picture.',auto_config_conflict:'Camera settings changed. Load the current settings before continuing.',auto_no_usable_image:'Auto could not find a usable picture. Check the camera position and light, or choose manual controls.',auto_cancelled:'Auto setup stopped.',auto_deadline:'Auto setup reached its time limit. Check the saved settings before trying again.',auto_storage_full:'Auto trial storage is full. Free app storage before taking more trial pictures.',auto_storage_unavailable:'The app could not save its Auto operation record. Repair app storage before continuing.',auto_save_unverified:'The selected settings save could not be verified. Restore the saved settings before continuing.',auto_activation_unverified:'The selected settings activation could not be verified. Restore the saved settings before continuing.',auto_recovery_unavailable:'The pending camera operation cannot be recovered automatically. Check app storage and the camera address.',auto_probe_failed:'The camera trial failed. Check its saved settings before taking another picture.',auto_response_invalid:'The camera returned an invalid trial response. Restore the saved settings before taking another picture.',auto_connection_failed:'The camera connection failed. Check its saved settings before taking another picture.'});
 function note(message,error=false,target='setup-status'){
  const element=$(target);element.textContent=message;element.hidden=!message;element.dataset.error=String(error);
 }
+messages.auto_reference_unusable='The saved settings did not produce a usable reference picture. Your current reference has been kept. Check the light or choose manual controls.';
 async function json(path,options={}){
  const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(10000),...options});
  const result=await response.json().catch(()=>({error:'The app returned an unreadable response.'}));
@@ -111,11 +113,13 @@ function paintCamera(value){
  camera=value;
  window.AIEdgeCameraControls?.configure(value.configured);
  window.AIEdgeImageControls?.configure(value.configured);
+ window.AIEdgeImageControls?.receiveAuto?.(value.auto_settings);
  window.AIEdgeImageControls?.markAttention(!!value.image_needs_attention);
  if(value.lighting_needs_attention)window.AIEdgeCameraControls?.markAttention();
- if(value.state==='ready'&&value.action?.startsWith('lighting-'))window.AIEdgeCameraControls?.receive(value);
- if(value.state==='ready'&&value.action?.startsWith('image-'))window.AIEdgeImageControls?.receive(value);
+ if(value.state==='ready'&&(value.action?.startsWith('lighting-')||value.action==='auto-picture'||value.action==='auto-recover'))window.AIEdgeCameraControls?.receive(value);
+ if(value.state==='ready'&&(value.action?.startsWith('image-')||value.action==='auto-picture'||value.action==='auto-recover'))window.AIEdgeImageControls?.receive(value);
  if(value.state==='error'&&value.error==='camera_image_unsupported')window.AIEdgeImageControls?.unavailable();
+ if(value.state==='error'&&(value.action?.startsWith('auto-')||value.action?.startsWith('image-')))window.AIEdgeImageControls?.markReload?.();
  $('settings-camera-address').textContent=value.camera_url||'Not configured';
  $('settings-capture').textContent=value.capture_enabled?'On':'Off';
  $('settings-interval').textContent=Number.isInteger(value.interval_seconds)?value.interval_seconds+' seconds':'—';
@@ -136,26 +140,35 @@ async function loadCamera(){
 async function cameraAction(action,details={}){
  if(polling||busy)return false;
  if(action==='picture'){
-  try{if(!await(window.AIEdgeCameraControls?.apply()??true)||!await(window.AIEdgeImageControls?.apply()??true))return false;}
+  try{
+   if(window.AIEdgeImageControls?.status?.().automatic){
+    action='auto-picture';details=window.AIEdgeImageControls.autoDetails();
+   }else if(!await(window.AIEdgeCameraControls?.apply()??true)||!await(window.AIEdgeImageControls?.apply()??true))return false;
+  }
   catch(error){note(error.message,true);return false;}
  }
  polling=true;busy=true;controls();
  window.AIEdgeCameraControls?.setBusy(true);
  window.AIEdgeImageControls?.setBusy(true);
  const target=active?'setup-status':'camera-action-status';note('',false,target);
- $('reference-working').hidden=action!=='picture';$('check-camera').disabled=true;
+ const takingPicture=action==='picture'||action==='auto-picture';
+ $('reference-working').hidden=!takingPicture;$('reference-working-text').textContent=action==='auto-picture'?'Adjusting light and exposure…':'Taking picture…';$('check-camera').disabled=true;
  try{
   const setup=await json('api/setup');
   let result=await json('api/camera-setup',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':setup.token},body:JSON.stringify({action,...details})});
-  const job=result.job,deadline=Date.now()+30000;
+  const job=result.job,deadline=Date.now()+(action==='auto-picture'?180000:30000);
   while(['queued','working'].includes(result.state)){
    if(Date.now()>=deadline)throw Error('The camera request is still pending. Check its status before taking another picture.');
    await new Promise(resolve=>setTimeout(resolve,500));result=await json('api/camera-setup');
    if(result.job!==job)throw Error('The camera request changed in another session. Check the current reference.');
+   if(action==='auto-picture'&&result.progress){
+    const progress=result.progress;
+    $('reference-working-text').textContent=progress.stage==='saving'?'Saving selected settings…':progress.stage==='reference'?'Taking reference picture…':`Adjusting light and exposure · ${progress.shots} picture${progress.shots===1?'':'s'}`;
+   }
   }
   paintCamera(result);
   if(result.state==='error')throw Error(messages[result.error]||'The camera request failed. Your current reference has been kept.');
-  if(action==='picture'){await window.AIEdgeCalibration.useReference(result.reference_sha256);window.AIEdgeCameraControls?.pictureTaken();window.AIEdgeImageControls?.pictureTaken(result.image_orientation);}
+  if(takingPicture){await window.AIEdgeCalibration.useReference(result.reference_sha256);window.AIEdgeCameraControls?.pictureTaken();window.AIEdgeImageControls?.pictureTaken(result.image_orientation);}
   else if(action==='lighting-apply')note(result.settings?.active_verified?'Lighting applied.': 'Lighting settings are unchanged.',false,target);
   else if(action==='image-apply')note(result.image_settings?.active_verified?'Image settings applied.':'Image settings are unchanged.',false,target);
   else if(action==='check')note('Camera: '+(result.readiness?.state||'unknown').replaceAll('_',' '),result.readiness?.state!=='ready',target);
