@@ -6,6 +6,10 @@ from package_assets import verify
 from reader import Reader,PROFILE,network_input,decoder_scores
 
 def main():
+    from performance import Timings
+    from capture import Camera,Store
+    from recognition import Recognition
+    assert Timings().snapshot()["state"]=="not_measured"
     p=argparse.ArgumentParser();p.add_argument('--library',required=True);p.add_argument('--accounting-library');a=p.parse_args()
     assets=Path(__file__).parent/'assets';verify(assets)
     reader=Reader(a.library,assets/'models',PROFILE)

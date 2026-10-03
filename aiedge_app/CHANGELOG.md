@@ -1,5 +1,13 @@
 # Changes
 
+## 0.2.0-dev23 (local candidate; not deployed)
+
+- Add bounded, in-memory monotonic stage durations to the existing diagnostic download.
+- Separate normal/reference captures, response headers, JPEG download, storage, recognition and inference commit.
+- Keep success, failed operations, rejected estimates and duplicate frame admission separate; no telemetry files or SD writes.
+- Preserve model/calibration/number-format logic. The changed recognition source fingerprint starts a separate consumption segment on a later reviewed update; existing records are retained.
+- Do not present these stages as end-to-end publication, verified accuracy or camera-internal profiling.
+
 ## 0.2.0-dev22 (draft; not deployed)
 
 - Update both container stages to Python 3.14.8 using a verified OCI digest.
