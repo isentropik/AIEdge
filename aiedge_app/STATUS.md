@@ -1,36 +1,37 @@
-# Optional network archive candidate - October 1, 2026
+# Navigation and error-state candidate - October 2, 2026
 
-The installed checkpoint is dev11. Its approved update preserved the reference,
-six-dial calibration, physical format, pipeline, four images and reviews. Capture,
-MQTT and automatic updates remain off. Its camera URL is configured and a read-only
-lighting load verified an OV2640 and 19 SK6812 RGBW pixels. Physical lighting
-activation and reading accuracy remain unverified.
+Local dev18 continues the UI/setup phase. It cancels a pending capture review
+when leaving for setup, keeps unsaved review and configuration drafts, and
+shows a connection failure once on the visible form. Calibration notices remain
+on image/alignment/dial steps; status loss clears the MQTT summary. Failed loads
+cannot advance setup. Number format reports required values inline and focuses
+the affected field without a native browser popup.
 
-Dev12 is a separate review candidate. It adds optional SMB/NFS copies through
-Home Assistant network storage, default off. It requires the media directory
-mapping. The Data step explains how to mount a share and queues stored/new
-capture events only after saving. Local images are never removed. Credentials
-stay with Home Assistant; no separate receiver or SMB client is added.
+Dial names and valid coordinates become drafts while typing, before blur.
+Incomplete coordinate typing retains the valid geometry until the field is
+finished. Browser route fragments are separate from page-container IDs, and
+navigation resets scrolling after rendering without disturbing the same route.
 
-NAS filesystem work runs in one isolated child with a 15-second deadline,
-parent-death termination and a process lock retained across a blocked syscall.
-Acknowledgements require exact hash/readback evidence. Lost acknowledgements
-recheck the same manifest; a corrupt image or conflicting remote file blocks
-progress. Transient failures retry with bounded backoff. All queued work is
-represented by the existing capture ledger and a separate durable cursor.
+Saved-image browser checks cover 13 routes at 320 px and 1440 px, in light and
+dark themes: 52 combinations, with no overflow, visible errors or inherited
+scroll position in the final run. Outage, recovery and draft tests are recorded
+separately; early failures are retained. Final local UI checks pass 152 tests.
+The backend base passes 425 Windows checks with protected real-image replay;
+three Linux-only checks are skipped on Windows. Exact candidate package tests
+and hashes belong to the validation artifacts. Linux validation for this dev18
+candidate remains pending until recorded against its published commit.
 
-Windows validation: 327 checks passed, including protected saved-image replay;
-two Linux filesystem/process checks and the Linux packaged-runtime check are
-explicitly skipped. All 74 browser-logic checks passed. The required Linux job
-must exercise those checks before this head is eligible for deployment.
+Meter type/units remain independent metadata. A unit change never relabels
+existing readings: the physical number format must be reviewed and saved in the
+new units. Source calibration, separate needle pivot, raw images, number format,
+model assets and recognition/accounting implementations remain unchanged.
 
-Local Chrome QA covered the normal desktop viewport and 390/320 px mobile
-widths, light/dark themes, form validation, Next saving, and current-step visibility.
-No horizontal page overflow or console errors were observed. Fixtures use saved
-images and simulated camera lighting; no camera or NAS request occurred.
+This is a local app candidate, not a live Home Assistant deployment. Fixture
+events use invented timestamps and one protected saved image; they prove no
+capture cadence, physical light/exposure behavior, consumption or accuracy.
+No labels are saved, and all fixture images and screenshots remain excluded
+from training. Scheduled capture, MQTT and archiving remain off.
 
-Models, native recognition/accounting cores, reader settings, calibration and
-number-format identity are unchanged. Archive files remain unchecked and are
-excluded from training and accuracy evidence. A real SMB/NFS mount, deployed
-copy, sustained capture/MQTT operation, camera exposure controls and tested
-firmware recovery remain open. No live update is authorized by this file.
+Physical camera firmware startup/recovery, real light/exposure behavior,
+independent recognition accuracy and sustained 30-second operation remain
+separate gates. No firmware binary or camera update is included here.

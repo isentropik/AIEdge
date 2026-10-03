@@ -29,7 +29,7 @@ def inventory_errors(identifiers,allow_archive,packaged):
     identifiers=set(identifiers);errors=[]
     for prefix,minimum in (('test_consumption.AccountingTests.',20),('test_consumption.FormatBoundTests.',3),
                            ('test_synthetic_pipeline.GeneratedPipelineTests.',3),
-                           ('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5),
+                           ('test_meter_profile.MeterTests.',8),('test_reading_format.',13),('test_reviews.ReviewTests.',13),('test_review_http.HttpReviewTests.',3),('test_marker_suggestions.SuggestionTests.',5),
                            ('test_changed_dials.ChangedDialTests.',12),('test_reading_bounds.BoundTests.',8),
                            ('test_reading_bounds.IntegrationTests.',3),('test_startup_shutdown.StartupTests.',3),
                            ('test_temporal_reading.TemporalTests.',10),('test_temporal_reading.PublicationTests.',4),
@@ -37,6 +37,9 @@ def inventory_errors(identifiers,allow_archive,packaged):
                            ('test_startup_shutdown.RuntimeTests.',5),('test_runtime_copy.RuntimeCopyTests.',4),
                            ('test_lifecycle.LifecycleTests.',2),('test_camera_setup.CameraSetupTests.',8),
                            ('test_camera_lighting.ConfigTests.',7),('test_camera_lighting.LightingTransactions.',12),
+                           ('test_camera_image.ImageConfigTests.',5),('test_camera_image.ImageTransactions.',10),
+                           ('test_camera_setup.ImageSetupTests.',3),
+                           ('test_camera_auto.AutoTransactions.',23),('test_camera_auto.AutoSetupTests.',7),
                            ('test_archive.ArchiveTests.',15),('test_archive.ArchiveCopyTests.',6),
                            ('test_archive.ArchiveLinuxTests.',2),('test_archive_http.ArchiveHttpTests.',3)):
         if sum(name.startswith(prefix) for name in identifiers)<minimum:

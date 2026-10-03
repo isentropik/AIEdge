@@ -21,19 +21,47 @@ const state={captures:1,unique_images:1,failures:0,capture_enabled:true,interval
  latest:null,recognition:{state:'estimated',dial_positions:[]},reading:{state:'estimated',value:123},
  camera:{state:'ready'},storage:{state:'ready',free_bytes:1024**3},mqtt:{state:'connected'}};
 const page={items:[],next_before:null};
-function fixture(fetch,physical=false){
+test('page containers cannot trigger browser fragment scrolling for app routes',()=>{
+ const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
+ for(const route of ['overview','captures','setup','format','settings']){
+  assert.ok(html.includes('id="page-'+route+'"'));assert.equal(html.includes('id="'+route+'"'),false);
+ }
+});
+function fixture(fetch,physical=false,modules={}){
  const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
  const document={getElementById:get,createElement:()=>new Element(),documentElement:{dataset:{}},hidden:true,readyState:'loading',addEventListener(){}};
- const window={addEventListener(){},dispatchEvent(){},renderPhysicalReading(reading){get('meter-value').textContent=reading.value===null?'—':String(reading.value);}};
+ const listeners={};
+ const window={...modules,addEventListener(name,fn){listeners[name]=fn;},dispatchEvent(){},renderPhysicalReading(reading){get('meter-value').textContent=reading.value===null?'—':String(reading.value);}};
  const context=vm.createContext({document,window,fetch,location:{hash:'#overview'},localStorage:{getItem(){return null;},setItem(){}},AbortSignal,setTimeout,clearTimeout,Date,console,CustomEvent:class{}});
  vm.runInContext(source,context);
  if(physical)vm.runInContext(fs.readFileSync(path.join(__dirname,'reading-format.js'),'utf8'),context);
- return {get,window,location:context.location};
+ return {get,window,location:context.location,listeners};
 }
+
+test('leaving a capture cancels its pending review before setup handles the route',async()=>{
+ const calls=[];const app=fixture(async url=>response(url==='api/status'?state:page),false,{
+  AIEdgeReview:{close:()=>calls.push('close'),open:id=>calls.push('open '+id)},
+  AIEdgeFlow:{renderStatus(){},statusUnavailable(){},route:hash=>{calls.push(hash);return hash.startsWith('#setup');}}
+ });
+ await tick();app.location.hash='#captures/9';app.listeners.hashchange();
+ assert.deepEqual(calls,['#captures/9','open 9']);calls.length=0;
+ app.location.hash='#setup/image';app.listeners.hashchange();assert.deepEqual(calls,['close','#setup/image']);
+});
 
 test('Setup navigation uses the guided route instead of the legacy calibration alias',async()=>{
  const app=fixture(async url=>response(url.includes('capture-history')?page:state));await tick();app.get('setup-tab').onclick();
  assert.equal(app.location.hash,'setup');
+});
+test('a changed page starts at the top but re-rendering the same route does not disturb scrolling',async()=>{
+ const scrolls=[];const app=fixture(async url=>response(url==='api/status'?state:page),false,{scrollTo:(x,y)=>scrolls.push([x,y]),AIEdgeFlow:{renderStatus(){},statusUnavailable(){},route:()=>true}});
+ await tick();app.location.hash='#setup/image';app.listeners.hashchange();assert.deepEqual(scrolls,[[0,0]]);
+ app.listeners.hashchange();assert.equal(scrolls.length,1);
+ app.location.hash='#setup/alignment';app.listeners.hashchange();assert.equal(scrolls.length,2);
+});
+test('deferred scroll reset cannot jump a later page when an older route finishes rendering',async()=>{
+ const callbacks=[],scrolls=[];const app=fixture(async url=>response(url==='api/status'?state:page),false,{requestAnimationFrame:fn=>callbacks.push(fn),scrollTo:(x,y)=>scrolls.push([x,y]),AIEdgeFlow:{renderStatus(){},statusUnavailable(){},route:()=>true}});
+ await tick();app.location.hash='#setup/image';app.listeners.hashchange();app.location.hash='#settings';app.listeners.hashchange();
+ callbacks.shift()();assert.equal(scrolls.length,0);callbacks.shift()();assert.deepEqual(scrolls,[[0,0]]);
 });
 test('failed history does not clear a successful current reading',async()=>{
  const app=fixture(async url=>{if(url.includes('capture-history'))throw new TypeError('network');return response(state);});

@@ -8,7 +8,7 @@ MARGIN=32
 MIN_DISTANCE=128
 MIN_AREA=12288
 
-def propose(reference,crops):
+def propose(reference,crops,visible=None):
     if not isinstance(crops,list) or not 1<=len(crops)<=16:raise ValueError('Add dial crops before suggesting markers.')
     crops=[box(crop,148) for crop in crops]
     gray=np.asarray(image_rgb(reference).convert('L'),dtype=np.float64)
@@ -17,6 +17,7 @@ def propose(reference,crops):
     candidates=[]
     for y in range(MARGIN,480-MARGIN-HEIGHT+1,8):
         for x in range(MARGIN,640-MARGIN-WIDTH+1,8):
+            if visible is not None and not visible.contains_box([x,y,WIDTH,HEIGHT]):continue
             if blocked[y:y+HEIGHT,x:x+WIDTH].any():continue
             patch=gray[y:y+HEIGHT,x:x+WIDTH]
             if np.mean((patch<8)|(patch>247))>.3:continue

@@ -38,6 +38,14 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .image-tools button{min-width:36px;padding:6px;background:transparent;border-color:transparent}
 .image-tools button[aria-pressed=true]{color:var(--accent);background:var(--selected)}
 .image-tools span{margin-left:auto;font-size:11px;color:var(--muted)}
+.image-toolbar{display:flex;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line)}
+.image-toolbar .image-tools{border:0;padding:6px 10px;min-height:44px}
+.image-view-tools{margin-left:auto}.image-view-tools span{margin-left:8px}
+.image-adjustment{display:grid;grid-template-columns:auto minmax(100px,1fr) 46px;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid var(--line);font-size:12px}
+.image-adjustment input{width:100%;accent-color:var(--accent);cursor:pointer}.image-adjustment output{font-variant-numeric:tabular-nums;text-align:right;color:var(--muted)}
+.image-toolbar[data-cropping=true] #image-mirror,.image-toolbar[data-cropping=true] #image-flip{display:none!important}
+@media(min-width:761px){.editor-stage{height:calc(100dvh - 290px);min-height:280px;display:flex;flex-direction:column}#reference-stage{height:auto;flex:1;min-height:160px}.editor-stage .panel-title,.image-toolbar,.image-adjustment{flex:none}}
+@media(max-width:540px){.image-toolbar .image-tools{gap:1px;padding:4px 7px}.image-edit-tools{width:100%;justify-content:center}.image-view-tools{width:100%;justify-content:flex-end;border-top:1px solid var(--line)!important}.image-tools button{min-width:32px}.image-view-tools span{margin-left:auto}}
 .image-working{position:absolute;inset:0;z-index:2;background:light-dark(#f0f1f4ed,#101115e8);display:flex;align-items:center;justify-content:center;gap:10px;pointer-events:none}
 .spinner{width:17px;height:17px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:turn .8s linear infinite}
 @keyframes turn{to{transform:rotate(360deg)}}
@@ -120,3 +128,28 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .archive-card .setup-status{margin:.75rem 0 0}
 .archive-card .actions:has(button:not([hidden])){margin-top:.75rem}
 @media(max-width:600px){.archive-path{grid-template-columns:1fr;gap:.375rem}.archive-card .panel-title{align-items:flex-start}.archive-card a{overflow-wrap:anywhere}}
+
+/* Sensor controls scroll independently of the reference on desktop. */
+#sensor-controls,#image-manual-controls{display:grid;gap:10px}
+.sensor-auto{padding-bottom:10px;border-bottom:1px solid var(--line);font-size:12px}
+#image-controls[data-automatic="true"]{grid-template-columns:minmax(0,1fr) auto;align-items:start}
+#image-controls[data-automatic="true"] .camera-sensor{grid-column:1;align-self:center;gap:8px}
+#image-controls[data-automatic="true"] #sensor-controls{grid-column:2;grid-row:1}
+#image-controls[data-automatic="true"] .sensor-auto{padding:0;border:0;margin:0}
+#image-controls[data-automatic="true"] .image-sources,#image-controls[data-automatic="true"] #camera-setup-note,#image-controls[data-automatic="true"] #camera-control-link{grid-column:1/-1}
+.sensor-section{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:4px;font-size:12px;font-weight:600}
+.sensor-section .check-label{font-size:11px;color:var(--muted);font-weight:400}
+.sensor-range{display:grid;grid-template-columns:1fr auto;gap:5px;align-items:center;font-size:12px}
+.sensor-range input{grid-column:1/-1;width:100%;min-height:24px;padding:0;accent-color:var(--accent);cursor:pointer}
+.sensor-range output{color:var(--muted);font-variant-numeric:tabular-nums;font-size:11px}
+.sensor-limit{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:12px}
+.sensor-limit select{width:90px;min-height:34px}
+.image-sources{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:12px;border-top:1px solid var(--line)}
+.image-sources button,.image-sources .file-label{font-size:11px!important;padding:7px 5px;min-width:0}
+#image-controls .camera-sensor{padding-bottom:4px;color:var(--muted)}
+#image-controls .camera-sensor span{font-weight:600;color:var(--text)}
+#image-controls .check-label input{margin:0;width:16px;height:16px;accent-color:var(--accent)}
+#image-controls-note{font-size:11px!important}
+#camera-control-link{justify-self:start}
+@media(max-width:760px){#image-controls{margin-top:12px}#image-manual-controls{grid-template-columns:1fr 1fr;column-gap:20px}.sensor-section{grid-column:1/-1}.sensor-range{min-width:0}.sensor-range input{min-height:36px}#sensor-controls .check-label{min-height:30px}}
+@media(max-width:360px){#image-manual-controls{grid-template-columns:1fr}.image-sources button,.image-sources .file-label{min-height:42px!important}}

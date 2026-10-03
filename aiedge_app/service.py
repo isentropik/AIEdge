@@ -32,7 +32,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.reject_post();return
             if setup is None:self.reply({'error':'Calibration runtime is not configured.'},503);return
             route=urllib.parse.urlsplit(self.path).path
-            if route not in ('/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive'):self.send_error(404);return
+            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -43,8 +43,28 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 if route.endswith('/reference'):
                     digest=setup.add_reference(body);self.reply({'reference_sha256':digest});return
                 if self.headers.get_content_type()!='application/json':raise ValueError('JSON request required.')
+                if route in ('/api/setup/image-edit','/api/setup/image-preview'):
+                    from image_edit import Edit,strict_json
+                    data=strict_json(body)
+                    expected={'reference_sha256','edit','revision'} if route.endswith('/image-edit') else {'reference_sha256','edit'}
+                    if not isinstance(data,dict) or set(data)!=expected:raise ValueError('image_edit_invalid')
+                    if route.endswith('/image-edit'):
+                        result=setup.save_image_edit(data['reference_sha256'],data['edit'],data['revision'])
+                        self.reply(result);return
+                    import hashlib
+                    edit=Edit(data['edit']);reference=setup.reference(data['reference_sha256']);preview=edit.render(reference)
+                    self.send_response(200)
+                    for name,value in {'Content-Type':'image/png','Cache-Control':'no-store',
+                                       'X-Content-Type-Options':'nosniff','Content-Length':str(len(preview)),
+                                       'X-AIEdge-Source-SHA256':data['reference_sha256'],
+                                       'X-AIEdge-Edit-SHA256':edit.sha256,
+                                       'X-AIEdge-Preview-SHA256':hashlib.sha256(preview).hexdigest()}.items():self.send_header(name,value)
+                    self.end_headers();self.wfile.write(preview);return
                 data=json.loads(body)
-                if route=='/api/archive':
+                if route=='/api/setup/meter':
+                    if not isinstance(data,dict) or set(data)!={'profile','revision'}:raise ValueError('meter_profile_invalid')
+                    result=setup.meter.save(data['profile'],data['revision'])
+                elif route=='/api/archive':
                     if archive is None:self.reply({'error':'archive_unavailable'},503);return
                     if not isinstance(data,dict):raise ValueError('archive_action_invalid')
                     if set(data)=={'action','config','revision'} and data['action']=='save':result=archive.save(data['config'],data['revision'])
@@ -52,18 +72,27 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     else:raise ValueError('archive_action_invalid')
                 elif route=='/api/camera-setup':
                     if camera_setup is None:self.reply({'error':'camera_not_configured'},503);return
-                    if not isinstance(data,dict) or set(data) != ({'action','revision','lighting'} if data.get('action')=='lighting-apply' else {'action'}):raise ValueError('invalid_camera_setup_action')
-                    result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'))
+                    action=data.get('action') if isinstance(data,dict) else None
+                    if not isinstance(action,str):raise ValueError('invalid_camera_setup_action')
+                    expected={'lighting-apply':{'action','revision','lighting'},'image-apply':{'action','revision','controls'},
+                              'auto-mode':{'action','automatic'},'auto-picture':{'action','revision','orientation'},
+                              'auto-recover':{'action','revision'}}.get(action,{'action'})
+                    if not isinstance(data,dict) or set(data) != expected:raise ValueError('invalid_camera_setup_action')
+                    result=camera_setup.start(data['action'],data.get('revision'),data.get('lighting'),data.get('controls'),
+                                             data.get('automatic'),data.get('orientation'))
                 elif route=='/api/setup/suggest-markers':
                     from marker_suggestions import propose
-                    result=propose(setup.reference(data['reference_sha256']),data['crops'])
+                    result=propose(setup.reference(data['reference_sha256']),data['crops'],setup.edits.current(data['reference_sha256']))
                 elif route=='/api/reviews':
                     if reviews is None:self.reply({'error':'Image review storage is unavailable.'},503);return
                     result=reviews.save(data)
                 elif route=='/api/reading-format':
                     if reading_format is None:self.reply({'error':'Reading format is not configured.'},503);return
                     result=reading_format.save(data['format'],data['revision'])
-                else:result=setup.save(data['reference_sha256'],data['design'],data['revision'])
+                else:
+                    result=setup.save(data['reference_sha256'],data['design'],data['revision'])
+                    image=getattr(camera_setup,'image_controls',None)
+                    if image:image.calibration_saved(result['calibration']['reference_sha256'])
                 self.reply(result)
             except ReviewConflict as exc:self.reply({'error':str(exc),'code':'review_conflict'},409)
             except ArchiveConflict as exc:self.reply({'error':str(exc),'code':'archive_conflict'},409)
@@ -122,7 +151,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/setup.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/archive.js'):
+            elif route in ('/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -183,7 +212,7 @@ def run_service(stop_signals):
             setup=Setup(args.data,lambda document:Reader(args.native_library,args.models,document),recognition)
             stop_signals.checkpoint()
             from reading_format import FormatStore
-            reading_format=FormatStore(args.data,recognition)
+            reading_format=FormatStore(args.data,recognition,setup.meter)
         except (OSError,sqlite3.Error):
             recognition=None;setup=None;reading_format=None;enabled=False
             configuration={'state':'invalid','code':'setup_storage_unavailable'}
@@ -225,9 +254,16 @@ def run_service(stop_signals):
         except (OSError,sqlite3.Error,ValueError):pass
     from camera_setup import CameraSetup
     from camera_lighting import CameraLighting
+    from camera_image import CameraImage
+    from camera_auto import CameraAuto
     lighting=CameraLighting(camera,args.data) if camera else None
-    if camera:camera.lighting=lighting
-    preview=CameraSetup(camera,setup,interval,enabled,lighting) if store and configuration.get('state')=='ready' else None
+    image_controls=CameraImage(camera,args.data) if camera else None
+    auto_control=CameraAuto(camera,args.data,lighting,image_controls) if camera else None
+    if camera:camera.lighting=lighting;camera.image_controls=image_controls;camera.auto_control=auto_control
+    if image_controls and setup:
+        saved=setup.status().get('calibration')
+        if saved:image_controls.calibration_saved(saved.get('reference_sha256'))
+    preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls,auto_control) if store and configuration.get('state')=='ready' else None
     stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive))
     from lifecycle import ServiceRuntime

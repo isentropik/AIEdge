@@ -78,3 +78,51 @@ Its camera-specific OTA policy requires three consecutive fresh JPEGs successful
 sent, synchronized capture timestamps, readable settings, a verified bundle and
 no system faults. Transmission success does not prove server persistence or meter
 accuracy. Hardware startup, OTA rollback and 30-second cadence are unverified.
+
+## Temporary Auto trials - local contract, not deployed
+
+The app requires `GET /temporary-capture-capabilities` to advertise version 1,
+remote-camera mode, OV2640, a 640 × 480 frame, temporary controls, restoration
+before response, zero SD writes and a cooperative 20-second capture limit.
+The trial route is `POST /api/v1/capture/temporary`, authenticated by the same
+website gate as normal capture. Unsupported firmware cannot silently substitute
+sensor automation for this contract.
+
+The canonical compact JSON request contains the saved configuration SHA-256,
+a random request ID, master lighting intensity and the nine supported image
+controls. Unknown/duplicate keys, wrong types and values outside the strict
+ranges are rejected. Light color, pixel type, count and selected GPIO remain
+unchanged. Temporary controls are applied only in RAM. The worker settles the
+sensor, discards a buffered frame and restores the saved controls and switches
+lighting off before returning success. Restoration failure inhibits both normal
+and temporary remote captures. Trial shots never count toward OTA acceptance.
+
+The JPEG has normal capture provenance plus a request hash, saved/restored
+configuration hashes and receipts for restored settings, lighting off and zero
+SD writes. The app verifies all receipts, framing, exact image hash, synchronized
+capture time and orientation. It uses a separate 25-second absolute I/O deadline
+for each trial; cleanup and transmission can outlast the firmware's cooperative
+limit. Neither limit can preempt an SDK stall or the OS DNS resolver.
+
+Before each trial or final save, the app durably records a SHA-only intent bound
+to the camera origin and known configuration revisions. It never stores camera
+credentials or raw configuration in that record. A lost/invalid response leaves
+the intent and blocks further captures across restart. Read-only status/settings
+requests and switching Auto off cannot clear it. Explicit recovery activates a
+known old/new saved revision on the same camera, verifies readback and activation,
+and never resubmits the uncertain trial or save.
+
+Auto uses at most eight probes over 90 seconds. It searches light and fixed
+exposure with gain zero, then performs one combined configuration save if needed.
+Activation of light and image controls must agree with the same exact revision.
+Only a subsequent normal capture with verified provenance and acceptable image
+quality can replace the reference. An orientation change also requires matching
+reference/calibration before scheduled capture resumes. App shutdown stops new
+probes and avoids starting a final reference after an in-flight commit finishes.
+
+Original successful, rejected and partial JPEG bytes are retained with hashes
+under `auto-trials`, outside reading history and inference. The archive is limited
+to 128 runs and 256 MiB with a free-space reserve; nothing is deleted automatically.
+Trial images are excluded from training and accuracy evidence. The quality
+thresholds do not measure sensor noise or prove correct meter readings. Host and
+browser substitutes do not establish physical dimming, startup or recovery.

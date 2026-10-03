@@ -1,5 +1,52 @@
 # Changes
 
+## 0.2.0-dev18 (local candidate)
+
+- Keep connection failures on the visible form instead of stacking global and setup errors.
+- Cancel pending capture reviews when leaving for setup; preserve unsaved review and configuration drafts.
+- Retain typed dial names and valid coordinates immediately, including when switching editor modes before blur.
+- Show missing revolution values inline and focus the field without a browser validation popup.
+- Keep failed loads from advancing setup and show unavailable MQTT status after an app outage.
+- Keep browser route fragments separate from page IDs so navigation opens at the top without anchor jumps.
+
+## 0.2.0-dev17 (local candidate)
+
+- Start setup with gas, water or electric meter type and supported units.
+- Keep existing readings in their saved units until an explicit new number format is applied. A unit change requires entering each dial value again.
+- Store meter choices independently of images and calibration; preserve invalid files before replacement and reject stale saves.
+- Keep the first step compact on mobile and desktop, with one error and a reload action after a failed request.
+
+## 0.2.0-dev16 (local candidate)
+
+- Keep the manual-review photo visible while scrolling phone dial inputs.
+- Widen position fields so the Unknown placeholder fits on narrow screens.
+- Preserve the dev15 recognition, framing and persistence behavior.
+
+## 0.2.0-dev15 (local candidate)
+
+- Add immediate crop, rotation and straightening, saved with Next.
+- Keep original images and source calibration unchanged by framing.
+- Use the framing map for alignment, dial placement and number-format previews.
+- Keep crop handles anchored, enlarge touch targets and follow rotated resize cursors.
+- Fit the desktop editor in one pane and keep mobile toolbars within the screen.
+
+## 0.2.0-dev14 (local candidate)
+
+- Auto chooses light intensity and exposure with gain held at zero, using at most eight temporary pictures. Keep the camera model visible and collapse manual controls. The preference survives app restart independently of the sensor's exposure/gain switches.
+- Require the camera's temporary-capture contract. Check request, image, time, orientation and restoration receipts; never fall back to older capture APIs. Block captures after an uncertain operation, including across app restart, until saved settings are explicitly reactivated and verified.
+- Save the selected light/exposure pair once, activate both without restarting, and take a normal reference picture. Reject an unusable final picture while keeping the current reference. After a flip, require a new reference and saved calibration before scheduled capture.
+- Keep original trial JPEGs and their hashes in a bounded separate archive. Trials never enter readings or training. Picture statistics describe image quality, not recognition accuracy or measured sensor noise.
+- Show progress inside the image and offer a saved-settings reload after failures. Camera startup recovery and physical light/sensor behavior remain unverified; this candidate is undeployed.
+
+## 0.2.0-dev13 (local candidate)
+
+- Add saved exposure, gain and flip controls to Image when the camera advertises the matching activation contract. Keep the camera model visible; automatic exposure/gain mode hides manual controls and brightness.
+- Keep edits local until an explicit picture or activation request. Apply lighting and image choices in order, carry only verified matching revisions between them, and preserve drafts during repeated status polls. Unchanged choices do not write to SD.
+- Persist uncertain activation and block captures across restart. Require a verified orientation receipt, new reference and saved calibration after a flip before scheduled capture can resume. Preview flips immediately relative to a proven camera picture; do not guess the orientation of uploaded images.
+- Keep a stale picture dimmed with one centered capture button. Capture masking stays inside the image. Use compact controls with accessible names and a pinned image on mobile.
+- Shorten temporary reference filenames so valid Windows data paths do not fail at the ordinary filename-length limit.
+- Models, native reading/accounting libraries and saved calculation assumptions are unchanged. This candidate is undeployed; matching camera firmware and physical behavior require separate validation and approval. Automatic exposure/gain is not automatic lighting calibration.
+
 ## 0.2.0-dev12 (review candidate)
 
 - Add optional original-image archives to SMB/NFS shares mounted by Home Assistant under /media. Keep local app storage as the default and preserve all local images.

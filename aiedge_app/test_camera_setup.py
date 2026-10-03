@@ -115,4 +115,77 @@ class CameraSetupTests(unittest.TestCase):
                 server.shutdown();server.server_close();thread.join()
             self.assertFalse(worker.is_alive())
 
+class ImageSetupTests(unittest.TestCase):
+    # Use the same HTTP/camera fixture; these tests exercise app routing and the
+    # worker's reference boundary rather than creating reading evidence.
+    readiness=CameraSetupTests.readiness
+    capture=CameraSetupTests.capture
+    add_reference=CameraSetupTests.add_reference
+    def setUp(self):
+        CameraSetupTests.setUp(self)
+        self.image_calls=[]
+        self.image=SimpleNamespace(needs_attention=lambda:False,requires_reference=lambda:True,
+            load=lambda:{'revision':'a'*64,'controls':{'exposure':600}},
+            apply=lambda revision,controls:self.image_apply(revision,controls),
+            reference_taken=lambda reference,headers:self.image_calls.append(('reference',reference)))
+        self.worker.image_controls=self.image
+    def image_apply(self,revision,controls):
+        self.image_calls.append(('apply',revision,controls))
+        return {'revision':'b'*64,'active_verified':True,'requires_reference':True}
+    def test_image_jobs_are_explicit_and_do_not_take_photos(self):
+        self.worker.start('image-load');self.worker.once()
+        self.assertTrue(self.worker.status()['image_settings_supported']);self.assertEqual(self.calls,[])
+        self.worker.start('image-apply','a'*64,controls={'exposure':700});self.worker.once()
+        self.assertEqual(self.image_calls,[('apply','a'*64,{'exposure':700})])
+        self.assertEqual(self.references,[]);self.assertEqual(self.calls,[])
+    def test_reference_photo_uses_orientation_gate_and_preserves_hash(self):
+        gates=[]
+        self.camera.require_capture=lambda reference=False:gates.append(reference)
+        self.camera.reference_capture=self.capture
+        self.worker.start('picture');self.worker.once()
+        self.assertEqual(gates,[True]);self.assertEqual(self.calls,['status','capture'])
+        self.assertEqual(self.image_calls,[('reference',hashlib.sha256(self.blob).hexdigest())])
+        self.assertTrue(self.worker.status()['image_requires_reference'])
+    def test_http_image_apply_requires_token_and_exact_payload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.setup.status=lambda:{'revision':None,'calibration':None}
+            server=ThreadingHTTPServer(('127.0.0.1',0),handler(Store(directory),False,None,setup=self.setup,camera_setup=self.worker))
+            thread=threading.Thread(target=server.serve_forever);thread.start()
+            origin=f'http://127.0.0.1:{server.server_port}'
+            def post(data,token=None):
+                headers={'Content-Type':'application/json'}
+                if token:headers['X-AIEdge-Setup']=token
+                request=urllib.request.Request(origin+'/api/camera-setup',data=json.dumps(data).encode(),headers=headers,method='POST')
+                try:
+                    with urllib.request.urlopen(request) as response:return response.status,json.load(response)
+                except urllib.error.HTTPError as error:
+                    code=error.code;error.close();return code,None
+            try:
+                with urllib.request.urlopen(origin+'/api/setup') as response:token=json.load(response)['token']
+                data={'action':'image-apply','revision':'a'*64,'controls':{'exposure':700}}
+                self.assertEqual(post(data)[0],403)
+                self.assertEqual(post(dict(data,lighting={}),token)[0],400)
+                self.assertEqual(post({'action':'image-apply','revision':'a'*64},token)[0],400)
+                self.assertEqual(post(data,token)[0],200);self.worker.once()
+                self.assertEqual(self.image_calls,[('apply','a'*64,{'exposure':700})]);self.assertEqual(self.calls,[])
+            finally:
+                server.shutdown();server.server_close();thread.join()
+    def test_orientation_receipt_is_exact_and_invalid_receipts_preserve_reference(self):
+        from email.message import Message
+        for value in ('0','1','2','3'):
+            self.headers['X-AIEdge-Image-Orientation']=value
+            self.worker.start('picture');self.worker.once()
+            self.assertEqual(self.worker.status()['image_orientation'],int(value))
+        self.references.clear()
+        for value in ('4','-1','00',1):
+            self.headers['X-AIEdge-Image-Orientation']=value
+            self.worker.start('picture');self.worker.once()
+            self.assertEqual(self.worker.status()['error'],'camera_image_orientation_unverified')
+            self.assertNotIn('image_orientation',self.worker.status())
+        duplicate=Message()
+        for key,value in photo()[1].items():duplicate[key]=value
+        duplicate['X-AIEdge-Image-Orientation']='0';duplicate['X-AIEdge-Image-Orientation']='0'
+        self.headers=duplicate;self.worker.start('picture');self.worker.once()
+        self.assertEqual(self.worker.status()['error'],'camera_image_orientation_unverified');self.assertEqual(self.references,[])
+
 if __name__=='__main__':unittest.main()

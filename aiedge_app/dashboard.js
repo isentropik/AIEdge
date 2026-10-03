@@ -46,20 +46,25 @@ function page(name){
   activePage=name;
   $('error').hidden=!$('error').textContent||$('error').dataset.owner===name;
   for(const id of ['overview','captures','setup','format','settings']){
-    $(id).hidden=id!==name;$(id+'-tab').setAttribute('aria-current',id===name?'page':'false');
+    $('page-'+id).hidden=id!==name;$(id+'-tab').setAttribute('aria-current',id===name?'page':'false');
   }
   $('title').textContent={overview:'Overview',captures:'Captures',setup:'Setup',format:'Number format',settings:'Settings'}[name];
+  window.AIEdgeNotices?.sync();
 }
 window.showAppPage=page;
 const routes={setup:'setup',settings:'settings',overview:'overview',captures:'captures',calibration:'setup',format:'format'};
+let routeHash=null;
 function route(){
- if(window.AIEdgeFlow?.route(location.hash))return;
+ const changed=routeHash!==location.hash;routeHash=location.hash;
+ const startAtTop=()=>{if(!changed)return;const requested=routeHash;const reset=()=>{if(location.hash===requested)window.scrollTo?.(0,0);};if(window.requestAnimationFrame)window.requestAnimationFrame(reset);else reset();};
+ if(!/^#captures\/[1-9][0-9]*$/.test(location.hash))window.AIEdgeReview?.close();
+ if(window.AIEdgeFlow?.route(location.hash)){startAtTop();return;}
  const review=/^#captures\/([1-9][0-9]*)$/.exec(location.hash);
  const name=review?'captures':routes[location.hash.slice(1)]||'overview';page(name);
  if(review){$('title').textContent='Review capture';window.AIEdgeReview?.open(Number(review[1]));}
- else window.AIEdgeReview?.close();
  if(name==='setup')window.openCalibration();
  if(name==='format')window.openReadingFormat();
+ startAtTop();
 }
 for(const [hash,name] of Object.entries(routes).filter(([hash])=>hash!=='calibration'))$(name+'-tab').onclick=()=>{
  if(location.hash==='#'+hash)route();else location.hash=hash;
@@ -90,6 +95,7 @@ function historyError(error){
  $('empty-gallery').hidden=historyFailed||!!historyPage?.items.length;
  $('history-error').hidden=!error;
  $('history-error').textContent=error?'Capture history could not be loaded. Use Refresh to try again.':'';
+ if(window.AIEdgeNotices)window.AIEdgeNotices.show('history-error',$('history-error').textContent,!!error,window.AIEdgeNotices.connection(error)&&!['storage_startup_failed','storage_unavailable'].includes(error?.code));
  $('empty-gallery').textContent=error?'Capture history unavailable.':'No stored captures yet.';
  if(error&&!historyPage)$('history-summary').textContent='History unavailable';
 }
@@ -109,7 +115,7 @@ async function get(path){
         else if(reason==='http_busy'){code=reason;message='The app is busy. Retrying automatically.';}
       }catch{}
     }
-    const error=Error(message);error.code=code;throw error;
+    const error=Error(message);error.code=code;error.status=response.status;throw error;
   }
   return response.json();
 }
@@ -195,6 +201,7 @@ function render(s,rows){
     s.last_error?(captureErrors[s.last_error.error]||'Capture failed: '+s.last_error.error):
     s.capture_enabled&&s.storage?.state==='low_space'?'Capture paused: local storage is low on space. Existing images are kept.':'';
   $('error').dataset.owner=configIssue?'':s.setup_recovery?'setup':s.format_recovery?'format':'';
+  $('error').dataset.noticeKind='action';
   $('error').hidden=!issue||$('error').dataset.owner===activePage;$('error').textContent=issue;
   window.AIEdgeFlow?.renderStatus(s);
   $('checked-at').textContent='Checked '+new Date().toLocaleTimeString();
@@ -226,7 +233,9 @@ async function refresh(){
     // History has its own result/error; a status outage must not discard it.
     if(!imageHash){$('empty-image').querySelector('strong').textContent='Image unavailable';$('empty-image').querySelector('p').textContent='Saved images could not be checked.';$('capture-time').textContent='Capture status unavailable';}
     $('dial-results').hidden=true;$('error').dataset.owner='';$('error').hidden=false;
+    $('error').dataset.noticeKind=window.AIEdgeNotices?(window.AIEdgeNotices.connection(error)&&!storageFailed&&!storageUnavailable?'connection':'action'):'connection';
     $('error').textContent=error.name==='TimeoutError'?'The app did not respond. Retrying automatically.':error instanceof TypeError?'Connection to the app was lost. Retrying automatically.':error.message;
+    window.AIEdgeNotices?.sync();
   } finally {
     await historyRequest;
     busy=false;$('refresh').disabled=false;

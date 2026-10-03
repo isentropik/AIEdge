@@ -941,7 +941,7 @@ canvas{
   font-size:11px
 }
 .review-row input{
-  width:88px;
+  width:112px;
   flex:none;
   font-variant-numeric:tabular-nums
 }
@@ -1033,7 +1033,9 @@ canvas{
   }
   .review-photo{
     grid-row:1;
-    position:static
+    position:sticky;
+    top:0;
+    z-index:3
   }
   .review-photo .image-stage{
     height:auto;
@@ -1160,3 +1162,10 @@ canvas{
     min-height:44px;
   }
 }
+/* Meter choices stay compact on both the first setup step and return visits. */
+.meter-card{max-width:520px;padding:20px}
+.meter-card form{display:grid;gap:18px}
+.meter-card label{display:grid;gap:8px}
+.meter-card .setup-status{margin:0}
+.format-unit-summary{display:flex;gap:12px;align-items:center}
+.format-unit-summary a{font-size:13px}

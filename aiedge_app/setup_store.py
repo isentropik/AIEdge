@@ -14,6 +14,10 @@ class Setup:
         self.factory=reader_factory;self.recognition=recognition;self.lock=threading.Lock();self.active=None
         self.path=self.root/'calibration.json'
         self.saved=SavedFile(self.path);self.draft=None
+        from meter_profile import MeterProfile
+        self.meter=MeterProfile(self.root,self._atomic)
+        from image_edit import EditStore
+        self.edits=EditStore(self.root,self.reference,self._atomic)
         try:
             raw=self.saved.read()
             if raw is None:return
@@ -46,7 +50,9 @@ class Setup:
         return digest
     @staticmethod
     def _atomic(path,blob):
-        temp=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp')
+        # Reference filenames already contain a 64-character hash. Keep the
+        # temporary sibling short enough for ordinary Windows data paths.
+        temp=path.with_name('.setup-'+uuid.uuid4().hex+'.tmp')
         try:
             with temp.open('xb') as f:f.write(blob);f.flush();os.fsync(f.fileno())
             if temp.read_bytes()!=blob:raise OSError('setup_write_verification_failed')
@@ -56,19 +62,32 @@ class Setup:
             if temp.exists():temp.unlink()
     def status(self):
         with self.lock:
-            if self.active is None:return {'revision':self.saved.revision,'calibration':json.loads(json.dumps(self.draft)),**self.saved.recovery()}
+            if self.active is None:return {'revision':self.saved.revision,'calibration':json.loads(json.dumps(self.draft)),'image_editor':self.edits.status(),'meter':self.meter.status(),**self.saved.recovery()}
             document,revision=self.active
             # Return a copy: callers cannot modify the active profile in place.
-            return {'revision':revision,'calibration':json.loads(json.dumps(document))}
+            return {'revision':revision,'calibration':json.loads(json.dumps(document)),'image_editor':self.edits.status(),'meter':self.meter.status()}
+    def save_image_edit(self,reference_id,value,expected_revision):
+        with self.lock:
+            calibration=self.active[0] if self.active else self.draft
+            geometry=None
+            if calibration and calibration['reference_sha256']==reference_id:
+                geometry={'markers':[m['box'] for m in calibration['markers']],
+                          'dials':[dict(crop=d['crop'],**d.get('landmarks',{})) for d in calibration['dials']]}
+            return self.edits.save(reference_id,value,expected_revision,geometry)
     def save(self,reference_id,design,expected_revision):
         reference=self.reference(reference_id)
+        with self.edits.lock:
+            edit_revision=self.edits.saved.revision
+            edit=self.edits.current(reference_id)
         document,revision=build(reference,design)
+        edit.require_geometry(design)
         # Reader constructor performs native geometry and model validation.
         candidate=self.factory(document)
         preview=candidate.read_rgb(image_rgb(reference).tobytes())
         if preview.get('state')!='estimated':raise ValueError('reference_recognition_rejected:'+preview.get('error','unknown'))
         blob=json.dumps(document,sort_keys=True,indent=2,allow_nan=False).encode('utf-8')
-        with self.lock:
+        with self.lock,self.edits.lock:
+            if self.edits.saved.revision!=edit_revision:raise ValueError('image_edit_changed_reload_before_saving')
             current=self.active[1] if self.active else self.saved.revision
             if current!=expected_revision:raise ValueError('setup_changed_reload_before_saving')
             self.recognition.activate(candidate,lambda:self.saved.replace(blob,self._atomic,'setup_changed_reload_before_saving'))
