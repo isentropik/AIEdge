@@ -1,6 +1,7 @@
 """Durable, deduplicated inference on immutable captures. Results are never labels."""
 import json,re,sqlite3,threading,time
 from capture import now
+from observation_support import observed_rows
 
 MAX_RESULT_BYTES=262144
 
@@ -13,6 +14,16 @@ def decode_result(encoded,digest,pipeline):
         raise ValueError('invalid_result_provenance')
     rows=value.get('dial_positions',[])
     if not isinstance(rows,list) or any(not isinstance(row,dict) for row in rows):raise ValueError('invalid_dial_results')
+    if 'observation_attempt' in value:
+        attempt=value['observation_attempt']
+        if value['state']!='rejected' or not isinstance(attempt,dict) or set(attempt)!={'schema_version','source_sha256','pipeline_id','requested_observed'}:
+            raise ValueError('invalid_observation_attempt')
+        if type(attempt['schema_version']) is not int or attempt['schema_version']!=1 or attempt['source_sha256']!=digest or attempt['pipeline_id']!=pipeline:
+            raise ValueError('invalid_observation_attempt_identity')
+        mask=attempt['requested_observed']
+        if not isinstance(mask,list) or not 1<=len(mask)<=32 or any(type(flag) is not bool for flag in mask) or not any(mask):
+            raise ValueError('invalid_observation_attempt_mask')
+    if 'observation_support' in value:observed_rows(value)
     return value
 
 class Recognition:

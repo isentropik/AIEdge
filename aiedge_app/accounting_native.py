@@ -19,6 +19,14 @@ class AccountingNative:
         self.lib.aiedge_accounting_observe.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_double),ctypes.c_size_t,ctypes.c_int64,ctypes.c_char_p,ctypes.c_size_t,ctypes.POINTER(Result)]
         self.lib.aiedge_accounting_observe.restype=ctypes.c_int
         self.lib.aiedge_accounting_stale.argtypes=[ctypes.c_void_p];self.lib.aiedge_accounting_stale.restype=ctypes.c_int
+        try:mask_abi=self.lib.aiedge_accounting_mask_abi
+        except AttributeError:self.supports_masked=False
+        else:
+            mask_abi.restype=ctypes.c_int
+            if mask_abi()!=1:raise ValueError('unsupported_accounting_mask_abi')
+            self.lib.aiedge_accounting_observe_masked.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_double),ctypes.POINTER(ctypes.c_ubyte),ctypes.c_size_t,ctypes.c_int64,ctypes.c_char_p,ctypes.c_size_t,ctypes.POINTER(Result)]
+            self.lib.aiedge_accounting_observe_masked.restype=ctypes.c_int
+            self.supports_masked=True
     def tracker(self,document):return Tracker(self,document)
 
 class Tracker:
@@ -35,14 +43,29 @@ class Tracker:
         with self.lock:
             if self.handle:self.native.lib.aiedge_accounting_stale(self.handle)
     def observe(self,positions,tick,clock):
+        return self._observe(positions,None,tick,clock)
+    def observe_masked(self,positions,observed,tick,clock):
+        if not self.native.supports_masked:raise ValueError('accounting_mask_unsupported')
+        if not isinstance(observed,(list,tuple)) or len(observed)!=self.count or any(type(flag) is not bool for flag in observed):
+            raise ValueError('invalid_accounting_mask')
+        # Unknown means absent evidence, never a retained position from an older image.
+        if any(position is not None for position,flag in zip(positions,observed) if not flag):
+            raise ValueError('unobserved_accounting_position')
+        return self._observe(positions,observed,tick,clock)
+    def _observe(self,positions,observed,tick,clock):
         if len(positions)!=self.count or type(tick) is not int or not 0<=tick<=9223372036854775807:
             raise ValueError('invalid_accounting_observation')
-        if any(not finite_number(p) or not 0<=p<10 for p in positions):raise ValueError('invalid_accounting_positions')
+        if any(not finite_number(p) or not 0<=p<10 for i,p in enumerate(positions) if observed is None or observed[i]):raise ValueError('invalid_accounting_positions')
         if not isinstance(clock,str) or not clock.isascii() or not 1<=len(clock)<=128:raise ValueError('invalid_accounting_clock')
         raw=clock.encode('ascii');vector=ctypes.c_double*self.count;output=Result()
         with self.lock:
             if not self.handle:raise ValueError('accounting_tracker_closed')
-            status=self.native.lib.aiedge_accounting_observe(self.handle,vector(*positions),self.count,tick,raw,len(raw),ctypes.byref(output))
+            if observed is None:
+                status=self.native.lib.aiedge_accounting_observe(self.handle,vector(*positions),self.count,tick,raw,len(raw),ctypes.byref(output))
+            else:
+                mask=ctypes.c_ubyte*self.count
+                values=vector(*(p if flag else math.nan for p,flag in zip(positions,observed)))
+                status=self.native.lib.aiedge_accounting_observe_masked(self.handle,values,mask(*observed),self.count,tick,raw,len(raw),ctypes.byref(output))
         if status:raise ValueError('accounting_native_failed')
         if output.status not in STATES:raise ValueError('unknown_accounting_status')
         # Infinity is explicit unboundedness; it never enters JSON as a number.

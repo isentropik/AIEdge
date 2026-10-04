@@ -21,10 +21,15 @@
     "include/PolarVisibility.h": "73288670bd995a64aa2697f5b24b579993357ca36d3206c185040108c164d751",
     "include/PolarWarp.h": "2dae08e0acd051a9b423816e3eb64d18d11eb54a835b6815c508385f201c04ac",
     "include/ReadingFormat.h": "a2e99191d6469c020124b1d88c38bb9c805af85c38a8a6dfbeae1b04009d4c7d",
-    "include/RevolutionAccounting.h": "f60b31e10f700162f8c78a15bb8106051512ac02a27ce619002dcdb6efc6817b",
+    "include/RevolutionAccounting.h": "e8eba1c949056bdd67bcf68053f20c5f71458adbf10a043ee06bf33c6bdd6d0d",
     "include/RevolutionReading.h": "f9ceb66ec951537edff5985c4eb296a871119ae9500a1c75df621a8d1c664ba3",
     "models/polar-int8.tflite": "b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0",
     "models/polar-main-float.tflite": "8c0d63fbe8c3cbc7bd854c464d9cd342b46f766a107d2cbd6d93026c49601016"
   },
-  "model_source": "Exact models pinned in reader.py. Headers retain the legacy frozen calibration for parity tests; it is never activated by default. No capture archives or credentials are packaged."
+  "model_source": "Exact models pinned in reader.py. Headers retain the legacy frozen calibration for parity tests; it is never activated by default. No capture archives or credentials are packaged.",
+  "accounting_header_provenance": {
+    "parent_candidate": "masked-accounting-candidate-20261003",
+    "parent_manifest_sha256": "324824c56e3c68c794d924983f62fd8e8f8bce313fd48f89f862e339c3ded76c",
+    "scope": "explicit observed masks; unchanged model and calibration files"
+  }
 }

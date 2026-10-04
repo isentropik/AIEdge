@@ -5,7 +5,16 @@ from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKA
 
 def result(skips=(),count=1):
     return SimpleNamespace(testsRun=count,skipped=[(SimpleNamespace(id=lambda name=name:name),'fixture missing') for name in skips])
-NEW_COVERAGE={*(f'test_delivery_timing.DeliveryTimingTests.test_{i}' for i in range(9)),
+NEW_COVERAGE={*(f'test_event_consumption.EventConsumptionTests.test_{i}' for i in range(8)),
+              *(f'test_event_service.EventServiceTests.test_{i}' for i in range(12)),
+              *(f'test_event_observation_read.HistoricalEventReadTests.test_{i}' for i in range(10)),
+              *(f'test_event_recognition.EventRecognitionTests.test_{i}' for i in range(18)),
+              *(f'test_masked_wrapper.MaskedWrapperTests.test_{i}' for i in range(5)),
+              *(f'test_masked_consumption.MaskedConsumptionTests.test_{i}' for i in range(12)),
+              *(f'test_reader_observation_mask.ObservationMaskReaderTests.test_{i}' for i in range(11)),
+              *(f'test_observation_attempt.AttemptTests.test_{i}' for i in range(3)),
+              *(f'test_wheel_capture_policy.PolicyTests.test_{i}' for i in range(7)),
+              *(f'test_delivery_timing.DeliveryTimingTests.test_{i}' for i in range(9)),
               *(f'test_reading_bounds.BoundTests.test_{i}' for i in range(8)),
               *(f'test_capture_trial.TrialTests.test_{i}' for i in range(26)),
               *(f'test_trial_results.ResultsTests.test_{i}' for i in range(12)),
@@ -63,6 +72,13 @@ class ValidationCoverageTests(unittest.TestCase):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
         self.assertTrue(inventory_errors(['test_consumption.AccountingTests.test_one']*23,True,False))
+    def test_event_mask_or_controller_coverage_cannot_be_omitted(self):
+        required=('test_event_consumption.','test_event_recognition.','test_event_service.','test_event_observation_read.','test_masked_wrapper.','test_masked_consumption.',
+                  'test_reader_observation_mask.','test_observation_attempt.','test_wheel_capture_policy.')
+        for prefix in required:
+            with self.subTest(prefix=prefix):
+                errors=inventory_errors({name for name in NEW_COVERAGE if not name.startswith(prefix)},True,False)
+                self.assertTrue(any(prefix in error for error in errors))
     def test_requested_packaged_or_archive_checks_must_exist(self):
         complete={*('test_consumption.AccountingTests.test_'+str(i) for i in range(20)),
                   *('test_consumption.FormatBoundTests.test_'+str(i) for i in range(3)),
