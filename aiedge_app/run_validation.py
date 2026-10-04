@@ -43,7 +43,12 @@ def inventory_errors(identifiers,allow_archive,packaged):
                            ('test_camera_auto.AutoTransactions.',23),('test_camera_auto.AutoSetupTests.',7),
                            ('test_archive.ArchiveTests.',15),('test_archive.ArchiveCopyTests.',6),
                            ('test_archive.ArchiveLinuxTests.',2),('test_archive_http.ArchiveHttpTests.',3),('test_capture_trial.',26),
-                           ('test_trial_results.ResultsTests.',12)):
+                           ('test_trial_results.ResultsTests.',12),
+                           ('test_masked_wrapper.MaskedWrapperTests.',5),('test_masked_consumption.MaskedConsumptionTests.',12),
+                           ('test_reader_observation_mask.ObservationMaskReaderTests.',11),('test_observation_attempt.AttemptTests.',3),
+                           ('test_wheel_capture_policy.PolicyTests.',7),('test_event_recognition.EventRecognitionTests.',18),
+                           ('test_event_consumption.EventConsumptionTests.',8),('test_event_service.EventServiceTests.',12),
+                           ('test_event_observation_read.HistoricalEventReadTests.',10)):
         if sum(name.startswith(prefix) for name in identifiers)<minimum:
             errors.append('Required test coverage is missing: '+prefix)
     if packaged and PACKAGED_CHECK not in identifiers:

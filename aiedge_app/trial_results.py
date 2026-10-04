@@ -23,15 +23,24 @@ def build(trial,recognition,request_id):
     results={}
     for frame in snapshot['frames']:
         digest=frame['sha256']
+        context=snapshot['context'].get('observation_context')
         with recognition.store.connect() as db:
-            exists=db.execute('SELECT 1 FROM frames WHERE frame_id=? AND captured_at=? AND sha256=? LIMIT 1',
-                              (frame['frame_id'],frame['captured_at'],digest)).fetchone()
+            if context is not None:
+                exists=db.execute('SELECT 1 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id LEFT JOIN capture_clocks c ON c.camera=e.camera AND c.frame_id=e.frame_id WHERE e.event_id=? AND e.camera=? AND f.frame_id=? AND f.captured_at=? AND f.sha256=? AND c.clock_id IS ? AND c.monotonic_us IS ?',
+                                  (frame['event_id'],frame['camera'],frame['frame_id'],frame['captured_at'],digest,frame['clock_id'],frame['monotonic_us'])).fetchone()
+            else:
+                exists=db.execute('SELECT 1 FROM frames WHERE frame_id=? AND captured_at=? AND sha256=? LIMIT 1',
+                                  (frame['frame_id'],frame['captured_at'],digest)).fetchone()
         if not exists:
             value={'processed_at':None,'result':dict(state='unavailable',error='trial_frame_missing',
                 source_sha256=digest,pipeline_id=pipeline,training_allowed=False,accuracy_verified=False)}
         else:
-            if digest not in results:results[digest]=recognition.stored(digest,pipeline)
-            value=results[digest]
+            if context is not None:
+                from event_observation_read import read_event
+                value=read_event(recognition.store,frame['event_id'],digest,pipeline,context)
+            else:
+                if digest not in results:results[digest]=recognition.stored(digest,pipeline)
+                value=results[digest]
         base['frames'].append(dict(frame=frame,**value))
     severity={'estimated':0,'rejected':1,'pending':2,'unavailable':3}
     states={}

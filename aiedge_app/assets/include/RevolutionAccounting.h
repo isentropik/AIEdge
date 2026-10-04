@@ -10,6 +10,8 @@ namespace meter {
 // There are no accounting roles. Every dial constrains the same physical motion.
 struct RevolutionObservation {
     std::vector<double> positions;
+    // Empty mask preserves the existing all-observed API. Unknown phases are never reused.
+    std::vector<unsigned char> observed;
     int64_t captureUs=0;
     std::string clockId;
 };
@@ -30,9 +32,11 @@ class RevolutionIntervalResolver {
         return true;
     }
     bool ranges(const std::vector<double>& phases,long double errorFactor,
-                long double upper,std::vector<Range>& result,bool& limited) const {
+                long double upper,std::vector<Range>& result,bool& limited,
+                const std::vector<unsigned char>& mask={}) const {
         limited=false;result={{0,upper,0}};
         for(std::size_t index=0;index<assumptions.periods.size();++index) {
+            if(!mask.empty()&&!mask[index])continue;
             const long double period=assumptions.periods[index];
             const long double phase=static_cast<long double>(phases[index])*period/10;
             const long double epsilon=period*1e-12L;
@@ -83,12 +87,25 @@ public:
     bool configured() const {return valid;}
     bool accepts(const RevolutionObservation& frame) const {
         if(!valid||frame.captureUs<0||!clockValid(frame.clockId)||frame.positions.size()!=assumptions.periods.size())return false;
-        for(double value:frame.positions)if(!validPosition(value))return false;
+        if(!frame.observed.empty()&&frame.observed.size()!=frame.positions.size())return false;
+        bool any=false;std::size_t largest=0;
+        for(std::size_t i=0;i<frame.positions.size();++i) {
+            if(!frame.observed.empty()&&frame.observed[i]>1)return false;
+            if(frame.observed.empty()||frame.observed[i]) {
+                if(!validPosition(frame.positions[i]))return false;
+                if(!any)largest=i;any=true;
+            }
+        }
+        // Cumulative turn phase is always the configured smallest dial.
+        if(!any||(!frame.observed.empty()&&!frame.observed.back()))return false;
         std::vector<Range> possible;bool limited;
-        // Check every dial simultaneously, including ambiguous lower-dial
-        // carries, without treating a point estimate as an exact observation.
-        return ranges(frame.positions,1,assumptions.periods[0],possible,limited)&&!possible.empty();
+        const long double upper=frame.observed.empty()?assumptions.periods[0]:assumptions.periods[largest];
+        return ranges(frame.positions,1,upper,possible,limited,frame.observed)&&!possible.empty();
     }
+    bool full(const RevolutionObservation& frame) const {
+        return frame.observed.empty()||std::all_of(frame.observed.begin(),frame.observed.end(),[](unsigned char x){return x==1;});
+    }
+
     Interval operator()(const RevolutionObservation& before,const RevolutionObservation& after,const Bounds&) const {
         Interval out;
         if(!valid)return out;
@@ -98,14 +115,19 @@ public:
         if(before.clockId.empty()||before.clockId!=after.clockId)return out;
         if(!accepts(before)||!accepts(after)){out.status=Status::Review;out.reason=Reason::MainInconsistent;return out;}
         out.elapsedSeconds=static_cast<double>(after.captureUs-before.captureUs)/1000000;
-        std::vector<double> phases;
-        for(std::size_t i=0;i<before.positions.size();++i)phases.push_back(after.positions[i]-before.positions[i]);
+        std::vector<double> phases(before.positions.size(),0);
+        std::vector<unsigned char> common(before.positions.size(),0);std::size_t largest=before.positions.size();
+        for(std::size_t i=0;i<before.positions.size();++i) {
+            common[i]=(before.observed.empty()||before.observed[i])&&(after.observed.empty()||after.observed[i]);
+            if(common[i]) {if(largest==before.positions.size())largest=i;phases[i]=after.positions[i]-before.positions[i];}
+        }
+        if(!common.back()||largest==before.positions.size())return out;
         out.rawPhaseDelta=phases.back()*assumptions.periods.back()/10;
         const long double upper=assumptions.hasMaximumRate?
-            static_cast<long double>(assumptions.maximumRate)*out.elapsedSeconds:assumptions.periods[0];
+            static_cast<long double>(assumptions.maximumRate)*out.elapsedSeconds:assumptions.periods[largest];
         if(!std::isfinite(upper)||upper>std::numeric_limits<double>::max())return out;
         std::vector<Range> possible;bool limited;
-        if(!ranges(phases,2,upper,possible,limited)){out.reason=Reason::TurnCountUnresolved;return out;}
+        if(!ranges(phases,2,upper,possible,limited,common)){out.reason=Reason::TurnCountUnresolved;return out;}
         if(possible.empty()){out.status=Status::Review;out.reason=Reason::MainRateContradiction;return out;}
         out.minimumFt3=std::numeric_limits<double>::infinity();out.maximumFt3=0;
         out.firstTurnOffset=std::numeric_limits<int64_t>::max();out.lastTurnOffset=std::numeric_limits<int64_t>::min();
@@ -157,7 +179,7 @@ public:
     bool configured() const {return resolver.configured();}
     const CumulativeResult& current() const {return published;}
     bool reset(const RevolutionObservation& frame) {
-        if(!resolver.accepts(frame))return false;
+        if(!resolver.full(frame)||!resolver.accepts(frame))return false;
         tracker.reset(frame);highestEstimate=std::numeric_limits<double>::quiet_NaN();publish();return true;
     }
     bool observe(const RevolutionObservation& frame) {

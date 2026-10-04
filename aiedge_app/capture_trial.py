@@ -76,7 +76,8 @@ def decode_snapshot(request_id, encoded):
         if value['in_flight'] and value['attempts']<=len(frames):raise ValueError()
         if value['state']=='queued' and (value['attempts'] or frames):raise ValueError()
         for frame in frames:
-            if not isinstance(frame,dict) or set(frame)!={'frame_id','captured_at','sha256','clock_id','monotonic_us','added'}:raise ValueError()
+            if not isinstance(frame,dict) or set(frame) not in ({'frame_id','captured_at','sha256','clock_id','monotonic_us','added'},{'frame_id','captured_at','sha256','clock_id','monotonic_us','added','event_id','camera'}):raise ValueError()
+            if 'event_id' in frame and (type(frame['event_id']) is not int or not 1<=frame['event_id']<=9223372036854775807 or not isinstance(frame['camera'],str) or not 1<=len(frame['camera'])<=2048):raise ValueError()
             if not isinstance(frame['frame_id'],str) or not re.fullmatch('[A-Za-z0-9_.-]{1,128}',frame['frame_id']):raise ValueError()
             if not _timestamp(frame['captured_at']) or not isinstance(frame['sha256'],str) or not re.fullmatch('[a-f0-9]{64}',frame['sha256']):raise ValueError()
             if type(frame['added']) is not bool:raise ValueError()
@@ -92,8 +93,9 @@ def decode_snapshot(request_id, encoded):
         if (value['state'] in ('failed','interrupted'))!=(error is not None):raise ValueError()
         if value['state']=='interrupted' and (error!='trial_interrupted' or value['counts_complete']):raise ValueError()
         context=value['context']
-        if not isinstance(context,dict) or not set(context)<= {'pipeline_id','format_revision','calibration_revision'}:raise ValueError()
+        if not isinstance(context,dict) or not set(context)<= {'pipeline_id','format_revision','calibration_revision','observation_context'}:raise ValueError()
         if any(v is not None and (not isinstance(v,str) or not re.fullmatch('[a-f0-9]{64}',v)) for v in context.values()):raise ValueError()
+        if context.get('observation_context') is not None and any('event_id' not in frame for frame in frames):raise ValueError()
         return value
     except (ValueError,TypeError,KeyError,OverflowError,UnicodeError,RecursionError):
         raise ValueError('trial_journal_invalid') from None
@@ -293,10 +295,16 @@ class CaptureTrial:
                 clock = parse_clock(headers)
                 previous = self.active['frames'][-1] if self.active['frames'] else None
                 added = self.store.add(self.camera.origin, blob, headers)
+                saved_frame=dict(frame_id=frame,captured_at=stamp,sha256=digest,
+                    clock_id=clock[0] if clock else None,monotonic_us=clock[1] if clock else None,added=added)
+                if self.active['context'].get('observation_context') is not None:
+                    with self.store.connect() as db:
+                        event=db.execute('SELECT event_id FROM capture_events WHERE camera=? AND frame_id=?',(self.camera.origin,frame)).fetchone()
+                    if event is None:raise sqlite3.DatabaseError('trial_capture_event_missing')
+                    saved_frame.update(event_id=event[0],camera=self.camera.origin)
                 with self.condition:
                     duplicate = any(row['sha256'] == digest for row in self.active['frames'])
-                    self.active['frames'].append(dict(frame_id=frame, captured_at=stamp, sha256=digest,
-                        clock_id=clock[0] if clock else None, monotonic_us=clock[1] if clock else None, added=added))
+                    self.active['frames'].append(saved_frame)
                     self.active['saved_frames'] += int(added)
                     self.active['unique_images'] += int(not duplicate)
                     self.active['duplicate_images'] += int(duplicate)

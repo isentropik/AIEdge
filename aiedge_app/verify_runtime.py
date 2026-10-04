@@ -6,6 +6,8 @@ from package_assets import verify
 from reader import Reader,PROFILE,network_input,decoder_scores
 
 def main():
+    # Import opt-in modules inside the installed image, where a missing COPY must fail.
+    import event_selection_config,event_recognition,event_observation_read,observation_support,wheel_capture_policy
     from performance import Timings
     from capture import Camera,Store
     from recognition import Recognition
@@ -48,6 +50,13 @@ def main():
             assert tracker.observe([0,0],1000000,'runtime-check')['accepted']
             value=tracker.observe([.01,2],31000000,'runtime-check')
             if value['state']!='estimated' or abs(value['value']-1)>1e-8:raise ValueError('accounting_runtime_contract')
+        finally:tracker.close()
+        if not AccountingNative(a.accounting_library).supports_masked:raise ValueError('masked_accounting_runtime_missing')
+        tracker=AccountingNative(a.accounting_library).tracker(document)
+        try:
+            assert tracker.observe([0,0],1000000,'masked-runtime-check')['accepted']
+            value=tracker.observe_masked([None,2],[False,True],31000000,'masked-runtime-check')
+            if value['state']!='estimated' or abs(value['value']-1)>1e-8:raise ValueError('masked_accounting_runtime_contract')
         finally:tracker.close()
     from temporal_reading import TemporalReading
     temporal=TemporalReading(ambiguity_document)

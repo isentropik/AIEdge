@@ -46,3 +46,17 @@ API int aiedge_accounting_observe(void* opaque,const double* positions,size_t co
 API int aiedge_accounting_stale(void* opaque) {
     if(!opaque)return -1;static_cast<AccountingHandle*>(opaque)->tracker.stale();return 0;
 }
+
+API int aiedge_accounting_mask_abi(){return 1;}
+API int aiedge_accounting_observe_masked(void* opaque,const double* positions,const unsigned char* observed,size_t count,int64_t tick,const char* clock,size_t clockBytes,AccountingResult* output) {
+    if(!opaque||!positions||!observed||!count||count>16||!clock||!clockBytes||clockBytes>128||!output)return -1;
+    for(size_t i=0;i<count;++i)if(observed[i]>1)return -1;
+    auto* handle=static_cast<AccountingHandle*>(opaque);
+    try {
+        meter::RevolutionObservation frame;frame.positions.assign(positions,positions+count);frame.observed.assign(observed,observed+count);
+        frame.captureUs=tick;frame.clockId.assign(clock,clockBytes);
+        if(!handle->resolver.accepts(frame)){handle->tracker.stale();snapshot(handle->tracker.current(),0,output);return 0;}
+        const bool accepted=handle->tracker.current().available?handle->tracker.observe(frame):handle->tracker.reset(frame);
+        snapshot(handle->tracker.current(),int(accepted),output);return 0;
+    }catch(...){return -2;}
+}

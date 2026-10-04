@@ -12,9 +12,11 @@ def capture_trial_context(setup,recognition,reading_format):
     with recognition.lock:
         reader=recognition.reader
         saved=reading_format.status()
-        return dict(calibration_revision=calibration.get('revision'),
+        context=dict(calibration_revision=calibration.get('revision'),
                     pipeline_id=reader.pipeline_id if reader else None,
                     format_revision=saved['revision'])
+        if getattr(recognition,'observation_context',None):context['observation_context']=recognition.observation_context
+        return context
 
 def publication_state(store,recognition,reading_format,consumption):
     # Capture events can share a JPEG. Match the exact accounting event, then
@@ -243,7 +245,9 @@ def create_reader(library,models,profile=None,calibration_file=None):
     return Reader(library,models,profile)
 
 def run_service(stop_signals):
-    parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--accounting-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file');args=parser.parse_args()
+    parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--accounting-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file')
+    parser.add_argument('--event-selection-config',help='Explicit development opt-in; never enables capture or publication.')
+    args=parser.parse_args()
     options,configuration=load_options(args.data)
     stop_signals.checkpoint()
     interval=options['interval_seconds'];enabled=options['capture_enabled']
@@ -270,6 +274,23 @@ def run_service(stop_signals):
         except (OSError,sqlite3.Error):
             recognition=None;setup=None;reading_format=None;enabled=False
             configuration={'state':'invalid','code':'setup_storage_unavailable'}
+    selection_error=False
+    if args.event_selection_config:
+        try:
+            from event_selection_config import configure
+            selected=configure(args.event_selection_config,store,recognition,reading_format,args.accounting_library)
+            recognition=selected;setup.recognition=selected;reading_format.recognition=selected
+        except (OSError,sqlite3.Error,ValueError,TypeError,UnicodeError,RecursionError):
+            configuration={'state':'invalid','code':'event_selection_configuration_invalid'};enabled=False;selection_error=True
+    consumption=None;consumption_error=None
+    if args.accounting_library and recognition and reading_format and not selection_error:
+        try:
+            from consumption import Consumption
+            consumption=Consumption(store,recognition,reading_format,args.accounting_library)
+        except (OSError,sqlite3.Error,ValueError):
+            consumption_error='consumption_runtime_unavailable'
+            if args.event_selection_config:
+                configuration={'state':'invalid','code':'event_selection_accounting_unavailable'};enabled=False;selection_error=True
     mqtt_enabled=options.get('mqtt_enabled',False) and not storage_error and configuration.get('state')=='ready'
     if mqtt_enabled and (recognition is None or reading_format is None):
         configuration={'state':'invalid','code':'options_mqtt_runtime_required'}
@@ -285,12 +306,6 @@ def run_service(stop_signals):
         camera=Camera(options['camera_url'],options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password',''),performance=store.performance)
     if enabled:
         collector=Collector(store,camera,interval)
-    consumption=None;consumption_error=None
-    if args.accounting_library and recognition and reading_format:
-        try:
-            from consumption import Consumption
-            consumption=Consumption(store,recognition,reading_format,args.accounting_library)
-        except (OSError,sqlite3.Error,ValueError):consumption_error='consumption_runtime_unavailable'
     reviews=None
     if store:
         from review_store import Reviews
@@ -328,7 +343,7 @@ def run_service(stop_signals):
     stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition,mqtt_output,consumption,preview,archive,trial),signals=stop_signals).run():
+    if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
 def main():
     from lifecycle import StartupSignals,StartupStopped,lifecycle_event

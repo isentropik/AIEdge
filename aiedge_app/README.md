@@ -18,6 +18,10 @@ image, six-dial calibration and number format survived an app restart. Full Linu
 regressions and live camera/MQTT integration still require validation.
 This branch is not ready to replace a working meter installation.
 
+Dev27 adds an opt-in development controller for full or last-two-dial recognition
+and cumulative accounting. The ordinary service still uses full recognition.
+See [development selection](EVENT-SELECTION.md) for its configuration and limits.
+
 [Install the development app](DOCS.md#install-for-a-first-home-assistant-test) · [User guide](DOCS.md) · [UI features and remaining camera controls](UI-PARITY.md) · [Current status](STATUS.md) · [Build notes](PACKAGING.md)
 
 AIEdge builds on [AI-on-the-edge-device](https://github.com/jomjol/AI-on-the-edge-device)

@@ -1,24 +1,22 @@
-# Final UI pass - October 2, 2026
+# Development status - October 4, 2026
 
-Dev19 is a local UI-only candidate based on the deployed dev18 source. The
-unchecked camera header and load button fit the compact Auto layout. Settings
-distinguishes unchecked controls, available exposure/gain controls, unsupported
-firmware and pending recovery. Overview labels MQTT output accurately and
-reports disabled output as Off. The notification script is loaded once.
+Dev27 is an unpublished local candidate based on dev26. It adds masked numerical
+accounting and an explicit development controller that records each capture's
+full or last-two recognition request before inference. Identical images retain
+separate capture timing, decisions and accounting events. Historical trial
+results recover those bindings without acquiring pictures or invoking models.
 
-Validation: 425 backend checks pass, including protected saved-image replay;
-three Linux-only checks are skipped. All 157 UI checks pass. Browser checks
-cover five camera states at 320, 390, 1024 and 1440 px in both themes: 40
-combinations with no horizontal overflow, clipped controls or unexpected notices.
-Mocked camera metadata is confined to the disposable preview server; camera
-actions are disabled there. No real camera or Home Assistant request was made.
+Ordinary service startup still uses full recognition. The development opt-in
+does not enable capture, MQTT or archiving and does not change automatic capture
+cadence. Full alignment and preprocessing remain. Model weights, calibration,
+dependencies, option defaults and firmware are unchanged.
 
-Raw reference images, calibration, separate needle pivot, image-edit settings,
-meter metadata and physical number format are preserved. Models, native code,
-dependencies, app options and permissions are unchanged. Fixture images and
-screenshots stay excluded from training. Invented fixture events verify neither
-accuracy, physical lighting/exposure nor sustained capture timing.
+Local synthetic/native checks establish persistence, replay, binding and selected
+network-call behavior. They do not establish recognition accuracy, real processing
+savings, safe physical capture cadence or device recovery. Linux container and
+exact-head CI evidence are required before proposing a live installation.
 
-Dev18 remains installed. Dev19 publication, exact Linux package validation and
-approved live verification remain pending. Physical camera recovery and capture
-cadence remain separate delivery phases.
+Phase 2 remains open: independent recognition accuracy and physical cumulative
+accounting still need validation. Camera firmware/recovery, sustained cadence,
+storage interruption, UI/setup and clean installation remain later phases.
+No production reflash is authorized by this candidate.

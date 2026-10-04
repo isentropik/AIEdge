@@ -1,5 +1,21 @@
 # Changes
 
+## 0.2.0-dev27 (local candidate; not deployed)
+
+- Add explicit development-only selection of full or last-two-dial recognition,
+  with immutable per-capture requests and separate caches for different masks.
+- Require durable accounting feedback before the next decision. Missing deadlines,
+  changed clocks, restart and uncertain results request a full read. Cadence is a
+  recommendation; automatic capture timing and full alignment remain unchanged.
+- Preserve unknown upper positions, missing-turn ambiguity, segment history and
+  interrupted accounting replay through an additive native mask API.
+- Return historical trial results by capture event and selection context, including
+  duplicate JPEGs with different masks. Reading results performs no model calls.
+- Keep the normal service on full recognition unless an explicit CLI configuration
+  is supplied. Invalid selection configuration stops all output and inference workers.
+- Model weights, calibration, default options, MQTT dedup behavior and firmware
+  remain unchanged. No accuracy, physical cadence or processing-savings claim.
+
 ## 0.2.0-dev26 (local candidate; not deployed)
 
 - Suppress equal numeric MQTT readings across new image hashes/timestamps, while

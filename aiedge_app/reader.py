@@ -66,7 +66,13 @@ class Reader:
         self.pipeline_ids={mode:hashlib.sha256(json.dumps(dict(contract,sparse=mode),sort_keys=True).encode()).hexdigest()
                            for mode in (False,True)}
         self.pipeline_id=self.pipeline_ids[self.sampling_sparse]
-    def read_rgb(self,rgb,sparse=None):
+    def _observed(self,observed):
+        if observed is None:return None
+        if not isinstance(observed,(list,tuple)) or len(observed)!=len(self.dials) or any(type(flag) is not bool for flag in observed) or not any(observed):
+            raise ValueError('invalid_reader_observation_mask')
+        return list(observed)
+    def read_rgb(self,rgb,sparse=None,observed=None):
+        mask=self._observed(observed)
         if sparse is None:sparse=self.sampling_sparse
         if type(sparse) is not bool:raise ValueError('invalid_sampling_mode')
         start=time.perf_counter()
@@ -74,15 +80,26 @@ class Reader:
                 'pipeline_id':self.pipeline_ids[sparse],'sampling':'sparse' if sparse else 'full',
                 'accuracy_verified':False,'training_allowed':False,'physical_value':None,
                 'work':{'preprocessing_reused':0,'inference_reused':0,'dials':len(self.dials)}}
+        if mask is not None:
+            # Diagnostic only. JPEG wrapper replaces this with byte-bound provenance.
+            result['_observed_mask']=mask
+            result['work']['selected_dials']=sum(mask)
         with self.lock:
+            if mask is not None:
+                for i,flag in enumerate(mask):
+                    if not flag:self.last_dials.pop(i,None)
             try:
                 prepare=self.runtime.prepare_with_reuse if self.runtime and self.reuse_unchanged else (self.runtime or self.native).prepare
                 prepared=prepare(rgb,sparse=sparse)
+                if len(prepared)!=len(self.dials):raise ValueError('native_dial_count_mismatch')
             except ValueError as e:
                 self.last_dials.clear()
                 result['error']=str(e);result['processing_seconds']=time.perf_counter()-start;return result
             for i,row in enumerate(prepared):
                 dial=self.dials[i]
+                if mask is not None and not mask[i]:
+                    result['dial_positions'].append({'name':dial['name'],'state':'unavailable','position':None,'visibility':None,'reason':'dial_not_observed'})
+                    continue
                 item={'name':dial['name'],'state':row['state'],'position':None,'visibility':row['visibility']}
                 if row.get('reused'):result['work']['preprocessing_reused']+=1
                 if row['state']=='ok':
@@ -97,17 +114,29 @@ class Reader:
                             item.update(state='estimated',position=self.native.decode(scores,dial['direction']=='ccw'),scores_sha256=hashlib.sha256(scores).hexdigest())
                         except Exception:
                             # A partial failed frame cannot leave successful dial outputs reusable.
-                            self.last_dials.clear();raise
+                            self.last_dials.clear()
+                            if mask is not None:
+                                result['dial_positions']=[];result['error']='selected_model_inference_failed'
+                                result['processing_seconds']=time.perf_counter()-start;return result
+                            raise
                     if self.reuse_unchanged:self.last_dials[i]=(row['features'],{k:item[k] for k in ('state','position','scores_sha256')})
                 else:self.last_dials.pop(i,None)
                 result['dial_positions'].append(item)
-        if all(r['state']=='estimated' for r in result['dial_positions']):result['state']='estimated'
+        selected=[r for i,r in enumerate(result['dial_positions']) if mask is None or mask[i]]
+        if all(r['state']=='estimated' for r in selected):result['state']='estimated'
         else:result['error']='one_or_more_dials_rejected'
         result['processing_seconds']=time.perf_counter()-start
         return result
-    def read_jpeg(self,blob):
+    def read_jpeg(self,blob,observed=None):
+        mask=self._observed(observed)
         if len(blob)>4*1024*1024:raise ValueError('image_too_large')
         with Image.open(io.BytesIO(blob)) as image:
             if image.format!='JPEG' or image.size!=(640,480):raise ValueError('image_does_not_match_calibration')
             image.load();rgb=image.convert('RGB').tobytes()
-        result=self.read_rgb(rgb);result['source_sha256']=hashlib.sha256(blob).hexdigest();return result
+        result=self.read_rgb(rgb,observed=mask);result['source_sha256']=hashlib.sha256(blob).hexdigest()
+        result.pop('_observed_mask',None)
+        if mask is not None:
+            provenance={'schema_version':1,'source_sha256':result['source_sha256'],'pipeline_id':result['pipeline_id']}
+            if result['state']=='estimated':result['observation_support']={**provenance,'observed':mask}
+            else:result['observation_attempt']={**provenance,'requested_observed':mask}
+        return result
