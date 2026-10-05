@@ -1,6 +1,19 @@
 # Changes
 
-## 0.2.0-dev27 (local candidate; not deployed)
+## 0.2.0-dev28 (local candidate; not published or deployed)
+
+- Prepare requested runtime-profile dials through an additive native ABI while
+  retaining marker alignment and existing crop, visibility and feature guards.
+  Clear omitted native and model caches so full reads rebuild omitted rows.
+- Copy native output once and omit feature materialization for unobserved rows.
+- Preserve full recognition and fixed capture cadence by default; selection
+  remains opt-in through the existing development CLI.
+- With exact-region reuse disabled, retain full non-reuse preparation before
+  applying the model mask. This path claims no omitted-crop savings.
+- Add a synthetic native parity check to the container build. Models,
+  calibration, accounting and camera firmware are unchanged.
+
+## 0.2.0-dev27
 
 - Add explicit development-only selection of full or last-two-dial recognition,
   with immutable per-capture requests and separate caches for different masks.

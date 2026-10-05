@@ -90,7 +90,9 @@ class Reader:
                     if not flag:self.last_dials.pop(i,None)
             try:
                 prepare=self.runtime.prepare_with_reuse if self.runtime and self.reuse_unchanged else (self.runtime or self.native).prepare
-                prepared=prepare(rgb,sparse=sparse)
+                if mask is not None and self.reuse_unchanged and self.runtime and hasattr(self.runtime,'prepare_masked'):
+                    prepared=self.runtime.prepare_masked(rgb,mask,sparse=sparse)
+                else:prepared=prepare(rgb,sparse=sparse)
                 if len(prepared)!=len(self.dials):raise ValueError('native_dial_count_mismatch')
             except ValueError as e:
                 self.last_dials.clear()

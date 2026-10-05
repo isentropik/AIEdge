@@ -51,6 +51,10 @@ class Profile:
         if self.reuse_function:
             self.reuse_function.argtypes=lib.aiedge_prepare_profile.argtypes+[ctypes.c_void_p]
             self.reuse_function.restype=ctypes.c_int
+        self.masked_function=getattr(lib,'aiedge_prepare_profile_masked',None)
+        if self.masked_function:
+            self.masked_function.argtypes=lib.aiedge_prepare_profile.argtypes+[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_size_t]
+            self.masked_function.restype=ctypes.c_int
         buffers=[];markers=(Marker*3)();count=len(self.document['dials']);dials=(Dial*count)()
         for i,m in enumerate(self.document['markers']):
             b=ctypes.create_string_buffer(base64.b64decode(m['pixels']));buffers.append(b)
@@ -66,7 +70,11 @@ class Profile:
         return self._prepare(rgb,sparse,False)
     def prepare_with_reuse(self,rgb,sparse=True):
         return self._prepare(rgb,sparse,True)
-    def _prepare(self,rgb,sparse,reuse):
+    def prepare_masked(self,rgb,observed,sparse=True):
+        if not isinstance(observed,(list,tuple)) or len(observed)!=len(self.document['dials']) or any(type(x) is not bool for x in observed) or not any(observed):raise ValueError('invalid_observation_mask')
+        if not self.masked_function:raise ValueError('masked_preparation_unsupported')
+        return self._prepare(rgb,sparse,True,observed)
+    def _prepare(self,rgb,sparse,reuse,observed=None):
         if len(rgb)!=640*480*3:raise ValueError('frame_dimensions_must_match_profile')
         count=len(self.document['dials']);size=count*384*40
         source=ctypes.create_string_buffer(rgb);out=ctypes.create_string_buffer(size);states=(ctypes.c_int*count)();visibility=(ctypes.c_double*count)()
@@ -74,9 +82,16 @@ class Profile:
         with self.lock:
             if not self.handle:raise ValueError('calibration_closed')
             args=(self.handle,source,len(rgb),int(sparse),out,size,states,visibility,count)
-            status=self.reuse_function(*args,reused) if reuse and self.reuse_function else self.native.lib.aiedge_prepare_profile(*args)
+            if observed is not None:
+                mask=(ctypes.c_uint8*count)(*observed)
+                status=self.masked_function(*args,reused,mask,count)
+            else:status=self.reuse_function(*args,reused) if reuse and self.reuse_function else self.native.lib.aiedge_prepare_profile(*args)
         if status:raise ValueError({-1:'invalid_native_input',-2:'alignment_rejected',-3:'preprocessing_failed'}.get(status,'unknown_native_error'))
-        rows=[{'state':self.native.lib.aiedge_preparation_status(states[i]).decode(),'visibility':visibility[i],'features':out.raw[i*15360:(i+1)*15360]} for i in range(count)]
+        raw=out.raw
+        rows=[({'state':'unavailable','visibility':None,'features':None} if observed is not None and not observed[i] else {'state':self.native.lib.aiedge_preparation_status(states[i]).decode(),'visibility':visibility[i],'features':raw[i*15360:(i+1)*15360]}) for i in range(count)]
         if reuse:
             for i,row in enumerate(rows):row['reused']=bool(reused[i])
+        if observed is not None:
+            for i,flag in enumerate(observed):
+                if not flag:rows[i]={'state':'unavailable','visibility':None,'features':None,'reused':False}
         return rows

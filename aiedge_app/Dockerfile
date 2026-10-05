@@ -1,9 +1,9 @@
 FROM python:3.14.8-slim-trixie@sha256:89fb7d3da20043c370643435258bdd7ab755d326d359001d02988ed15ae5219e AS native-build
 RUN apt-get update && apt-get install -y --no-install-recommends g++ && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
-COPY native.cpp accounting_native.cpp package_assets.py check_accounting_core.py test_accounting_core.cpp ./
+COPY native.cpp accounting_native.cpp package_assets.py check_accounting_core.py test_accounting_core.cpp check_native_preparation.py test_native_masked.cpp ./
 COPY assets ./assets
-RUN python package_assets.py && python check_accounting_core.py && g++ -std=c++17 -O2 -ffp-contract=off -fPIC -shared -Iassets/include native.cpp -o libaiedge_native.so && g++ -std=c++17 -O2 -ffp-contract=off -fPIC -shared -Iassets/include accounting_native.cpp -o libaiedge_accounting.so
+RUN python package_assets.py && python check_accounting_core.py && python check_native_preparation.py && g++ -std=c++17 -O2 -ffp-contract=off -fPIC -shared -Iassets/include native.cpp -o libaiedge_native.so && g++ -std=c++17 -O2 -ffp-contract=off -fPIC -shared -Iassets/include accounting_native.cpp -o libaiedge_accounting.so
 
 FROM python:3.14.8-slim-trixie@sha256:89fb7d3da20043c370643435258bdd7ab755d326d359001d02988ed15ae5219e
 ARG BUILD_VERSION
