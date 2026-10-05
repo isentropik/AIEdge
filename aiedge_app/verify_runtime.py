@@ -5,6 +5,10 @@ from pathlib import Path
 from package_assets import verify
 from reader import Reader,PROFILE,network_input,decoder_scores
 
+def require_preparation_exports(library):
+    if not hasattr(library,'aiedge_prepare_profile_reuse'):raise ValueError('changed_dial_runtime_missing')
+    if not hasattr(library,'aiedge_prepare_profile_masked'):raise ValueError('masked_preparation_runtime_missing')
+
 def main():
     # Import opt-in modules inside the installed image, where a missing COPY must fail.
     import event_selection_config,event_recognition,event_observation_read,observation_support,wheel_capture_policy
@@ -17,7 +21,7 @@ def main():
     reader=Reader(a.library,assets/'models',PROFILE)
     if reader.sampling_sparse or reader.pipeline_id!=reader.pipeline_ids[False] or reader.pipeline_ids[False]==reader.pipeline_ids[True]:
         raise ValueError('full_sampling_identity_contract')
-    if not hasattr(reader.native.lib,'aiedge_prepare_profile_reuse'):raise ValueError('changed_dial_runtime_missing')
+    require_preparation_exports(reader.native.lib)
     assert len(reader.networks)==2
     for role,(net,inp,out) in reader.networks.items():
         net.set_tensor(inp["index"],network_input(bytes(384*40),role));net.invoke()

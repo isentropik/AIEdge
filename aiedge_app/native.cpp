@@ -127,9 +127,10 @@ static bool unchangedSource(const uint8_t* rgb,const std::vector<uint8_t>& previ
  return true;
 }
 static int prepareRuntime(void* handle,const uint8_t* rgb,size_t bytes,int sparse,
- int8_t* output,size_t capacity,int* states,double* visibility,size_t count,int* reused){
+ int8_t* output,size_t capacity,int* states,double* visibility,size_t count,int* reused,const uint8_t* observed=nullptr){
  auto* p=static_cast<RuntimeProfile*>(handle);
  if(!p||!rgb||bytes!=640*480*3||count!=p->dials.size()||capacity!=count*384*40||!output||!states||!visibility||(sparse!=0&&sparse!=1))return -1;
+ if(observed){bool any=false;for(size_t i=0;i<count;++i){if(observed[i]>1)return -1;any|=observed[i]!=0;}if(!any)return -1;}
  std::memset(output,0,capacity);for(size_t i=0;i<count;++i){states[i]=0;visibility[i]=-1;if(reused)reused[i]=0;}
  try{
   std::unique_ptr<polar::PipelineScratch> scratch(new polar::PipelineScratch);double inverse[6];
@@ -138,6 +139,7 @@ static int prepareRuntime(void* handle,const uint8_t* rgb,size_t bytes,int spars
    std::memcmp(inverse,p->previousInverse,sizeof(inverse))==0;
   for(size_t i=0;i<count;++i){
    auto& cached=p->cache[i];
+   if(observed&&!observed[i]){cached.valid=false;states[i]=-1;continue;}
    if(sameTransform&&cached.valid&&unchangedSource(rgb,p->previous,inverse,*p->dials[i].get())){
     states[i]=static_cast<int>(polar::PreparationStatus::Ok);visibility[i]=cached.visibility;
     std::memcpy(output+i*384*40,cached.features.data(),384*40);reused[i]=1;continue;
@@ -176,4 +178,12 @@ API int aiedge_reading(const double* revolutions,const double* positions,
  const auto status=meter::reconstructRevolutions(dials,count,candidate);
  if(status==meter::RevolutionResult::Ready)*output=candidate;
  return static_cast<int>(status);
+}
+
+// Additive masked ABI: old ABI2 entrypoints retain exact semantics.
+API int aiedge_prepare_profile_masked(void* handle,const uint8_t* rgb,size_t bytes,int sparse,
+ int8_t* output,size_t capacity,int* states,double* visibility,size_t count,int* reused,
+ const uint8_t* observed,size_t maskCount){
+ if(!observed||!reused||maskCount!=count)return -1;
+ return prepareRuntime(handle,rgb,bytes,sparse,output,capacity,states,visibility,count,reused,observed);
 }

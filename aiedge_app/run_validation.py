@@ -45,7 +45,8 @@ def inventory_errors(identifiers,allow_archive,packaged):
                            ('test_archive.ArchiveLinuxTests.',2),('test_archive_http.ArchiveHttpTests.',3),('test_capture_trial.',26),
                            ('test_trial_results.ResultsTests.',12),
                            ('test_masked_wrapper.MaskedWrapperTests.',5),('test_masked_consumption.MaskedConsumptionTests.',12),
-                           ('test_reader_observation_mask.ObservationMaskReaderTests.',11),('test_observation_attempt.AttemptTests.',3),
+                           ('test_reader_observation_mask.ObservationMaskReaderTests.',11),('test_reader_masked_prepare.Tests.',3),
+                           ('test_reader_reuse_disabled.Tests.',3),('test_runtime_preparation_exports.PreparationExportTests.',3),('test_observation_attempt.AttemptTests.',3),
                            ('test_wheel_capture_policy.PolicyTests.',7),('test_event_recognition.EventRecognitionTests.',18),
                            ('test_event_consumption.EventConsumptionTests.',8),('test_event_service.EventServiceTests.',12),
                            ('test_event_observation_read.HistoricalEventReadTests.',10)):
