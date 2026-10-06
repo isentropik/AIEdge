@@ -21,6 +21,7 @@ COPY camera_auto.py auto_capture.py auto_preview.py ./
 COPY capture_trial.py capture-trial.js ./
 COPY trial_results.py ./
 COPY observation_support.py wheel_capture_policy.py event_selection.py event_recognition.py event_selection_config.py event_observation_read.py ./
+COPY event_mode.py ha_event_selection.py event-selection-ui.js ./
 COPY image_edit.py image-editor.js ./
 COPY meter_profile.py meter-profile.js ./
 COPY notices.js ./
