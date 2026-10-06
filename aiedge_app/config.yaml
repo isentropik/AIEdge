@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev28
+version: 0.2.0-dev29
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -30,6 +30,8 @@ options:
   mqtt_enabled: false
   capture_enabled: false
   interval_seconds: 30
+  recognition_mode: FULL
+  event_selection_policy: {}
 schema:
   camera_url: str
   camera_token: password
@@ -38,3 +40,10 @@ schema:
   mqtt_enabled: bool
   capture_enabled: bool
   interval_seconds: int(10,3600)
+  recognition_mode: list(FULL|EVENT_LAST_TWO)
+  event_selection_policy:
+    normal_interval_seconds: float?
+    urgent_interval_seconds: float?
+    full_refresh_seconds: float?
+    phase_probe_budget: float?
+    uncertainty_probe_width: float?

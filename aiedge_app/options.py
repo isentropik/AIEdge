@@ -5,7 +5,8 @@ from capture import Camera
 
 MAX_OPTIONS = 65536
 DEFAULTS = dict(camera_url='', camera_token='', camera_username='', camera_password='',
-                capture_enabled=False, mqtt_enabled=False, interval_seconds=30)
+                capture_enabled=False, mqtt_enabled=False, interval_seconds=30,
+                recognition_mode='FULL',event_selection_policy={})
 
 class InvalidOptions(ValueError):
     def __init__(self, code, field=None):
@@ -25,6 +26,9 @@ def validate(document):
     interval = options['interval_seconds']
     if type(interval) is not int or not 10 <= interval <= 3600:
         raise InvalidOptions('options_invalid_field', 'interval_seconds')
+    from event_mode import validate_options
+    try:validate_options(options['recognition_mode'],options['event_selection_policy'],interval)
+    except (ValueError,TypeError):raise InvalidOptions('options_event_policy_invalid') from None
     for field in ('camera_url', 'camera_token', 'camera_username', 'camera_password'):
         value = options[field]
         if not isinstance(value, str) or len(value) > 4096:
@@ -54,6 +58,8 @@ def load(directory):
             value = {}
             for key, item in pairs:
                 if key in value:
+                    from event_mode import FIELDS
+                    if key in FIELDS|{'recognition_mode','event_selection_policy'}:raise InvalidOptions('options_event_policy_invalid')
                     raise InvalidOptions('options_duplicate_field')
                 value[key] = item
             return value

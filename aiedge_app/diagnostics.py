@@ -60,4 +60,6 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
             report['archive']={key:state[key] for key in ('state','copied_events','pending_events','error','in_progress')}
         except (OSError,sqlite3.Error):pass
     report['performance']=store.performance.snapshot() if store and hasattr(store,'performance') else {'state':'unavailable'}
+    from ha_event_selection import status as selection_status
+    report['event_selection']=selection_status(recognition)
     return report

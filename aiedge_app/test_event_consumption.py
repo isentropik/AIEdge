@@ -19,6 +19,8 @@ class SyntheticReader:
     pipeline_id=PIPELINE
     def __init__(self,periods):
         self.periods=periods;self.dials=[{'name':str(i)} for i in range(len(periods))];self.calls=[];self.native=Native(READING)
+        # Explicit fake masked-runtime capability; never calls native preparation.
+        self.runtime=type('FakeRuntime',(),{'handle':1,'masked_function':lambda *a,**k:None,'prepare_masked':lambda *a,**k:None})();self.reuse_unchanged=True
     def read_jpeg(self,blob,observed=None):
         quantity=float(blob[2:-2].decode());mask=[True]*len(self.periods) if observed is None else list(observed)
         self.calls.append((hashlib.sha256(blob).hexdigest(),mask))

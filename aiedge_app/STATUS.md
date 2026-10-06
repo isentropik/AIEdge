@@ -1,28 +1,39 @@
-# Development status - October 4, 2026
+# Development status - October 5, 2026
 
-Dev28 is an unpublished local candidate based on the released dev27. Dev27 added masked numerical
-accounting and an explicit development controller that records each capture's
-full or last-two recognition request before inference. Identical images retain
-separate capture timing, decisions and accounting events. Historical trial
-results recover those bindings without acquiring pictures or invoking models.
+Dev29 is a local candidate based on released dev28. It exposes explicit
+Supervisor FULL-default/EVENT_LAST_TWO recognition options. Partial requests
+follow the validated physical coarse-to-fine dial mapping and require a live
+runtime profile, masked native export, exact-region reuse and compatible
+accounting. Unsupported optimization uses full observations in the event ledger;
+invalid selected configuration or durable evidence stays blocked.
 
-Ordinary service startup still uses full recognition. The development opt-in
-does not enable capture, MQTT or archiving and does not change automatic capture
-cadence. Dev28 retains full alignment and quality checks while allowing runtime
-profiles to omit crop and feature work for unrequested dials. Omitted results
-are unavailable and their caches are invalidated. Disabled reuse and built-in
-fixed profiles retain full preparation. Model weights, calibration,
-dependencies, option defaults and firmware are unchanged.
+Capture keeps its existing fixed schedule. Recognition mode does not enable
+capture, MQTT, archiving or automatic updates. Alignment and quality checks
+remain mandatory. Models, native code, dependencies, default accounting inputs
+and output defaults are unchanged. Exact future compiled library identities
+must still be verified before relying on default pipeline/segment continuity.
 
-Local synthetic/native checks establish persistence, replay, binding and selected
-network-call behavior. One protected 27-frame Windows diagnostic measured 40.6%
-less native preparation time than the preceding full path, with identical selected
-features and quality states. This excludes decoding, models and acquisition and
-does not establish repeatable or installed-system savings. Recognition accuracy,
-safe physical capture cadence and device recovery remain unverified. Linux container and
-exact-head CI evidence are required before proposing a live installation.
+Selected-context edits require FULL and an app restart first. Mode/policy/context
+changes retain prior data and start linked relative segments at the persisted
+latest-event floor, with unresolved interpretation-change gaps. Completed event
+bindings survive restart without repeated inference. Identical image data can
+still represent separate acquisition events; numeric MQTT deduplication retains
+freshness/reconnect and new-segment exceptions.
 
-Phase 2 remains open: independent recognition accuracy and physical cumulative
-accounting still need validation. Camera firmware/recovery, sustained cadence,
-storage interruption, UI/setup and clean installation remain later phases.
-No production reflash is authorized by this candidate.
+The isolated implementation passed 75 focused synthetic/unit/host-native checks
+and six fake-DOM UI checks. An independent accounting lane passed nine new and
+three existing targeted synthetic checks with no skips. They cover generic dial
+counts, physical index order, direction normalization, carry/rollover, retained
+uncertainty for whole-turn aliases and high-rate/long-gap cases, and durable
+FULL-to-event-to-FULL transitions. The decision gap for rejected/inconsistent
+feedback was reproduced and fixed conservatively for the next event.
+
+These tests do not establish optical accuracy, model generality, measured capture
+timing, a physical maximum rate or whole-turn continuity. Independent frozen
+regression, rendered UI and exact-head Linux/package validation remain release
+gates. Dev28's earlier merged-head Linux CI does not validate this new source.
+
+Phase 2 remains open for independent recognition accuracy and physical cumulative
+accounting. Camera firmware/recovery, sustained cadence, interrupted storage,
+UI/setup and clean installation remain later phases. No camera reflash, live
+update, opt-in or output enablement is authorized by this local candidate.

@@ -169,6 +169,7 @@ function gallery(rows){
   }
 }
 function render(s,rows){
+  window.renderEventSelection?.(s.event_selection,s.configuration);
   renderConsumption(s.consumption);
   renderRecognition(s.recognition);window.latestReading=s.reading;window.latestRecognition=s.recognition;
   window.renderPhysicalReading?.(s.reading,s.recognition);
