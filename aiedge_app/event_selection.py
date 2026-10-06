@@ -15,7 +15,7 @@ def decide(current,previous,previous_request,feedback,last_full,restart,document
         if full_timing['state']=='continuous':age=full_timing['elapsed_seconds']
     state=feedback.get('state') if feedback else None
     flags={'first':previous is None or last_full is None,'restart':restart,'gap':previous is not None and timing['state']!='continuous',
-           'quality_uncertain':state=='unavailable','phase_ambiguous':state in ('ambiguous','bounded','unavailable','pending','recovering'),
+           'quality_uncertain':state in ('unavailable','rejected','inconsistent'),'phase_ambiguous':state in ('ambiguous','bounded','unavailable','pending','recovering','rejected','inconsistent'),
            'backpressure':deadline_missed,'full_age_seconds':age,'observed_phase_speed':observed_phase_speed,
            'phase_interval_width':2*document['dials'][-1]['position_error']}
     recommendation=recommend(flags,capabilities,configuration)

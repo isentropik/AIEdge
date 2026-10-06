@@ -1,5 +1,54 @@
 # AIEdge Home Assistant app
 
+## Recognition mode (dev29)
+
+The Home Assistant app Configuration page owns recognition mode and its policy.
+`FULL` is the default. Choosing `EVENT_LAST_TWO` opts into event-bound recognition
+of the final two dials in the saved number format's coarse-to-fine physical order.
+It does not choose dials by their displayed names or numeric reader indices.
+The saved format remains the authority for units, periods, mapping, uncertainty
+and any independently justified maximum rate. One-dial configurations use full
+fallback; a two-dial configuration observes both dials.
+
+Opt-in requires these explicit positive finite policy values:
+
+- `normal_interval_seconds`: must equal the configured `interval_seconds`.
+- `urgent_interval_seconds`: cannot exceed the normal interval.
+- `full_refresh_seconds`: when to request a fresh full observation.
+- `phase_probe_budget`: the permitted fine-wheel phase change for a probe.
+- `uncertainty_probe_width`: uncertainty threshold for a full observation.
+
+These values are policy inputs, not measured timing or physical-rate guarantees.
+Capture keeps its configured fixed schedule. Advisory cadence recommendations
+do not reschedule the camera. The app does not assume a household flow rate or
+turn a slow-looking wrapped wheel into proof that no turns were missed.
+Configure and validate an appropriate sampling schedule for the meter and its
+supported maximum rate before relying on accumulated consumption.
+
+Apply mode/policy changes with an app restart. Enabling or disabling event mode
+starts a new relative tracking segment at the latest retained event; earlier
+records remain, and the interpretation-change gap retains unknown consumption.
+Restarting an unchanged context reuses completed event bindings.
+
+While event mode is active, calibration, reference, image-edit, meter-profile and
+number-format edits are blocked before recognition or storage work. Choose FULL
+and restart first, perform the usual calibration/format setup, then review the
+event policy and opt in again. Do not treat a zero relative anchor as zero usage
+across the mode-change gap.
+
+Missing masked native support, a closed/missing runtime profile or disabled
+exact-region reuse causes full observations within the event ledger. Unavailable
+accounting or corrupt durable evidence blocks selected processing; it is not
+permission to substitute an unvalidated reading. Alignment and quality checks
+remain required. Unobserved dials are not fresh measurements.
+
+Capture, MQTT, archive and automatic-update settings are independent and remain
+off by default. Choosing recognition mode does not enable them. Preserve a cold
+app backup containing app/data/options before changing an installation: the
+ledger resides in `/data`, which a `/config` backup alone does not cover.
+Generic nested dial configuration does not establish neural-model accuracy on
+every meter or certify physical consumption, capture cadence or camera recovery.
+
 AIEdge stores camera images, dial estimates and calibration inside the app's
 persistent `/data` directory. No separate storage server or credentials are needed.
 Optional archive copies use an SMB or NFS share mounted by Home Assistant.

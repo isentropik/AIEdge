@@ -4,6 +4,48 @@ from datetime import datetime,timezone
 
 PACKAGES=('ai-edge-litert','numpy','Pillow','paho-mqtt')
 
+def selection_diagnostics(recognition):
+    """Bounded typed projection; operational error text never leaves this report."""
+    from ha_event_selection import status
+    from reading_format import finite_number
+    import re
+    result={'current_failure':bool(getattr(recognition,'last_error',None))}
+    try:raw=status(recognition)
+    except (OSError,sqlite3.Error,ValueError,TypeError,KeyError,AttributeError):
+        return dict(result,state='blocked',current_failure=True)
+    if not isinstance(raw,dict):return dict(result,state='blocked',current_failure=True)
+    result['current_failure']=result['current_failure'] or bool(raw.get('failure'))
+    enums={'requested_mode':{'FULL','EVENT_LAST_TWO'},'effective_mode':{'FULL','EVENT_LAST_TWO','EVENT_FULL_FALLBACK','BLOCKED'},'state':{'ready','blocked'},'cadence_execution':{'fixed'},'edit_policy':{'choose_FULL_and_restart_before_editing'}}
+    for key,allowed in enums.items():
+        if isinstance(raw.get(key),str) and raw[key] in allowed:result[key]=raw[key]
+    for key in ('partial_supported','timing_capability_measured','alignment_required'):
+        if type(raw.get(key)) is bool:result[key]=raw[key]
+    value=raw.get('fixed_interval_seconds')
+    if finite_number(value) and 10<=value<=3600:result['fixed_interval_seconds']=value
+    value=raw.get('context_id')
+    if isinstance(value,str) and re.fullmatch('[a-f0-9]{64}',value):result['context_id']=value
+    value=raw.get('first_event')
+    if type(value) is int and 1<=value<=9223372036854775807:result['first_event']=value
+    indices=raw.get('selected_indices')
+    if isinstance(indices,list) and len(indices)<=2 and all(type(i) is int and 0<=i<32 for i in indices) and len(set(indices))==len(indices):result['selected_indices']=list(indices)
+    from event_mode import validate_policy
+    try:result['policy']=validate_policy(raw['policy'])
+    except (ValueError,TypeError,KeyError):pass
+    decision=raw.get('last_decision')
+    if isinstance(decision,dict):
+        projected={}
+        if decision.get('mode') in ('FULL','LAST_TWO'):projected['mode']=decision['mode']
+        observed=decision.get('observed')
+        if isinstance(observed,list) and 1<=len(observed)<=16 and all(type(v) is bool for v in observed):projected['observed']=list(observed)
+        allowed={'first','gap','restart','context_changed','quality_uncertain','pose_uncertain','phase_ambiguous','backpressure','partial_recognition_unsupported','periodic_full','observed_motion_probe','phase_uncertainty','requested_cadence_not_supported','missed_prior_recommendation_deadline'}
+        reasons=decision.get('reasons')
+        if isinstance(reasons,list) and len(reasons)<=32:projected['reasons']=[v for v in reasons if isinstance(v,str) and v in allowed]
+        interval=decision.get('recommended_interval_seconds')
+        if finite_number(interval) and interval>0:projected['recommended_interval_seconds']=interval
+        projected.update(execution='recommendation_only',continuity_certified=False)
+        result['last_decision']=projected
+    return result
+
 def build(store,collector=None,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,archive=None):
     report={'schema_version':1,'generated_at':datetime.now(timezone.utc).isoformat(),
             'runtime':{'python':platform.python_version(),'system':platform.system(),'architecture':platform.machine()},
@@ -60,4 +102,5 @@ def build(store,collector=None,recognition=None,setup=None,reading_format=None,m
             report['archive']={key:state[key] for key in ('state','copied_events','pending_events','error','in_progress')}
         except (OSError,sqlite3.Error):pass
     report['performance']=store.performance.snapshot() if store and hasattr(store,'performance') else {'state':'unavailable'}
+    report['event_selection']=selection_diagnostics(recognition)
     return report

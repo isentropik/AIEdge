@@ -43,6 +43,8 @@ class Setup:
         if len(blob)>MAX_IMAGE or hashlib.sha256(blob).hexdigest()!=digest:raise ValueError('reference_corrupt')
         return blob
     def add_reference(self,blob):
+        from event_mode import edit_allowed
+        edit_allowed(self.recognition)
         image_rgb(blob);digest=hashlib.sha256(blob).hexdigest();path=self.references/(digest+'.image')
         with self.lock:
             if path.exists():self.reference(digest)
@@ -67,6 +69,8 @@ class Setup:
             # Return a copy: callers cannot modify the active profile in place.
             return {'revision':revision,'calibration':json.loads(json.dumps(document)),'image_editor':self.edits.status(),'meter':self.meter.status()}
     def save_image_edit(self,reference_id,value,expected_revision):
+        from event_mode import edit_allowed
+        edit_allowed(self.recognition)
         with self.lock:
             calibration=self.active[0] if self.active else self.draft
             geometry=None
@@ -75,6 +79,8 @@ class Setup:
                           'dials':[dict(crop=d['crop'],**d.get('landmarks',{})) for d in calibration['dials']]}
             return self.edits.save(reference_id,value,expected_revision,geometry)
     def save(self,reference_id,design,expected_revision):
+        from event_mode import edit_allowed
+        edit_allowed(self.recognition)
         reference=self.reference(reference_id)
         with self.edits.lock:
             edit_revision=self.edits.saved.revision

@@ -31,7 +31,7 @@ class EventRecognition(Recognition):
         check(len(self.document['dials'])==len(reader.dials) and sorted(d['index'] for d in self.document['dials'])==list(range(len(reader.dials))),'event_dial_mapping')
         recommend({'first':True},capabilities,configuration)
         self.configuration=decode(encoded(configuration));self.capabilities=decode(encoded(capabilities))
-        deps=['event_recognition.py','event_selection.py','event_observation_read.py','wheel_capture_policy.py','reader.py','recognition.py','observation_support.py','consumption.py','accounting_native.py','capture_clock.py','reading_format.py']
+        deps=['event_recognition.py','event_selection.py','event_mode.py','ha_event_selection.py','event_selection_config.py','event_observation_read.py','wheel_capture_policy.py','reader.py','recognition.py','observation_support.py','consumption.py','accounting_native.py','capture_clock.py','reading_format.py']
         self.observation_context=digest({'version':1,'format_id':self.format_id,'pipeline':reader.pipeline_id,'document':self.document,'configuration':self.configuration,'capabilities':self.capabilities,
                                          'sources':{n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest() for n in deps}})
         with store.connect() as db:

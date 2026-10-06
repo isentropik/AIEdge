@@ -62,6 +62,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if not self.allowed() or not secrets.compare_digest(self.headers.get('X-AIEdge-Setup',''),token):self.reject_post();return
             if setup is None:self.reply({'error':'Calibration runtime is not configured.'},503);return
             route=urllib.parse.urlsplit(self.path).path
+            if route in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/image-edit','/api/reading-format'):
+                from event_mode import edit_allowed
+                try:edit_allowed(recognition)
+                except ValueError as exc:self.reply({'error':str(exc),'code':'event_selection_restart_required'},409);return
             if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/capture-trial'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
@@ -182,6 +186,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state['setup_recovery']=setup.status().get('recovery') if setup else None
                 state['format_recovery']=reading_format.status().get('recovery') if reading_format else None
                 state['recognition_error']=recognition.last_error if recognition else None
+                from ha_event_selection import status as selection_status
+                state['event_selection']=selection_status(recognition)
                 state['mqtt']=mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}
                 state['consumption']=consumption.status() if consumption else {'state':'unavailable' if consumption_error else 'not_configured','reason':consumption_error,'value':None,'accuracy_verified':False,'training_allowed':False}
                 from reading_format import reconcile_reading
@@ -207,7 +213,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
+            elif route in ('/event-selection-ui.js','/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -274,14 +280,22 @@ def run_service(stop_signals):
         except (OSError,sqlite3.Error):
             recognition=None;setup=None;reading_format=None;enabled=False
             configuration={'state':'invalid','code':'setup_storage_unavailable'}
-    selection_error=False
-    if args.event_selection_config:
+    selection_error=configuration.get('code')=='options_event_policy_invalid'
+    if selection_error and recognition:
+        recognition.ha_selection={'requested_mode':'EVENT_LAST_TWO','effective_mode':'BLOCKED','partial_supported':False,'failure':'options_event_policy_invalid','cadence_execution':'fixed','alignment_required':True}
+    if args.event_selection_config or options.get('recognition_mode')=='EVENT_LAST_TWO':
         try:
-            from event_selection_config import configure
-            selected=configure(args.event_selection_config,store,recognition,reading_format,args.accounting_library)
+            if args.event_selection_config:
+                if options.get('recognition_mode')=='EVENT_LAST_TWO':raise ValueError('event_selection_authority_conflict')
+                from event_selection_config import configure
+                selected=configure(args.event_selection_config,store,recognition,reading_format,args.accounting_library)
+            else:
+                from ha_event_selection import configure
+                selected=configure(options,store,recognition,reading_format,args.accounting_library)
             recognition=selected;setup.recognition=selected;reading_format.recognition=selected
         except (OSError,sqlite3.Error,ValueError,TypeError,UnicodeError,RecursionError):
             configuration={'state':'invalid','code':'event_selection_configuration_invalid'};enabled=False;selection_error=True
+            if recognition:recognition.ha_selection={'requested_mode':'EVENT_LAST_TWO','effective_mode':'BLOCKED','partial_supported':False,'failure':'event_selection_configuration_invalid','cadence_execution':'fixed','alignment_required':True}
     consumption=None;consumption_error=None
     if args.accounting_library and recognition and reading_format and not selection_error:
         try:
@@ -289,7 +303,7 @@ def run_service(stop_signals):
             consumption=Consumption(store,recognition,reading_format,args.accounting_library)
         except (OSError,sqlite3.Error,ValueError):
             consumption_error='consumption_runtime_unavailable'
-            if args.event_selection_config:
+            if args.event_selection_config or options.get('recognition_mode')=='EVENT_LAST_TWO':
                 configuration={'state':'invalid','code':'event_selection_accounting_unavailable'};enabled=False;selection_error=True
     mqtt_enabled=options.get('mqtt_enabled',False) and not storage_error and configuration.get('state')=='ready'
     if mqtt_enabled and (recognition is None or reading_format is None):

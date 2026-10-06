@@ -1,5 +1,19 @@
 # Changes
 
+## 0.2.0-dev29 (local candidate)
+
+- Add explicit Supervisor FULL-default/EVENT_LAST_TWO recognition options with
+  strict shared policy validation and authoritative physical dial mapping.
+- Gate partial work on actual masked native support, runtime calibration and
+  reuse; keep fixed capture cadence and mandatory alignment/quality checks.
+- Force full next-event observations for rejected/inconsistent feedback. Block
+  malformed identifiable policy processing without rewriting durable settings.
+- Require FULL/restart before selected-context setup/format edits; preserve
+  event history, latest-event floors and linked unresolved tracking gaps.
+- Show compact effective mode, fallback, advisory cadence and editing guidance,
+  with exact context/mask/reasons retained in diagnostics.
+- Preserve models, native code, default accounting inputs and output defaults.
+
 ## 0.2.0-dev28 (local candidate; not published or deployed)
 
 - Prepare requested runtime-profile dials through an additive native ABI while

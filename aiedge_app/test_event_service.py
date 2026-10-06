@@ -82,14 +82,17 @@ class EventServiceTests(fixture.EventConsumptionTests):
         state=self.recognize_consume(100.0);frame=self.frame(state['event_id']);frame['monotonic_us']+=1;trial,identity,value=self.trial([frame]);before=self.snapshots()
         with patch.object(self.recognition,'stored',side_effect=AssertionError('legacy fallback forbidden')):result=build(trial,self.recognition,identity)
         self.assertEqual(result['state'],'unavailable');self.assertEqual(result['frames'][0]['result']['error'],'trial_frame_missing');self.assertEqual(self.snapshots(),before)
-    def startup(self,optin=None,requested_outputs=False):
+    def startup(self,optin=None,requested_outputs=False,options_override=None,configuration_override=None):
         from service import run_service
         args=['service','--data',self.temp.name,'--native-library',READING,'--models','unused','--calibration-profile','synthetic','--accounting-library',LIBRARY]
         if optin is not None:args+=['--event-selection-config',str(optin)]
         options={'interval_seconds':30,'capture_enabled':requested_outputs,'mqtt_enabled':requested_outputs,'camera_url':'http://127.0.0.1' if requested_outputs else ''}
+        options.update(options_override or {})
         setup=SimpleNamespace(meter=None,recognition=None,status=lambda:{'calibration':None})
         with ExitStack() as stack:
-            for name,value in [('sys.argv',args),('service.Store',lambda _:self.store),('service.load_options',lambda _:(options,{'state':'ready'})),
+            # Startup fixture must never import or construct a real interpreter.
+            stack.enter_context(patch.dict('sys.modules',{'reader':SimpleNamespace(Reader=lambda *a,**k:(_ for _ in ()).throw(AssertionError('real_reader_forbidden')))}))
+            for name,value in [('sys.argv',args),('service.Store',lambda _:self.store),('service.load_options',lambda _:(options,configuration_override or {'state':'ready'})),
                                ('service.create_reader',lambda *args:self.reader),('setup_store.Setup',lambda root,factory,recognition:setup),
                                ('reading_format.FormatStore',lambda *args:self.formats)]:stack.enter_context(patch(name,value))
             server=stack.enter_context(patch('service.AppHTTPServer'));handler=stack.enter_context(patch('service.handler'))
@@ -102,6 +105,24 @@ class EventServiceTests(fixture.EventConsumptionTests):
         args,workers,setup=self.startup()
         self.assertIsInstance(workers[1],Recognition);self.assertFalse(hasattr(workers[1],'observation_context'))
         self.assertEqual(args[7],{'state':'ready'});self.assertIsNotNone(workers[3]);workers[3]._drop()
+    def test_supervisor_optin_wires_event_worker_without_enabling_outputs(self):
+        from test_ha_event_selection import POLICY
+        args,workers,setup=self.startup(options_override={'recognition_mode':'EVENT_LAST_TWO','event_selection_policy':POLICY})
+        self.assertTrue(hasattr(workers[1],'observation_context'));self.assertEqual(workers[1].ha_selection['fixed_interval_seconds'],30)
+        self.assertIs(setup.recognition,workers[1]);self.assertIs(self.formats.recognition,workers[1]);self.assertIsNotNone(workers[3]);workers[3]._drop()
+    def test_conflicting_cli_supervisor_authority_blocks_selected_workers(self):
+        from test_ha_event_selection import POLICY
+        path=Path(self.temp.name)/'selection.json';path.write_text(json.dumps(self.optin()))
+        args,workers,setup=self.startup(path,options_override={'recognition_mode':'EVENT_LAST_TWO','event_selection_policy':POLICY})
+        self.assertEqual(args[7]['state'],'invalid');self.assertIsNone(workers[1]);self.assertIsNone(workers[3])
+    def test_invalid_event_options_defaults_do_not_start_legacy_or_saved_archive(self):
+        from archive import Archive
+        archive=Archive(self.store)
+        with archive.connect() as db:db.execute('UPDATE settings SET enabled=1,directory=?',(str(Path(self.temp.name)/'fake-nas'),))
+        args,workers,setup=self.startup(configuration_override={'state':'invalid','code':'options_event_policy_invalid'})
+        self.assertEqual(args[7]['code'],'options_event_policy_invalid')
+        for index in (0,1,2,3,5,6):self.assertIsNone(workers[index])
+        with archive.connect() as db:self.assertTrue(archive.config(db)['enabled'])
     def test_runtime_explicit_optin_wires_setup_format_and_consumer(self):
         path=Path(self.temp.name)/'selection.json';path.write_text(json.dumps(self.optin()))
         args,workers,setup=self.startup(path)
