@@ -24,3 +24,10 @@ class SelectionDiagnosticsTests(unittest.TestCase):
         with patch('ha_event_selection.status',return_value={'policy':policy}):self.assertEqual(build(None)['event_selection']['policy'],policy)
         with patch('ha_event_selection.status',side_effect=ValueError('PRIVATE-PATH')):
             s=build(None)['event_selection'];self.assertEqual(s,{'current_failure':True,'state':'blocked'})
+
+    def test_new_observation_only_and_full_fallback_reasons_remain_redacted(self):
+        reasons=['fine_observation_uncertain','full_refresh_uncertain','observation_only_unbounded_accounting']
+        raw={'last_decision':{'mode':'LAST_TWO','reasons':reasons+['PRIVATE-CERTIFICATE'],'private':'PRIVATE-DETAIL'}}
+        with patch('ha_event_selection.status',return_value=raw):value=build(None)['event_selection']['last_decision']
+        self.assertEqual(value['reasons'],reasons);self.assertFalse(value['continuity_certified'])
+        self.assertNotIn('PRIVATE-',json.dumps(value))

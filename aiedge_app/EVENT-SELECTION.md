@@ -33,9 +33,18 @@ whole turns were not missed. Optional capability acquisition/processing costs
 raise the supported interval floor. Timing recommendations are recorded but
 never reschedule the collector in this candidate.
 
-The first new event, restart, changed acquisition context, missed deadline, stale
-full anchor or uncertain accounting requests a full read. Other eligible events
-request the last two physical dials, mapped to reader indices. Full alignment
+The first new event, restart, changed acquisition context, missed deadline,
+invalid or overdue FULL refresh, bad observation or uncertain fine-wheel interval
+requests a FULL read. Bounded cumulative outcomes still request FULL in this
+conservative implementation. An ambiguous outcome with an explicitly unbounded
+upper limit may request the last two physical dials only when the prior observation
+was accepted/current, both fine wheels are readable away from wrap uncertainty,
+and the original genuine FULL anchor and latest accepted FULL refresh validate.
+No declared maximum flow can be replaced by an observed motion heuristic.
+This is eligibility for another observation, not certification of whole-turn
+continuity. Omitting coarse wheels can weaken cumulative constraints compared
+with reading every wheel every time. Ambiguity and null scalars remain visible.
+The two selected physical dials are mapped to their reader indices. Full alignment
 and preprocessing run in either mode. Unknown upper positions stay absent;
 partial observations withhold the absolute register. Relative accounting retains
 its uncertainty and unresolved gaps rather than borrowing stale upper readings.
@@ -61,3 +70,18 @@ old cumulative history remains, and continuity across that gap is not inferred.
 An app rollback restores software; restoring its complete data backup separately
 restores the ledger snapshot and loses any newer events. A source-only rollback
 does not restore databases or physical camera state.
+
+
+Schema2 active requests carry a hash-bound prior-observation certificate that is
+rederived from acquisition, completion, cache, acceptance witness and accounting
+records. Historical schema1 and schema2 results remain readable without executing
+the current policy. Public per-image `decision` and `decision_evidence` sidecars
+expose validated saved masks, allowlisted reasons, timing and evidence presence.
+The sidecars do not expose certificates or private feedback. Invalid public
+summary fields suppress only the summary when the original result is valid.
+
+The accepted-FULL index and accounting result commit in one SQLite transaction.
+If persistence fails, the non-rollbackable native tracker and uncommitted FULL
+pointers are discarded. Processing can resume only by reconstructing from durable
+observations; this does not claim restoration of physical camera state. Index
+lookup uses a bounded number of reads independent of retained history length.

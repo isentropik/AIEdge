@@ -34,18 +34,34 @@ class EventRecognitionTests(unittest.TestCase):
     def complete(self,tick,repeat=False,**kw):
         event,source=self.capture(tick,repeat,**kw);self.assertTrue(self.worker.once());return event,source,self.worker.event_result(event,source,PIPELINE)
     def feedback(self,event,source,state='estimated'):
-        obs=self.worker.event_result(event,source,PIPELINE)['event_observation'];segment='synthetic-segment'
+        result=self.worker.event_result(event,source,PIPELINE);obs=result['event_observation'];segment='synthetic-segment'
         with self.store.connect() as db:
             previous=db.execute('SELECT result FROM consumption_records WHERE segment_id=? ORDER BY event_id LIMIT 1',('synthetic-segment',)).fetchone() if db.execute("SELECT 1 FROM sqlite_master WHERE name='consumption_records'").fetchone() else None
         anchor=json.loads(previous[0]).get('anchor_captured_at') if previous else obs['captured_at']
         value={'anchor_captured_at':anchor,'event_id':event,'source_sha256':source,'state':state,'format_id':self.worker.format_id,'segment_id':segment,'observation_context':self.worker.observation_context,'event_observation':obs}
+        # Explicit manual fixture witness; this fake reader test does not prove
+        # native acceptance. Actual native producer tests are separate.
+        observed=result.get('observation_support',{}).get('observed',[True]*len(DOC['dials']))
+        accepted=state in ('anchored','estimated','within_noise','bounded','ambiguous') and result['state']=='estimated'
+        has_anchor=state=='anchored' or (previous is not None and json.loads(previous[0]).get('state')=='anchored')
+        value.update(observation_accepted=accepted,observation_current_through_us=obs['monotonic_us'] if accepted else None,
+                     observation_inference_sha256=digest(result) if accepted else None,
+                     observation_full_anchor_event_id=1 if accepted and has_anchor else None,observation_latest_full_event_id=None,
+                     observation_support={'schema_version':1,'source_sha256':source,'pipeline_id':PIPELINE,
+                                          'reader_observed':observed,'document_observed':observed,'partial':not all(observed)})
+        if state=='anchored':value['value']=0
         with self.store.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS consumption_segments(segment_id TEXT PRIMARY KEY,format_id TEXT,engine_id TEXT,first_event INTEGER,gap_reason TEXT,document TEXT)')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_active(singleton INTEGER PRIMARY KEY,segment_id TEXT)')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_records(segment_id TEXT,event_id INTEGER,result TEXT,PRIMARY KEY(segment_id,event_id))')
+            db.execute('CREATE TABLE IF NOT EXISTS consumption_accepted_full_observations(segment_id TEXT,event_id INTEGER,result_sha256 TEXT,PRIMARY KEY(segment_id,event_id))')
+            latest=db.execute('SELECT MAX(event_id) FROM consumption_accepted_full_observations WHERE segment_id=?',(segment,)).fetchone()[0]
+            if accepted and all(observed):latest=event
+            if accepted and has_anchor:value['observation_latest_full_event_id']=latest
             db.execute('INSERT OR IGNORE INTO consumption_segments VALUES(?,?,?,?,?,?)',(segment,self.worker.format_id,'synthetic-engine',1,'first_capture',encoded(DOC)))
             db.execute('INSERT OR REPLACE INTO consumption_active VALUES(1,?)',(segment,))
             db.execute('INSERT INTO consumption_records VALUES(?,?,?)',(segment,event,encoded(value)))
+            if accepted and all(observed):db.execute('INSERT INTO consumption_accepted_full_observations VALUES(?,?,?)',(segment,event,digest(value)))
     def request(self,event):
         with self.store.connect() as db:return self.worker._request(db,event)
     def test_oldest_first_and_feedback_holds_next_request(self):

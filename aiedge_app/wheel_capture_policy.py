@@ -24,7 +24,7 @@ def recommend(event,capabilities,configuration):
     partial=capabilities.get('partial_recognition')
     if type(partial) is not bool:raise ValueError('invalid_partial_recognition_capability')
     reasons=[];mode='LAST_TWO';uncertain=False
-    for key in ('first','gap','restart','context_changed','quality_uncertain','pose_uncertain','phase_ambiguous','backpressure'):
+    for key in ('first','gap','restart','context_changed','quality_uncertain','pose_uncertain','phase_ambiguous','backpressure','fine_observation_uncertain','full_refresh_uncertain'):
         flag=event.get(key,False)
         if type(flag) is not bool:raise ValueError('invalid_'+key)
         if flag:reasons.append(key);mode='FULL';uncertain=True
@@ -44,9 +44,13 @@ def recommend(event,capabilities,configuration):
     if uncertain:requested=min(requested,configuration['urgent_interval_seconds'])
     if requested<floor:
         reasons.append('requested_cadence_not_supported');mode='FULL';uncertain=True
+    accounting_uncertain=event.get('accounting_uncertain',False)
+    observation_only=event.get('observation_only',False)
+    if type(accounting_uncertain) is not bool or type(observation_only) is not bool:raise ValueError('invalid_observation_eligibility_flags')
+    if observation_only and mode=='LAST_TWO':reasons.append('observation_only_unbounded_accounting')
     return {'requested_mode':mode,'requested_interval_seconds':requested,
             'supported_interval_seconds':max(floor,requested),'reasons':reasons,
-            'continuity_certified':False,'uncertainty_retained':uncertain,
+            'continuity_certified':False,'uncertainty_retained':uncertain or accounting_uncertain,
             'accounting_before_publication_required':True,'history_event_required':True,
             'physical_scalar':None,'alignment_bypass':False,
             'execution':'recommendation_only','rate_basis':'observed_phase_speed_is_not_a_maximum_rate'}

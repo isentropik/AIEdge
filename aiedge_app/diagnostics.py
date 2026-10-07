@@ -37,7 +37,7 @@ def selection_diagnostics(recognition):
         if decision.get('mode') in ('FULL','LAST_TWO'):projected['mode']=decision['mode']
         observed=decision.get('observed')
         if isinstance(observed,list) and 1<=len(observed)<=16 and all(type(v) is bool for v in observed):projected['observed']=list(observed)
-        allowed={'first','gap','restart','context_changed','quality_uncertain','pose_uncertain','phase_ambiguous','backpressure','partial_recognition_unsupported','periodic_full','observed_motion_probe','phase_uncertainty','requested_cadence_not_supported','missed_prior_recommendation_deadline'}
+        allowed={'first','gap','restart','context_changed','quality_uncertain','pose_uncertain','phase_ambiguous','backpressure','partial_recognition_unsupported','periodic_full','observed_motion_probe','phase_uncertainty','requested_cadence_not_supported','missed_prior_recommendation_deadline','fine_observation_uncertain','full_refresh_uncertain','observation_only_unbounded_accounting'}
         reasons=decision.get('reasons')
         if isinstance(reasons,list) and len(reasons)<=32:projected['reasons']=[v for v in reasons if isinstance(v,str) and v in allowed]
         interval=decision.get('recommended_interval_seconds')

@@ -62,7 +62,7 @@ class RuntimeCopyTests(unittest.TestCase):
         self.assertEqual(missing_browser_assets((ROOT/'Dockerfile').read_text()),[])
     def test_missing_event_helpers_rejected_by_transitive_import_gate(self):
         docker=(ROOT/'Dockerfile').read_text()
-        for name in ('event_mode.py','ha_event_selection.py'):
+        for name in ('event_mode.py','ha_event_selection.py','selector_observation.py'):
             with self.subTest(name=name):self.assertIn(name,missing_runtime_modules(docker.replace(name+' ','')))
     def test_missing_event_ui_and_existing_dashboard_are_rejected(self):
         docker=(ROOT/'Dockerfile').read_text()
