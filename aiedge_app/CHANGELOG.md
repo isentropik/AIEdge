@@ -1,5 +1,23 @@
 # Changes
 
+## 0.2.0-dev30 (local candidate; unpublished)
+
+- Let an accepted, current observation of the final two dials remain eligible
+  when cumulative usage has an unbounded upper limit. Keep usage ambiguous and
+  withhold its scalar; recent phase motion is never a maximum-flow guarantee.
+- Bind eligibility to acquisition, request, cache, accounting segment and
+  producer acceptance evidence; rederive active decisions from durable records.
+  Keep a genuine initial FULL anchor separately from the latest accepted FULL
+  refresh. Missing evidence, wrap uncertainty, gaps and overdue probes use FULL.
+- Save per-image masks, bounded decision reasons and timing evidence in trial
+  results. Preserve original results and schema1 history without rerunning old
+  policy. Do not expose private feedback or eligibility certificates.
+- Save accepted-FULL evidence atomically with accounting records. Discard native
+  tracker state after failed commits and reconstruct from durable observations.
+- Retain default FULL recognition, fixed capture cadence, mandatory alignment,
+  models, native algorithms and disabled output defaults. New source fingerprints
+  start linked accounting segments with unresolved null gaps in both modes.
+
 ## 0.2.0-dev29 (local candidate)
 
 - Add explicit Supervisor FULL-default/EVENT_LAST_TWO recognition options with
@@ -190,7 +208,7 @@
 
 - Remove position-error controls from Number format, including Advanced. Editing
   physical dial values preserves saved reader assumptions. New formats retain
-  the provisional Ã‚Â±0.1 default until model/calibration error is validated; this
+  the provisional Ãƒâ€šÃ‚Â±0.1 default until model/calibration error is validated; this
   is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames

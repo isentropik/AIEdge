@@ -9,6 +9,7 @@ from event_selection import encoded,digest,decide
 from wheel_capture_policy import recommend
 from capture import now
 from event_observation_read import read_event
+from selector_observation import build as build_observation
 
 MAX_REQUEST_BYTES=32768
 def check(ok,reason):
@@ -31,7 +32,7 @@ class EventRecognition(Recognition):
         check(len(self.document['dials'])==len(reader.dials) and sorted(d['index'] for d in self.document['dials'])==list(range(len(reader.dials))),'event_dial_mapping')
         recommend({'first':True},capabilities,configuration)
         self.configuration=decode(encoded(configuration));self.capabilities=decode(encoded(capabilities))
-        deps=['event_recognition.py','event_selection.py','event_mode.py','ha_event_selection.py','event_selection_config.py','event_observation_read.py','wheel_capture_policy.py','reader.py','recognition.py','observation_support.py','consumption.py','accounting_native.py','capture_clock.py','reading_format.py']
+        deps=['event_recognition.py','event_selection.py','event_mode.py','ha_event_selection.py','event_selection_config.py','event_observation_read.py','selector_observation.py','wheel_capture_policy.py','reader.py','recognition.py','observation_support.py','consumption.py','accounting_native.py','capture_clock.py','reading_format.py']
         self.observation_context=digest({'version':1,'format_id':self.format_id,'pipeline':reader.pipeline_id,'document':self.document,'configuration':self.configuration,'capabilities':self.capabilities,
                                          'sources':{n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest() for n in deps}})
         with store.connect() as db:
@@ -70,17 +71,17 @@ class EventRecognition(Recognition):
         try:return self._validated_request(db,event)
         except (KeyError,TypeError,IndexError,AttributeError,OverflowError) as exc:raise ValueError('event_request_malformed') from exc
     def _validated_request(self,db,event):
-        row=db.execute('SELECT request,request_sha FROM event_recognition_requests WHERE event_id=? AND pipeline=? AND context=?',(event,self.reader.pipeline_id,self.observation_context)).fetchone()
+        row=db.execute('SELECT CASE WHEN length(CAST(request AS BLOB))<=? THEN request END,request_sha FROM event_recognition_requests WHERE event_id=? AND pipeline=? AND context=?',(MAX_REQUEST_BYTES,event,self.reader.pipeline_id,self.observation_context)).fetchone()
         if row is None:return None
         r=decode(row[0],MAX_REQUEST_BYTES);check(digest(r)==row[1],'event_request_tampered')
-        required={'reader_observed','recommendation','timing','deadline_missed','flags','full_reason','schema_version','event','pipeline_id','context_id','format_id','configuration','capabilities','feedback','last_full_event'}
+        required={'reader_observed','recommendation','timing','deadline_missed','flags','full_reason','schema_version','event','pipeline_id','context_id','format_id','configuration','capabilities','feedback','last_full_event','observation_eligibility'}
         check(isinstance(r,dict) and set(r)==required,'event_request_keys_invalid')
         actual_event=self._event(db,event)
         check(isinstance(r['event'],dict) and r['event']==actual_event and all(type(r['event'][k]) is type(v) for k,v in actual_event.items()) and r['pipeline_id']==self.reader.pipeline_id and r['context_id']==self.observation_context and r['format_id']==self.format_id,'event_request_binding_invalid')
         check(type(r['deadline_missed']) is bool and (r['last_full_event'] is None or (type(r['last_full_event']) is int and self.observation_first_event<=r['last_full_event']<event)),'event_request_flags_invalid')
         mask=r['reader_observed'];check(isinstance(mask,list) and len(mask)==len(self.reader.dials) and any(mask) and all(type(f) is bool for f in mask),'event_request_mask_invalid')
         check(r['configuration']==self.configuration and r['capabilities']==self.capabilities,'event_request_policy_drift')
-        check(type(r['schema_version']) is int and r['schema_version']==1 and recommend(r['flags'],self.capabilities,self.configuration)==r['recommendation'],'event_request_recommendation_invalid')
+        check(type(r['schema_version']) is int and r['schema_version']==2 and recommend(r['flags'],self.capabilities,self.configuration)==r['recommendation'],'event_request_recommendation_invalid')
         check(r['flags'].get('first') is (r['last_full_event'] is None),'event_request_anchor_flag_invalid')
         desired=[True]*len(mask)
         if r['recommendation']['requested_mode']=='LAST_TWO':
@@ -94,7 +95,45 @@ class EventRecognition(Recognition):
             check(prior is not None,'event_request_feedback_missing')
             saved=decode(prior[0]);check(isinstance(saved,dict) and digest(saved)==feedback['result_sha256'],'event_request_feedback_changed')
             check(feedback['result']=={k:saved[k] for k in ('state','event_id','segment_id','source_sha256','format_id','observation_context')},'event_request_feedback_summary_invalid')
+        prior=db.execute('SELECT event_id FROM event_recognition_bindings WHERE pipeline=? AND context=? AND event_id<? ORDER BY event_id DESC LIMIT 1',
+                         (self.reader.pipeline_id,self.observation_context,event)).fetchone()
+        previous_request=self._saved_request(db,prior[0]) if prior else None
+        if prior:
+            check(feedback is not None and feedback['event_id']==prior[0],'event_request_prior_feedback_invalid')
+            certificate=build_observation(self,db,prior[0],feedback['segment_id'])
+            check(certificate is not None,'event_request_observation_evidence_missing')
+            expected_feedback=self._feedback(db,prior[0],feedback['segment_id'],certificate)
+            check(encoded(feedback)==encoded(expected_feedback),'event_request_feedback_rederived_invalid')
+        else:
+            check(feedback is None,'event_request_first_feedback_invalid');certificate=None
+        expected_evidence={'certificate':certificate,'certificate_sha256':digest(certificate)}
+        check(encoded(r['observation_eligibility'])==encoded(expected_evidence),'event_request_observation_evidence_changed')
+        reference=certificate['latest_accepted_full_observation'] if certificate and certificate['genuine_full_anchor'] else None
+        last_full_id=reference['event']['event_id'] if reference else None
+        check(r['last_full_event']==last_full_id,'event_request_full_observation_rederived_invalid')
+        # Restart is a durable scheduling intent, retained when a crashed worker
+        # adopts an existing request. Certificate-derived flags, timing, age,
+        # masks and deadline are independently rebuilt from linked evidence.
+        expected=decide(actual_event,previous_request['event'] if previous_request else None,previous_request,
+                        expected_feedback['result'] if prior else None,reference['event'] if reference else None,
+                        r['flags']['restart'],self.document,self.configuration,self.capabilities,
+                        observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate)
+        check(all(encoded(r[k])==encoded(value) for k,value in expected.items()),'event_request_decision_rederived_invalid')
         return r
+    def _saved_request(self,db,event):
+        # Completed historical evidence is read without recursive policy replay
+        # across the whole history. No saved eligibility boolean is used as proof.
+        acquisition=self._event(db,event)
+        check(acquisition is not None,'event_prior_acquisition_missing')
+        from event_observation_read import _read
+        value=_read(db,event,acquisition['source_sha256'],self.reader.pipeline_id,self.observation_context)
+        check(value['result']['state'] in ('estimated','rejected'),'event_prior_completion_missing')
+        row=db.execute('SELECT CASE WHEN length(CAST(request AS BLOB))<=? THEN request END,request_sha FROM event_recognition_requests WHERE event_id=? AND pipeline=? AND context=?',
+                       (MAX_REQUEST_BYTES,event,self.reader.pipeline_id,self.observation_context)).fetchone()
+        request=decode(row[0],MAX_REQUEST_BYTES)
+        check(digest(request)==row[1] and request['configuration']==self.configuration and request['capabilities']==self.capabilities and
+              recommend(request['flags'],self.capabilities,self.configuration)==request['recommendation'],'event_prior_policy_invalid')
+        return request
     def _cache(self,db,source,mask):
         row=db.execute('SELECT mask,result,result_sha FROM event_recognition_cache WHERE source_sha=? AND pipeline=? AND mask_sha=?',(source,self.reader.pipeline_id,digest(mask))).fetchone()
         if row is None:return None
@@ -123,35 +162,23 @@ class EventRecognition(Recognition):
             return encoded(result)
     def event_result(self,event,digest_value,pipeline):
         value=self.accounting_result(event,digest_value,pipeline);return decode(value) if value is not None else {'state':'pending'}
-    def _feedback(self,db,event):
+    def _feedback(self,db,event,segment=None,certificate=None):
         try:
-            row=db.execute('SELECT r.segment_id,r.result FROM consumption_records r JOIN consumption_segments s ON s.segment_id=r.segment_id JOIN consumption_active a ON a.segment_id=s.segment_id WHERE r.event_id=? AND s.format_id=?',(event,self.format_id)).fetchone()
+            certificate=build_observation(self,db,event,segment) if certificate is None else certificate
         except sqlite3.OperationalError as exc:
             if str(exc).startswith('no such table: consumption_'):return None
             raise
-        if not row:return None
-        value=decode(row[1]);check(isinstance(value,dict),'event_feedback_malformed');check(value.get('event_id')==event and value.get('format_id')==self.format_id,'event_feedback_binding_invalid')
-        if value.get('observation_context')!=self.observation_context:return None
-        request=self._request(db,event)
-        check(request is not None and value.get('segment_id')==row[0] and value.get('source_sha256')==request['event']['source_sha256'],'event_feedback_source_invalid')
-        expected={**{k:request['event'][k] for k in ('event_id','camera','captured_at','clock_id','monotonic_us','source_sha256')},'context_id':self.observation_context,'format_id':self.format_id,'request_sha256':digest(request)}
-        check(value.get('event_observation')==expected,'event_feedback_observation_invalid')
-        anchor=value.get('anchor_captured_at');genuine=False
-        if isinstance(anchor,str):
-            candidates=db.execute('SELECT e.event_id FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id WHERE e.event_id<=? AND f.captured_at=? ORDER BY e.event_id DESC LIMIT 128',(event,anchor)).fetchall()
-            for candidate in candidates:
-                anchor_request=self._request(db,candidate[0])
-                anchor_feedback=db.execute('SELECT result FROM consumption_records WHERE segment_id=? AND event_id=?',(row[0],candidate[0])).fetchone()
-                if anchor_request and all(anchor_request['reader_observed']) and anchor_feedback:
-                    av=decode(anchor_feedback[0]);check(isinstance(av,dict),'event_anchor_feedback_malformed')
-                    binding=av.get('event_observation');check(isinstance(binding,dict),'event_anchor_feedback_malformed')
-                    genuine=av.get('state')=='anchored' and av.get('observation_context')==self.observation_context and binding.get('request_sha256')==digest(anchor_request)
-                    if genuine:break
-        return {'segment_id':row[0],'event_id':event,'result_sha256':digest(value),'genuine_full_anchor':genuine,'result':{k:value[k] for k in ('state','event_id','segment_id','source_sha256','format_id','observation_context')}}
+        if certificate is None:return None
+        segment=certificate['observation']['accounting_segment_id']
+        row=db.execute('SELECT CASE WHEN length(CAST(result AS BLOB))<=65536 THEN result END FROM consumption_records WHERE segment_id=? AND event_id=?',(segment,event)).fetchone()
+        value=decode(row[0]);check(digest(value)==certificate['observation']['accounting_result_sha256'],'event_feedback_changed')
+        return {'segment_id':segment,'event_id':event,'result_sha256':digest(value),
+                'genuine_full_anchor':certificate['genuine_full_anchor'] is not None,
+                'result':{k:value[k] for k in ('state','event_id','segment_id','source_sha256','format_id','observation_context')}}
     def _speed(self,db,event):
         rows=db.execute('SELECT event_id FROM event_recognition_bindings WHERE pipeline=? AND context=? AND event_id<=? ORDER BY event_id DESC LIMIT 2',(self.reader.pipeline_id,self.observation_context,event)).fetchall()
         if len(rows)!=2:return None
-        newer,older=[self._request(db,r[0]) for r in rows];timing=capture_clock.interval(older['event'],newer['event'])
+        newer,older=[self._saved_request(db,r[0]) for r in rows];timing=capture_clock.interval(older['event'],newer['event'])
         if timing['state']!='continuous':return None
         finest=self.document['dials'][-1]['index']
         values=[]
@@ -180,12 +207,14 @@ class EventRecognition(Recognition):
                     feedback=self._feedback(db,prior[0]) if prior else None
                     if prior and feedback is None:return False
                     previous_request=self._request(db,prior[0]) if prior else None;previous=previous_request['event'] if previous_request else None
-                    last_full_id=previous_request.get('last_full_event') if previous_request else None
-                    if feedback and not feedback['genuine_full_anchor']:last_full_id=None
-                    if prior and feedback['genuine_full_anchor'] and all(previous_request['reader_observed']) and feedback['result'].get('state') in ('anchored','estimated','within_noise','bounded','ambiguous'):last_full_id=prior[0]
-                    last_full=self._event(db,last_full_id) if last_full_id else None
-                    decision=decide(current,previous,previous_request,feedback['result'] if feedback else None,last_full,self._restart_pending,self.document,self.configuration,self.capabilities,observed_phase_speed=self._speed(db,prior[0]) if prior else None)
-                    request={**decision,'schema_version':1,'event':current,'pipeline_id':pipeline,'context_id':context,'format_id':self.format_id,'configuration':self.configuration,'capabilities':self.capabilities,'feedback':feedback,'last_full_event':last_full_id}
+                    certificate=build_observation(self,db,prior[0],feedback['segment_id']) if prior else None
+                    reference=certificate['latest_accepted_full_observation'] if certificate and certificate['genuine_full_anchor'] else None
+                    last_full_id=reference['event']['event_id'] if reference else None
+                    last_full=reference['event'] if reference else None
+                    decision=decide(current,previous,previous_request,feedback['result'] if feedback else None,last_full,self._restart_pending,self.document,self.configuration,self.capabilities,
+                                    observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate)
+                    request={**decision,'schema_version':2,'event':current,'pipeline_id':pipeline,'context_id':context,'format_id':self.format_id,'configuration':self.configuration,'capabilities':self.capabilities,'feedback':feedback,'last_full_event':last_full_id,
+                             'observation_eligibility':{'certificate':certificate,'certificate_sha256':digest(certificate)}}
                     encoded_request=encoded(request);check(len(encoded_request.encode())<=MAX_REQUEST_BYTES,'event_request_too_large')
                     db.execute('INSERT INTO event_recognition_requests VALUES(?,?,?,?,?)',(event,pipeline,context,encoded_request,digest(request)))
                     self._restart_pending=False

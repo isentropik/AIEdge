@@ -64,7 +64,8 @@ class EventServiceTests(fixture.EventConsumptionTests):
             row=db.execute('SELECT e.camera,e.frame_id,f.captured_at,f.sha256,c.clock_id,c.monotonic_us FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id JOIN capture_clocks c ON c.camera=e.camera AND c.frame_id=e.frame_id WHERE e.event_id=?',(event,)).fetchone()
         return dict(zip(('camera','frame_id','captured_at','sha256','clock_id','monotonic_us'),row),event_id=event,added=True)
     def test_trial_same_image_events_keep_distinct_full_and_partial_masks(self):
-        self.recognize_consume(100.0);a=self.recognize_consume(100.1);self.recognize_consume(100.1);b=self.recognize_consume(100.1)
+        # Synthetic phases stay away from fine wrap; delta/cache assertions remain unchanged.
+        self.recognize_consume(100.2);a=self.recognize_consume(100.3);self.recognize_consume(100.3);b=self.recognize_consume(100.3)
         trial,identity,value=self.trial([self.frame(a['event_id']),self.frame(b['event_id'])]);before=self.snapshots();calls=len(self.reader.calls)
         result=build(trial,self.recognition,identity)
         self.assertEqual(result['state'],'complete');self.assertEqual(result['unique_images'],1)

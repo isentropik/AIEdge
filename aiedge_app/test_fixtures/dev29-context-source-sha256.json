@@ -1,0 +1,16 @@
+{
+  "event_recognition.py": "93c5dd0fb2f2f5496b3e88b349d33ce17d9e2995a40cb4e6c6cd464f30537694",
+  "event_selection.py": "fddfad4618b7026c787ff253b6b8685cc9fd32596bd3ebff0dfe53a6fc2f886f",
+  "event_mode.py": "a6bd692d00c468ecdbb89fd95a49085cf6901fb047ed39f345411b4d9cd28515",
+  "ha_event_selection.py": "e9e964d309d041669f749db43c2e2dbaedaa5f37b57e3044ccf133d8b36958b8",
+  "event_selection_config.py": "20f9aa780c333832c8154c98bbaf699abd785d4af4b18b8edc8b94a15f1d514c",
+  "event_observation_read.py": "4811faaccfcc72637a9c803562291c63c4e71c83845ce81e3ca2e95ad16b0c57",
+  "wheel_capture_policy.py": "5b8d627b292b80b71f55e55ff1a48310d05d039b831f81dddbc27208be6728a4",
+  "reader.py": "62727e546477794662832e285cd18f2fc34bcccf0add597f2ad33dacf003800e",
+  "recognition.py": "e103fb4f7bee9c977ebac220ef71a670d502b1ed1f328cbcf8838f69d554e937",
+  "observation_support.py": "3eeb5b2710e341f1d78d2c905661305d9a20e99783d7f25a61c0c6fee2abfc37",
+  "consumption.py": "bf2567b950b8e9bd27c51e00c7f6b477ace305bace80b7205866d2c92960ca88",
+  "accounting_native.py": "67f0cbac82f48748e681601976ea3307ce05d2e23ca40638b422c18c06303f06",
+  "capture_clock.py": "3b37638707df50d54a3482e28393fb8b401908d154bdde7a82942ecd2bd0b002",
+  "reading_format.py": "63944f64fcffd4616494933c93c7a2711ee84cc241e2df0f96523a87f7b0479f"
+}

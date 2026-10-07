@@ -1,0 +1,50 @@
+[
+  {
+    "path": "consumption.py",
+    "source": "F9/source/aiedge_app/consumption.py",
+    "sha256": "bf2567b950b8e9bd27c51e00c7f6b477ace305bace80b7205866d2c92960ca88",
+    "copy_sha256": "bf2567b950b8e9bd27c51e00c7f6b477ace305bace80b7205866d2c92960ca88"
+  },
+  {
+    "path": "accounting_native.py",
+    "source": "F9/source/aiedge_app/accounting_native.py",
+    "sha256": "67f0cbac82f48748e681601976ea3307ce05d2e23ca40638b422c18c06303f06",
+    "copy_sha256": "67f0cbac82f48748e681601976ea3307ce05d2e23ca40638b422c18c06303f06"
+  },
+  {
+    "path": "reading_format.py",
+    "source": "F9/source/aiedge_app/reading_format.py",
+    "sha256": "63944f64fcffd4616494933c93c7a2711ee84cc241e2df0f96523a87f7b0479f",
+    "copy_sha256": "63944f64fcffd4616494933c93c7a2711ee84cc241e2df0f96523a87f7b0479f"
+  },
+  {
+    "path": "capture_clock.py",
+    "source": "F9/source/aiedge_app/capture_clock.py",
+    "sha256": "3b37638707df50d54a3482e28393fb8b401908d154bdde7a82942ecd2bd0b002",
+    "copy_sha256": "3b37638707df50d54a3482e28393fb8b401908d154bdde7a82942ecd2bd0b002"
+  },
+  {
+    "path": "recognition.py",
+    "source": "F9/source/aiedge_app/recognition.py",
+    "sha256": "e103fb4f7bee9c977ebac220ef71a670d502b1ed1f328cbcf8838f69d554e937",
+    "copy_sha256": "e103fb4f7bee9c977ebac220ef71a670d502b1ed1f328cbcf8838f69d554e937"
+  },
+  {
+    "path": "temporal_reading.py",
+    "source": "F9/source/aiedge_app/temporal_reading.py",
+    "sha256": "af83c17fc9eed9e0e4da6708a69e9b9055c0ef4859f3fa15a986b329112def32",
+    "copy_sha256": "af83c17fc9eed9e0e4da6708a69e9b9055c0ef4859f3fa15a986b329112def32"
+  },
+  {
+    "path": "reading_bounds.py",
+    "source": "F9/source/aiedge_app/reading_bounds.py",
+    "sha256": "506ce7640051df5600a445bab2de934d253324b57090f70e17f636623cd9648f",
+    "copy_sha256": "506ce7640051df5600a445bab2de934d253324b57090f70e17f636623cd9648f"
+  },
+  {
+    "path": "observation_support.py",
+    "source": "F9/source/aiedge_app/observation_support.py",
+    "sha256": "3eeb5b2710e341f1d78d2c905661305d9a20e99783d7f25a61c0c6fee2abfc37",
+    "copy_sha256": "3eeb5b2710e341f1d78d2c905661305d9a20e99783d7f25a61c0c6fee2abfc37"
+  }
+]

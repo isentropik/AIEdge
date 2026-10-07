@@ -1,4 +1,4 @@
-"""Synthetic event→selection→native accounting→publication integration."""
+"""Synthetic eventâ†’selectionâ†’native accountingâ†’publication integration."""
 import copy,hashlib,json,os,sqlite3,tempfile,unittest
 from contextlib import contextmanager
 from datetime import datetime,timedelta,timezone
@@ -60,10 +60,11 @@ class EventConsumptionTests(unittest.TestCase):
         while self.worker.once():pass
         return self.worker.status()
     def test_duplicate_partial_then_full_has_separate_cache_and_every_event_is_accounted(self):
-        self.assertEqual(self.recognize_consume(100.0)['state'],'anchored')
-        second=self.recognize_consume(100.1);self.assertEqual(second['observation_support']['reader_observed'],[False,True,True]);self.assertAlmostEqual(second['value'],.1);self.assertIsNone(second['absolute']['value'])
-        third=self.recognize_consume(100.1);self.assertNotEqual(second['event_id'],third['event_id']);self.assertEqual(len(self.reader.calls),2)
-        fourth=self.recognize_consume(100.1);self.assertEqual(fourth['observation_support']['reader_observed'],[True]*3);self.assertEqual(len(self.reader.calls),3)
+        # Synthetic phases stay away from fine wrap; delta/cache assertions remain unchanged.
+        self.assertEqual(self.recognize_consume(100.2)['state'],'anchored')
+        second=self.recognize_consume(100.3);self.assertEqual(second['observation_support']['reader_observed'],[False,True,True]);self.assertAlmostEqual(second['value'],.1);self.assertIsNone(second['absolute']['value'])
+        third=self.recognize_consume(100.3);self.assertNotEqual(second['event_id'],third['event_id']);self.assertEqual(len(self.reader.calls),2)
+        fourth=self.recognize_consume(100.3);self.assertEqual(fourth['observation_support']['reader_observed'],[True]*3);self.assertEqual(len(self.reader.calls),3)
         self.assertEqual(self.reader.calls[-1][0],self.reader.calls[-2][0]);self.assertEqual(self.reader.calls[-1][1],[True]*3)
         self.assertEqual(len(self.records()),4);self.assertEqual(self.store.status()['unique_images'],2);self.assertEqual(self.restart_consumption(),fourth)
     def test_selection_waits_for_durable_feedback_and_consumption_never_uses_legacy_fallback(self):

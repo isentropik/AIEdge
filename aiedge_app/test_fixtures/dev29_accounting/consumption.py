@@ -27,21 +27,20 @@ class Consumption:
             contract['event_sources']={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in ('event_recognition.py','event_selection.py','wheel_capture_policy.py')}
         self.engine=hashlib.sha256(json.dumps(contract,sort_keys=True).encode()).hexdigest()
         self.stop=threading.Event();self.lock=threading.Lock();self.last_error=None;self.blocked=False
-        self.tracker=None;self.absolute=None;self.segment=None;self.cursor=0;self.previous=None;self.anchor=None;self.latest_accepted_full=None
+        self.tracker=None;self.absolute=None;self.segment=None;self.cursor=0;self.previous=None;self.anchor=None
         self.state={'state':'not_configured','value':None,'accuracy_verified':False,'training_allowed':False}
         with store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_segments(segment_id TEXT PRIMARY KEY,format_id TEXT NOT NULL,engine_id TEXT NOT NULL,first_event INTEGER NOT NULL,gap_reason TEXT NOT NULL,document TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_active(singleton INTEGER PRIMARY KEY CHECK(singleton=1),segment_id TEXT NOT NULL,FOREIGN KEY(segment_id) REFERENCES consumption_segments(segment_id))')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_records(segment_id TEXT NOT NULL,event_id INTEGER NOT NULL,result TEXT NOT NULL,PRIMARY KEY(segment_id,event_id),FOREIGN KEY(segment_id) REFERENCES consumption_segments(segment_id),FOREIGN KEY(event_id) REFERENCES capture_events(event_id))')
-            db.execute('CREATE TABLE IF NOT EXISTS consumption_accepted_full_observations(segment_id TEXT NOT NULL,event_id INTEGER NOT NULL,result_sha256 TEXT NOT NULL,PRIMARY KEY(segment_id,event_id),FOREIGN KEY(segment_id,event_id) REFERENCES consumption_records(segment_id,event_id))')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_segment_links(segment_id TEXT PRIMARY KEY,prior_segment_id TEXT NOT NULL,unresolved_gap_reason TEXT NOT NULL,first_event INTEGER NOT NULL,FOREIGN KEY(segment_id) REFERENCES consumption_segments(segment_id),FOREIGN KEY(prior_segment_id) REFERENCES consumption_segments(segment_id))')
             db.execute('SELECT segment_id,format_id,engine_id,first_event,gap_reason,document FROM consumption_segments LIMIT 0')
             db.execute('SELECT singleton,segment_id FROM consumption_active LIMIT 0')
             db.execute('SELECT segment_id,event_id,result FROM consumption_records LIMIT 0')
     def _drop(self):
         if self.tracker:self.tracker.close()
-        self.tracker=None;self.absolute=None;self.segment=None;self.previous=None;self.anchor=None;self.latest_accepted_full=None
+        self.tracker=None;self.absolute=None;self.segment=None;self.previous=None;self.anchor=None
     def _activate(self,segment,document):
         with self.store.connect() as db:
             link=db.execute('SELECT prior_segment_id,unresolved_gap_reason,first_event FROM consumption_segment_links WHERE segment_id=?',(segment['segment_id'],)).fetchone()
@@ -105,9 +104,6 @@ class Consumption:
                 'average_rate_per_second':None,'accuracy_verified':False,'training_allowed':False,
                 'gap_reason':self.segment['gap_reason'],
                 'observation_context':self.observation_context,
-                'observation_accepted':False,'observation_current_through_us':None,
-                'observation_full_anchor_event_id':None,'observation_latest_full_event_id':None,
-                'observation_inference_sha256':None,
                 'prior_segment_id':self.segment.get('prior_segment_id'),
                 'unresolved_gap':self.segment.get('unresolved_gap'),
                 'absolute':{'state':'unavailable','value':None,'accuracy_verified':False,'training_allowed':False}}
@@ -186,16 +182,7 @@ class Consumption:
                             native=self.tracker.observe_masked(positions,observed,tick,clock) if partial else self.tracker.observe(positions,tick,clock)
                             if not native['accepted']:output.update(state='unavailable',reason='consumption_positions_contradict_bounds')
                             else:
-                                # Explicit producer witness, not inferred later
-                                # from a permissive state string. It cannot
-                                # certify the next image or complete rotations.
-                                if native.get('accepted') is True and native.get('available') is True and native.get('current') is True and type(native.get('through_us')) is int and native['through_us']==tick:
-                                    output.update(observation_accepted=True,observation_current_through_us=tick,
-                                                  observation_inference_sha256=hashlib.sha256(json.dumps(inference,sort_keys=True,separators=(',',':'),allow_nan=False).encode()).hexdigest())
-                                if self.anchor is None:self.anchor={'captured_at':stamp,'monotonic_us':tick,'camera':camera,'event_id':event}
-                                if output['observation_accepted'] and not partial:self.latest_accepted_full=event
-                                if output['observation_accepted']:
-                                    output.update(observation_full_anchor_event_id=self.anchor['event_id'],observation_latest_full_event_id=self.latest_accepted_full)
+                                if self.anchor is None:self.anchor={'captured_at':stamp,'monotonic_us':tick,'camera':camera}
                                 output.update({key:native[key] for key in ('state','minimum','maximum','value','upper_unbounded')})
                                 if partial:
                                     output['absolute'].update(reason='partial_observation_no_absolute_reading')
@@ -215,34 +202,22 @@ class Consumption:
                                             output['average_rate_per_minute_text']=display_quantity(rate*60,rate_document,resolution_factor=2)
                 encoded_output=json.dumps(output,sort_keys=True,separators=(',',':'),allow_nan=False)
                 if len(encoded_output.encode())>MAX_RECORD_BYTES:raise ValueError('consumption_result_too_large')
-                self._persist(output,event,cached,encoded_output)
+                if cached and (cached[0] is None or json.loads(cached[0])!=output):raise ValueError('consumption_saved_result_invalid')
+                with self.store.connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    active_segment=db.execute('SELECT segment_id FROM consumption_active WHERE singleton=1').fetchone()
+                    if not active_segment or active_segment[0]!=self.segment['segment_id']:raise SegmentChanged()
+                    if not cached:
+                        # A second worker may have written this event while native
+                        # calculation ran. Accept only the identical durable decision.
+                        prior=db.execute('SELECT CASE WHEN length(CAST(result AS BLOB))<=? THEN result ELSE NULL END FROM consumption_records WHERE segment_id=? AND event_id=?',(MAX_RECORD_BYTES,self.segment['segment_id'],event)).fetchone()
+                        if prior:
+                            if prior[0] is None or json.loads(prior[0])!=output:raise ValueError('consumption_saved_result_invalid')
+                        else:db.execute('INSERT INTO consumption_records VALUES(?,?,?)',(self.segment['segment_id'],event,encoded_output))
                 # State becomes public only after the durable decision is saved.
                 self.previous=current;self.cursor=event;self.state=output;self.last_error=None
                 sample.outcome='success' if output['absolute'].get('state')=='estimated' else 'rejected'
                 return True
-    def _persist(self,output,event,cached,encoded_output):
-        # Called with the worker locks held. A native tracker cannot be rolled
-        # back. On commit failure discard it and every uncommitted anchor/full
-        # pointer; only reconstruction from the durable ledger may resume.
-        try:
-            if cached and (cached[0] is None or json.loads(cached[0])!=output):raise ValueError('consumption_saved_result_invalid')
-            with self.store.connect() as db:
-                db.execute('BEGIN IMMEDIATE')
-                active_segment=db.execute('SELECT segment_id FROM consumption_active WHERE singleton=1').fetchone()
-                if not active_segment or active_segment[0]!=self.segment['segment_id']:raise SegmentChanged()
-                if not cached:
-                    prior=db.execute('SELECT CASE WHEN length(CAST(result AS BLOB))<=? THEN result ELSE NULL END FROM consumption_records WHERE segment_id=? AND event_id=?',(MAX_RECORD_BYTES,self.segment['segment_id'],event)).fetchone()
-                    if prior:
-                        if prior[0] is None or json.loads(prior[0])!=output:raise ValueError('consumption_saved_result_invalid')
-                    else:db.execute('INSERT INTO consumption_records VALUES(?,?,?)',(self.segment['segment_id'],event,encoded_output))
-                if output.get('observation_accepted') is True and output.get('observation_support',{}).get('partial') is False:
-                    result_sha=hashlib.sha256(encoded_output.encode()).hexdigest()
-                    indexed=db.execute('SELECT result_sha256 FROM consumption_accepted_full_observations WHERE segment_id=? AND event_id=?',(self.segment['segment_id'],event)).fetchone()
-                    if indexed and indexed[0]!=result_sha:raise ValueError('consumption_saved_full_observation_invalid')
-                    if not indexed:db.execute('INSERT INTO consumption_accepted_full_observations VALUES(?,?,?)',(self.segment['segment_id'],event,result_sha))
-        except (OSError,sqlite3.Error,SegmentChanged,ValueError,TypeError,KeyError,RecursionError):
-            self._drop();self.last_error='consumption_commit_requires_reconstruction'
-            raise
     def status(self):
         with self.recognition.lock,self.formats.lock,self.lock:
             reader=self.recognition.reader;configured=self.formats.active
@@ -261,8 +236,6 @@ class Consumption:
         if segment and (not active or active[0]!=segment):return {'state':'recovering','value':None,'accuracy_verified':False,'training_allowed':False}
         if latest>cursor and state.get('state') not in ('not_configured','unavailable','pending','recovering'):
             return {**state,'state':'pending','value':None,'text':None,'average_rate_per_second':None,'average_rate_per_minute_text':None,
-                    'observation_accepted':False,'observation_current_through_us':None,'observation_inference_sha256':None,
-                    'observation_full_anchor_event_id':None,'observation_latest_full_event_id':None,
                     'absolute':{'state':'pending','value':None,'accuracy_verified':False,'training_allowed':False},
                     'reason':'consumption_waiting_for_latest_capture'}
         return state
