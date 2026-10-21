@@ -77,6 +77,23 @@ void fixed_anchor_tracking() {
             close(stationary.current().minimumFt3,0);assert(std::isnan(stationary.current().estimatedFt3));}
     }
 }
+void tracked_turns_beyond_anchor_search_limit() {
+    RevolutionAssumptions assumptions{{5},{0},true,1};
+    const auto anchor=frame(0,assumptions);
+    RevolutionCumulative tracker(assumptions);assert(tracker.reset(anchor));
+    // Consecutive observations establish each turn without guessing across gaps.
+    // The unbounded anchor search used to exhaust its branch budget at 640.
+    for(int i=1;i<=700;++i) {
+        const int64_t tick=1000000+int64_t(i)*1000000;
+        assert(tracker.observe(frame(i,assumptions,tick)));
+        const auto& result=tracker.current();
+        assert(result.current&&result.status==Status::Estimated);
+        assert(result.throughUs==tick);close(result.estimatedFt3,i);
+    }
+    // Without those observations, the search cap must still fail closed.
+    const auto gap=RevolutionIntervalResolver(assumptions)(anchor,frame(640,assumptions,641000000),Bounds{});
+    assert(gap.status==Status::Invalid&&gap.reason==Reason::TurnCountUnresolved);
+}
 // Independent small-range oracle: enumerate the finest dial's integer turns,
 // then intersect each higher dial's possible interval rather than reconstructing
 // point readings or using the resolver's highest-to-lowest branch traversal.
@@ -106,4 +123,4 @@ void randomized_oracle() {
         double lo=INFINITY,hi=0;for(auto range:expected){lo=std::min(lo,range.first);hi=std::max(hi,range.second);}close(result.minimumFt3,lo);close(result.maximumFt3,hi);
     }
 }
-int main(){ratios_and_rollovers();rejection_and_ambiguity();fixed_anchor_tracking();randomized_oracle();std::cout<<"PASS: generic intervals, ratios, wraps, fixed-anchor tracking, ambiguity, bounds and 1000 oracle comparisons (synthetic only)\n";}
+int main(){ratios_and_rollovers();rejection_and_ambiguity();fixed_anchor_tracking();tracked_turns_beyond_anchor_search_limit();randomized_oracle();std::cout<<"PASS: generic intervals, ratios, wraps, fixed-anchor tracking beyond search limit, ambiguity, bounds and 1000 oracle comparisons (synthetic only)\n";}

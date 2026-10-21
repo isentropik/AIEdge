@@ -33,8 +33,8 @@ class RevolutionIntervalResolver {
     }
     bool ranges(const std::vector<double>& phases,long double errorFactor,
                 long double upper,std::vector<Range>& result,bool& limited,
-                const std::vector<unsigned char>& mask={}) const {
-        limited=false;result={{0,upper,0}};
+                const std::vector<unsigned char>& mask={},long double lower=0) const {
+        limited=false;result={{lower,upper,0}};
         for(std::size_t index=0;index<assumptions.periods.size();++index) {
             if(!mask.empty()&&!mask[index])continue;
             const long double period=assumptions.periods[index];
@@ -106,7 +106,7 @@ public:
         return frame.observed.empty()||std::all_of(frame.observed.begin(),frame.observed.end(),[](unsigned char x){return x==1;});
     }
 
-    Interval operator()(const RevolutionObservation& before,const RevolutionObservation& after,const Bounds&) const {
+    Interval operator()(const RevolutionObservation& before,const RevolutionObservation& after,const Bounds&,const int64_t* provenTurns=nullptr) const {
         Interval out;
         if(!valid)return out;
         out.reason=Reason::CaptureTimeRequired;
@@ -127,7 +127,21 @@ public:
             static_cast<long double>(assumptions.maximumRate)*out.elapsedSeconds:assumptions.periods[largest];
         if(!std::isfinite(upper)||upper>std::numeric_limits<double>::max())return out;
         std::vector<Range> possible;bool limited;
-        if(!ranges(phases,2,upper,possible,limited,common)){out.reason=Reason::TurnCountUnresolved;return out;}
+        long double searchLow=0,searchHigh=upper;
+        if(provenTurns) {
+            // Restrict work using a caller-proved integer lift. Endpoint error
+            // remains relative to the original anchor, never summed per step.
+            if(std::abs(static_cast<long double>(*provenTurns))>4503599627370495.0L)return out;
+            const long double period=assumptions.periods.back();
+            const long double center=static_cast<long double>(phases.back())*period/10+
+                                     static_cast<long double>(*provenTurns)*period;
+            const long double error=2*assumptions.errors.back()*period/10+2*period*1e-12L;
+            searchLow=std::max(0.0L,center-error);searchHigh=std::min(upper,center+error);
+            if(!std::isfinite(searchLow)||!std::isfinite(searchHigh)||searchLow>searchHigh) {
+                out.status=Status::Review;out.reason=Reason::MainRateContradiction;return out;
+            }
+        }
+        if(!ranges(phases,2,searchHigh,possible,limited,common,searchLow)){out.reason=Reason::TurnCountUnresolved;return out;}
         if(possible.empty()){out.status=Status::Review;out.reason=Reason::MainRateContradiction;return out;}
         out.minimumFt3=std::numeric_limits<double>::infinity();out.maximumFt3=0;
         out.firstTurnOffset=std::numeric_limits<int64_t>::max();out.lastTurnOffset=std::numeric_limits<int64_t>::min();
