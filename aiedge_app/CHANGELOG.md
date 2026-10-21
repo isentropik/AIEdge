@@ -1,3 +1,8 @@
+## 0.2.0-dev31
+
+- Keep cumulative accounting tied to turns established by consecutive valid observations when resolving the original anchor. This avoids re-enumerating already excluded whole-turn possibilities as a tracking session grows.
+- Preserve ambiguous gaps and interpretation-change handling; no dial recognition, calibration or output-default change.
+
 # Changes
 
 ## 0.2.0-dev30 (local candidate; unpublished)

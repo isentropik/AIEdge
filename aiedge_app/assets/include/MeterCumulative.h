@@ -16,7 +16,7 @@ struct CumulativeResult {
 // cannot ratchet consumption upward once per sample. Bounds are conditional on
 // the caller's error assumptions; this is not a verified lifetime meter total.
 struct LegacyCumulativeResolver {
-    Interval operator()(const Frame& a,const Frame& b,const Bounds& bounds) const {return resolve(a,b,bounds);}
+    Interval operator()(const Frame& a,const Frame& b,const Bounds& bounds,const int64_t* =nullptr) const {return resolve(a,b,bounds);}
     double turnUnits() const {return secondaryRevolutionFt3;}
     double phaseError(const Bounds& bounds) const {return bounds.secondaryDial+numericalSlackFt3;}
     double epsilon() const {return 1e-9;}
@@ -43,11 +43,6 @@ public:
     bool observe(const Observation& frame,const Bounds& bounds) {
         if(!result.available || frame.clockId!=anchor.clockId || frame.captureUs<=result.throughUs)
             return false;
-        Interval whole=resolver(anchor,frame,bounds);
-        if(whole.status==Status::Invalid || whole.status==Status::Review ||
-           !std::isfinite(whole.minimumFt3) || std::isnan(whole.maximumFt3) ||
-           whole.maximumFt3<whole.minimumFt3 ||
-           (!std::isfinite(whole.maximumFt3)&&whole.status!=Status::Ambiguous))return false;
         // Propagate only discrete, uniquely established turn offsets. Never sum
         // positive noisy volumes: the phase still comes from the fixed anchor.
         const Interval step=resolver(previous,frame,bounds);
@@ -60,6 +55,15 @@ public:
             if((delta>0 && turnOffset>std::numeric_limits<int64_t>::max()-delta) ||
                (delta<0 && turnOffset<std::numeric_limits<int64_t>::min()-delta))return false;
             nextOffset+=delta;
+        }
+        // A unique adjacent lift plus tracked history is evidence for this
+        // exact original-anchor integer lift; an ambiguous step supplies none.
+        Interval whole=resolver(anchor,frame,bounds,nextTracked?&nextOffset:nullptr);
+        if(whole.status==Status::Invalid || whole.status==Status::Review ||
+           !std::isfinite(whole.minimumFt3) || std::isnan(whole.maximumFt3) ||
+           whole.maximumFt3<whole.minimumFt3 ||
+           (!std::isfinite(whole.maximumFt3)&&whole.status!=Status::Ambiguous))return false;
+        if(nextTracked) {
             if(nextOffset<whole.firstTurnOffset || nextOffset>whole.lastTurnOffset)return false;
             const double estimate=whole.rawPhaseDelta+resolver.turnUnits()*nextOffset;
             const double error=resolver.phaseError(bounds);
