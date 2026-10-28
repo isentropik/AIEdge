@@ -19,13 +19,56 @@ class HistoricalEventReadTests(unittest.TestCase):
         first,second=self.read(e1,s),self.read(e2,s)
         self.assertEqual(first['result']['event_observation']['event_id'],e1);self.assertEqual(second['result']['event_observation']['event_id'],e2);self.assertNotIn('observation_support',first['result']);self.assertEqual(second['result']['observation_support']['observed'],[False,True,True]);self.assertIsNone(first['processed_at']);self.assertEqual(self.snapshot(),before);self.assertEqual(self.f.reader.calls,calls)
     def test_historical_context_survives_new_policy_and_profile_pipeline(self):
-        e1,e2,s=self.setup_two_masks();old_context=self.f.worker.observation_context
+        e1,e2,s=self.setup_two_masks()
+        old_context=self.f.worker.observation_context
+        old_first=copy.deepcopy(self.read(e1,s,old_context))
+        old_second=copy.deepcopy(self.read(e2,s,old_context))
+        self.assertEqual(old_first['result']['state'],'estimated')
+        self.assertEqual(old_second['result']['state'],'estimated')
+        calls=copy.deepcopy(self.f.reader.calls)
+        def saved_rows():
+            with self.store.connect() as db:
+                return {table:list(db.execute('SELECT * FROM '+table+' ORDER BY rowid'))
+                        for table in ('inference','event_recognition_requests',
+                                      'event_recognition_cache','event_recognition_bindings')}
+        old_rows=saved_rows()
         new=EventRecognition(self.store,self.f.reader,fixtures.DOC,{**fixtures.CONFIG,'full_refresh_seconds':30},fixtures.CAPS)
-        self.assertNotEqual(new.observation_context,old_context);self.assertEqual(new.stored_event(e2,s,fixtures.PIPELINE,old_context)['result']['state'],'estimated');self.assertEqual(new.stored_event(e2,s,fixtures.PIPELINE)['result']['state'],'pending')
-        self.assertEqual(self.read(e1,s,old_context)['result']['state'],'estimated')
-        alternate=fixtures.FakeReader();alternate.pipeline_id='b'*64;doc=copy.deepcopy(fixtures.DOC);doc['pipeline_id']=alternate.pipeline_id
+        self.assertNotEqual(new.observation_context,old_context)
+        self.assertEqual(new.observation_first_event,e2+1)
+        before=self.snapshot()
+        excluded=new.stored_event(e2,s,fixtures.PIPELINE)
+        self.assertEqual(excluded['result']['state'],'unavailable')
+        self.assertEqual(excluded['result']['error'],'event_historical_binding_invalid')
+        self.assertEqual(excluded['decision_evidence'],{
+            'state':'unavailable','request_exists':None,'completion_exists':None,
+            'completion_valid':False,'error':'event_historical_binding_invalid'})
+        self.assertIsNone(excluded['processed_at'])
+        self.assertEqual(new.stored_event(e2,s,fixtures.PIPELINE,old_context),old_second)
+        self.assertEqual(self.read(e1,s,old_context),old_first)
+        self.assertEqual(self.snapshot(),before)
+        self.assertEqual(self.f.reader.calls,calls)
+        self.assertEqual(saved_rows(),old_rows)
+
+        alternate=fixtures.FakeReader()
+        alternate.pipeline_id='b'*64
+        doc=copy.deepcopy(fixtures.DOC)
+        doc['pipeline_id']=alternate.pipeline_id
         different=EventRecognition(self.store,alternate,doc,fixtures.CONFIG,fixtures.CAPS)
-        self.assertEqual(different.stored_event(e2,s,fixtures.PIPELINE,old_context)['result']['state'],'estimated');self.assertEqual(alternate.calls,[])
+        self.assertEqual(different.observation_first_event,e2+1)
+        before=self.snapshot()
+        excluded=different.stored_event(e2,s,alternate.pipeline_id)
+        self.assertEqual(excluded['decision_evidence'],{
+            'state':'unavailable','request_exists':None,'completion_exists':None,
+            'completion_valid':False,'error':'event_historical_binding_invalid'})
+        self.assertEqual(excluded['result']['state'],'unavailable')
+        self.assertEqual(excluded['result']['error'],'event_historical_binding_invalid')
+        self.assertIsNone(excluded['processed_at'])
+        self.assertEqual(different.stored_event(e2,s,fixtures.PIPELINE,old_context),old_second)
+        self.assertEqual(self.read(e1,s,old_context),old_first)
+        self.assertEqual(self.snapshot(),before)
+        self.assertEqual(self.f.reader.calls,calls)
+        self.assertEqual(alternate.calls,[])
+        self.assertEqual(saved_rows(),old_rows)
     def test_pending_unbound_no_legacy_fallback(self):
         e,s=self.f.capture(1000000)
         with self.store.connect() as db:db.execute('INSERT INTO inference VALUES(?,?,?,?)',(s,fixtures.PIPELINE,'fake',encoded({'state':'estimated','physical_value':999})))
