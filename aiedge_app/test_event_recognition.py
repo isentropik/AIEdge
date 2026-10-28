@@ -106,7 +106,9 @@ class EventRecognitionTests(unittest.TestCase):
         with self.store.connect() as db:db.execute("UPDATE event_recognition_requests SET request='{}'")
         with self.assertRaises(ValueError):self.worker.accounting_result(e,s,PIPELINE)
     def test_context_floor_and_reconfiguration_refusal(self):
-        e,s,_=self.complete(1000000);self.feedback(e,s,'anchored');self.capture(3000000);config={**CONFIG,'full_refresh_seconds':30};new=EventRecognition(self.store,self.reader,DOC,config,CAPS);self.assertNotEqual(new.observation_context,self.worker.observation_context);self.assertEqual(new.observation_first_event,2);self.assertTrue(new.once());self.assertEqual(self.reader.calls[-1],None)
+        e,s,_=self.complete(1000000);self.feedback(e,s,'anchored');self.capture(3000000);config={**CONFIG,'full_refresh_seconds':30};new=EventRecognition(self.store,self.reader,DOC,config,CAPS);self.assertNotEqual(new.observation_context,self.worker.observation_context);self.assertEqual(new.observation_first_event,3)
+        calls=list(self.reader.calls);self.assertFalse(new.once());self.assertEqual(self.reader.calls,calls)
+        self.capture(5000000);self.assertTrue(new.once());self.assertEqual(self.reader.calls[-1],None)
         bad=FakeReader();bad.pipeline_id='b'*64
         with self.assertRaises(ValueError):new.activate(bad,lambda:None)
     def test_durable_feedback_digest_and_binding_drift_reject(self):

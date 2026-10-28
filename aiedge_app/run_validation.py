@@ -16,6 +16,15 @@ SAMPLING_CHECKS=frozenset((
 NAS_LINUX_CHECKS=frozenset(('test_archive.ArchiveLinuxTests.test_nofollow_directory_files_and_nonregular_rejection',
     'test_archive.ArchiveLinuxTests.test_child_lock_admits_one_process_and_parent_death_stops_it'))
 
+DECODER_CONTEXT_CHECK_GROUPS=(
+    ('test_model_tensors.ModelTensorTests.',5),
+    ('test_float_probability_decoder.FloatDecoderTests.',10),
+    ('test_float_probability_decoder.ReaderRoutingTests.',2),
+    ('test_float_decoder_integration.DecoderSmokeTests.',2),
+    ('test_float_decoder_integration.PipelineIdentityTests.',1),
+    ('test_future_context_floor.FutureContextFloorTests.',14),
+)
+
 def coverage_errors(result,allow_archive,packaged):
     errors=[]
     if result.testsRun==0:errors.append('No tests ran.')
@@ -52,7 +61,7 @@ def inventory_errors(identifiers,allow_archive,packaged):
                            ('test_event_observation_read.HistoricalEventReadTests.',10),
                            ('test_selector_observation.CandidateTests.',25),
                            ('test_event_decision_observability.DecisionTests.',28),
-                           ('test_event_decision_schema2.DecisionSchema2Tests.',7)):
+                           ('test_event_decision_schema2.DecisionSchema2Tests.',7))+DECODER_CONTEXT_CHECK_GROUPS:
         if sum(name.startswith(prefix) for name in identifiers)<minimum:
             errors.append('Required test coverage is missing: '+prefix)
     if packaged and PACKAGED_CHECK not in identifiers:

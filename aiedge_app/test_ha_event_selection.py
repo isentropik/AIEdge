@@ -90,10 +90,13 @@ class HAMigrationTests(fixture.EventConsumptionTests):
         self.worker._drop()
         options=validate({'recognition_mode':'EVENT_LAST_TWO','event_selection_policy':POLICY})
         selected=configure(options,self.store,legacy,self.formats,fixture.LIBRARY);self.formats.recognition=selected
-        self.assertEqual(selected.observation_first_event,3)
+        self.assertEqual(selected.observation_first_event,4)
         self.worker=Consumption(self.store,selected,self.formats,fixture.LIBRARY)
+        calls=list(self.reader.calls);self.assertFalse(selected.once());self.assertFalse(self.worker.once());self.assertEqual(self.reader.calls,calls)
+        # Only this newly invented event is processed; prior inference rows stay exact.
+        self.event(100.03);self.assertTrue(legacy.once())
         self.assertTrue(selected.once());self.assertTrue(self.worker.once());state=self.worker.status()
-        self.assertEqual(state['event_id'],3);self.assertEqual(state['prior_segment_id'],prior['segment_id']);self.assertIsNone(state['unresolved_gap']['delta'])
+        self.assertEqual(state['event_id'],4);self.assertEqual(state['prior_segment_id'],prior['segment_id']);self.assertIsNone(state['unresolved_gap']['delta'])
         self.assertTrue(set(oldrows)<=set(self.records()));calls=len(self.reader.calls);records=self.records()
         self.worker._drop();selected2=configure(options,self.store,legacy,self.formats,fixture.LIBRARY);self.formats.recognition=selected2
         self.worker=Consumption(self.store,selected2,self.formats,fixture.LIBRARY)
@@ -102,7 +105,9 @@ class HAMigrationTests(fixture.EventConsumptionTests):
         self.worker._drop();self.formats.recognition=legacy;self.worker=Consumption(self.store,legacy,self.formats,fixture.LIBRARY)
         self.assertTrue(self.worker.once());back=self.worker.status();self.assertEqual(back['prior_segment_id'],state['segment_id']);self.assertIsNone(back['unresolved_gap']['delta'])
         with self.store.connect() as db:
-            self.assertEqual(list(db.execute('SELECT * FROM inference ORDER BY sha256,pipeline')),oldinference);self.assertEqual(list(db.execute('SELECT * FROM capture_events')),events)
+            afterinference=list(db.execute('SELECT * FROM inference ORDER BY sha256,pipeline'));afterevents=list(db.execute('SELECT * FROM capture_events'))
+            self.assertTrue(set(oldinference)<=set(afterinference));self.assertEqual(len(afterinference),len(oldinference)+1)
+            self.assertEqual(afterevents[:len(events)],events);self.assertEqual(len(afterevents),len(events)+1)
     def test_missing_native_export_closed_profile_and_reuse_disabled_only_full(self):
         self.worker._drop();legacy=Recognition(self.store,self.reader)
         options=validate({'recognition_mode':'EVENT_LAST_TWO','event_selection_policy':POLICY})

@@ -1,7 +1,7 @@
 """Prevent a green validation result when required native coverage is skipped."""
 import unittest
 from types import SimpleNamespace
-from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKAGED_CHECK,SAMPLING_CHECKS
+from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKAGED_CHECK,SAMPLING_CHECKS,DECODER_CONTEXT_CHECK_GROUPS
 
 def result(skips=(),count=1):
     return SimpleNamespace(testsRun=count,skipped=[(SimpleNamespace(id=lambda name=name:name),'fixture missing') for name in skips])
@@ -46,7 +46,14 @@ NEW_COVERAGE={*(f'test_selector_observation.CandidateTests.test_{i}' for i in ra
               *(f'test_archive.ArchiveCopyTests.test_{i}' for i in range(6)),
               *(f'test_archive.ArchiveLinuxTests.test_{i}' for i in range(2)),
               *(f'test_archive_http.ArchiveHttpTests.test_{i}' for i in range(3)),*SAMPLING_CHECKS}
+NEW_COVERAGE.update(prefix+'test_'+str(i) for prefix,count in DECODER_CONTEXT_CHECK_GROUPS for i in range(count))
 class ValidationCoverageTests(unittest.TestCase):
+    def test_decoder_and_future_context_groups_cannot_be_omitted_or_skipped(self):
+        for prefix,count in DECODER_CONTEXT_CHECK_GROUPS:
+            with self.subTest(prefix=prefix):
+                errors=inventory_errors({name for name in NEW_COVERAGE if not name.startswith(prefix)},True,False)
+                self.assertTrue(any(prefix in error for error in errors))
+                self.assertEqual(len(coverage_errors(result([prefix+'test_required']),True,False)),1)
     def test_archive_omission_requires_explicit_permission(self):
         value=result(ARCHIVE_CHECKS)
         self.assertEqual(coverage_errors(value,True,False),[])

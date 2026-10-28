@@ -108,11 +108,11 @@ class EventConsumptionTests(unittest.TestCase):
         self.worker._drop()
         # A fresh policy context is created after one retained legacy event.
         first,digest=self.event(100.0);cfg=copy.deepcopy(self.config);cfg['full_refresh_seconds']=4
-        self.recognition=EventRecognition(self.store,self.reader,self.document,cfg,self.capabilities);self.assertEqual(self.recognition.observation_first_event,first)
+        self.recognition=EventRecognition(self.store,self.reader,self.document,cfg,self.capabilities);self.assertEqual(self.recognition.observation_first_event,first+1)
         self.event(100.1);self.formats=FormatStore(self.temp.name,self.recognition)
         self.worker=Consumption(self.store,self.recognition,self.formats,LIBRARY)
-        self.assertTrue(self.recognition.once());state=self.consume();self.assertEqual(state['event_id'],first)
-        self.assertTrue(self.recognition.once());self.consume()
+        self.assertTrue(self.recognition.once());state=self.consume();self.assertEqual(state['event_id'],first+1)
+        self.event(100.2);self.assertTrue(self.recognition.once());self.consume()
     def test_format_change_is_withheld_before_creating_or_reinterpreting_a_segment(self):
         self.recognize_consume(100.0);before=self.records();segment=self.worker.segment['segment_id']
         changed=copy.deepcopy(self.document);changed['unit']='m3';self.formats.save(changed,self.saved['revision'])

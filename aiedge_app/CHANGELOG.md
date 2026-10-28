@@ -1,3 +1,19 @@
+## 0.2.0-dev32
+
+- Decode main floating-point model probabilities without int8 quantization,
+  retaining peak order and fractional position. Include the decoder contract
+  in pipeline identity; preserve the separate int8 model route.
+- Start newly created event-selection contexts at the next capture event.
+  Persist that pending floor across restart and keep accounting unchanged until
+  the first future event arrives. Existing contexts retain their saved floor,
+  terminal results, and pending-request recovery.
+- Retain historical rows and link new accounting interpretations with an
+  unresolved gap. Legacy FULL mode retains its existing historical processing;
+  the future-event behavior applies only to event-selection mode.
+- Require decoder, pipeline identity, and future-context regression coverage.
+  Keep calibration, models, bounds, capture defaults, and output defaults
+  unchanged. These source corrections do not establish physical accuracy.
+
 ## 0.2.0-dev31
 
 - Keep cumulative accounting tied to turns established by consecutive valid observations when resolving the original anchor. This avoids re-enumerating already excluded whole-turn possibilities as a tracking session grows.

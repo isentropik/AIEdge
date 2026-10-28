@@ -43,10 +43,12 @@ class EventRecognition(Recognition):
             db.execute('CREATE TABLE IF NOT EXISTS event_recognition_bindings(event_id INTEGER NOT NULL,pipeline TEXT NOT NULL,context TEXT NOT NULL,source_sha TEXT NOT NULL,mask_sha TEXT NOT NULL,result_sha TEXT NOT NULL,request_sha TEXT NOT NULL,PRIMARY KEY(event_id,pipeline,context))')
             row=db.execute('SELECT pipeline,format_id,first_event FROM event_selection_contexts WHERE context=?',(self.observation_context,)).fetchone()
             if row:
-                latest=max(1,db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0])
-                check(row[:2]==(reader.pipeline_id,self.format_id) and type(row[2]) is int and 1<=row[2]<=latest,'event_context_saved_invalid');self.observation_first_event=row[2]
+                latest=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
+                # A context may be durable before its first future capture.
+                check(row[:2]==(reader.pipeline_id,self.format_id) and type(row[2]) is int and 1<=row[2]<=max(1,latest+1),'event_context_saved_invalid');self.observation_first_event=row[2]
             else:
-                self.observation_first_event=max(1,db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0])
+                # New contexts must never backfill a pre-existing photograph.
+                self.observation_first_event=max(1,db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]+1)
                 db.execute('INSERT INTO event_selection_contexts VALUES(?,?,?,?)',(self.observation_context,reader.pipeline_id,self.format_id,self.observation_first_event))
         self._restart_pending=bool(row)
     def activate(self,reader,persist):

@@ -122,6 +122,17 @@ class Consumption:
                 self.state={'state':'unavailable','reason':'reading_pipeline_changed','value':None,'accuracy_verified':False,'training_allowed':False};return False
             if self.observation_context is not None and getattr(self.recognition,'observation_format_id',None)!=identity:
                 self.state={'state':'unavailable','reason':'consumption_selection_format_changed','value':None,'accuracy_verified':False,'training_allowed':False};return False
+            if self.observation_context is not None:
+                # Pending future-only contexts do not move the active segment.
+                first=getattr(self.recognition,'observation_first_event',None)
+                with self.store.connect() as db:
+                    latest=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
+                if type(first) is not int or not 1<=first<=max(1,latest+1):
+                    raise ValueError('invalid_consumption_observation_floor')
+                if first>latest:
+                    self.state={'state':'pending','reason':'consumption_waiting_for_context_first_capture',
+                                'value':None,'first_event':first,'accuracy_verified':False,'training_allowed':False}
+                    return False
             self._prepare(identity,document)
             with self.store.connect() as db:
                 row=db.execute("""SELECT e.event_id,e.camera,f.captured_at,f.sha256,c.clock_id,c.monotonic_us,
