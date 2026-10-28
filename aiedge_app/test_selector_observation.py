@@ -210,9 +210,10 @@ class CandidateTests(unittest.TestCase):
         self.worker._drop();config={**self.config,'full_refresh_seconds':90.}
         self.recognition=EventRecognition(self.store,self.reader,self.document,config,self.caps)
         self.formats=FormatStore(self.temp.name,self.recognition);self.worker=Consumption(self.store,self.recognition,self.formats,LIBRARY)
-        self.assertNotEqual(old_context,self.recognition.observation_context);self.assertEqual(self.recognition.observation_first_event,2)
-        self.assertTrue(self.recognition.once());self.assertTrue(self.worker.once());state=self.worker.status()
-        self.assertEqual(state['gap_reason'],'interpretation_changed');self.assertIsNone(state['unresolved_gap']['delta']);self.assertEqual(self.request(2)['reader_observed'],[True]*3)
+        self.assertNotEqual(old_context,self.recognition.observation_context);self.assertEqual(self.recognition.observation_first_event,3)
+        calls=list(self.reader.calls);self.assertFalse(self.recognition.once());self.assertFalse(self.worker.once());self.assertEqual(self.reader.calls,calls)
+        self.capture(123.4);self.assertTrue(self.recognition.once());self.assertTrue(self.worker.once());state=self.worker.status()
+        self.assertEqual(state['gap_reason'],'interpretation_changed');self.assertIsNone(state['unresolved_gap']['delta']);self.assertEqual(self.request(3)['reader_observed'],[True]*3)
         with self.store.connect() as db:
             after=list(db.execute('SELECT segment_id,event_id,result FROM consumption_records'));after_requests=list(db.execute('SELECT event_id,context,request FROM event_recognition_requests'))
         for row in before:self.assertIn(row,after)

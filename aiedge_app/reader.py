@@ -13,6 +13,7 @@ MODELS={'main':('polar-main-float.tflite','8c0d63fbe8c3cbc7bd854c464d9cd342b46f7
 NAMES=('main.10000k','main.1000k','main.100k','main.10k','main.1k','secondary.5')
 FEATURE_SCALE=0.006855103187263012
 FEATURE_ZERO=-53
+DECODER_CONTRACT={'main':'float32le-probabilities-360-local21-v1','secondary':'native-int8-probabilities-360-local21-v1'}
 
 def network_input(features,role):
     """The native ABI still supplies the exact frozen int8 feature tensor."""
@@ -21,13 +22,35 @@ def network_input(features,role):
 
 def decoder_scores(value,role):
     if role=='main':
-        # Preserve the native circular decoder's probability-bin contract.
-        # Float weights avoid catastrophic near-tied peaks in the int8 main
-        # export; preprocessing, guards and secondary weights stay unchanged.
+        # Keep the float model's probability resolution and peak ordering.
+        # This byte representation is also the exact input to the float decoder
+        # and the input bound by scores_sha256. Secondary bytes stay unchanged.
         if value.dtype!=np.float32 or value.shape!=(1,360) or not np.isfinite(value).all() or np.any(value<0) or np.any(value>1) or abs(float(value.sum())-1)>2e-5:
             raise ValueError('model_probability_contract:main')
-        value=np.clip(np.rint(value*256)-128,-128,127).astype(np.int8)
+        return value.astype('<f4',copy=False).tobytes(order='C')
     return value.tobytes()
+
+
+def decode_main_scores(scores,ccw):
+    """Same circular local centroid as native, with original float weights."""
+    if type(ccw) is not bool or not isinstance(scores,bytes) or len(scores)!=360*4:
+        raise ValueError('model_probability_contract:main')
+    value=np.frombuffer(scores,dtype='<f4').astype(np.float32,copy=False).reshape(1,360)
+    # Keep the existing finite/range/unit-sum contract; do not renormalize bad data.
+    decoder_scores(value,'main')
+    probabilities=value[0]
+    peak=int(np.argmax(probabilities))
+    offsets=np.arange(-10,11,dtype=np.int64)
+    weights=probabilities[(peak+offsets)%360].astype(np.float64)
+    mass=float(np.sum(weights,dtype=np.float64))
+    if not mass>0 or not np.isfinite(mass):
+        raise ValueError('model_probability_contract:main')
+    moment=float(np.dot(offsets.astype(np.float64),weights))
+    value=((peak+moment/mass)%360.0)/36.0
+    if ccw:value=(10.0-value)%10.0
+    # Preserve the public position precision and [0,10) rounding guard.
+    result=float(np.float32(value))
+    return 0.0 if result>=10.0 else result
 
 class Reader:
     def __init__(self,library,models,profile,reference_kernels=False,reuse_unchanged=True,sampling_sparse=False):
@@ -62,7 +85,8 @@ class Reader:
                   'reader':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                   'litert':importlib.metadata.version('ai-edge-litert'),'pillow':importlib.metadata.version('Pillow'),
                   'numpy':np.__version__,'reference_kernels':reference_kernels,
-                  'dial_reuse':'exact-source-region-v1' if reuse_unchanged else 'disabled'}
+                  'dial_reuse':'exact-source-region-v1' if reuse_unchanged else 'disabled',
+                  'decoder_contract':DECODER_CONTRACT}
         self.pipeline_ids={mode:hashlib.sha256(json.dumps(dict(contract,sparse=mode),sort_keys=True).encode()).hexdigest()
                            for mode in (False,True)}
         self.pipeline_id=self.pipeline_ids[self.sampling_sparse]
@@ -79,6 +103,7 @@ class Reader:
         result={'state':'rejected','profile':self.profile,'model_hashes':self.hashes,'dial_positions':[],
                 'pipeline_id':self.pipeline_ids[sparse],'sampling':'sparse' if sparse else 'full',
                 'accuracy_verified':False,'training_allowed':False,'physical_value':None,
+                'decoder_contract':dict(DECODER_CONTRACT),
                 'work':{'preprocessing_reused':0,'inference_reused':0,'dials':len(self.dials)}}
         if mask is not None:
             # Diagnostic only. JPEG wrapper replaces this with byte-bound provenance.
@@ -113,7 +138,9 @@ class Reader:
                             role=dial['model'];net,inp,out=self.networks[role]
                             net.set_tensor(inp['index'],network_input(row['features'],role));net.invoke()
                             scores=decoder_scores(net.get_tensor(out['index']),role)
-                            item.update(state='estimated',position=self.native.decode(scores,dial['direction']=='ccw'),scores_sha256=hashlib.sha256(scores).hexdigest())
+                            ccw=dial['direction']=='ccw'
+                            position=decode_main_scores(scores,ccw) if role=='main' else self.native.decode(scores,ccw)
+                            item.update(state='estimated',position=position,scores_sha256=hashlib.sha256(scores).hexdigest())
                         except Exception:
                             # A partial failed frame cannot leave successful dial outputs reusable.
                             self.last_dials.clear()

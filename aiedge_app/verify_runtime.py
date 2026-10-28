@@ -3,11 +3,25 @@ import argparse
 import numpy as np
 from pathlib import Path
 from package_assets import verify
-from reader import Reader,PROFILE,network_input,decoder_scores
+from reader import Reader,PROFILE,network_input,decoder_scores,decode_main_scores
 
 def require_preparation_exports(library):
     if not hasattr(library,'aiedge_prepare_profile_reuse'):raise ValueError('changed_dial_runtime_missing')
     if not hasattr(library,'aiedge_prepare_profile_masked'):raise ValueError('masked_preparation_runtime_missing')
+
+
+def verify_model_decoder(native,role,value):
+    """Exercise the installed score contract for each explicit model route."""
+    if role not in ('main','secondary'):raise ValueError('invalid_model_route')
+    scores=decoder_scores(value,role)
+    if role=='main':
+        assert len(scores)==360*4
+        position=decode_main_scores(scores,False)
+    else:
+        assert len(scores)==360
+        position=native.decode(scores,False)
+    assert 0<=position<10
+    return position
 
 def main():
     # Import opt-in modules inside the installed image, where a missing COPY must fail.
@@ -25,9 +39,7 @@ def main():
     assert len(reader.networks)==2
     for role,(net,inp,out) in reader.networks.items():
         net.set_tensor(inp["index"],network_input(bytes(384*40),role));net.invoke()
-        scores=decoder_scores(net.get_tensor(out["index"]),role)
-        assert len(scores)==360
-        assert 0<=reader.native.decode(scores,False)<10
+        verify_model_decoder(reader.native,role,net.get_tensor(out["index"]))
     reading=reader.native.reading([1000,100,10],[1.234,2.34,3.4],[.01,.01,.01])
     if reading['state']!='estimated' or abs(reading['value']-123.4)>1e-8:raise ValueError('reading_runtime_contract')
     from reading_format import ReadingFormat

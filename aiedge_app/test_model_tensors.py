@@ -21,11 +21,13 @@ class ModelTensorTests(unittest.TestCase):
         self.assertEqual(actual.shape,(1,384,40))
         self.assertEqual(actual.tobytes(),blob)
 
-    def test_float_probabilities_keep_the_native_decoder_bins(self):
+    def test_float_probabilities_preserve_exact_float_decoder_bytes(self):
         probability=np.zeros((1,360),np.float32)
         probability[0,0]=.25;probability[0,1]=.75
-        actual=np.frombuffer(decoder_scores(probability,'main'),np.int8)
-        self.assertEqual(actual[:3].tolist(),[-64,64,-128])
+        actual=decoder_scores(probability,'main')
+        self.assertEqual(len(actual),360*4)
+        self.assertEqual(actual,probability.astype('<f4').tobytes())
+        np.testing.assert_array_equal(np.frombuffer(actual,dtype='<f4').reshape(1,360),probability)
 
     def test_probability_validation_rejects_corrupt_outputs(self):
         good=np.zeros((1,360),np.float32);good[0,0]=1
