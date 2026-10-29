@@ -77,6 +77,36 @@ class TrialTests(unittest.TestCase):
         self.assertTrue(all(not row['training_allowed'] for row in self.store.history()['items']))
         self.assertEqual(self.store.capture_timing()['elapsed_seconds'],30)
 
+
+    def test_six_second_trial_preserves_finite_start_spacing(self):
+        starts=[]
+        def image(index, deadline):
+            starts.append(self.clock())
+            self.clock.value += 4.8
+            return JPEG, headers(index)
+        self.camera.hook=image
+        self.start(max_attempts=3,duration_seconds=24,interval_seconds=6)
+        self.worker.once()
+        self.assertEqual(self.worker.status()['state'],'completed')
+        self.assertEqual(self.worker.status()['attempts'],3)
+        self.assertEqual(self.worker.status()['missed_slots'],0)
+        for a,b in zip(starts,starts[1:]):self.assertAlmostEqual(b-a,6,places=5)
+        self.worker.once()
+        self.assertEqual(self.camera.calls,3)
+
+    def test_six_second_overrun_skips_slots_without_catchup(self):
+        starts=[]
+        def image(index, deadline):
+            starts.append(self.clock())
+            self.clock.value += 7
+            return JPEG, headers(index)
+        self.camera.hook=image
+        self.start(max_attempts=3,duration_seconds=30,interval_seconds=6)
+        self.worker.once()
+        self.assertGreater(self.worker.status()['missed_slots'],0)
+        for a,b in zip(starts,starts[1:]):self.assertAlmostEqual(b-a,12,places=5)
+        self.assertLessEqual(self.camera.calls,3)
+
     def test_time_budget_prevents_more_requests_and_never_catches_up(self):
         self.start(duration_seconds=50);self.worker.once()
         self.assertEqual((self.camera.calls,self.worker.status()['state']), (2,'expired'))
@@ -141,7 +171,7 @@ class TrialTests(unittest.TestCase):
 
     def test_invalid_limits_conflicts_busy_and_disabled_have_no_camera_io(self):
         for field,value in [('max_attempts',4),('max_attempts',True),('duration_seconds',91),
-                            ('duration_seconds',float('nan')),('interval_seconds',0)]:
+                            ('duration_seconds',float('nan')),('interval_seconds',0),('interval_seconds',5),('interval_seconds',True),('interval_seconds',6.0)]:
             with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.start(**{field:value})
         self.allowed=False
         with self.assertRaisesRegex(ValueError,'trial_not_allowed'):self.start()

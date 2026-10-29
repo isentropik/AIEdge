@@ -5,7 +5,7 @@ from capture import Camera
 
 MAX_OPTIONS = 65536
 DEFAULTS = dict(camera_url='', camera_token='', camera_username='', camera_password='',
-                capture_enabled=False, mqtt_enabled=False, interval_seconds=30,
+                capture_enabled=False, mqtt_enabled=False, mqtt_output_mode='reading', interval_seconds=30,
                 recognition_mode='FULL',event_selection_policy={})
 
 class InvalidOptions(ValueError):
@@ -23,8 +23,11 @@ def validate(document):
     for field in ('capture_enabled', 'mqtt_enabled'):
         if type(options[field]) is not bool:
             raise InvalidOptions('options_invalid_field', field)
+    from mqtt_consumption import MODES
+    if options['mqtt_output_mode'] not in MODES:
+        raise InvalidOptions('options_invalid_field', 'mqtt_output_mode')
     interval = options['interval_seconds']
-    if type(interval) is not int or not 10 <= interval <= 3600:
+    if type(interval) is not int or not 6 <= interval <= 3600:
         raise InvalidOptions('options_invalid_field', 'interval_seconds')
     from event_mode import validate_options
     try:validate_options(options['recognition_mode'],options['event_selection_policy'],interval)

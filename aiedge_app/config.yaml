@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev33
+version: 0.2.0-dev34
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -28,6 +28,7 @@ options:
   camera_username: ""
   camera_password: ""
   mqtt_enabled: false
+  mqtt_output_mode: reading
   capture_enabled: false
   interval_seconds: 30
   recognition_mode: FULL
@@ -38,8 +39,9 @@ schema:
   camera_username: str
   camera_password: password
   mqtt_enabled: bool
+  mqtt_output_mode: list(reading|consumption|gas_consumption)
   capture_enabled: bool
-  interval_seconds: int(10,3600)
+  interval_seconds: int(6,3600)
   recognition_mode: list(FULL|EVENT_LAST_TWO)
   event_selection_policy:
     normal_interval_seconds: float?

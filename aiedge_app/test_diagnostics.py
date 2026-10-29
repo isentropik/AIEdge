@@ -41,4 +41,18 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertEqual(report['schema_version'],1)
         finally:server.shutdown();thread.join();server.server_close()
 
+
+
+class CommissioningCadenceDiagnosticsTests(unittest.TestCase):
+    def test_six_second_cadence_reported_but_out_of_range_omitted(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        from diagnostics import selection_diagnostics
+        for value in (6,9,10,3600):
+            with patch('ha_event_selection.status',return_value={'fixed_interval_seconds':value}):
+                self.assertEqual(selection_diagnostics(SimpleNamespace())['fixed_interval_seconds'],value)
+        for value in (5,0,3601,True,float('inf')):
+            with patch('ha_event_selection.status',return_value={'fixed_interval_seconds':value}):
+                self.assertNotIn('fixed_interval_seconds',selection_diagnostics(SimpleNamespace()))
+
 if __name__=='__main__':unittest.main()

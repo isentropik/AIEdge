@@ -83,7 +83,10 @@ def fresh_state(snapshot,max_age,clock=None):
             'format_id':reading['format_id'],'accuracy_verified':False}
 
 class MqttOutput:
-    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None,clock=time.monotonic):
+    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None,clock=time.monotonic,output_mode='reading'):
+        from mqtt_consumption import MODES
+        if output_mode not in MODES:raise ValueError('invalid_mqtt_output_mode')
+        self.output_mode=output_mode
         self.performance=performance if performance is not None else Timings()
         self.identity=instance_id(directory);self.snapshot=snapshot;self.interval=interval
         self.provider=provider;self.client_factory=client_factory;self.stop=threading.Event()
@@ -93,6 +96,9 @@ class MqttOutput:
         # HA numeric expiry is separate from availability. Refresh equal values
         # from current evidence, leaving one capture interval of headroom.
         self.refresh_after=max(90,interval*3)-interval
+    def _discovery(self,document):
+        from mqtt_consumption import configuration
+        return configuration(self.identity,document,self.interval,self.output_mode,discovery)
     def _reset_dedup(self):
         self.last_payload=None;self.last_key=None;self.last_state_ack=None
     def status(self):return {'state':self.state,'error':self.error}
@@ -109,7 +115,7 @@ class MqttOutput:
         info.wait_for_publish(timeout=5)
         if not info.is_published():raise ValueError('mqtt_publish_unconfirmed')
     def connect(self,document):
-        credentials=self.provider();self.configuration,self.base,self.config=discovery(self.identity,document,self.interval)
+        credentials=self.provider();self.configuration,self.base,self.config=self._discovery(document)
         self.connected.clear()
         client=self.client_factory(mqtt.CallbackAPIVersion.VERSION2,client_id='aiedge-'+self.identity[:16],protocol=mqtt.MQTTv311)
         self.client=client
@@ -132,13 +138,14 @@ class MqttOutput:
             if self.client and self.connected.is_set():self._publish(self.base+'/availability','offline',True)
             self._reset_dedup()
             self.state='waiting_for_format';return 'rejected'
-        target,base,config=discovery(self.identity,document,self.interval)
+        target,base,config=self._discovery(document)
         if not self.client or target!=self.configuration or not self.connected.is_set():
             self.close();self.connect(document)
         if self.rediscover.is_set():
             self._publish(self.configuration,json.dumps(self.config,ensure_ascii=False),True)
             self.rediscover.clear();self._reset_dedup()
-        state=fresh_state(snapshot,max(90,self.interval*3))
+        from mqtt_consumption import fresh_consumption
+        state=(fresh_state if self.output_mode=='reading' else fresh_consumption)(snapshot,max(90,self.interval*3))
         if state and state['format_id']!=validate(document)[1]:state=None
         payload=json.dumps(state,sort_keys=True,allow_nan=False) if state else None
         if payload is None:
