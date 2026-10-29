@@ -28,11 +28,12 @@ def publication_state(store,recognition,reading_format,consumption):
     accounted=consumption.status() if consumption else None
     reading=reconcile_reading(reading,accounted)
     after,_=store.publication_frame()
+    consumption_public=accounted if after==event and accounted and accounted.get('event_id')==event else None
     if after!=event or (consumption and accounted.get('event_id')!=event):
         reading={'state':'pending','value':None}
     elif consumption and accounted.get('state') not in ('anchored','estimated','within_noise','bounded','ambiguous'):
         reading={'state':'pending' if accounted.get('state') in ('pending','recovering') else 'unavailable','value':None}
-    return {'latest':latest,'reading':reading,'format':saved['format'],'_timing_event_id':event,
+    return {'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
             '_publication_segment_id':accounted.get('segment_id') if accounted else None}
 
 def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None):
@@ -312,7 +313,7 @@ def run_service(stop_signals):
     if mqtt_enabled:
         from mqtt_output import MqttOutput
         def publication_snapshot():return publication_state(store,recognition,reading_format,consumption)
-        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval,performance=store.performance)
+        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval,performance=store.performance,output_mode=options.get('mqtt_output_mode','reading'))
         except (OSError,ValueError,UnicodeError):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     camera=None
