@@ -5,7 +5,8 @@ from run_validation import coverage_errors,inventory_errors,ARCHIVE_CHECKS,PACKA
 
 def result(skips=(),count=1):
     return SimpleNamespace(testsRun=count,skipped=[(SimpleNamespace(id=lambda name=name:name),'fixture missing') for name in skips])
-NEW_COVERAGE={*(f'test_selector_observation.CandidateTests.test_{i}' for i in range(25)),
+NEW_COVERAGE={*(f'test_mqtt_consumption.ConsumptionPublicationTests.test_{i}' for i in range(18)),
+              *(f'test_selector_observation.CandidateTests.test_{i}' for i in range(25)),
               *(f'test_event_decision_observability.DecisionTests.test_{i}' for i in range(28)),
               *(f'test_event_decision_schema2.DecisionSchema2Tests.test_{i}' for i in range(7)),
               *(f'test_event_consumption.EventConsumptionTests.test_{i}' for i in range(8)),
@@ -59,7 +60,8 @@ class ValidationCoverageTests(unittest.TestCase):
         self.assertEqual(coverage_errors(value,True,False),[])
         self.assertEqual(len(coverage_errors(value,False,False)),len(ARCHIVE_CHECKS))
     def test_accounting_and_generated_model_skips_are_never_accepted(self):
-        for name in ('test_consumption.AccountingTests.test_unique_intervals_and_many_turns_survive_restart',
+        for name in ('test_mqtt_consumption.ConsumptionPublicationTests.test_required',
+                     'test_consumption.AccountingTests.test_unique_intervals_and_many_turns_survive_restart',
                      'test_synthetic_pipeline.GeneratedPipelineTests.test_both_model_routes_estimate_without_accuracy_or_label_claims',
                      'test_changed_dials.ChangedDialTests.test_changed_dial_only_recomputes_its_crop'):
             self.assertEqual(len(coverage_errors(result([name]),True,False)),1)
@@ -80,7 +82,7 @@ class ValidationCoverageTests(unittest.TestCase):
                   *('test_changed_dials.ChangedDialTests.test_'+str(i) for i in range(12))}
         complete|=NEW_COVERAGE|{f'test_mqtt_semantic_dedup.SemanticDedupTests.test_{i}' for i in range(14)}
         self.assertEqual(inventory_errors(complete,True,False),[])
-        for prefix in ('test_mqtt_semantic_dedup.','test_delivery_timing.','test_meter_profile.','test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
+        for prefix in ('test_mqtt_consumption.','test_mqtt_semantic_dedup.','test_delivery_timing.','test_meter_profile.','test_consumption.','test_synthetic_pipeline.','test_reviews.','test_review_http.','test_marker_suggestions.','test_changed_dials.',
                        'test_reading_bounds.','test_reading_consistency.','test_temporal_reading.','test_startup_shutdown.','test_runtime_copy.','test_lifecycle.','test_camera_setup.','test_camera_lighting.','test_camera_image.','test_camera_auto.','test_capture_trial.','test_trial_results.'):
             self.assertTrue(inventory_errors({i for i in complete if not i.startswith(prefix)},True,False))
     def test_duplicate_ids_cannot_satisfy_required_coverage(self):
