@@ -27,7 +27,7 @@ def validate(document):
     if options['mqtt_output_mode'] not in MODES:
         raise InvalidOptions('options_invalid_field', 'mqtt_output_mode')
     interval = options['interval_seconds']
-    if type(interval) is not int or not 10 <= interval <= 3600:
+    if type(interval) is not int or not 6 <= interval <= 3600:
         raise InvalidOptions('options_invalid_field', 'interval_seconds')
     from event_mode import validate_options
     try:validate_options(options['recognition_mode'],options['event_selection_policy'],interval)

@@ -21,7 +21,7 @@ def selection_diagnostics(recognition):
     for key in ('partial_supported','timing_capability_measured','alignment_required'):
         if type(raw.get(key)) is bool:result[key]=raw[key]
     value=raw.get('fixed_interval_seconds')
-    if finite_number(value) and 10<=value<=3600:result['fixed_interval_seconds']=value
+    if finite_number(value) and 6<=value<=3600:result['fixed_interval_seconds']=value
     value=raw.get('context_id')
     if isinstance(value,str) and re.fullmatch('[a-f0-9]{64}',value):result['context_id']=value
     value=raw.get('first_event')

@@ -18,10 +18,13 @@ class OptionsTests(unittest.TestCase):
                           'camera_password':'private', 'interval_seconds':60})
         self.assertFalse(value['capture_enabled'])
         self.assertEqual(value['interval_seconds'],60)
+        for seconds in (6,9,10,3600):
+            self.assertEqual(validate({'interval_seconds':seconds})['interval_seconds'],seconds)
+        self.assertEqual(DEFAULTS['interval_seconds'],30)
 
     def test_invalid_documents_never_enable_workers_or_expose_values(self):
         documents = [[], None, {'extra_secret':'DO-NOT-EXPOSE'}, {'capture_enabled':1},
-                     {'mqtt_enabled':'true'}, {'interval_seconds':True}, {'interval_seconds':9},
+                     {'mqtt_enabled':'true'}, {'interval_seconds':True}, {'interval_seconds':5},
                      {'interval_seconds':3601}, {'interval_seconds':30.0}, {'camera_password':[]},
                      {'camera_token':'x'*4097}, {'camera_token':'token with space'}, {'camera_token':'token\u2603'}, {'capture_enabled':True},
                      {'camera_url':'http://name:bad'}, {'camera_url':'http://name:70000'},

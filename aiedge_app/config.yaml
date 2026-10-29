@@ -41,7 +41,7 @@ schema:
   mqtt_enabled: bool
   mqtt_output_mode: list(reading|consumption|gas_consumption)
   capture_enabled: bool
-  interval_seconds: int(10,3600)
+  interval_seconds: int(6,3600)
   recognition_mode: list(FULL|EVENT_LAST_TWO)
   event_selection_policy:
     normal_interval_seconds: float?

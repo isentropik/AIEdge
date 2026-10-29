@@ -105,7 +105,7 @@ SELECT_DOCUMENT="CASE WHEN length(CAST(document AS BLOB))<=16384 THEN document E
 def limits(request_id, max_attempts, duration_seconds, interval_seconds):
     if not isinstance(request_id, str) or not re.fullmatch('[a-f0-9]{32}', request_id):
         raise ValueError('trial_request_id_invalid')
-    for value, low, high in ((max_attempts, 1, 3), (duration_seconds, 1, 90), (interval_seconds, 10, 90)):
+    for value, low, high in ((max_attempts, 1, 3), (duration_seconds, 1, 90), (interval_seconds, 6, 90)):
         if type(value) is not int or not low <= value <= high:
             raise ValueError('trial_limits_invalid')
     return dict(request_id=request_id, max_attempts=max_attempts,
