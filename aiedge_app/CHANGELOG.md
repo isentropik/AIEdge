@@ -1,3 +1,9 @@
+## 0.2.0-dev33
+
+- Replace only the main floating model with a fixed-schedule candidate trained with independent foreground positions on fixed synthetic backgrounds. The secondary model, native preprocessing, floating decoder, calibration and accounting algorithms are unchanged.
+- Preserve the model/reader hashes in the pipeline identity. A deployment must bind the new reading-format pipeline while stopped and start a future-only event context; no historical captures or consumption rows are reprocessed.
+- Include data-free training-method source and synthetic recipe tests. Original private training inputs, masks and labels are not bundled. Synthetic checks and a limited host diagnostic are development evidence, not a final independent physical-accuracy certificate.
+
 ## 0.2.0-dev32
 
 - Decode main floating-point model probabilities without int8 quantization,

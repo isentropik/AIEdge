@@ -8,7 +8,7 @@ from ai_edge_litert.interpreter import Interpreter,OpResolverType
 from native import Native,Profile
 
 PROFILE='frozen-gas-six-dial-v1'
-MODELS={'main':('polar-main-float.tflite','8c0d63fbe8c3cbc7bd854c464d9cd342b46f766a107d2cbd6d93026c49601016'),
+MODELS={'main':('polar-main-float.tflite','723c5680bbae4f19e3eaee343a008cbca823e95a5da55d274f2afee33d0da9ca'),
         'secondary':('polar-int8.tflite','b039dd72fa6cb2c821f9de2154a44879d5ce9620c862a2129176e2e18db05ed0')}
 NAMES=('main.10000k','main.1000k','main.100k','main.10k','main.1k','secondary.5')
 FEATURE_SCALE=0.006855103187263012
