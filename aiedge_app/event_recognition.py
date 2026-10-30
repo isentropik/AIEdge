@@ -1,6 +1,7 @@
 """Explicit opt-in event recognition; default Recognition/service remain unchanged."""
 import hashlib,json,sqlite3
 import capture_clock
+import capture_recovery
 from pathlib import Path
 from recognition import Recognition,decode_result,MAX_RESULT_BYTES
 from reading_format import validate,finite_number
@@ -32,7 +33,7 @@ class EventRecognition(Recognition):
         check(len(self.document['dials'])==len(reader.dials) and sorted(d['index'] for d in self.document['dials'])==list(range(len(reader.dials))),'event_dial_mapping')
         recommend({'first':True},capabilities,configuration)
         self.configuration=decode(encoded(configuration));self.capabilities=decode(encoded(capabilities))
-        deps=['event_recognition.py','event_selection.py','event_mode.py','ha_event_selection.py','event_selection_config.py','event_observation_read.py','selector_observation.py','wheel_capture_policy.py','reader.py','recognition.py','observation_support.py','consumption.py','accounting_native.py','capture_clock.py','reading_format.py']
+        deps=['event_recognition.py','event_selection.py','event_mode.py','ha_event_selection.py','event_selection_config.py','event_observation_read.py','selector_observation.py','wheel_capture_policy.py','reader.py','recognition.py','observation_support.py','consumption.py','accounting_native.py','capture_clock.py','reading_format.py','capture_recovery.py']
         self.observation_context=digest({'version':1,'format_id':self.format_id,'pipeline':reader.pipeline_id,'document':self.document,'configuration':self.configuration,'capabilities':self.capabilities,
                                          'sources':{n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest() for n in deps}})
         with store.connect() as db:
@@ -119,7 +120,7 @@ class EventRecognition(Recognition):
         expected=decide(actual_event,previous_request['event'] if previous_request else None,previous_request,
                         expected_feedback['result'] if prior else None,reference['event'] if reference else None,
                         r['flags']['restart'],self.document,self.configuration,self.capabilities,
-                        observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate)
+                        observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate,capture_failed=capture_recovery.boundary(db,event))
         check(all(encoded(r[k])==encoded(value) for k,value in expected.items()),'event_request_decision_rederived_invalid')
         return r
     def _saved_request(self,db,event):
@@ -214,7 +215,7 @@ class EventRecognition(Recognition):
                     last_full_id=reference['event']['event_id'] if reference else None
                     last_full=reference['event'] if reference else None
                     decision=decide(current,previous,previous_request,feedback['result'] if feedback else None,last_full,self._restart_pending,self.document,self.configuration,self.capabilities,
-                                    observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate)
+                                    observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate,capture_failed=capture_recovery.boundary(db,event))
                     request={**decision,'schema_version':2,'event':current,'pipeline_id':pipeline,'context_id':context,'format_id':self.format_id,'configuration':self.configuration,'capabilities':self.capabilities,'feedback':feedback,'last_full_event':last_full_id,
                              'observation_eligibility':{'certificate':certificate,'certificate_sha256':digest(certificate)}}
                     encoded_request=encoded(request);check(len(encoded_request.encode())<=MAX_REQUEST_BYTES,'event_request_too_large')

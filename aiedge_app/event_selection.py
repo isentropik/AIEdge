@@ -5,8 +5,9 @@ from wheel_capture_policy import recommend
 
 def encoded(value):return json.dumps(value,sort_keys=True,separators=(',',':'),allow_nan=False)
 def digest(value):return hashlib.sha256(encoded(value).encode()).hexdigest()
-def decide(current,previous,previous_request,feedback,last_full,restart,document,configuration,capabilities,observed_phase_speed=None,observation_eligibility=None):
+def decide(current,previous,previous_request,feedback,last_full,restart,document,configuration,capabilities,observed_phase_speed=None,observation_eligibility=None,capture_failed=False):
     timing=capture_clock.interval(previous,current)
+    if capture_failed:timing={'state':'unavailable','reason':'capture_failure','elapsed_seconds':None}
     prior_recommendation=previous_request.get('recommendation') if previous_request else None
     deadline_missed=bool(prior_recommendation and timing['state']=='continuous' and timing['elapsed_seconds']>prior_recommendation['supported_interval_seconds'])
     age=0;refresh_uncertain=False

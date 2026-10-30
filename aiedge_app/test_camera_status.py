@@ -72,26 +72,26 @@ class CameraStatusTests(unittest.TestCase):
                 device.status=status
                 with self.subTest(status=status),self.assertRaisesRegex(ValueError,'^'+code+'$'):camera.readiness()
             self.assertEqual((device.gets,device.posts),(3,0))
-    def test_collector_waits_for_readiness_then_resumes_on_next_cycle(self):
-        with fixture() as (camera,device),tempfile.TemporaryDirectory() as directory:
-            store=Store(directory);collector=Collector(store,camera,30)
-            for state,code,changes in [
+    def test_nonfreshness_readiness_failure_holds_without_post(self):
+        for state,code,changes in [
                 ('busy','camera_busy',{'camera_available':None}),
                 ('settings_unavailable','camera_settings_unavailable',{'settings_ready':False}),
                 ('startup_recovery','camera_startup_recovery',{'settings_ready':False}),
                 ('clock_unsynchronized','camera_clock_unsynchronized',{'clock_synchronized':False}),
                 ('camera_unavailable','camera_unavailable',{'camera_available':False}),
                 ('demo_mode','camera_demo_mode',{})]:
+            with self.subTest(state=state),fixture() as (camera,device),tempfile.TemporaryDirectory() as directory:
+                store=Store(directory);collector=Collector(store,camera,30)
                 device.payload=READY|{'state':state}|changes
                 collector.once()
                 self.assertEqual(collector.last_error['error'],code)
                 self.assertEqual(collector.camera_state['state'],state)
                 self.assertEqual((device.posts,store.status()['captures']),(0,0))
-            device.payload=READY.copy();collector.once()
-            self.assertIsNone(collector.last_error)
-            self.assertEqual(collector.camera_state['state'],'ready')
-            self.assertEqual((device.gets,device.posts,store.status()['captures']),(7,1,1))
-            self.assertFalse(store.status()['training_allowed'])
+                device.payload=READY.copy();collector.once()
+                self.assertTrue(collector.stop.is_set())
+                self.assertEqual((device.gets,device.posts,store.status()['captures']),(1,0,0))
+                self.assertEqual(store.status()['failures'],1)
+                self.assertFalse(store.status()['training_allowed'])
     def test_connection_failure_is_visible_and_does_not_capture(self):
         with fixture() as (camera,device),tempfile.TemporaryDirectory() as directory:
             collector=Collector(Store(directory),camera,30)
