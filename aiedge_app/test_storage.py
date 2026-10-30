@@ -16,7 +16,7 @@ class StorageTests(unittest.TestCase):
         self.store=Store(self.root)
     def tearDown(self):self.temp.cleanup()
     def disk(self,free):return patch('capture.shutil.disk_usage',return_value=SimpleNamespace(free=free))
-    def test_low_space_prevents_camera_request_and_recovers(self):
+    def test_low_space_prevents_camera_request_and_holds_current_collector(self):
         camera=Mock(spec=['origin','readiness','capture'],origin='fixture');camera.readiness.return_value={'state':'ready'};camera.capture.return_value=(JPEG,headers())
         collector=Collector(self.store,camera,30)
         with self.disk(MIN_FREE_BYTES):
@@ -25,8 +25,13 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(self.store.status()['storage']['state'],'low_space')
             self.assertEqual(self.store.status()['captures'],0)
         with self.disk(MIN_FREE_BYTES+MAX_IMAGE):collector.once()
-        self.assertIsNone(collector.last_error)
-        self.assertEqual(self.store.status()['captures'],1)
+        camera.capture.assert_not_called()
+        self.assertTrue(collector.stop.is_set())
+        self.assertEqual(collector.last_error['error'],'storage_low_space')
+        self.assertEqual(collector.recovery_status()['state'],'held')
+        self.assertEqual(collector.recovery_status()['attempt_count'],0)
+        self.assertEqual(self.store.status()['captures'],0)
+        self.assertEqual(self.store.status()['failures'],1)
     def test_space_is_rechecked_after_download_without_overwriting_history(self):
         self.store.add('fixture',JPEG,headers())
         prior=self.store.recent()
@@ -100,3 +105,4 @@ class StorageTests(unittest.TestCase):
         with store.connect() as db:self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
 
 if __name__=='__main__':unittest.main()
+

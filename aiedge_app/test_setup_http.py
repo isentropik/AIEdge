@@ -8,9 +8,11 @@ class Tests(unittest.TestCase):
     setUp=test_setup.Tests.setUp
     tearDown=test_setup.Tests.tearDown
     def test_historical_failure_does_not_look_like_current_failure(self):
-        from types import SimpleNamespace
+        from capture import Collector
+        from unittest.mock import Mock
         self.store.fail('earlier_capture_failed')
-        collector=SimpleNamespace(last_error=None,missed_slots=0,interval=30,camera_state={'state':'ready'})
+        collector=Collector(self.store,Mock(spec=['origin','readiness','capture'],origin='fixture'),30)
+        collector.camera_state={'state':'ready'}
         server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,collector))
         thread=threading.Thread(target=server.serve_forever);thread.start()
         origin='http://127.0.0.1:'+str(server.server_port)
@@ -20,6 +22,9 @@ class Tests(unittest.TestCase):
             self.assertEqual(state['last_failure']['error'],'earlier_capture_failed')
             self.assertEqual(state['interval_seconds'],30)
             self.assertEqual(state['camera'],{'state':'ready'})
+            self.assertEqual(state['capture_recovery']['state'],'ready')
+            self.assertEqual(state['capture_recovery']['attempt_count'],0)
+            self.assertEqual(state['capture_recovery']['failure_count'],1)
             collector.last_error={'error':'current_failure','at':'fixture'}
             with urllib.request.urlopen(origin+'/api/status') as response:state=json.load(response)
             self.assertEqual(state['last_error'],collector.last_error)
@@ -83,3 +88,4 @@ class Tests(unittest.TestCase):
             with urllib.request.urlopen(origin+'/reference/'+self.ref) as response:self.assertEqual(response.read(),reference())
         finally:server.shutdown();thread.join();server.server_close()
 if __name__=='__main__':unittest.main()
+

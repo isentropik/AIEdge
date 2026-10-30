@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from camera_lighting import CameraLighting, Config, capabilities, digest
 from camera_setup import CameraSetup
-from capture import Camera, Collector
+from capture import Camera, Collector, Store
 
 CONFIG = b'''# retain comments\r\n[TakeImage]\r\nLEDIntensity = 25 ; master\r\nCameraExposure = 600\r\n[GPIO]\r\nIO0 = disabled disabled 10 false false unused\r\nIO1 = disabled disabled 10 false false unused\r\nIO3 = disabled disabled 10 false false unused\r\nIO4 = disabled disabled 10 false false unused\r\nIO12 = external-flash-ws281x   disabled 10 false false lighting # strip\r\nIO13 = disabled disabled 10 false false unused\r\nLEDType = SK6812_RGBW\r\nLEDNumbers = 19\r\nLEDColor = 0 0 0 255\r\n[Network]\r\nPassword = SECRET-private\r\n[Unknown]\r\nFutureSetting = preserve me\r\n'''
 CAPS = {'version':1, 'builtin_pin':4, 'pins':[{'pin':n,'available':True,'reason':'SECRET-unsolicited'} for n in (0,1,3,4,12,13)]}
@@ -154,11 +154,16 @@ class LightingTransactions(unittest.TestCase):
         self.assertEqual(worker.status()['state'],'ready');self.assertEqual(references,[])
     def test_pending_lighting_blocks_setup_and_collector_capture(self):
         self.client._intent(CONFIG,CONFIG)
-        self.camera.capture=lambda:self.fail('capture must not occur')
+        from unittest.mock import Mock
+        self.camera.capture=Mock(side_effect=AssertionError('capture must not occur'))
         worker=CameraSetup(self.camera,object(),30,False,self.client);worker.start('picture');worker.once()
         self.assertEqual(worker.status()['error'],'camera_lighting_unverified')
-        collector=Collector(object(),self.camera,30);collector.once()
+        store=Store(Path(self.directory.name)/'capture-data')
+        collector=Collector(store,self.camera,30);collector.once()
         self.assertEqual(collector.last_error,{'error':'camera_lighting_unverified'})
+        self.camera.capture.assert_not_called()
+        self.assertTrue(collector.stop.is_set())
+        self.assertEqual(collector.recovery_status()['attempt_count'],0)
     def test_corrupt_pending_state_blocks_writes_and_capture(self):
         self.client.path.write_text('bad state')
         client=CameraLighting(self.camera,self.directory.name)
@@ -175,3 +180,4 @@ class LightingTransactions(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
