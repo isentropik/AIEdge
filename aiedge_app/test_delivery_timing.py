@@ -29,6 +29,49 @@ class Clock:
     def advance(self,seconds):self.value+=seconds
 
 class DeliveryTimingTests(unittest.TestCase):
+    def scheduled(self,durations,oversleep=0,hold_after=None):
+        from test_capture_recovery import FakeCamera
+        clock=Clock();starts=[];waits=[]
+        with tempfile.TemporaryDirectory() as root:
+            store=Store(root);worker=Collector(store,FakeCamera([True]*len(durations)),6)
+            original=worker.once
+            def once():
+                starts.append(clock.value);original();clock.advance(durations[len(starts)-1])
+                if hold_after==len(starts):worker.stop.set()
+            def wait(delay):
+                waits.append(delay)
+                if len(starts)>=len(durations):worker.stop.set()
+                else:clock.advance(delay+oversleep)
+            worker.once=once
+            with patch('capture.time.monotonic',clock),patch.object(worker.stop,'wait',side_effect=wait):worker.run()
+            return starts,waits,worker.recovery_status(),store.status()
+    def test_scheduler_normal_six_second_minimum(self):
+        starts,_,r,s=self.scheduled([3,3,3])
+        self.assertEqual(starts,[10,16,22]);self.assertEqual(r['schedule']['late_cycles'],0);self.assertEqual(s['captures'],3)
+    def test_scheduler_slow_success_avoids_extra_idle_slot(self):
+        starts,_,r,s=self.scheduled([6.86,3,3])
+        self.assertAlmostEqual(starts[1]-starts[0],6.86);self.assertAlmostEqual(starts[2]-starts[1],6)
+        self.assertEqual(r['schedule']['missed_nominal_slots'],1);self.assertEqual(s['captures'],3)
+        over=r['schedule']['recent_overruns'][0];terminal=next(a for a in r['recent_attempts'] if a['attempt_id']==over['attempt_id'])
+        self.assertEqual((terminal['outcome'],terminal['event_id']),('committed',1))
+    def test_scheduler_exact_deadline_does_not_count_overrun(self):
+        starts,_,r,_=self.scheduled([6,6,6]);self.assertEqual(starts,[10,16,22]);self.assertEqual(r['schedule']['late_cycles'],0)
+    def test_scheduler_reanchors_after_late_wakeup(self):
+        starts,_,_,_=self.scheduled([3,3,3],oversleep=.7)
+        for a,b in zip(starts,starts[1:]):self.assertAlmostEqual(b-a,6.7)
+    def test_scheduler_repeated_overruns_never_burst(self):
+        starts,_,r,_=self.scheduled([6.9]*4)
+        for a,b in zip(starts,starts[1:]):self.assertAlmostEqual(b-a,6.9)
+        self.assertEqual(r['schedule']['late_cycles'],4);self.assertEqual(r['schedule']['missed_nominal_slots'],4)
+    def test_scheduler_long_overrun_remains_visible(self):
+        starts,_,r,_=self.scheduled([13.2,3]);self.assertAlmostEqual(starts[1]-starts[0],13.2)
+        self.assertEqual(r['schedule']['recent_overruns'][0]['missed_nominal_slots'],2)
+    def test_scheduler_hold_never_starts_next_request(self):
+        starts,waits,r,s=self.scheduled([6.86,3],hold_after=1)
+        self.assertEqual(len(starts),1);self.assertEqual(waits,[]);self.assertEqual(s['captures'],1)
+    def test_scheduler_overrun_tail_is_bounded(self):
+        _,_,r,_=self.scheduled([6.86]*12);self.assertEqual(r['schedule']['late_cycles'],12)
+        self.assertEqual([x['cycle'] for x in r['schedule']['recent_overruns']],list(range(3,13)))
     def snapshot(self,event=1,digest='b'*64):
         doc=document([1000,100]);revision=validate(doc)[1]
         return dict(format=doc,latest=dict(captured_at=datetime.now(timezone.utc).isoformat(),sha256=digest),
