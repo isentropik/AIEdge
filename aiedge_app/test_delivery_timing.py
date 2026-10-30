@@ -167,14 +167,14 @@ class DeliveryTimingTests(unittest.TestCase):
         consumption=SimpleNamespace(status=lambda:dict(event_id=1,state='estimated',absolute=dict(state='estimated',value=120)))
         for sequence in ((1,2),(2,2)):
             values=iter(sequence)
-            store=SimpleNamespace(publication_frame=lambda:(next(values),frame))
+            store=SimpleNamespace(publication_frame=lambda:(next(values),frame),publication_blocked=lambda _:False)
             result=publication_state(store,recognition,formats,consumption)
             self.assertEqual(result['reading']['state'],'pending');self.assertIsNone(result['reading']['value'])
-        values=iter((1,1));store=SimpleNamespace(publication_frame=lambda:(next(values),frame))
+        values=iter((1,1));store=SimpleNamespace(publication_frame=lambda:(next(values),frame),publication_blocked=lambda _:False)
         with patch('reading_format.reconcile_reading',side_effect=lambda r,c:r):
             self.assertEqual(publication_state(store,recognition,formats,consumption)['reading']['state'],'estimated')
         for state in ('pending','recovering','unavailable','not_configured'):
-            store=SimpleNamespace(publication_frame=lambda:(1,frame))
+            store=SimpleNamespace(publication_frame=lambda:(1,frame),publication_blocked=lambda _:False)
             consumption=SimpleNamespace(status=lambda:dict(event_id=1,state=state,reason='consumption_positions_contradict_bounds'))
             result=publication_state(store,recognition,formats,consumption)
             self.assertNotEqual(result['reading']['state'],'estimated')

@@ -28,8 +28,10 @@ def publication_state(store,recognition,reading_format,consumption):
     accounted=consumption.status() if consumption else None
     reading=reconcile_reading(reading,accounted)
     after,_=store.publication_frame()
+    blocked=store.publication_blocked(after)
     consumption_public=accounted if after==event and accounted and accounted.get('event_id')==event else None
-    if after!=event or (consumption and accounted.get('event_id')!=event):
+    if blocked:consumption_public=None
+    if blocked or after!=event or (consumption and accounted.get('event_id')!=event):
         reading={'state':'pending','value':None}
     elif consumption and accounted.get('state') not in ('anchored','estimated','within_noise','bounded','ambiguous'):
         reading={'state':'pending' if accounted.get('state') in ('pending','recovering') else 'unavailable','value':None}
@@ -181,6 +183,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state['camera']=dict(collector.camera_state) if collector else {'state':'not_checked'}
                 state['last_failure']=state['last_error']
                 state['last_error']=collector.last_error if collector else None
+                state['capture_recovery']=collector.recovery_status() if collector else {'state':'disabled'}
                 state['interval_seconds']=collector.interval if collector else None
                 state['recognition']=recognition.latest() if recognition else {'state':'not_configured'}
                 state['reading']=reading_format.evaluate(state['recognition']) if reading_format else {'state':'not_configured','value':None}
@@ -320,7 +323,7 @@ def run_service(stop_signals):
     if store and configuration.get('state')=='ready' and options.get('camera_url'):
         camera=Camera(options['camera_url'],options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password',''),performance=store.performance)
     if enabled:
-        collector=Collector(store,camera,interval)
+        collector=Collector(store,camera,interval,recovery_floor=getattr(recognition,'observation_first_event',1))
     reviews=None
     if store:
         from review_store import Reviews

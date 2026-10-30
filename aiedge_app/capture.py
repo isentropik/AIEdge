@@ -55,6 +55,8 @@ class Store:
             db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS frames(camera TEXT,frame_id TEXT,captured_at TEXT,received_at TEXT,sha256 TEXT,bytes INTEGER,training_allowed INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(camera,frame_id))')
             db.execute('CREATE TABLE IF NOT EXISTS failures(received_at TEXT,error TEXT)')
+            import capture_recovery
+            capture_recovery.initialize(db)
             # Check the existing schema before committing any initialization writes.
             db.execute('SELECT camera,frame_id,captured_at,received_at,sha256,bytes,training_allowed FROM frames LIMIT 0')
             db.execute('SELECT received_at,error FROM failures LIMIT 0')
@@ -124,8 +126,16 @@ class Store:
             if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
         self.performance.admit(event,digest,request_started)
         return True
-    def fail(self,error):
-        with self.lock,self.connect() as db:db.execute('INSERT INTO failures VALUES(?,?)',(now(),error))
+    def fail(self,error,*,outcome='unknown',attempt=None):
+        if outcome not in ('rejected','unknown'):raise ValueError('capture_failure_outcome_invalid')
+        with self.lock,self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            ident=db.execute('INSERT INTO failures VALUES(?,?)',(now(),error)).lastrowid
+            after=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
+            db.execute('INSERT INTO capture_failure_boundaries VALUES(?,?,?,?)',(ident,after,error,outcome))
+            if attempt is not None:
+                import capture_recovery
+                capture_recovery.finish_transaction(db,attempt,outcome,error=error)
     def recent(self):
         with self.lock,self.connect() as db:
             rows=db.execute('SELECT f.captured_at,f.received_at,f.sha256,f.bytes FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 50').fetchall()
@@ -153,6 +163,9 @@ class Store:
             row=db.execute('SELECT e.event_id,f.captured_at,f.received_at,f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
         if not row:return None,None
         return row[0],dict(zip(('captured_at','received_at','sha256'),row[1:]))
+    def publication_blocked(self,event):
+        import capture_recovery
+        with self.lock,self.connect() as db:return capture_recovery.publication_blocked(db,event or 0,getattr(self,'active_capture_attempt',None))
     def capture_timing(self):
         """Newest acquisition and immediately preceding acquisition of that camera.
 
@@ -268,6 +281,9 @@ class Camera:
                       409:'camera_busy',429:'camera_busy',503:'camera_unavailable'}.get(exc.code,'camera_http_error')
                 if exc.code==503 and len(body)<=256:code=CAMERA_FAILURES.get(body,code)
             finally:exc.close()
+            if code=='camera_clock_changed':
+                from capture_recovery import FreshnessRejected
+                raise FreshnessRejected() from None
             raise ValueError(code) from None
         except urllib.error.URLError as exc:
             if isinstance(exc.reason,ssl.SSLCertVerificationError):code='camera_certificate_invalid'
@@ -279,9 +295,15 @@ class Camera:
             raise ValueError('camera_timeout') from None
 
 class Collector:
-    def __init__(self,store,camera,interval):
+    def __init__(self,store,camera,interval,*,recovery_floor=1):
         self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None;self.camera_state={'state':'not_checked'}
+        if type(recovery_floor) is not int or recovery_floor<1:raise ValueError('invalid_recovery_floor')
+        self.recovery_floor=recovery_floor;self.recovery_state='ready'
+        import capture_recovery
+        with store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,recovery_floor)
+        if reason:self.recovery_state='held';self.last_error={'error':reason};self.stop.set()
     def once(self):
+        if self.stop.is_set():return
         # Serialize the whole status/capture pair against camera-setting jobs.
         from contextlib import nullcontext
         try:
@@ -292,7 +314,20 @@ class Collector:
             self.last_error={'error':str(error) if str(error) in ('camera_busy','camera_lighting_unverified','camera_image_unverified','camera_image_reference_required','auto_restore_unverified') else 'camera_connection_failed'}
             try:self.store.fail(self.last_error['error'])
             except (AttributeError,OSError,sqlite3.Error):pass
+            self.recovery_state='held';self.stop.set()
+    def recovery_status(self):
+        import capture_recovery
+        with self.store.lock,self.store.connect() as db:
+            db.execute('BEGIN');result=capture_recovery.snapshot(db,self.recovery_floor)
+            active=getattr(self.store,'active_capture_attempt',None)
+            pending=[a for a in result['recent_attempts'] if a['outcome'] is None]
+            if len(pending)==1 and pending[0]['attempt_id']==active and result['hold_reason']=='unknown_capture_outcome':result['state']='capturing'
+            elif result['hold_reason']:result['state']='held'
+            else:result['state']=self.recovery_state
+        return result
     def _once(self):
+        import capture_recovery
+        attempt=None
         try:
             self.store.require_space()
             # One passive check per scheduled cycle. It is an admission snapshot,
@@ -314,14 +349,27 @@ class Collector:
                       'demo_mode':'camera_demo_mode'}.get(state,'camera_status_invalid')
                 raise ValueError(code)
             request_started=self.store.performance.clock()
+            attempt,after=capture_recovery.begin(self.store,self.recovery_floor)
+            self.store.active_capture_attempt=attempt
             blob,headers=self.camera.capture()
-            self.store.add(self.camera.origin,blob,headers,request_started=request_started)
+            added=self.store.add(self.camera.origin,blob,headers,request_started=request_started)
+            if not added:raise ValueError('capture_duplicate_response')
+            event,_=self.store.publication_frame()
+            if event!=after+1:raise ValueError('capture_event_ownership_conflict')
+            capture_recovery.finish(self.store,attempt,'committed',event)
             self.last_error=None
+            self.recovery_state='ready'
         except Exception as e:
             self.last_error={'at':now(),'error':str(e) if isinstance(e,ValueError) else type(e).__name__}
-            # A full or unavailable filesystem must not kill the capture worker.
-            try:self.store.fail(self.last_error['error'])
-            except (OSError,sqlite3.Error):pass
+            rejected=attempt is not None and isinstance(e,capture_recovery.FreshnessRejected)
+            outcome='rejected' if rejected else 'unknown'
+            try:
+                self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt)
+                with self.store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,self.recovery_floor)
+            except (OSError,sqlite3.Error,ValueError):reason='capture_failure_commit_unknown'
+            if rejected and reason is None:self.recovery_state='waiting_for_next_slot'
+            else:self.recovery_state='held';self.stop.set()
+        finally:self.store.active_capture_attempt=None
     def run(self):
         due=time.monotonic()
         while not self.stop.is_set():

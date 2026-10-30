@@ -2,6 +2,7 @@
 import hashlib,json,re,sqlite3,threading,uuid
 from pathlib import Path
 import capture_clock
+import capture_recovery
 from datetime import datetime
 from accounting_native import AccountingNative
 from recognition import decode_result,MAX_RESULT_BYTES
@@ -20,7 +21,7 @@ class Consumption:
         if self.observation_context is not None and (not isinstance(self.observation_context,str) or not re.fullmatch('[a-f0-9]{64}',self.observation_context)):
             raise ValueError('invalid_consumption_observation_context')
         dependencies=('consumption.py','accounting_native.py','reading_format.py','capture_clock.py','recognition.py',
-                      'temporal_reading.py','reading_bounds.py','observation_support.py')
+                      'temporal_reading.py','reading_bounds.py','observation_support.py','capture_recovery.py')
         contract={'native':self.native.identity,'sources':{name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in dependencies},'schema':2}
         if self.observation_context is not None:
             contract['observation_context']=self.observation_context
@@ -82,7 +83,7 @@ class Consumption:
         if row and self.segment and row[0]==self.segment['segment_id'] and row[1]==identity and row[2]==self.engine:return
         if row and row[1]==identity and row[2]==self.engine:
             saved,actual=validate(json.loads(row[5]))
-            if actual!=identity or saved!=document or type(row[3]) is not int or row[3]<1 or row[3]>max(1,latest) or row[4] not in ('first_capture','interpretation_changed','capture_clock_changed','capture_clock_missing','capture_clock_invalid','capture_clock_not_increasing','capture_clock_utc_discontinuity','capture_camera_changed'):
+            if actual!=identity or saved!=document or type(row[3]) is not int or row[3]<1 or row[3]>max(1,latest) or row[4] not in ('first_capture','interpretation_changed','capture_clock_changed','capture_clock_missing','capture_clock_invalid','capture_clock_not_increasing','capture_clock_utc_discontinuity','capture_camera_changed','capture_failure'):
                 raise ValueError('consumption_saved_state_invalid')
             segment=dict(zip(('segment_id','format_id','engine_id','first_event','gap_reason'),row[:5]))
             self._activate(segment,document)
@@ -156,6 +157,8 @@ class Consumption:
             with self.store.performance.measure('accounting') as sample:
                 current={'camera':camera,'captured_at':stamp,'clock_id':clock,'monotonic_us':tick}
                 timing=capture_clock.interval(self.previous,current)
+                with self.store.connect() as db:failed_boundary=capture_recovery.boundary(db,event)
+                if failed_boundary:timing={'state':'unavailable','reason':'capture_failure','elapsed_seconds':None}
                 # A gap starts a separate relative segment; never stitch two clocks.
                 if self.anchor and timing['state']!='continuous':
                     self._create(identity,document,event,timing['reason'],self.segment['segment_id']);cached=None

@@ -1,3 +1,10 @@
+## 0.2.0-dev35
+
+- Recover on a later scheduled capture after the camera explicitly rejects a stale frame or a clock change. Preserve the failed attempt and hold on unknown outcomes or the third freshness rejection in an accounting context.
+- Force a full reading after a rejected frame and start a new consumption segment with an unknown gap. Never estimate usage across that gap.
+- Persist capture intent before each continuous request, prevent restart from replaying pending requests, and expose bounded recovery evidence for commissioning.
+- Keep existing clock checks, native accounting, models, calibration, and MQTT numeric-value requirements unchanged.
+
 ## 0.2.0-dev33
 
 - Replace only the main floating model with a fixed-schedule candidate trained with independent foreground positions on fixed synthetic backgrounds. The secondary model, native preprocessing, floating decoder, calibration and accounting algorithms are unchanged.
@@ -302,3 +309,4 @@
 ## 0.2.0-dev3
 
 - Home Assistant app repository metadata and branch-specific installation guide.
+

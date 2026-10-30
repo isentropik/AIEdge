@@ -118,14 +118,14 @@ class ConsumptionPublicationTests(unittest.TestCase):
                 self.assertEqual(w.last_key[0],2)
             finally:w.close()
     def test_service_race_withholds_consumption(self):
-        store=Mock();store.publication_frame.side_effect=[(8,self.s['latest']),(9,self.s['latest'])]
+        store=Mock();store.publication_blocked.return_value=False;store.publication_frame.side_effect=[(8,self.s['latest']),(9,self.s['latest'])]
         recog=Mock();fmt=Mock();cons=Mock()
         fmt.evaluate.return_value={'state':'unavailable','value':None}
         fmt.status.return_value={'revision':validate(self.s['format'])[1],'format':self.s['format']}
         cons.status.return_value=self.s['consumption']
         self.assertIsNone(publication_state(store,recog,fmt,cons)['consumption'])
     def test_service_passes_exact_durable_record(self):
-        store=Mock();store.publication_frame.return_value=(8,self.s['latest'])
+        store=Mock();store.publication_blocked.return_value=False;store.publication_frame.return_value=(8,self.s['latest'])
         recog=Mock();fmt=Mock();cons=Mock()
         fmt.evaluate.return_value={'state':'unavailable','value':None}
         fmt.status.return_value={'revision':validate(self.s['format'])[1],'format':self.s['format']}
