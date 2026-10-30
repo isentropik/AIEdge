@@ -297,6 +297,7 @@ class Camera:
 class Collector:
     def __init__(self,store,camera,interval,*,recovery_floor=1):
         self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None;self.camera_state={'state':'not_checked'}
+        self.schedule_lock=threading.Lock();self.late_cycles=0;self.overruns=[];self.last_cycle_attempt=None
         if type(recovery_floor) is not int or recovery_floor<1:raise ValueError('invalid_recovery_floor')
         self.recovery_floor=recovery_floor;self.recovery_state='ready'
         import capture_recovery
@@ -324,6 +325,10 @@ class Collector:
             if len(pending)==1 and pending[0]['attempt_id']==active and result['hold_reason']=='unknown_capture_outcome':result['state']='capturing'
             elif result['hold_reason']:result['state']='held'
             else:result['state']=self.recovery_state
+            with self.schedule_lock:
+                result['schedule']={'mode':'minimum_start_interval','interval_seconds':self.interval,
+                                    'missed_nominal_slots':self.missed_slots,'late_cycles':self.late_cycles,
+                                    'recent_overruns':[dict(x) for x in self.overruns]}
         return result
     def _once(self):
         import capture_recovery
@@ -350,6 +355,7 @@ class Collector:
                 raise ValueError(code)
             request_started=self.store.performance.clock()
             attempt,after=capture_recovery.begin(self.store,self.recovery_floor)
+            self.last_cycle_attempt=attempt
             self.store.active_capture_attempt=attempt
             blob,headers=self.camera.capture()
             added=self.store.add(self.camera.origin,blob,headers,request_started=request_started)
@@ -371,9 +377,19 @@ class Collector:
             else:self.recovery_state='held';self.stop.set()
         finally:self.store.active_capture_attempt=None
     def run(self):
-        due=time.monotonic()
         while not self.stop.is_set():
-            self.once();due+=self.interval;current=time.monotonic()
+            started=time.monotonic();self.once();current=time.monotonic()
+            if self.stop.is_set():break
+            due=started+self.interval
             if current>due:
-                missed=int((current-due)//self.interval)+1;self.missed_slots+=missed;due+=missed*self.interval
+                # A completed slow request must not add another whole idle slot.
+                # Record missed nominal deadlines; never overlap or replay a POST.
+                missed=int((current-due)//self.interval)+1
+                with self.schedule_lock:
+                    self.missed_slots+=missed;self.late_cycles+=1
+                    self.overruns.append({'cycle':self.late_cycles,'attempt_id':self.last_cycle_attempt,
+                                          'duration_seconds':current-started,'missed_nominal_slots':missed})
+                    self.overruns=self.overruns[-10:]
+                due=current
+            # Re-anchor on the actual start, so a late cycle cannot cause a burst.
             self.stop.wait(max(0,due-time.monotonic()))

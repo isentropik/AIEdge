@@ -1,3 +1,9 @@
+## 0.2.0-dev36
+
+- Schedule continuous requests at least one configured interval apart, measured from their actual starts. After a slow completed request, start the next new request without adding an unnecessary whole idle interval; never overlap or replay requests.
+- Retain missed nominal-deadline counts and expose each recent overrun with its terminal request identity and elapsed duration. This is a nominal cadence, not a guarantee of exact capture timing.
+- Bind the capture implementation into the future-only accounting context. Preserve all earlier frames, contexts, failures and consumption records; clock and flow-bound checks are unchanged.
+
 ## 0.2.0-dev35
 
 - Recover on a later scheduled capture after the camera explicitly rejects a stale frame or a clock change. Preserve the failed attempt and hold on unknown outcomes or the third freshness rejection in an accounting context.

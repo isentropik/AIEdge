@@ -184,6 +184,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 state['last_failure']=state['last_error']
                 state['last_error']=collector.last_error if collector else None
                 state['capture_recovery']=collector.recovery_status() if collector else {'state':'disabled'}
+                if 'schedule' in state['capture_recovery']:
+                    state['missed_slots']=state['capture_recovery']['schedule']['missed_nominal_slots']
                 state['interval_seconds']=collector.interval if collector else None
                 state['recognition']=recognition.latest() if recognition else {'state':'not_configured'}
                 state['reading']=reading_format.evaluate(state['recognition']) if reading_format else {'state':'not_configured','value':None}
