@@ -23,7 +23,7 @@ DECODER_CONTEXT_CHECK_GROUPS=(
     ('test_float_decoder_integration.DecoderSmokeTests.',2),
     ('test_float_decoder_integration.PipelineIdentityTests.',1),
     ('test_future_context_floor.FutureContextFloorTests.',14),
-    ('test_capture_recovery.RecoveryTests.',15),
+    ('test_capture_recovery.RecoveryTests.',22),
     ('test_capture_recovery.NativeGapTests.',1),
     ('test_capture_recovery.SelectorGapTests.',1),
     ('test_capture_recovery.ReportingRecoveryTests.',1),

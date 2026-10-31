@@ -57,10 +57,73 @@ class RecoveryTests(unittest.TestCase):
         for _ in range(4):worker.once()
         self.assertEqual(c.calls,3);self.assertTrue(worker.stop.is_set());self.assertEqual(worker.rejections,3)
         restarted=Collector(self.store,c,6);restarted.once();self.assertEqual(c.calls,3);self.assertTrue(restarted.stop.is_set())
-    def test_success_does_not_reset_total_rejection_budget(self):
+    def test_success_replenishes_streak_without_erasing_total_rejections(self):
         c=FakeCamera([recovery.FreshnessRejected(),True,recovery.FreshnessRejected(),True,recovery.FreshnessRejected(),True]);worker=Collector(self.store,c,6)
         for _ in range(6):worker.once()
-        self.assertEqual(c.calls,5);self.assertEqual(worker.rejections,3);self.assertTrue(worker.stop.is_set())
+        self.assertEqual(c.calls,6);self.assertEqual(worker.rejections,3);self.assertFalse(worker.stop.is_set())
+        status=worker.recovery_status()
+        self.assertEqual(status['rejections'],3);self.assertEqual(status['consecutive_rejections'],0)
+        self.assertEqual(status['rejection_policy'],'consecutive_acknowledged')
+        self.assertEqual(len(self.rows('failures')),3)
+    def test_restart_after_separated_rejections_retains_all_old_rows(self):
+        c=FakeCamera([True,recovery.FreshnessRejected(),True,recovery.FreshnessRejected(),True,recovery.FreshnessRejected(),True])
+        worker=Collector(self.store,c,6)
+        for _ in range(6):worker.once()
+        tables=('frames','capture_events','failures','capture_failure_boundaries','continuous_capture_attempts','continuous_capture_outcomes')
+        old={table:self.rows(table) for table in tables}
+        reopened=Store(self.temp.name);restarted=Collector(reopened,c,6)
+        self.assertFalse(restarted.stop.is_set());self.assertEqual(restarted.recovery_status()['consecutive_rejections'],1)
+        restarted.once();self.assertEqual(c.calls,7)
+        for table,rows in old.items():self.assertEqual(self.rows(table)[:len(rows)],rows)
+        self.assertEqual(restarted.recovery_status()['rejections'],3)
+    def test_restart_does_not_replenish_two_consecutive_rejections(self):
+        c=FakeCamera([recovery.FreshnessRejected() for _ in range(4)])
+        first=Collector(self.store,c,6);first.once();first.once()
+        restarted=Collector(Store(self.temp.name),c,6);restarted.once();restarted.once()
+        self.assertEqual(c.calls,3);self.assertTrue(restarted.stop.is_set())
+        self.assertEqual(restarted.recovery_status()['consecutive_rejections'],3)
+    def test_many_isolated_rejections_do_not_create_lifetime_shutdown(self):
+        c=FakeCamera([item for _ in range(12) for item in (recovery.FreshnessRejected(),True)])
+        worker=Collector(self.store,c,6)
+        for _ in range(24):worker.once()
+        self.assertEqual(c.calls,24);self.assertFalse(worker.stop.is_set())
+        s=worker.recovery_status();self.assertEqual(s['rejections'],12);self.assertEqual(s['consecutive_rejections'],0)
+        self.assertEqual(len(self.rows('capture_failure_boundaries')),12)
+        self.assertEqual(len(set(row[0] for row in self.rows('continuous_capture_attempts'))),24)
+    def test_corrupt_commit_cannot_replenish_allowance(self):
+        c=FakeCamera([True]*3)
+        for field,value in (('event_id',99),('error','bad'),('outcome','unexpected')):
+            with self.subTest(field=field):
+                worker=Collector(self.store,c,6);worker.once()
+                ident=self.rows('continuous_capture_attempts')[-1][0]
+                with self.store.connect() as db:
+                    original=db.execute('SELECT '+field+' FROM continuous_capture_outcomes WHERE attempt_id=?',(ident,)).fetchone()[0]
+                    db.execute('UPDATE continuous_capture_outcomes SET '+field+'=? WHERE attempt_id=?',(value,ident))
+                blocked=Collector(self.store,FakeCamera([True]),6)
+                self.assertTrue(blocked.stop.is_set());self.assertEqual(blocked.recovery_status()['hold_reason'],'capture_recovery_ledger_invalid')
+                with self.store.connect() as db:db.execute('UPDATE continuous_capture_outcomes SET '+field+'=? WHERE attempt_id=?',(original,ident))
+    def test_new_context_cannot_reset_consecutive_rejection_hold(self):
+        c=FakeCamera([recovery.FreshnessRejected() for _ in range(4)])
+        for floor in (1,2,3):Collector(self.store,c,6,recovery_floor=floor).once()
+        restarted=Collector(self.store,c,6,recovery_floor=4);restarted.once()
+        self.assertEqual(c.calls,3);self.assertTrue(restarted.stop.is_set())
+        status=restarted.recovery_status()
+        self.assertEqual(status['consecutive_rejections'],3);self.assertEqual(status['lifetime_rejections'],3)
+    def test_unknown_earlier_attempt_still_blocks_after_later_commit(self):
+        c=FakeCamera([True,True]);worker=Collector(self.store,c,6);worker.once();worker.once()
+        ident=self.rows('continuous_capture_attempts')[0][0]
+        with self.store.connect() as db:
+            db.execute("UPDATE continuous_capture_outcomes SET outcome='unknown',event_id=NULL,error='camera_timeout' WHERE attempt_id=?",(ident,))
+        restarted=Collector(self.store,c,6)
+        self.assertTrue(restarted.stop.is_set());self.assertEqual(restarted.recovery_status()['hold_reason'],'unknown_capture_outcome')
+    def test_wall_clock_order_cannot_hide_consecutive_rejections(self):
+        c=FakeCamera([True,recovery.FreshnessRejected(),recovery.FreshnessRejected(),recovery.FreshnessRejected()]);worker=Collector(self.store,c,6)
+        for _ in range(4):worker.once()
+        with self.store.connect() as db:
+            db.execute("UPDATE continuous_capture_attempts SET started_at='1900-01-01' WHERE rowid>1")
+            db.execute("UPDATE continuous_capture_outcomes SET finished_at='1900-01-01' WHERE outcome='rejected'")
+        restarted=Collector(self.store,c,6)
+        self.assertTrue(restarted.stop.is_set());self.assertEqual(restarted.recovery_status()['consecutive_rejections'],3)
     def test_crashed_pending_attempt_holds_without_new_post(self):
         recovery.begin(self.store,1);c=FakeCamera([True]);worker=Collector(self.store,c,6);worker.once()
         self.assertEqual(c.calls,0);self.assertTrue(worker.stop.is_set())

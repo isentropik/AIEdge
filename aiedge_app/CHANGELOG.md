@@ -1,3 +1,9 @@
+## 0.2.0-dev37
+
+- Hold continuous capture after three consecutive acknowledged freshness rejections, rather than three lifetime rejections. A durably committed capture ends the streak; all failures and the lifetime total remain visible.
+- Preserve pending/unknown holds across restarts and context changes. Reject invalid commit bindings before they can replenish the allowance. Never replay a rejected request; recovery uses a later scheduled request at the unchanged minimum cadence.
+- Bind this source change to the existing future-only observation context and retain historical consumption and unknown gaps. Models, calibration, firmware freshness checks, and numeric publication gates are unchanged.
+
 ## 0.2.0-dev36
 
 - Schedule continuous requests at least one configured interval apart, measured from their actual starts. After a slow completed request, start the next new request without adding an unnecessary whole idle interval; never overlap or replay requests.
