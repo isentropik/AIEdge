@@ -6,6 +6,8 @@ Pending/unknown attempts hold across process restarts. No gap is consumption.
 import sqlite3,uuid
 from datetime import datetime,timezone
 
+# Only consecutive acknowledged freshness rejections consume this allowance.
+# Lifetime rejections remain in the immutable ledger and status diagnostics.
 MAX_REJECTIONS=3
 FRESHNESS='camera_clock_changed'
 
@@ -32,17 +34,46 @@ def publication_blocked(db,event,active_attempt=None):
 
 def snapshot(db,first):
     reason,count=readiness(db,first)
+    consecutive,_=rejection_streak(db,first)
+    lifetime=db.execute("SELECT COUNT(*) FROM continuous_capture_outcomes WHERE outcome='rejected'").fetchone()[0]
     rows=db.execute('SELECT a.attempt_id,a.after_event_id,a.started_at,o.outcome,o.event_id,o.error,o.finished_at FROM continuous_capture_attempts a LEFT JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.first_event=? ORDER BY a.rowid DESC LIMIT 10',(first,)).fetchall()
     total=db.execute('SELECT COUNT(*) FROM continuous_capture_attempts WHERE first_event=?',(first,)).fetchone()[0]
     names=('attempt_id','after_event_id','started_at','outcome','event_id','error','finished_at')
     failed=db.execute('SELECT COUNT(*) FROM failures').fetchone()[0]
     last=db.execute('SELECT received_at,error FROM failures ORDER BY rowid DESC LIMIT 1').fetchone()
-    return {'first_event':first,'maximum_rejections':MAX_REJECTIONS,'rejections':count,'hold_reason':reason,'attempt_count':total,'failure_count':failed,'last_failure':dict(zip(('at','error'),last)) if last else None,'recent_attempts':[dict(zip(names,r)) for r in reversed(rows)]}
+    return {'first_event':first,'maximum_rejections':MAX_REJECTIONS,'rejections':count,
+            'rejection_policy':'consecutive_acknowledged','consecutive_rejections':consecutive,'lifetime_rejections':lifetime,
+            'hold_reason':reason,'attempt_count':total,'failure_count':failed,'last_failure':dict(zip(('at','error'),last)) if last else None,'recent_attempts':[dict(zip(names,r)) for r in reversed(rows)]}
+
+def rejection_streak(db,first):
+    # Intent order is durable and independent of wall-clock adjustments. Read at
+    # most the limit: three rejections hold even if an older success exists.
+    # Across all contexts: changing a floor must never replenish this allowance.
+    rows=db.execute('SELECT a.after_event_id,o.outcome,o.event_id,o.error '
+                    'FROM continuous_capture_attempts a LEFT JOIN continuous_capture_outcomes o USING(attempt_id) '
+                    'ORDER BY a.rowid DESC LIMIT ?',
+                    (MAX_REJECTIONS,)).fetchall()
+    count=0
+    for after,outcome,event,error in rows:
+        if outcome=='committed':
+            # A label alone must not replenish the allowance. Require the same
+            # event binding that finish_transaction enforces for real commits.
+            if type(event) is not int or event!=after+1 or error is not None or not db.execute(
+                    'SELECT 1 FROM capture_events WHERE event_id=?',(event,)).fetchone():
+                return count,'capture_recovery_ledger_invalid'
+            return count,None
+        if outcome=='rejected' and event is None and error==FRESHNESS:
+            count+=1
+        else:
+            return count,'capture_recovery_ledger_invalid'
+    return count,None
 
 def readiness(db,first):
     unknown=db.execute("SELECT 1 FROM continuous_capture_attempts a LEFT JOIN continuous_capture_outcomes o USING(attempt_id) WHERE o.attempt_id IS NULL OR o.outcome='unknown' LIMIT 1").fetchone()
     count=db.execute("SELECT COUNT(*) FROM continuous_capture_attempts a JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.first_event=? AND o.outcome='rejected'",(first,)).fetchone()[0]
-    return ('unknown_capture_outcome' if unknown else 'freshness_recovery_exhausted' if count>=MAX_REJECTIONS else None),count
+    if unknown:return 'unknown_capture_outcome',count
+    consecutive,invalid=rejection_streak(db,first)
+    return (invalid or ('freshness_recovery_exhausted' if consecutive>=MAX_REJECTIONS else None)),count
 
 def begin(store,first):
     with store.lock,store.connect() as db:
