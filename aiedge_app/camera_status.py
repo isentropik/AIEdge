@@ -1,5 +1,17 @@
 """Strict passive camera admission snapshot. Does not acquire a frame."""
-import http.client,json,time,urllib.error,urllib.request
+import errno,http.client,json,ssl,time,urllib.error,urllib.request
+
+class ReadinessTransportError(ValueError):
+    """A failed passive GET; no capture request was admitted by this probe."""
+    def __init__(self):super().__init__('camera_connection_failed')
+
+def transient_transport(error):
+    reason=error.reason if isinstance(error,urllib.error.URLError) else error
+    if isinstance(reason,ssl.SSLError):return False
+    return isinstance(reason,(TimeoutError,ConnectionError)) or (
+        isinstance(reason,OSError) and reason.errno in (
+            errno.ETIMEDOUT,errno.ECONNREFUSED,errno.ECONNRESET,
+            errno.ECONNABORTED,errno.ENETUNREACH,errno.EHOSTUNREACH,errno.EPIPE))
 
 FIELDS=('protocol_version','mode','state','camera_available','settings_ready',
         'clock_synchronized','capture_path','capture_method','capture_clock_metadata','image_sha256')
@@ -53,5 +65,7 @@ def probe(camera,*,deadline=None):
         code={401:'camera_authentication_failed',403:'camera_authentication_failed',
               404:'camera_api_unavailable',405:'camera_api_unavailable'}.get(exc.code,'camera_http_error')
         exc.close();raise ValueError(code) from None
-    except (urllib.error.URLError,OSError):raise ValueError('camera_connection_failed') from None
+    except (urllib.error.URLError,OSError) as error:
+        if transient_transport(error):raise ReadinessTransportError() from None
+        raise ValueError('camera_connection_failed') from None
     except (UnicodeError,json.JSONDecodeError,TypeError,RecursionError,http.client.HTTPException):raise ValueError('camera_status_invalid') from None

@@ -301,6 +301,7 @@ class Collector:
         self.control_lock=threading.RLock();self.shutdown=threading.Event();self.continuation_context=None
         if type(recovery_floor) is not int or recovery_floor<1:raise ValueError('invalid_recovery_floor')
         self.recovery_floor=recovery_floor;self.recovery_state='ready'
+        self.readiness_failures=0;self.readiness_retry_delay=0
         import capture_recovery
         with store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,recovery_floor)
         if reason:self.recovery_state='held';self.last_error={'error':reason};self.stop.set()
@@ -366,6 +367,8 @@ class Collector:
             if len(pending)==1 and pending[0]['attempt_id']==active and result['hold_reason']=='unknown_capture_outcome':result['state']='capturing'
             elif result['hold_reason']:result['state']='held'
             else:result['state']=self.recovery_state
+            result['readiness_failures']=self.readiness_failures
+            result['readiness_retry_delay_seconds']=self.readiness_retry_delay
             with self.schedule_lock:
                 result['schedule']={'mode':'minimum_start_interval','interval_seconds':self.interval,
                                     'missed_nominal_slots':self.missed_slots,'late_cycles':self.late_cycles,
@@ -373,7 +376,8 @@ class Collector:
         return result
     def _once(self):
         import capture_recovery
-        attempt=None
+        from camera_status import ReadinessTransportError
+        attempt=None;retry_readiness=False;self.last_cycle_attempt=None
         try:
             self.store.require_space()
             # One passive check per scheduled cycle. It is an admission snapshot,
@@ -382,8 +386,9 @@ class Collector:
             try:
                 with self.store.performance.measure('camera_readiness'):
                     readiness=self.camera.readiness()
-            except Exception:
+            except Exception as error:
                 self.camera_state={'state':'unavailable','checked_at':now()}
+                retry_readiness=isinstance(error,ReadinessTransportError)
                 raise
             self.camera_state=dict(readiness,checked_at=now())
             state=readiness.get('state')
@@ -407,6 +412,7 @@ class Collector:
             capture_recovery.finish(self.store,attempt,'committed',event)
             self.last_error=None
             self.recovery_state='ready'
+            self.readiness_failures=0;self.readiness_retry_delay=0
         except Exception as e:
             self.last_error={'at':now(),'error':str(e) if isinstance(e,ValueError) else type(e).__name__}
             rejected=attempt is not None and isinstance(e,capture_recovery.FreshnessRejected)
@@ -415,7 +421,14 @@ class Collector:
                 self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt)
                 with self.store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,self.recovery_floor)
             except (OSError,sqlite3.Error,ValueError):reason='capture_failure_commit_unknown'
-            if rejected and reason is None:self.recovery_state='waiting_for_next_slot'
+            if retry_readiness and attempt is None and reason is None:
+                # Retry only a typed passive-GET transport failure, after its
+                # failure/gap is durable and every existing hold is rechecked.
+                # Never admit a retry of a submitted capture request.
+                self.readiness_failures+=1
+                self.readiness_retry_delay=min(60,6*2**min(self.readiness_failures-1,4))
+                self.recovery_state='waiting_for_camera'
+            elif rejected and reason is None:self.recovery_state='waiting_for_next_slot'
             else:self.recovery_state='held';self.stop.set()
         finally:self.store.active_capture_attempt=None
     def run(self):
@@ -438,5 +451,6 @@ class Collector:
                                           'duration_seconds':current-started,'missed_nominal_slots':missed})
                     self.overruns=self.overruns[-10:]
                 due=current
+            due=max(due,started+self.readiness_retry_delay)
             # Re-anchor on the actual start, so a late cycle cannot cause a burst.
             self.stop.wait(max(0,due-time.monotonic()))
