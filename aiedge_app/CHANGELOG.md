@@ -1,3 +1,9 @@
+## 0.2.0-dev41
+
+- Retry typed transient passive camera readiness failures before capture admission, with probe start intervals of 6, 12, 24, 48, then 60 seconds, never shorter than the configured capture interval. Resume new captures when readiness succeeds, without a time limit or a separate recovery worker.
+- Preserve every durable failure and unknown consumption gap, all dev40 continuation records, pending/unknown capture holds and three-consecutive rejection limits. Failure to persist evidence, non-ready device state, TLS/authentication/protocol and unclassified errors still hold. Shutdown interrupts waiting and cannot be undone by readiness recovery.
+- Keep numeric publication, models, calibration, firmware and camera transfer timeouts unchanged. This repairs the permanent stop after a transient readiness error; it does not repair the underlying camera/network outage or invent missing usage.
+
 ## 0.2.0-dev40
 
 - Add an authenticated, explicitly reviewed continuation action for one terminal camera timeout. Bind acceptance to the exact attempt, durable failure boundary, complete capture ledger, runtime settings and installed recovery source, after a fresh passive readiness check.
@@ -261,7 +267,7 @@
 
 - Remove position-error controls from Number format, including Advanced. Editing
   physical dial values preserves saved reader assumptions. New formats retain
-  the provisional Ãƒâ€šÃ‚Â±0.1 default until model/calibration error is validated; this
+  the provisional ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±0.1 default until model/calibration error is validated; this
   is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames
