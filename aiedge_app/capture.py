@@ -298,12 +298,17 @@ class Collector:
     def __init__(self,store,camera,interval,*,recovery_floor=1):
         self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None;self.camera_state={'state':'not_checked'}
         self.schedule_lock=threading.Lock();self.late_cycles=0;self.overruns=[];self.last_cycle_attempt=None
+        self.control_lock=threading.RLock();self.shutdown=threading.Event();self.continuation_context=None
         if type(recovery_floor) is not int or recovery_floor<1:raise ValueError('invalid_recovery_floor')
         self.recovery_floor=recovery_floor;self.recovery_state='ready'
         import capture_recovery
         with store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,recovery_floor)
         if reason:self.recovery_state='held';self.last_error={'error':reason};self.stop.set()
     def once(self):
+        with self.control_lock:
+            if self.shutdown.is_set():return
+            self._controlled_once()
+    def _controlled_once(self):
         if self.stop.is_set():return
         # Serialize the whole status/capture pair against camera-setting jobs.
         from contextlib import nullcontext
@@ -316,6 +321,42 @@ class Collector:
             try:self.store.fail(self.last_error['error'])
             except (AttributeError,OSError,sqlite3.Error):pass
             self.recovery_state='held';self.stop.set()
+    def request_stop(self):
+        # Shutdown is irrevocable for this worker; continuation can only release
+        # a fault hold, never a service stop or SIGTERM.
+        self.shutdown.set();self.stop.set()
+    def continuation_review(self):
+        import capture_recovery
+        with self.control_lock:
+            if self.shutdown.is_set() or not self.stop.is_set() or self.recovery_state!='held':raise ValueError('continuation_requires_held_collector')
+            if self.continuation_context is None:raise ValueError('continuation_context_unavailable')
+            if getattr(self.store,'active_capture_attempt',None):raise ValueError('continuation_capture_active')
+            context=self.continuation_context()
+            with self.store.lock,self.store.connect() as db:
+                db.execute('BEGIN')
+                return capture_recovery.continuation_review(db,self.recovery_floor,context)
+    def continue_after_gap(self,request):
+        import capture_recovery
+        with self.control_lock:
+            # Validate before any passive I/O. Revalidate in the write transaction
+            # after the fresh camera check; a stale review never admits a POST.
+            review=self.continuation_review()
+            if not isinstance(request,dict) or request.get('review_sha256')!=review['review_sha256']:raise ValueError('continuation_review_changed')
+            with self.camera.operation():
+                self.camera.require_capture()
+                ready=self.camera.readiness()
+                context=self.continuation_context()
+                with self.store.lock,self.store.connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    if self.shutdown.is_set() or getattr(self.store,'active_capture_attempt',None):raise ValueError('continuation_stopping_or_active')
+                    result=capture_recovery.accept_continuation(db,self.recovery_floor,context,request,ready)
+                # Commit the durable acceptance before waking the existing worker.
+                # If shutdown raced the commit, leave it stopped. A future normal
+                # startup reads the acceptance without erasing the original fault.
+                if not self.shutdown.is_set():
+                    self.camera_state=dict(ready,checked_at=now())
+                    self.recovery_state='waiting_for_next_slot';self.last_error=None;self.stop.clear()
+                return result
     def recovery_status(self):
         import capture_recovery
         with self.store.lock,self.store.connect() as db:
@@ -354,6 +395,7 @@ class Collector:
                       'demo_mode':'camera_demo_mode'}.get(state,'camera_status_invalid')
                 raise ValueError(code)
             request_started=self.store.performance.clock()
+            if self.shutdown.is_set():return
             attempt,after=capture_recovery.begin(self.store,self.recovery_floor)
             self.last_cycle_attempt=attempt
             self.store.active_capture_attempt=attempt
@@ -377,9 +419,14 @@ class Collector:
             else:self.recovery_state='held';self.stop.set()
         finally:self.store.active_capture_attempt=None
     def run(self):
-        while not self.stop.is_set():
+        while not self.shutdown.is_set():
+            if self.stop.is_set():
+                if self.recovery_state!='held':break
+                # No polling of the camera, no retry, and no additional runner.
+                # A reviewed continuation wakes this same lifecycle-owned worker.
+                self.shutdown.wait(.2);continue
             started=time.monotonic();self.once();current=time.monotonic()
-            if self.stop.is_set():break
+            if self.stop.is_set():continue
             due=started+self.interval
             if current>due:
                 # A completed slow request must not add another whole idle slot.
