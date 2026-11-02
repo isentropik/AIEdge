@@ -1,3 +1,10 @@
+## 0.2.0-dev42
+
+- Continue after newly witnessed JPEG-body timeouts under an explicit missing-image gap policy. Record validated frame/clock/hash headers and bytes delivered to the application, preserve the original unknown outcome and null consumption gap, close the failed response, and wait for fresh passive readiness before accepting the gap. A later cycle issues a new capture; it never replays the failed POST or claims its image was recovered.
+- Space recovery probes and repeated body failures with 6/12/24/48/60-second backoff, never shorter than the configured cadence. Busy and transiently unreachable cameras receive passive probes only. Acceptance and the next capture occur in separate cycles on the same lifecycle worker.
+- Bind immutable transfer evidence and acceptance to the exact terminal attempt, failure, full ledger, source and runtime context. Existing unknowns, header timeouts, malformed metadata, pending requests, restart-before-acceptance, storage errors, non-transient faults and three-consecutive rejection holds remain. The old held attempt needs its own explicit continuation.
+- Keep firmware, radio, transport deadline and numeric publication unchanged. This repairs capture availability after this class of image loss; it does not establish or fix the underlying network/camera transfer cause or recover missed usage.
+
 ## 0.2.0-dev41
 
 - Retry typed transient passive camera readiness failures before capture admission, with probe start intervals of 6, 12, 24, 48, then 60 seconds, never shorter than the configured capture interval. Resume new captures when readiness succeeds, without a time limit or a separate recovery worker.

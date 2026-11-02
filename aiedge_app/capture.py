@@ -126,7 +126,7 @@ class Store:
             if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
         self.performance.admit(event,digest,request_started)
         return True
-    def fail(self,error,*,outcome='unknown',attempt=None):
+    def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None):
         if outcome not in ('rejected','unknown'):raise ValueError('capture_failure_outcome_invalid')
         with self.lock,self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -136,6 +136,12 @@ class Store:
             if attempt is not None:
                 import capture_recovery
                 capture_recovery.finish_transaction(db,attempt,outcome,error=error)
+                if transfer is not None:
+                    if outcome!='unknown' or error!='camera_timeout' or context is None:raise ValueError('transfer_failure_invalid')
+                    capture_recovery.validate_transfer_evidence(transfer)
+                    db.execute('INSERT INTO capture_transfer_timeouts VALUES(?,?,?,?)',(attempt,
+                        capture_recovery.canonical(transfer),capture_recovery.digest(capture_recovery.continuation_binding(db,attempt)),
+                        capture_recovery.digest(context)))
     def recent(self):
         with self.lock,self.connect() as db:
             rows=db.execute('SELECT f.captured_at,f.received_at,f.sha256,f.bytes FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 50').fetchall()
@@ -266,11 +272,26 @@ class Camera:
                 if not 4<=length<=MAX_IMAGE:raise ValueError('invalid_image_length')
                 with self.performance.measure('reference_download' if reference else 'camera_download'):
                     parts=[];remaining=length
-                    while remaining:
-                        if time.monotonic()>=request.aiedge_deadline:raise ValueError('capture_deadline_exceeded')
-                        block=r.read1(min(65536,remaining))
-                        if not block:raise ValueError('truncated_image')
-                        parts.append(block);remaining-=len(block)
+                    try:
+                        while remaining:
+                            if time.monotonic()>=request.aiedge_deadline:raise TimeoutError('camera_io_deadline')
+                            block=r.read1(min(65536,remaining))
+                            if not block:raise ValueError('truncated_image')
+                            parts.append(block);remaining-=len(block)
+                    except (TimeoutError,socket.timeout):
+                        # No image is admitted, and no POST is repeated. Only
+                        # well-formed response provenance qualifies for the
+                        # explicit body-timeout gap policy in the collector.
+                        from capture_recovery import BodyTimeout
+                        try:
+                            clock=capture_clock.parse(r.headers)
+                            if clock is None:raise ValueError('capture_clock_missing')
+                            failure=BodyTimeout(dict(stage='jpeg_body',expected_bytes=length,received_bytes=length-remaining,
+                                frame_id=camera_header(r.headers,'X-AIEdge-Frame-Id'),
+                                captured_at=camera_header(r.headers,'X-AIEdge-Captured-At'),
+                                expected_sha256=camera_header(r.headers,'X-AIEdge-SHA256'),clock_id=clock[0],monotonic_us=clock[1]))
+                        except ValueError:raise ValueError('camera_timeout') from None
+                        raise failure from None
                     return b''.join(parts),r.headers
         except urllib.error.HTTPError as exc:
             try:
@@ -302,6 +323,7 @@ class Collector:
         if type(recovery_floor) is not int or recovery_floor<1:raise ValueError('invalid_recovery_floor')
         self.recovery_floor=recovery_floor;self.recovery_state='ready'
         self.readiness_failures=0;self.readiness_retry_delay=0
+        self.transfer_attempt=None;self.transfer_failures=0;self.transfer_not_before=0
         import capture_recovery
         with store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,recovery_floor)
         if reason:self.recovery_state='held';self.last_error={'error':reason};self.stop.set()
@@ -365,10 +387,18 @@ class Collector:
             active=getattr(self.store,'active_capture_attempt',None)
             pending=[a for a in result['recent_attempts'] if a['outcome'] is None]
             if len(pending)==1 and pending[0]['attempt_id']==active and result['hold_reason']=='unknown_capture_outcome':result['state']='capturing'
+            elif (self.transfer_attempt and not self.stop.is_set() and self.recovery_state=='waiting_for_transfer_recovery'
+                  and result['hold_reason']=='unknown_capture_outcome'):result['state']='waiting_for_transfer_recovery'
             elif result['hold_reason']:result['state']='held'
             else:result['state']=self.recovery_state
             result['readiness_failures']=self.readiness_failures
             result['readiness_retry_delay_seconds']=self.readiness_retry_delay
+            result['transfer_recovery_attempt']=self.transfer_attempt
+            result['transfer_failures']=self.transfer_failures
+            result['transfer_recovery_policy']=capture_recovery.TRANSFER_POLICY
+            if self.transfer_attempt:
+                evidence,_=capture_recovery.transfer_record(db,self.transfer_attempt)
+                result['transfer_failure_evidence']=evidence
             with self.schedule_lock:
                 result['schedule']={'mode':'minimum_start_interval','interval_seconds':self.interval,
                                     'missed_nominal_slots':self.missed_slots,'late_cycles':self.late_cycles,
@@ -377,9 +407,12 @@ class Collector:
     def _once(self):
         import capture_recovery
         from camera_status import ReadinessTransportError
-        attempt=None;retry_readiness=False;self.last_cycle_attempt=None
+        attempt=None;retry_readiness=False;self.last_cycle_attempt=None;context=None
         try:
             self.store.require_space()
+            if self.transfer_attempt:
+                self._recover_transfer()
+                return
             # One passive check per scheduled cycle. It is an admission snapshot,
             # not a promise that the following capture cannot fail or become busy.
             self.camera_state={'state':'checking','checked_at':now()}
@@ -401,6 +434,7 @@ class Collector:
                 raise ValueError(code)
             request_started=self.store.performance.clock()
             if self.shutdown.is_set():return
+            if self.continuation_context is not None:context=self.continuation_context()
             attempt,after=capture_recovery.begin(self.store,self.recovery_floor)
             self.last_cycle_attempt=attempt
             self.store.active_capture_attempt=attempt
@@ -413,13 +447,25 @@ class Collector:
             self.last_error=None
             self.recovery_state='ready'
             self.readiness_failures=0;self.readiness_retry_delay=0
+            self.transfer_failures=0
         except Exception as e:
             self.last_error={'at':now(),'error':str(e) if isinstance(e,ValueError) else type(e).__name__}
             rejected=attempt is not None and isinstance(e,capture_recovery.FreshnessRejected)
             outcome='rejected' if rejected else 'unknown'
             try:
-                self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt)
+                qualified=attempt is not None and isinstance(e,capture_recovery.BodyTimeout) and context is not None
+                if qualified:
+                    self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt,transfer=e.evidence,context=context)
+                else:self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt)
                 with self.store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,self.recovery_floor)
+                if qualified:
+                    with self.store.connect() as db:capture_recovery.transfer_review(db,self.recovery_floor,self.continuation_context(),attempt)
+                    self.transfer_attempt=attempt
+                    self.transfer_failures+=1
+                    self.readiness_retry_delay=min(60,6*2**min(self.transfer_failures-1,4))
+                    self.transfer_not_before=time.monotonic()+max(self.interval,self.readiness_retry_delay)
+                    self.recovery_state='waiting_for_transfer_recovery'
+                    return
             except (OSError,sqlite3.Error,ValueError):reason='capture_failure_commit_unknown'
             if retry_readiness and attempt is None and reason is None:
                 # Retry only a typed passive-GET transport failure, after its
@@ -431,6 +477,49 @@ class Collector:
             elif rejected and reason is None:self.recovery_state='waiting_for_next_slot'
             else:self.recovery_state='held';self.stop.set()
         finally:self.store.active_capture_attempt=None
+    def _recover_transfer(self):
+        """Accept one evidenced missing-image gap under the deployed policy.
+
+        Called with collector/camera locks. Never captures in this cycle. A
+        restart loses the in-process identity and deliberately retains the hold.
+        """
+        import capture_recovery as recovery
+        from camera_status import ReadinessTransportError,validate
+        context=self.continuation_context()
+        with self.store.lock,self.store.connect() as db:
+            db.execute('BEGIN')
+            review=recovery.transfer_review(db,self.recovery_floor,context,self.transfer_attempt)
+        try:
+            with self.store.performance.measure('camera_readiness'):
+                ready=validate(self.camera.readiness())
+        except ReadinessTransportError:
+            self.store.fail('camera_connection_failed')
+            self.readiness_failures+=1
+            self.readiness_retry_delay=min(60,6*2**min(self.readiness_failures-1,4))
+            self.transfer_not_before=time.monotonic()+max(self.interval,self.readiness_retry_delay)
+            self.camera_state={'state':'unavailable','checked_at':now()}
+            return
+        self.camera_state=dict(ready,checked_at=now())
+        if ready['state']=='busy':
+            # The old request may still own the device. Probe only; no POST.
+            self.readiness_failures+=1
+            self.readiness_retry_delay=min(60,6*2**min(self.readiness_failures-1,4))
+            self.transfer_not_before=time.monotonic()+max(self.interval,self.readiness_retry_delay)
+            return
+        if ready['state']!='ready':raise ValueError('transfer_camera_not_ready')
+        current=self.continuation_context()
+        with self.store.lock,self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if self.shutdown.is_set() or getattr(self.store,'active_capture_attempt',None):raise ValueError('transfer_stopping_or_active')
+            checked=recovery.transfer_review(db,self.recovery_floor,current,self.transfer_attempt)
+            if checked!=review:raise ValueError('transfer_review_changed')
+            request=dict(action='accept-gap-and-continue',attempt_id=self.transfer_attempt,
+                         review_sha256=review['review_sha256'],approval_reference=recovery.TRANSFER_POLICY)
+            recovery.accept_continuation(db,self.recovery_floor,current,request,ready,transfer_policy=True)
+        self.transfer_attempt=None
+        self.recovery_state='waiting_for_next_slot';self.last_error=None
+        self.readiness_failures=0
+        self.transfer_not_before=time.monotonic()+max(self.interval,self.readiness_retry_delay)
     def run(self):
         while not self.shutdown.is_set():
             if self.stop.is_set():
@@ -451,6 +540,6 @@ class Collector:
                                           'duration_seconds':current-started,'missed_nominal_slots':missed})
                     self.overruns=self.overruns[-10:]
                 due=current
-            due=max(due,started+self.readiness_retry_delay)
+            due=max(due,started+self.readiness_retry_delay,self.transfer_not_before)
             # Re-anchor on the actual start, so a late cycle cannot cause a burst.
             self.stop.wait(max(0,due-time.monotonic()))
