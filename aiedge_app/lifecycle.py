@@ -53,7 +53,9 @@ class ServiceRuntime:
             # must not reenter the event's non-reentrant internal lock.
             self.stop_started=True
             self.stopping.set()
-            for worker in self.workers:worker.stop.set()
+            for worker in self.workers:
+                if hasattr(worker,'request_stop'):worker.request_stop()
+                else:worker.stop.set()
             if hasattr(self.server,'begin_shutdown'):self.server.begin_shutdown()
             # HTTPServer.shutdown cannot run on the serve_forever thread itself.
             # Before serving, run() closes without starting a blocked shutdown.

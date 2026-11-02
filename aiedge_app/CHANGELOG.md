@@ -1,3 +1,10 @@
+## 0.2.0-dev40
+
+- Add an authenticated, explicitly reviewed continuation action for one terminal camera timeout. Bind acceptance to the exact attempt, durable failure boundary, complete capture ledger, runtime settings and installed recovery source, after a fresh passive readiness check.
+- Preserve the original unknown outcome, every failure and image, and the unknown consumption gap. The action permits only new future captures; it neither replays the timed-out POST nor assigns usage to the outage. Publication remains blocked until a new valid event and its native accounting result are available.
+- Keep the same lifecycle-owned collector parked during a hold. Explicit continuation resumes that worker; service shutdown remains irrevocable. Pending requests, other unknown failures, corrupt evidence, stale reviews, and three consecutive acknowledged rejections still hold.
+- Retain append-only continuation evidence and expose the accepted unknown-gap count. Dev38 held-estimate publication and dev39 automatic passive-readiness retries are not included. Numeric accounting, models, calibration and firmware are unchanged.
+
 ## 0.2.0-dev37
 
 - Hold continuous capture after three consecutive acknowledged freshness rejections, rather than three lifetime rejections. A durably committed capture ends the streak; all failures and the lifetime total remain visible.

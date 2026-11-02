@@ -69,7 +69,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from event_mode import edit_allowed
                 try:edit_allowed(recognition)
                 except ValueError as exc:self.reply({'error':str(exc),'code':'event_selection_restart_required'},409);return
-            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/capture-trial'):self.send_error(404);return
+            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/capture-trial','/api/capture-continuation'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -98,7 +98,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                                        'X-AIEdge-Preview-SHA256':hashlib.sha256(preview).hexdigest()}.items():self.send_header(name,value)
                     self.end_headers();self.wfile.write(preview);return
                 data=json.loads(body)
-                if route=='/api/capture-trial':
+                if route=='/api/capture-continuation':
+                    if collector is None:self.reply({'error':'continuation_capture_disabled'},409);return
+                    result=collector.continue_after_gap(data)
+                elif route=='/api/capture-trial':
                     if trial is None:self.reply({'error':'trial_unavailable'},503);return
                     if not isinstance(data,dict):raise ValueError('trial_action_invalid')
                     if set(data)=={'action','request_id','max_attempts','duration_seconds','interval_seconds'} and data['action']=='start':
@@ -152,6 +155,19 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
         def read_request(self):
             if not self.allowed():self.send_error(403);return
             route=urllib.parse.urlsplit(self.path).path
+            if route=='/api/capture-continuation':
+                if collector is None:self.reply({'error':'continuation_capture_disabled'},409);return
+                try:
+                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=1)
+                    if query:
+                        if set(query)!={'attempt_id'} or len(query['attempt_id'])!=1:raise ValueError('continuation_query_invalid')
+                        from capture_recovery import continuation_record
+                        with store.lock,store.connect() as db:
+                            db.execute('BEGIN');record=continuation_record(db,query['attempt_id'][0])
+                        self.reply(record)
+                    else:self.reply(collector.continuation_review())
+                except ValueError as exc:self.reply({'error':str(exc)},409)
+                return
             if route=='/api/diagnostics':
                 from diagnostics import build
                 body=json.dumps(build(store,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,archive),indent=2,allow_nan=False).encode()
@@ -347,6 +363,20 @@ def run_service(stop_signals):
     if image_controls and setup:
         saved=setup.status().get('calibration')
         if saved:image_controls.calibration_saved(saved.get('reference_sha256'))
+    if collector and setup and reading_format and recognition:
+        def continuation_context():
+            import hashlib
+            # Bind the reviewed permission to the running settings, recognition
+            # context, and installed recovery implementation; never expose secrets.
+            from capture_recovery import digest
+            files=('capture_recovery.py','capture.py','service.py','lifecycle.py','camera_status.py')
+            return {'options_sha256':digest(options),
+                    'recognition':capture_trial_context(setup,recognition,reading_format),
+                    'first_event':collector.recovery_floor,
+                    'source':{name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in files},
+                    'camera_controls':{name:hashlib.sha256((Path(args.data)/name).read_bytes()).hexdigest() if (Path(args.data)/name).is_file() else None
+                                       for name in ('camera-lighting-operation.json','camera-image-operation.json','camera-auto-operation.json','camera-auto.json')}}
+        collector.continuation_context=continuation_context
     preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls,auto_control) if store and configuration.get('state')=='ready' else None
     trial=None
     if store and camera and setup and recognition and reading_format:
