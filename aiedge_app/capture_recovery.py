@@ -10,6 +10,44 @@ from datetime import datetime,timezone
 # Lifetime rejections remain in the immutable ledger and status diagnostics.
 MAX_REJECTIONS=3
 FRESHNESS='camera_clock_changed'
+TRANSFER_POLICY='dev42-body-timeout-gap-policy-v1'
+
+class BodyTimeout(ValueError):
+    """Only a timed-out JPEG body with complete, validated response metadata."""
+    def __init__(self,evidence):
+        validate_transfer_evidence(evidence)
+        self.evidence=dict(evidence)
+        super().__init__('camera_timeout')
+
+def validate_transfer_evidence(value):
+    fields={'stage','expected_bytes','received_bytes','frame_id','captured_at','expected_sha256','clock_id','monotonic_us'}
+    if not isinstance(value,dict) or set(value)!=fields or value['stage']!='jpeg_body':raise ValueError('transfer_evidence_invalid')
+    if (type(value['expected_bytes']) is not int or not 4<=value['expected_bytes']<=4*1024*1024
+            or type(value['received_bytes']) is not int or not 0<=value['received_bytes']<value['expected_bytes']):raise ValueError('transfer_evidence_invalid')
+    for key in ('frame_id','clock_id'):
+        if not isinstance(value[key],str) or not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}',value[key]):raise ValueError('transfer_evidence_invalid')
+    if not isinstance(value['expected_sha256'],str) or not re.fullmatch('[0-9a-f]{64}',value['expected_sha256']):raise ValueError('transfer_evidence_invalid')
+    if type(value['monotonic_us']) is not int or not 0<=value['monotonic_us']<=9223372036854775807:raise ValueError('transfer_evidence_invalid')
+    try:
+        if not isinstance(value['captured_at'],str) or len(value['captured_at'])>64:raise ValueError()
+        stamp=datetime.fromisoformat(value['captured_at'].replace('Z','+00:00'))
+        if stamp.tzinfo is None or stamp.year<2020:raise ValueError()
+    except (TypeError,ValueError):raise ValueError('transfer_evidence_invalid') from None
+
+def transfer_record(db,ident):
+    row=db.execute('SELECT evidence_json,binding_sha256,context_sha256 FROM capture_transfer_timeouts WHERE attempt_id=?',(ident,)).fetchone()
+    if not row:raise ValueError('transfer_evidence_missing')
+    try:evidence=json.loads(row[0]);validate_transfer_evidence(evidence)
+    except (TypeError,ValueError):raise ValueError('transfer_evidence_invalid') from None
+    if row[1]!=digest(continuation_binding(db,ident)):raise ValueError('transfer_binding_changed')
+    return evidence,row[2]
+
+def transfer_review(db,first,context,ident):
+    evidence,context_hash=transfer_record(db,ident)
+    if digest(context)!=context_hash:raise ValueError('transfer_context_changed')
+    review=continuation_review(db,first,context)
+    if review['attempt_id']!=ident:raise ValueError('transfer_attempt_changed')
+    return review
 
 class FreshnessRejected(ValueError):
     """Only constructed after the exact acknowledged firmware HTTP 503 body."""
@@ -20,8 +58,10 @@ def initialize(db):
     db.execute('CREATE TABLE IF NOT EXISTS continuous_capture_attempts(attempt_id TEXT PRIMARY KEY,first_event INTEGER NOT NULL,after_event_id INTEGER NOT NULL,started_at TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS continuous_capture_outcomes(attempt_id TEXT PRIMARY KEY,outcome TEXT NOT NULL,event_id INTEGER,error TEXT,finished_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_continuations(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,review_json TEXT NOT NULL,readiness_json TEXT NOT NULL,approval_reference TEXT NOT NULL,accepted_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
+    db.execute('CREATE TABLE IF NOT EXISTS capture_transfer_timeouts(attempt_id TEXT PRIMARY KEY,evidence_json TEXT NOT NULL,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     for action in ('UPDATE','DELETE'):
         db.execute("CREATE TRIGGER IF NOT EXISTS capture_continuations_no_"+action.lower()+" BEFORE "+action+" ON capture_continuations BEGIN SELECT RAISE(ABORT,'capture_continuation_immutable'); END")
+        db.execute("CREATE TRIGGER IF NOT EXISTS capture_transfer_timeouts_no_"+action.lower()+" BEFORE "+action+" ON capture_transfer_timeouts BEGIN SELECT RAISE(ABORT,'capture_transfer_timeout_immutable'); END")
 
 def boundary(db,event):
     rows=db.execute('SELECT b.failure_id,b.error,b.outcome,f.error FROM capture_failure_boundaries b LEFT JOIN failures f ON f.rowid=b.failure_id WHERE b.after_event_id=? ORDER BY b.failure_id',(event-1,)).fetchall()
@@ -44,10 +84,16 @@ def snapshot(db,first):
     names=('attempt_id','after_event_id','started_at','outcome','event_id','error','finished_at')
     failed=db.execute('SELECT COUNT(*) FROM failures').fetchone()[0]
     last=db.execute('SELECT received_at,error FROM failures ORDER BY rowid DESC LIMIT 1').fetchone()
+    transfer=db.execute('SELECT attempt_id FROM capture_transfer_timeouts ORDER BY rowid DESC LIMIT 1').fetchone()
+    transfer_summary=None
+    if transfer:
+        evidence,_=transfer_record(db,transfer[0])
+        transfer_summary={'attempt_id':transfer[0],'evidence':evidence,
+                          'gap_accepted':transfer[0] in accepted_continuations(db)}
     return {'first_event':first,'maximum_rejections':MAX_REJECTIONS,'rejections':count,
             'rejection_policy':'consecutive_acknowledged','consecutive_rejections':consecutive,'lifetime_rejections':lifetime,
             'hold_reason':reason,'attempt_count':total,'failure_count':failed,'last_failure':dict(zip(('at','error'),last)) if last else None,'recent_attempts':[dict(zip(names,r)) for r in reversed(rows)],
-            'accepted_unknown_gaps':len(accepted_continuations(db))}
+            'accepted_unknown_gaps':len(accepted_continuations(db)),'last_transfer_timeout':transfer_summary}
 
 def rejection_streak(db,first,accepted=None):
     # Intent order is durable and independent of wall-clock adjustments. Read at
@@ -143,6 +189,9 @@ def accepted_continuations(db):
             if (saved['attempt_id']!=ident or saved['binding_sha256']!=binding
                     or binding!=digest(continuation_binding(db,ident))
                     or not approval or datetime.fromisoformat(at).tzinfo is None):raise ValueError()
+            if approval==TRANSFER_POLICY:
+                _,context_hash=transfer_record(db,ident)
+                if saved['context_sha256']!=context_hash:raise ValueError()
         except (KeyError,TypeError,ValueError):raise ValueError('capture_continuation_invalid') from None
         result.add(ident)
     return result
@@ -200,7 +249,7 @@ def continuation_review(db,first,context):
     # Hash complete ordered metadata, including all historical contexts and prior
     # acceptances. Changes while a human reviews the action invalidate its token.
     hashes={}
-    for table in ('frames','capture_events','capture_clocks','failures','capture_failure_boundaries','continuous_capture_attempts','continuous_capture_outcomes','capture_continuations'):
+    for table in ('frames','capture_events','capture_clocks','failures','capture_failure_boundaries','continuous_capture_attempts','continuous_capture_outcomes','capture_continuations','capture_transfer_timeouts'):
         hashes[table]=digest(db.execute('SELECT rowid,* FROM '+table+' ORDER BY rowid').fetchall())
     review={'action':'accept-gap-and-continue','attempt_id':ident,'after_event_id':last,
             'first_event':first,'binding_sha256':digest(binding),'ledger_sha256':digest(hashes),
@@ -209,10 +258,13 @@ def continuation_review(db,first,context):
     return dict(review,review_sha256=digest(review))
 
 
-def accept_continuation(db,first,context,request,camera_status):
+def accept_continuation(db,first,context,request,camera_status,*,transfer_policy=False):
     # Caller owns the collector and camera operation locks plus BEGIN IMMEDIATE.
     if not isinstance(request,dict) or set(request)!={'action','attempt_id','review_sha256','approval_reference'} or request['action']!='accept-gap-and-continue':raise ValueError('continuation_request_invalid')
     if not isinstance(request['approval_reference'],str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}',request['approval_reference']):raise ValueError('continuation_approval_reference_required')
+    if request['approval_reference']==TRANSFER_POLICY:
+        if not transfer_policy:raise ValueError('continuation_reserved_policy')
+        transfer_review(db,first,context,request['attempt_id'])
     from camera_status import validate
     camera_status=validate(camera_status)
     if camera_status['state']!='ready':raise ValueError('continuation_camera_not_ready')
