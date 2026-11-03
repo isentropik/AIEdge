@@ -1,3 +1,7 @@
+## 0.2.0-dev45
+
+- Add an optional, supervised two-batch meter capture trial for the matching buffered camera firmware. Each batch contains five scheduled pictures. The collector resumes ordinary capture after a verified completion.
+
 ## 0.2.0-dev44
 
 - Add transfer timings to application diagnostics. The latest eight body reads and the most recent collector body timeout are retained for the current app session.

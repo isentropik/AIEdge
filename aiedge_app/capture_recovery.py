@@ -272,3 +272,11 @@ def accept_continuation(db,first,context,request,camera_status,*,transfer_policy
     if request['attempt_id']!=review['attempt_id'] or request['review_sha256']!=review['review_sha256']:raise ValueError('continuation_review_changed')
     db.execute('INSERT INTO capture_continuations VALUES(?,?,?,?,?,?)',(review['attempt_id'],review['binding_sha256'],canonical(review),canonical(camera_status),request['approval_reference'],datetime.now(timezone.utc).isoformat()))
     return {'state':'gap_accepted','attempt_id':review['attempt_id'],'review_sha256':review['review_sha256'],'unknown_outcome_preserved':True,'gap_delta':None}
+
+def buffered_gap(db,event):
+    if db.execute("SELECT 1 FROM buffered_omissions WHERE after_event=? LIMIT 1",(event-1,)).fetchone():
+        return 'buffered_slot_omitted'
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='buffered_batch_admissions'").fetchone():
+        if db.execute("SELECT 1 FROM buffered_batch_admissions WHERE after_event=? AND initial_boundary=1",(event-1,)).fetchone():
+            return 'buffered_trial'
+    return None

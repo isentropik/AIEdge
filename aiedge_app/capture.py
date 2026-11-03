@@ -63,6 +63,8 @@ class Store:
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='inference'").fetchone():
                 db.execute('SELECT sha256,pipeline,processed_at,result FROM inference LIMIT 0')
             db.execute('CREATE TABLE IF NOT EXISTS capture_events(event_id INTEGER PRIMARY KEY AUTOINCREMENT,camera TEXT NOT NULL,frame_id TEXT NOT NULL,UNIQUE(camera,frame_id),FOREIGN KEY(camera,frame_id) REFERENCES frames(camera,frame_id))')
+            db.execute("CREATE TABLE IF NOT EXISTS buffered_slot_events(boot TEXT NOT NULL,slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 4),event_id INTEGER NOT NULL UNIQUE REFERENCES capture_events(event_id),PRIMARY KEY(boot,slot))")
+            db.execute("CREATE TABLE IF NOT EXISTS buffered_omissions(boot TEXT NOT NULL,slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 4),after_event INTEGER NOT NULL,PRIMARY KEY(boot,slot))")
             db.execute('CREATE TABLE IF NOT EXISTS capture_clocks(camera TEXT NOT NULL,frame_id TEXT NOT NULL,clock_id TEXT NOT NULL,monotonic_us INTEGER NOT NULL CHECK(monotonic_us>=0),PRIMARY KEY(camera,frame_id),FOREIGN KEY(camera,frame_id) REFERENCES frames(camera,frame_id))')
             db.execute('SELECT camera,frame_id,clock_id,monotonic_us FROM capture_clocks LIMIT 0')
             db.execute('CREATE INDEX IF NOT EXISTS capture_events_camera ON capture_events(camera,event_id)')
@@ -103,29 +105,37 @@ class Store:
         with self.lock,self.connect() as db:
             # Serialize file+ledger admission even if another process opened this store.
             db.execute('BEGIN IMMEDIATE')
-            target=self.root/'images'/(digest+'.jpg')
-            if target.exists():verified_image(target,digest)
-            prior=db.execute('SELECT captured_at,sha256 FROM frames WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
-            if prior:
-                prior_clock=db.execute('SELECT clock_id,monotonic_us FROM capture_clocks WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
-                if prior!=(stamp,digest) or prior_clock!=clock:raise ValueError('frame_identity_conflict')
-                if not target.exists():raise ValueError('stored_image_missing')
-                return False
-            self.require_space(0 if target.exists() else len(blob))
-            if not target.exists():
-                temp=target.with_name(uuid.uuid4().hex+'.tmp')
-                try:
-                    with temp.open('xb') as f:f.write(blob);f.flush();os.fsync(f.fileno())
-                    os.replace(temp,target)
-                finally:
-                    if temp.exists():temp.unlink()
-            # Persist the image directory entry before committing its ledger row.
-            sync_directory(target.parent)
-            db.execute('INSERT INTO frames VALUES(?,?,?,?,?,?,0)',(camera,frame,stamp,now(),digest,len(blob)))
-            event=db.execute('INSERT INTO capture_events(camera,frame_id) VALUES(?,?)',(camera,frame)).lastrowid
-            if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
+            event=self._insert_frame(db,camera,blob,frame,stamp,digest,clock)
+        if event is None:
+            return False
         self.performance.admit(event,digest,request_started)
         return True
+
+    def _insert_frame(self,db,camera,blob,frame,stamp,digest,clock):
+        """Called with the store lock and an open write transaction."""
+        target=self.root/'images'/(digest+'.jpg')
+        if target.exists():verified_image(target,digest)
+        prior=db.execute('SELECT captured_at,sha256 FROM frames WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
+        if prior:
+            prior_clock=db.execute('SELECT clock_id,monotonic_us FROM capture_clocks WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
+            if prior!=(stamp,digest) or prior_clock!=clock:raise ValueError('frame_identity_conflict')
+            if not target.exists():raise ValueError('stored_image_missing')
+            return None
+        self.require_space(0 if target.exists() else len(blob))
+        if not target.exists():
+            temp=target.with_name(uuid.uuid4().hex+'.tmp')
+            try:
+                with temp.open('xb') as f:f.write(blob);f.flush();os.fsync(f.fileno())
+                os.replace(temp,target)
+            finally:
+                if temp.exists():temp.unlink()
+        # Persist the image directory entry before committing its ledger row.
+        sync_directory(target.parent)
+        db.execute('INSERT INTO frames VALUES(?,?,?,?,?,?,0)',(camera,frame,stamp,now(),digest,len(blob)))
+        event=db.execute('INSERT INTO capture_events(camera,frame_id) VALUES(?,?)',(camera,frame)).lastrowid
+        if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
+        return event
+
     def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None):
         if outcome not in ('rejected','unknown'):raise ValueError('capture_failure_outcome_invalid')
         with self.lock,self.connect() as db:
@@ -170,6 +180,7 @@ class Store:
         if not row:return None,None
         return row[0],dict(zip(('captured_at','received_at','sha256'),row[1:]))
     def publication_blocked(self,event):
+        if getattr(self,"buffered_hold",False):return True
         import capture_recovery
         with self.lock,self.connect() as db:return capture_recovery.publication_blocked(db,event or 0,getattr(self,'active_capture_attempt',None))
     def capture_timing(self):
@@ -350,6 +361,7 @@ class Collector:
         # a fault hold, never a service stop or SIGTERM.
         self.shutdown.set();self.stop.set()
     def continuation_review(self):
+        if getattr(self.store,"buffered_hold",False):raise ValueError("buffered_trial_unresolved")
         import capture_recovery
         with self.control_lock:
             if self.shutdown.is_set() or not self.stop.is_set() or self.recovery_state!='held':raise ValueError('continuation_requires_held_collector')
@@ -360,6 +372,7 @@ class Collector:
                 db.execute('BEGIN')
                 return capture_recovery.continuation_review(db,self.recovery_floor,context)
     def continue_after_gap(self,request):
+        if getattr(self.store,"buffered_hold",False):raise ValueError("buffered_trial_unresolved")
         import capture_recovery
         with self.control_lock:
             # Validate before any passive I/O. Revalidate in the write transaction

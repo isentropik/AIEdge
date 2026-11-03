@@ -276,6 +276,12 @@ def run_service(stop_signals):
     parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--accounting-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file')
     parser.add_argument('--event-selection-config',help='Explicit development opt-in; never enables capture or publication.')
     args=parser.parse_args()
+    from bench_owner import service_owner
+    with service_owner(args.data):
+        stop_signals.checkpoint()
+        return run_owned_service(args,stop_signals)
+
+def run_owned_service(args,stop_signals):
     options,configuration=load_options(args.data)
     stop_signals.checkpoint()
     interval=options['interval_seconds'];enabled=options['capture_enabled']
@@ -390,6 +396,33 @@ def run_service(stop_signals):
             return capture_trial_context(setup,recognition,reading_format)
         try:trial=CaptureTrial(store,camera,trial_allowed,context=trial_context)
         except (OSError,sqlite3.Error):pass
+    stop_signals.checkpoint()
+    # Isolated bench entry point. Fail before constructing a listener or worker.
+    import time
+    import http.client
+    from bench_startup import gate,needs_camera_preflight
+    from bench_transport import BurstTransport
+    activation=options.get('buffered_trial','')
+    from lifecycle import StartupStopped
+    try:
+        if needs_camera_preflight(args.data,store,activation):
+            if consumption is None or collector is None or not callable(getattr(collector,'continuation_context',None)):
+                raise RuntimeError('missing configured collector for buffered trial')
+            from bench_baseline import prepare_trial
+            context,orientation,ticket=prepare_trial(activation,collector,image_controls,args.data)
+            transport=BurstTransport(camera,time.monotonic()+160,checkpoint=stop_signals.checkpoint)
+            gate(collector,transport,Path(args.data)/'burst-bench.sqlite3',context,orientation,start_on_boot=ticket,count=2)
+    except StartupStopped:
+        raise
+    except (ValueError,OSError,RuntimeError,KeyError,TypeError,sqlite3.Error,http.client.HTTPException) as error:
+        # Keep ingress and MQTT workers available while rejecting new acquisitions.
+        # Protocol failures may include external text. Expose only a fixed reason.
+        configuration={**configuration,'buffered_trial':'held','buffered_error_type':type(error).__name__}
+        if store is not None:store.buffered_hold=True
+        if collector is not None:
+            collector.recovery_state='held'
+            collector.last_error={'error':'buffered_trial_unresolved'}
+            collector.stop.set()
     stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial))
     from lifecycle import ServiceRuntime
