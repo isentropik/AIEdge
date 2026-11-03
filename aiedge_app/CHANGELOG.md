@@ -1,3 +1,7 @@
+## 0.2.0-dev46
+
+- Show the observed gas usage range since the current segment began, with the time of its last acknowledged positive estimate when available.
+
 ## 0.2.0-dev44
 
 - Add transfer timings to application diagnostics. The latest eight body reads and the most recent collector body timeout are retained for the current app session.

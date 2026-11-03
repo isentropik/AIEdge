@@ -25,7 +25,7 @@ def configuration(identity,document,interval,mode,reading_discovery):
     if mode=='gas_consumption':cfg['device_class']='gas'
     return 'homeassistant/sensor/'+unique+'/config',base,cfg
 
-def fresh_consumption(snapshot,max_age,clock=None):
+def _fresh_observation(snapshot,max_age,clock,states):
     doc=snapshot.get('format');c=snapshot.get('consumption');frame=snapshot.get('latest')
     if not isinstance(doc,dict) or not isinstance(c,dict) or not isinstance(frame,dict):return None
     try:_,revision=validate(doc)
@@ -33,7 +33,7 @@ def fresh_consumption(snapshot,max_age,clock=None):
     # An explicit rate assumption is required; cadence alone cannot rule out turns.
     rate=doc.get('maximum_rate_per_second')
     if not finite(rate) or rate<=0:return None
-    if c.get('state') not in ('anchored','estimated') or c.get('observation_accepted') is not True:return None
+    if c.get('state') not in states or c.get('observation_accepted') is not True:return None
     event=snapshot.get('_timing_event_id')
     if type(event) is not int or event<1 or type(c.get('event_id')) is not int or c['event_id']!=event:return None
     segment=c.get('segment_id')
@@ -43,7 +43,7 @@ def fresh_consumption(snapshot,max_age,clock=None):
     if not isinstance(digest,str) or not re.fullmatch('[a-f0-9]{64}',digest) or c.get('source_sha256')!=digest:return None
     if c.get('through_captured_at')!=frame.get('captured_at'):return None
     value,lo,hi=c.get('value'),c.get('minimum'),c.get('maximum')
-    if not all(finite(x) for x in (value,lo,hi)) or not 0<=lo<=value<=hi or c.get('upper_unbounded') is not False:return None
+    if not all(finite(x) for x in (lo,hi)) or not 0<=lo<=hi or c.get('upper_unbounded') is not False:return None
     try:
         captured=datetime.fromisoformat(frame['captured_at'].replace('Z','+00:00'))
         anchor=datetime.fromisoformat(c['anchor_captured_at'].replace('Z','+00:00'))
@@ -57,3 +57,22 @@ def fresh_consumption(snapshot,max_age,clock=None):
                 segment_id=segment,event_id=event,minimum=lo,maximum=hi,
                 maximum_rate_per_second=rate,unresolved_gap=c.get('unresolved_gap'),
                 coverage='observed_segment_only',accuracy_verified=False)
+
+def fresh_consumption(snapshot,max_age,clock=None):
+    obs=_fresh_observation(snapshot,max_age,clock,('anchored','estimated'))
+    if obs and finite(obs['value']) and obs['minimum']<=obs['value']<=obs['maximum']:
+        return obs
+
+def fresh_range(snapshot,max_age,clock=None):
+    """Report the outer limits of the current segment, including disjoint possibilities."""
+    from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
+    obs=_fresh_observation(snapshot,max_age,clock,('bounded','ambiguous','within_noise','estimated','anchored'))
+    if obs is None:return None
+    obs.pop('value')
+    unit=snapshot['consumption']['unit']
+    lower=(Decimal(str(obs['minimum']))*100).to_integral_value(rounding=ROUND_FLOOR)/100
+    upper=(Decimal(str(obs['maximum']))*100).to_integral_value(rounding=ROUND_CEILING)/100
+    symbol={'ft3':'ft³','m3':'m³'}.get(unit,unit)
+    obs['label']=f"{lower:.2f}–{upper:.2f} {symbol}"
+    obs['interpretation']=snapshot['consumption']['state']
+    return obs
