@@ -15,6 +15,43 @@ STAGES = frozenset(('camera_readiness', 'capture', 'reference_capture',
                     'capture_request_to_broker_ack'))
 OUTCOMES = frozenset(('success', 'failure', 'duplicate', 'rejected'))
 WINDOW = 64
+TRANSFER_WINDOW = 8
+
+
+class _TransferReads:
+    """Counts application read1 waits and delivered bytes, never TCP packets."""
+    def __init__(self, clock, expected, reference):
+        self.clock = clock
+        self.started = clock()
+        self.expected = expected
+        self.reference = reference
+        self.received = self.calls = 0
+        self.first_delivery = self.last_delivery = None
+        self.maximum_wait = 0.0
+
+    def read1(self, response, size):
+        before = self.clock()
+        self.calls += 1
+        try:
+            block = response.read1(size)
+        finally:
+            after = self.clock()
+            self.maximum_wait = max(self.maximum_wait, after - before)
+        if block:
+            self.received += len(block)
+            if self.first_delivery is None:
+                self.first_delivery = after
+            self.last_delivery = after
+        return block
+
+    def finish(self, outcome):
+        ended = self.clock()
+        return dict(expected_bytes=self.expected, application_bytes=self.received,
+            reference=self.reference, read_calls=self.calls, outcome=outcome,
+            elapsed_seconds=ended-self.started,
+            maximum_read_wait_seconds=self.maximum_wait,
+            first_delivery_seconds=None if self.first_delivery is None else self.first_delivery-self.started,
+            since_last_delivery_seconds=None if self.last_delivery is None else ended-self.last_delivery)
 
 
 class Timings:
@@ -23,6 +60,9 @@ class Timings:
         self.lock = threading.Lock()
         self.traces = OrderedDict()
         self.trace_evictions = 0
+        self.transfer_samples = deque(maxlen=TRANSFER_WINDOW)
+        self.transfer_count = 0
+        self.last_capture_body_timeout = None
         self.samples = {stage: deque(maxlen=WINDOW) for stage in STAGES}
         self.counts = {stage: {outcome: 0 for outcome in OUTCOMES} for stage in STAGES}
 
@@ -52,11 +92,34 @@ class Timings:
         finally:
             self.record(stage, self.clock() - start, sample.outcome)
 
+    @contextmanager
+    def transfer_reads(self, expected, reference=False):
+        trace = _TransferReads(self.clock, expected, reference)
+        outcome = 'failure'
+        try:
+            yield trace
+            outcome = 'complete' if trace.received == expected else 'incomplete'
+        except TimeoutError:
+            outcome = 'timeout'
+            raise
+        finally:
+            result = trace.finish(outcome)
+            with self.lock:
+                self.transfer_count += 1
+                result['sequence'] = self.transfer_count
+                self.transfer_samples.append(result)
+                if outcome == 'timeout' and not reference:
+                    self.last_capture_body_timeout = result
+
     def snapshot(self):
         with self.lock:
             samples = {stage: list(values) for stage, values in self.samples.items()}
             counts = {stage: dict(values) for stage, values in self.counts.items()}
             evictions = self.trace_evictions
+            transfers = [dict(row) for row in self.transfer_samples]
+            transfer_count = self.transfer_count
+            timeout = self.last_capture_body_timeout
+            last_timeout = None if timeout is None else dict(timeout)
         stages = {}
         for stage in sorted(STAGES):
             if not samples[stage]:
@@ -84,6 +147,11 @@ class Timings:
                 'publication_start': 'app_host_capture_request',
                 'ha_entity_receipt_measured': False,
                 'trace_window': WINDOW, 'trace_evictions_since_start': evictions,
+                'transfer_reads': {'scope': 'application_read1_only',
+                    'window': TRANSFER_WINDOW, 'count_since_start': transfer_count,
+                    'samples': transfers, 'tcp_packet_timing_measured': False,
+                    'last_capture_body_timeout': last_timeout,
+                    'camera_internal_timing_measured': False},
                 'reading_accuracy_verified': False,
                 'unmeasured': ['camera_internal_stages', 'ha_entity_receipt']}
 

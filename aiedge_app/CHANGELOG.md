@@ -1,3 +1,7 @@
+## 0.2.0-dev44
+
+- Add transfer timings to application diagnostics. The latest eight body reads and the most recent collector body timeout are retained for the current app session.
+
 ## 0.2.0-dev43
 
 - Retain the finite set of possible revolution counts across ambiguous intervals. Later short intervals no longer introduce turns excluded by intervening observations; later evidence can resolve retained alternatives.
