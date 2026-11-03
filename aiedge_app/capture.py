@@ -273,11 +273,12 @@ class Camera:
                 with self.performance.measure('reference_download' if reference else 'camera_download'):
                     parts=[];remaining=length
                     try:
-                        while remaining:
-                            if time.monotonic()>=request.aiedge_deadline:raise TimeoutError('camera_io_deadline')
-                            block=r.read1(min(65536,remaining))
-                            if not block:raise ValueError('truncated_image')
-                            parts.append(block);remaining-=len(block)
+                        with self.performance.transfer_reads(length,reference=reference) as reads:
+                            while remaining:
+                                if time.monotonic()>=request.aiedge_deadline:raise TimeoutError('camera_io_deadline')
+                                block=reads.read1(r,min(65536,remaining))
+                                if not block:raise ValueError('truncated_image')
+                                parts.append(block);remaining-=len(block)
                     except (TimeoutError,socket.timeout):
                         # No image is admitted, and no POST is repeated. Only
                         # well-formed response provenance qualifies for the
