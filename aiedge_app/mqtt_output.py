@@ -87,6 +87,8 @@ class MqttOutput:
         from mqtt_consumption import MODES
         if output_mode not in MODES:raise ValueError('invalid_mqtt_output_mode')
         self.output_mode=output_mode
+        self.range_error=None
+        self.last_acknowledged_estimate=None
         self.performance=performance if performance is not None else Timings()
         self.identity=instance_id(directory);self.snapshot=snapshot;self.interval=interval
         self.provider=provider;self.client_factory=client_factory;self.stop=threading.Event()
@@ -101,7 +103,11 @@ class MqttOutput:
         return configuration(self.identity,document,self.interval,self.output_mode,discovery)
     def _reset_dedup(self):
         self.last_payload=None;self.last_key=None;self.last_state_ack=None
-    def status(self):return {'state':self.state,'error':self.error}
+        self.range_configured=False;self.range_key=None
+    def status(self):
+        result={'state':self.state,'error':self.error}
+        if self.range_error:result['range_error']=self.range_error
+        return result
     def _on_connect(self,client,userdata,flags,reason,properties):
         if reason.is_failure:self.error='mqtt_connection_rejected';return
         self.connected.set();self.rediscover.set();client.subscribe('homeassistant/status',qos=1)
@@ -132,6 +138,33 @@ class MqttOutput:
     def publish_snapshot(self,snapshot):
         with self.performance.measure('mqtt_publication') as sample:
             sample.outcome=self._publish_snapshot(snapshot)
+        if self.output_mode=='gas_consumption' and self.client and self.connected.is_set():
+            try:
+                self._publish_range(snapshot)
+                self.range_error=None
+            except Exception:
+                self.range_error='range_publication_failed'
+                self.range_key=None
+
+    def _publish_range(self,snapshot):
+        from mqtt_consumption import fresh_range
+        topic=self.base+'/segment_range'
+        if not self.range_configured:
+            uid=self.config['unique_id']+'_segment_range'
+            discovery_config=dict(name='Gas usage range since segment start',unique_id=uid,
+                device=self.config['device'],state_topic=topic,value_template="{{ value_json.label | default('unknown') }}",
+                json_attributes_topic=topic,expire_after=max(90,self.interval*3),
+                availability_topic=topic,availability_template="{{ 'online' if value_json.label is defined else 'offline' }}")
+            self._publish('homeassistant/sensor/'+uid+'/config',json.dumps(discovery_config),True)
+            self.range_configured=True
+        obs=fresh_range(snapshot,max(90,self.interval*3))
+        prior=self.last_acknowledged_estimate
+        if obs and prior and prior['segment_id']==obs['segment_id'] and prior['format_id']==obs['format_id'] and prior['event_id']<=obs['event_id']:
+            obs['last_acknowledged_estimate']=prior
+        key=(obs['segment_id'],obs['event_id'],obs['source_sha256']) if obs else 'offline'
+        if key!=self.range_key:
+            self._publish(topic,json.dumps(obs or {},allow_nan=False))
+            self.range_key=key
     def _publish_snapshot(self,snapshot):
         document=snapshot.get('format')
         if not document:
@@ -174,6 +207,9 @@ class MqttOutput:
             self.last_payload=payload
             self.last_key=key;self.last_state_ack=self.clock()
             outcome='success'
+            if self.output_mode=='gas_consumption' and state['value']>0:
+                self.last_acknowledged_estimate={k:state[k] for k in
+                    ('value','event_id','source_sha256','captured_at','format_id','segment_id')}
             self.performance.publication_ack(snapshot.get('_timing_event_id'),state['source_sha256'])
         self.state='publishing';self.error=None
         return outcome
