@@ -1,3 +1,10 @@
+## 0.2.0-dev43
+
+- Retain the finite set of possible revolution counts across ambiguous intervals. Later short intervals no longer introduce turns excluded by intervening observations; later evidence can resolve retained alternatives.
+- Keep genuine missing-turn uncertainty, unknown gaps, partial-observation masks, unchanged flow/error assumptions and monotonic publication. Branch/numeric limits fail closed without choosing or truncating alternatives.
+- Require the branch-accounting native capability. The changed source-bound wrapper creates a future-only observation context; historical records and missing usage are not reinterpreted.
+- Add portable native, ABI, restart and source-context migration regressions to required validation. This does not repair camera/Wi-Fi transfer failures or establish physical accuracy.
+
 ## 0.2.0-dev42
 
 - Continue after newly witnessed JPEG-body timeouts under an explicit missing-image gap policy. Record validated frame/clock/hash headers and bytes delivered to the application, preserve the original unknown outcome and null consumption gap, close the failed response, and wait for fresh passive readiness before accepting the gap. A later cycle issues a new capture; it never replays the failed POST or claims its image was recovered.
@@ -274,7 +281,7 @@
 
 - Remove position-error controls from Number format, including Advanced. Editing
   physical dial values preserves saved reader assumptions. New formats retain
-  the provisional ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±0.1 default until model/calibration error is validated; this
+  the provisional ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±0.1 default until model/calibration error is validated; this
   is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames

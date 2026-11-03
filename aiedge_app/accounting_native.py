@@ -13,6 +13,12 @@ class AccountingNative:
         path=Path(path).resolve();self.identity=hashlib.sha256(path.read_bytes()).hexdigest();self.lib=ctypes.CDLL(str(path))
         self.lib.aiedge_accounting_abi.restype=ctypes.c_int
         if self.lib.aiedge_accounting_abi()!=1:raise ValueError('unsupported_accounting_abi')
+        # This wrapper source is part of the persisted event-context identity.
+        # Reject mixed old/new native packages before constructing a context.
+        try:branch_abi=self.lib.aiedge_accounting_branch_abi
+        except AttributeError:raise ValueError('accounting_branch_abi_required') from None
+        branch_abi.restype=ctypes.c_int
+        if branch_abi()!=1:raise ValueError('unsupported_accounting_branch_abi')
         self.lib.aiedge_accounting_create.argtypes=[ctypes.POINTER(ctypes.c_double)]*2+[ctypes.c_size_t,ctypes.c_int,ctypes.c_double]
         self.lib.aiedge_accounting_create.restype=ctypes.c_void_p
         self.lib.aiedge_accounting_destroy.argtypes=[ctypes.c_void_p];self.lib.aiedge_accounting_destroy.restype=None
