@@ -2,6 +2,7 @@
 #include "MeterCumulative.h"
 #include <string>
 #include <vector>
+#include <set>
 
 namespace meter {
 // Generic interval adapter for the same nested mechanical dial scales used by
@@ -171,9 +172,86 @@ public:
     double phaseError(const Bounds&) const {return 2*assumptions.errors.back()*turnUnits()/10+epsilon();}
     double epsilon() const {return turnUnits()*1e-12;}
 };
+
+// Keep the finite set of possible integer lifts after an ambiguous interval.
+// Discarding that set loses intervening observations and can introduce turns
+// that no sequence of adjacent observations permits. This deliberately retains
+// a superset of physical paths: it does not assume independent endpoint errors
+// are an exact jointly feasible path, nor sum clipped noisy volume increments.
+class RevolutionBranchCumulative {
+    RevolutionIntervalResolver resolver;
+    FixedAnchorCumulative<RevolutionObservation,RevolutionIntervalResolver> unbounded;
+    bool bounded;
+    RevolutionObservation anchor{}, previous{};
+    std::set<int64_t> offsets;
+    CumulativeResult result;
+    static constexpr std::size_t maximumBranches=128;
+    static bool usable(const Interval& x) {
+        return x.status!=Status::Invalid && x.status!=Status::Review &&
+            std::isfinite(x.minimumFt3) && std::isfinite(x.maximumFt3) &&
+            x.minimumFt3<=x.maximumFt3;
+    }
+public:
+    explicit RevolutionBranchCumulative(const RevolutionAssumptions& a):
+        resolver(a),unbounded(resolver),bounded(a.hasMaximumRate){}
+    const CumulativeResult& current() const {return bounded?result:unbounded.current();}
+    void stale() {
+        if(!bounded){unbounded.stale();return;}
+        result.current=false;result.estimatedFt3=std::numeric_limits<double>::quiet_NaN();
+    }
+    void reset(const RevolutionObservation& frame) {
+        if(!bounded){unbounded.reset(frame);return;}
+        anchor=previous=frame;offsets={0};result=CumulativeResult{};
+        result.available=result.current=true;
+        result.anchorUs=result.throughUs=frame.captureUs;result.status=Status::WithinNoise;
+    }
+    bool observe(const RevolutionObservation& frame,const Bounds& bounds) {
+        if(!bounded)return unbounded.observe(frame,bounds);
+        if(!result.available||frame.clockId!=anchor.clockId||frame.captureUs<=result.throughUs)return false;
+        const Interval step=resolver(previous,frame,bounds);
+        if(!usable(step)||step.candidates<1||step.firstTurnOffset>step.lastTurnOffset||
+            static_cast<long double>(step.lastTurnOffset)-step.firstTurnOffset>=maximumBranches)return false;
+        std::set<int64_t> proposed;
+        for(int64_t delta=step.firstTurnOffset;;++delta) {
+            const Interval exactStep=resolver(previous,frame,bounds,&delta);
+            if(exactStep.status==Status::Invalid)return false; // Work/numeric limit: never prune unknown paths.
+            if(usable(exactStep)) {
+                for(int64_t prior:offsets) {
+                    if((delta>0&&prior>std::numeric_limits<int64_t>::max()-delta)||
+                       (delta<0&&prior<std::numeric_limits<int64_t>::min()-delta))return false;
+                    proposed.insert(prior+delta);
+                    if(proposed.size()>maximumBranches)return false;
+                }
+            }
+            if(delta==step.lastTurnOffset)break;
+        }
+        std::set<int64_t> next;
+        Interval unique;
+        double low=std::numeric_limits<double>::infinity(),high=0;
+        for(int64_t offset:proposed) {
+            const Interval whole=resolver(anchor,frame,bounds,&offset);
+            if(whole.status==Status::Invalid)return false;
+            if(!usable(whole)||whole.maximumFt3<result.minimumFt3)continue;
+            next.insert(offset);unique=whole;
+            low=std::min(low,whole.minimumFt3);high=std::max(high,whole.maximumFt3);
+        }
+        if(next.empty())return false;
+        CumulativeResult candidate=result;
+        candidate.current=true;candidate.throughUs=frame.captureUs;
+        candidate.minimumFt3=std::max(result.minimumFt3,low);candidate.maximumFt3=high;
+        candidate.status=next.size()==1?unique.status:Status::Ambiguous;
+        candidate.estimatedFt3=next.size()==1?unique.estimatedFt3:std::numeric_limits<double>::quiet_NaN();
+        if(std::isfinite(candidate.estimatedFt3)&&candidate.estimatedFt3<candidate.minimumFt3) {
+            candidate.estimatedFt3=std::numeric_limits<double>::quiet_NaN();candidate.status=Status::BoundedOnly;
+        }
+        offsets=std::move(next);previous=frame;result=candidate;
+        return true;
+    }
+};
+
 class RevolutionCumulative {
     RevolutionIntervalResolver resolver;
-    FixedAnchorCumulative<RevolutionObservation,RevolutionIntervalResolver> tracker;
+    RevolutionBranchCumulative tracker;
     CumulativeResult published;
     double highestEstimate=std::numeric_limits<double>::quiet_NaN();
     void publish() {
@@ -189,7 +267,7 @@ class RevolutionCumulative {
         }
     }
 public:
-    explicit RevolutionCumulative(const RevolutionAssumptions& assumptions):resolver(assumptions),tracker(resolver){}
+    explicit RevolutionCumulative(const RevolutionAssumptions& assumptions):resolver(assumptions),tracker(assumptions){}
     bool configured() const {return resolver.configured();}
     const CumulativeResult& current() const {return published;}
     bool reset(const RevolutionObservation& frame) {

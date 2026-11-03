@@ -123,4 +123,49 @@ void randomized_oracle() {
         double lo=INFINITY,hi=0;for(auto range:expected){lo=std::min(lo,range.first);hi=std::max(hi,range.second);}close(result.minimumFt3,lo);close(result.maximumFt3,hi);
     }
 }
-int main(){ratios_and_rollovers();rejection_and_ambiguity();fixed_anchor_tracking();tracked_turns_beyond_anchor_search_limit();randomized_oracle();std::cout<<"PASS: generic intervals, ratios, wraps, fixed-anchor tracking beyond search limit, ambiguity, bounds and 1000 oracle comparisons (synthetic only)\n";}
+void retained_branch_paths() {
+    RevolutionAssumptions a;
+    a.periods={10000000,1000000,100000,10000,1000,5};
+    a.errors=std::vector<double>(6,.1);a.hasMaximumRate=true;a.maximumRate=1700.0/3600;
+    for(bool partial:{false,true}) {
+        RevolutionCumulative t(a);assert(t.reset(frame(0,a,0)));
+        for(int sec=12;sec<=120;sec+=6) {
+            auto f=frame(0,a,int64_t(sec)*1000000);
+            if(partial) {f.observed={false,false,false,false,false,true};for(size_t i=0;i<5;++i)f.positions[i]=NAN;}
+            assert(t.observe(f));auto r=t.current();
+            assert(r.status==Status::Ambiguous&&!std::isfinite(r.estimatedFt3));
+            assert(r.minimumFt3==0&&r.maximumFt3>=5&&r.maximumFt3<=5.100001);
+        }
+    }
+    RevolutionCumulative resolved(a);auto f=frame(0,a,0);f.positions[4]=.09;
+    assert(resolved.reset(f));f.captureUs=12000000;assert(resolved.observe(f));
+    assert(resolved.current().status==Status::Ambiguous);
+    for(int i=1;i<=200;++i) {
+        f=frame(i*.5,a,(12+int64_t(i)*6)*1000000);
+        f.positions[4]=std::fmod(f.positions[4]+(i<200?.09:-.09)+10,10);
+        assert(resolved.observe(f));
+    }
+    assert(resolved.current().status==Status::Estimated);close(resolved.current().estimatedFt3,100);
+    RevolutionAssumptions single;single.periods={5};single.errors={.1};single.hasMaximumRate=true;single.maximumRate=1;
+    RevolutionCumulative limited(single);assert(limited.reset(frame(0,single,0)));
+    assert(!limited.observe(frame(0,single,1000000000)));
+    assert(limited.current().throughUs==0&&!limited.current().current&&!std::isfinite(limited.current().estimatedFt3));
+}
+
+void randomized_retained_paths() {
+    RevolutionAssumptions a;a.periods={10000,1000,5};a.errors={.1,.1,.1};a.hasMaximumRate=true;a.maximumRate=1700.0/3600;
+    for(int seed=0;seed<30;++seed) {
+        std::mt19937 generator(seed);std::uniform_real_distribution<double> unit(0,1);
+        double q=200000+unit(generator)*100000,initial=q;int64_t tick=0;RevolutionCumulative t(a);
+        for(int i=0;i<120;++i) {
+            if(i){int64_t dt=3000000+int64_t(unit(generator)*15000000);q+=unit(generator)*a.maximumRate*double(dt)/1000000;tick+=dt;}
+            auto f=frame(q,a,tick);
+            for(auto& p:f.positions)p=std::fmod(p+(unit(generator)*2-1)*.099+10,10);
+            if(i%3){f.observed={false,false,true};f.positions[0]=f.positions[1]=NAN;}
+            assert(i?t.observe(f):t.reset(f));auto r=t.current();
+            assert(r.minimumFt3<=q-initial+1e-6&&r.maximumFt3>=q-initial-1e-6);
+        }
+    }
+}
+
+int main(){retained_branch_paths();randomized_retained_paths();ratios_and_rollovers();rejection_and_ambiguity();fixed_anchor_tracking();tracked_turns_beyond_anchor_search_limit();randomized_oracle();std::cout<<"PASS: generic intervals, ratios, wraps, fixed-anchor tracking beyond search limit, ambiguity, bounds and 1000 oracle comparisons (synthetic only)\n";}

@@ -20,6 +20,7 @@ void snapshot(const meter::CumulativeResult& value,int accepted,AccountingResult
         value.anchorUs,value.throughUs,value.minimumFt3,value.maximumFt3,value.estimatedFt3};
 }
 API int aiedge_accounting_abi(){return 1;}
+API int aiedge_accounting_branch_abi(){return 1;}
 API void* aiedge_accounting_create(const double* periods,const double* errors,size_t count,int bounded,double maximumRate) {
     if(!periods||!errors||!count||count>16||(bounded!=0&&bounded!=1))return nullptr;
     try {
