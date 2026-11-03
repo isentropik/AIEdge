@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev44
+version: 0.2.0-dev45
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -23,6 +23,7 @@ map:
 services:
   - mqtt:want
 options:
+  buffered_trial: ""
   camera_url: ""
   camera_token: ""
   camera_username: ""
@@ -34,6 +35,7 @@ options:
   recognition_mode: FULL
   event_selection_policy: {}
 schema:
+  buffered_trial: str?
   camera_url: str
   camera_token: password
   camera_username: str

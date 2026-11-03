@@ -17,6 +17,7 @@ RUN python verify_notices.py
 RUN pip install --no-cache-dir --only-binary=:all: --require-hashes -r requirements-linux-amd64.lock && pip check
 COPY --from=native-build /build/libaiedge_native.so /build/libaiedge_accounting.so ./
 COPY assets ./assets
+COPY bench_owner.py bench_store.py bench_baseline.py bench_transport.py bench_collector.py bench_startup.py buffered_ingest.py ./
 COPY camera_auto.py auto_capture.py auto_preview.py ./
 COPY capture_trial.py capture-trial.js ./
 COPY trial_results.py ./

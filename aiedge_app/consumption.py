@@ -33,6 +33,7 @@ class Consumption:
         with store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_segments(segment_id TEXT PRIMARY KEY,format_id TEXT NOT NULL,engine_id TEXT NOT NULL,first_event INTEGER NOT NULL,gap_reason TEXT NOT NULL,document TEXT NOT NULL)')
+            db.execute("CREATE TABLE IF NOT EXISTS buffered_batch_admissions(boot TEXT PRIMARY KEY,context TEXT NOT NULL,after_event INTEGER NOT NULL CHECK(after_event>=0),initial_boundary INTEGER NOT NULL CHECK(initial_boundary IN (0,1)))")
             db.execute('CREATE TABLE IF NOT EXISTS consumption_active(singleton INTEGER PRIMARY KEY CHECK(singleton=1),segment_id TEXT NOT NULL,FOREIGN KEY(segment_id) REFERENCES consumption_segments(segment_id))')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_records(segment_id TEXT NOT NULL,event_id INTEGER NOT NULL,result TEXT NOT NULL,PRIMARY KEY(segment_id,event_id),FOREIGN KEY(segment_id) REFERENCES consumption_segments(segment_id),FOREIGN KEY(event_id) REFERENCES capture_events(event_id))')
             db.execute('CREATE TABLE IF NOT EXISTS consumption_accepted_full_observations(segment_id TEXT NOT NULL,event_id INTEGER NOT NULL,result_sha256 TEXT NOT NULL,PRIMARY KEY(segment_id,event_id),FOREIGN KEY(segment_id,event_id) REFERENCES consumption_records(segment_id,event_id))')
@@ -157,7 +158,10 @@ class Consumption:
             with self.store.performance.measure('accounting') as sample:
                 current={'camera':camera,'captured_at':stamp,'clock_id':clock,'monotonic_us':tick}
                 timing=capture_clock.interval(self.previous,current)
-                with self.store.connect() as db:failed_boundary=capture_recovery.boundary(db,event)
+                with self.store.connect() as db:
+                    failed_boundary=capture_recovery.boundary(db,event)
+                    burst_boundary=capture_recovery.buffered_gap(db,event)
+                if burst_boundary:timing={'state':'unavailable','reason':burst_boundary,'elapsed_seconds':None}
                 if failed_boundary:timing={'state':'unavailable','reason':'capture_failure','elapsed_seconds':None}
                 # A gap starts a separate relative segment; never stitch two clocks.
                 if self.anchor and timing['state']!='continuous':

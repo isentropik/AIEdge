@@ -1,12 +1,12 @@
 """Read Supervisor-owned options without rewriting them or exposing secrets."""
-import json
+import json,re
 from pathlib import Path
 from capture import Camera
 
 MAX_OPTIONS = 65536
 DEFAULTS = dict(camera_url='', camera_token='', camera_username='', camera_password='',
                 capture_enabled=False, mqtt_enabled=False, mqtt_output_mode='reading', interval_seconds=30,
-                recognition_mode='FULL',event_selection_policy={})
+                recognition_mode='FULL',event_selection_policy={},buffered_trial='')
 
 class InvalidOptions(ValueError):
     def __init__(self, code, field=None):
@@ -26,6 +26,11 @@ def validate(document):
     from mqtt_consumption import MODES
     if options['mqtt_output_mode'] not in MODES:
         raise InvalidOptions('options_invalid_field', 'mqtt_output_mode')
+    trial=options['buffered_trial']
+    if not isinstance(trial,str) or (trial and not re.fullmatch(r'[0-9a-f]{32}\.[1-9][0-9]{0,9}@[0-9a-f]{64}',trial)):
+        raise InvalidOptions('options_invalid_field','buffered_trial')
+    if trial and (not options['capture_enabled'] or options['interval_seconds']!=6 or options['recognition_mode']!='EVENT_LAST_TWO'):
+        raise InvalidOptions('options_invalid_field','buffered_trial')
     interval = options['interval_seconds']
     if type(interval) is not int or not 6 <= interval <= 3600:
         raise InvalidOptions('options_invalid_field', 'interval_seconds')
