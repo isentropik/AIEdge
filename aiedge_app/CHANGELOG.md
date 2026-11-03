@@ -1,3 +1,7 @@
+## 0.2.0-dev47
+
+- Show the absolute gas meter register to 100 ftÂ³ resolution when all supported readings agree at that precision. Expose the current segment's start time on the gas usage range.
+
 ## 0.2.0-dev46
 
 - Show the observed gas usage range since the current segment began, with the time of its last acknowledged positive estimate when available.
@@ -289,7 +293,7 @@
 
 - Remove position-error controls from Number format, including Advanced. Editing
   physical dial values preserves saved reader assumptions. New formats retain
-  the provisional ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±0.1 default until model/calibration error is validated; this
+  the provisional ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â±0.1 default until model/calibration error is validated; this
   is not a claim of measured model accuracy or a user-adjustable accuracy setting.
 - Use full-resolution dial sampling in the server app. Sparse sampling remains
   available for diagnostics with a distinct pipeline identity. Four saved frames

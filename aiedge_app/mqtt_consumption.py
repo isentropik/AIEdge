@@ -63,13 +63,44 @@ def fresh_consumption(snapshot,max_age,clock=None):
     if obs and finite(obs['value']) and obs['minimum']<=obs['value']<=obs['maximum']:
         return obs
 
+def _register_hundreds(absolute, register_limit):
+    """Return the absolute register truncated to 100 ft³ only if every candidate agrees."""
+    if not isinstance(absolute,dict) or absolute.get('unit')!='ft3':
+        return None
+    if absolute.get('provenance')!='temporal_consumption_bounds':
+        return None
+    bounds=absolute.get('bounds')
+    if not isinstance(bounds,dict) or bounds.get('state')!='bounded' or bounds.get('wraps_register') is not False:
+        return None
+    ranges=bounds.get('ranges')
+    if not isinstance(ranges,list) or not 1<=len(ranges)<=256:
+        return None
+    bucket=None
+    for band in ranges:
+        if not isinstance(band,dict):
+            return None
+        lo,hi=band.get('lower'),band.get('upper')
+        if not finite(lo) or not finite(hi) or not 0<=lo<=hi<register_limit:
+            return None
+        hundreds=int(lo)//100
+        if int(hi)//100!=hundreds or (bucket is not None and hundreds!=bucket):
+            return None
+        bucket=hundreds
+    return bucket*100
+
 def fresh_range(snapshot,max_age,clock=None):
     """Report the outer limits of the current segment, including disjoint possibilities."""
     from decimal import Decimal, ROUND_FLOOR, ROUND_CEILING
     obs=_fresh_observation(snapshot,max_age,clock,('bounded','ambiguous','within_noise','estimated','anchored'))
     if obs is None:return None
     obs.pop('value')
+    obs['segment_started_at']=obs.pop('last_reset')
     unit=snapshot['consumption']['unit']
+    if unit=='ft3':
+        register=_register_hundreds(snapshot['consumption'].get('absolute'),snapshot['format']['dials'][0]['value_per_revolution'])
+        if register is not None:
+            obs['register_ft3']=register
+            obs['register_resolution_ft3']=100
     lower=(Decimal(str(obs['minimum']))*100).to_integral_value(rounding=ROUND_FLOOR)/100
     upper=(Decimal(str(obs['maximum']))*100).to_integral_value(rounding=ROUND_CEILING)/100
     symbol={'ft3':'ft³','m3':'m³'}.get(unit,unit)
