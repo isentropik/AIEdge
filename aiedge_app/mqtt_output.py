@@ -104,6 +104,7 @@ class MqttOutput:
     def _reset_dedup(self):
         self.last_payload=None;self.last_key=None;self.last_state_ack=None
         self.range_configured=False;self.range_key=None
+        self.register_configured=False
     def status(self):
         result={'state':self.state,'error':self.error}
         if self.range_error:result['range_error']=self.range_error
@@ -157,6 +158,15 @@ class MqttOutput:
                 availability_topic=topic,availability_template="{{ 'online' if value_json.label is defined else 'offline' }}")
             self._publish('homeassistant/sensor/'+uid+'/config',json.dumps(discovery_config),True)
             self.range_configured=True
+        if not self.register_configured and (snapshot.get('format') or {}).get('unit')=='ft3':
+            uid=self.config['unique_id']+'_register_100ft3'
+            cfg=dict(name='Gas meter register (100 ft³ resolution)',unique_id=uid,
+                     device=self.config['device'],device_class='gas',unit_of_measurement='ft³',
+                     state_topic=topic,value_template="{{ value_json.register_ft3 | default(none) }}",
+                     json_attributes_topic=topic,expire_after=max(90,self.interval*3),
+                     availability_topic=topic,availability_template="{{ 'online' if value_json.register_ft3 is defined else 'offline' }}")
+            self._publish('homeassistant/sensor/'+uid+'/config',json.dumps(cfg),True)
+            self.register_configured=True
         obs=fresh_range(snapshot,max(90,self.interval*3))
         prior=self.last_acknowledged_estimate
         if obs and prior and prior['segment_id']==obs['segment_id'] and prior['format_id']==obs['format_id'] and prior['event_id']<=obs['event_id']:
