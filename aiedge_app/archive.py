@@ -48,6 +48,7 @@ class Archive:
         with self.connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY CHECK(id=1),instance TEXT NOT NULL,enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),directory TEXT NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS targets(directory TEXT PRIMARY KEY,cursor INTEGER NOT NULL DEFAULT 0,manifest TEXT,copied_at TEXT,error TEXT,attempts INTEGER NOT NULL DEFAULT 0,retry_at REAL NOT NULL DEFAULT 0,inflight INTEGER)')
+            db.execute('CREATE TABLE IF NOT EXISTS retention_skips(directory TEXT PRIMARY KEY,skipped INTEGER NOT NULL)')
             db.execute('INSERT OR IGNORE INTO settings VALUES(1,?,0,?)', (uuid.uuid4().hex, ''))
             instance, enabled, directory = db.execute('SELECT instance,enabled,directory FROM settings WHERE id=1').fetchone()
             if len(instance) != 32 or any(c not in '0123456789abcdef' for c in instance):
@@ -99,6 +100,8 @@ class Archive:
         with self.lock, self.connect() as db:
             config = self.config(db)
             target = db.execute('SELECT cursor,manifest,copied_at,error,attempts,retry_at,inflight FROM targets WHERE directory=?', (config['directory'],)).fetchone()
+            skiprow = db.execute('SELECT skipped FROM retention_skips WHERE directory=?',(config['directory'],)).fetchone()
+            skipped = skiprow[0] if skiprow else 0
             active = bool(self.active)
             copying_current = active and self.active['directory'] == config['directory']
             stopping = active and self.active['timed_out']
@@ -110,7 +113,7 @@ class Archive:
                  'waiting_for_worker' if active else 'blocked' if error in PERMANENT_ERRORS else
                  'retrying' if error else 'pending' if pending else 'waiting_for_capture' if not cursor else 'ready')
         return {'state': state, 'config': config, 'revision': revision(config),
-                'copied_events': copied, 'pending_events': pending, 'last_copied_at': copied_at,
+                'copied_events': copied-skipped, 'expired_before_archive': skipped, 'pending_events': pending, 'last_copied_at': copied_at,
                 'last_manifest_sha256': manifest, 'error': error or self.last_error,
                 'retry_at': retry_at if error and error not in PERMANENT_ERRORS else None,
                 'in_progress': active, 'training_allowed': False, 'accuracy_verified': False}
@@ -124,6 +127,20 @@ class Archive:
             if error in PERMANENT_ERRORS or retry_at > time.time():
                 return None
             with self.store.connect() as captures:
+                # An archive enabled later can copy every surviving photo. Record
+                # expired entries separately; never acknowledge a missing JPEG as copied.
+                prefix = captures.execute("""SELECT e.event_id,r.sha256 FROM capture_events e
+                    JOIN frames f USING(camera,frame_id) LEFT JOIN retired_images r ON r.sha256=f.sha256
+                    WHERE e.event_id>? ORDER BY e.event_id LIMIT 256""",(cursor,)).fetchall()
+                expired = []
+                for event_id, retired in prefix:
+                    if retired is None:
+                        break
+                    expired.append(event_id)
+                if expired:
+                    db.execute('UPDATE targets SET cursor=? WHERE directory=?',(expired[-1],config['directory']))
+                    db.execute('INSERT INTO retention_skips VALUES(?,?) ON CONFLICT(directory) DO UPDATE SET skipped=skipped+excluded.skipped',(config['directory'],len(expired)))
+                    return None
                 row = captures.execute('''SELECT e.event_id,f.camera,f.frame_id,f.captured_at,f.received_at,f.sha256,f.bytes,c.clock_id,c.monotonic_us
                     FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id
                     LEFT JOIN capture_clocks c ON c.camera=e.camera AND c.frame_id=e.frame_id

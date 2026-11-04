@@ -9,7 +9,7 @@ FROM python:3.14.8-slim-trixie@sha256:89fb7d3da20043c370643435258bdd7ab755d326d3
 ARG BUILD_VERSION
 ARG BUILD_ARCH
 LABEL io.hass.type="app" io.hass.version="${BUILD_VERSION}" io.hass.arch="${BUILD_ARCH}"
-RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 libgomp1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libstdc++6 libgomp1 tzdata && rm -rf /var/lib/apt/lists/*
 WORKDIR /opt/aiedge
 COPY requirements-linux-amd64.lock verify_notices.py ./
 COPY third-party ./third-party
@@ -19,7 +19,7 @@ COPY --from=native-build /build/libaiedge_native.so /build/libaiedge_accounting.
 COPY assets ./assets
 COPY camera_auto.py auto_capture.py auto_preview.py ./
 COPY capture_trial.py capture-trial.js ./
-COPY trial_results.py ./
+COPY trial_results.py image_retention.py daily_mqtt.py daily_records.py daily_range.py ./
 COPY observation_support.py wheel_capture_policy.py event_selection.py event_recognition.py event_selection_config.py event_observation_read.py selector_observation.py ./
 COPY event_mode.py ha_event_selection.py event-selection-ui.js ./
 COPY image_edit.py image-editor.js ./
@@ -29,4 +29,5 @@ COPY archive.py archive_copy.py archive.js camera_image.py camera-image.js camer
 RUN python verify_runtime.py --library /opt/aiedge/libaiedge_native.so --accounting-library /opt/aiedge/libaiedge_accounting.so
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "service.py", "--data", "/data", "--bind", "0.0.0.0", "--ingress", "--native-library", "/opt/aiedge/libaiedge_native.so", "--accounting-library", "/opt/aiedge/libaiedge_accounting.so", "--models", "/opt/aiedge/assets/models"]
+
 

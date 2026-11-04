@@ -83,9 +83,11 @@ def fresh_state(snapshot,max_age,clock=None):
             'format_id':reading['format_id'],'accuracy_verified':False}
 
 class MqttOutput:
-    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None,clock=time.monotonic,output_mode='reading'):
+    def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None,clock=time.monotonic,output_mode='reading',daily=None):
         from mqtt_consumption import MODES
         if output_mode not in MODES:raise ValueError('invalid_mqtt_output_mode')
+        self.daily=daily
+        self.daily_error=None
         self.output_mode=output_mode
         self.range_error=None
         self.last_acknowledged_estimate=None
@@ -105,8 +107,10 @@ class MqttOutput:
         self.last_payload=None;self.last_key=None;self.last_state_ack=None
         self.range_configured=False;self.range_key=None
         self.register_configured=False
+        if self.daily:self.daily.reset()
     def status(self):
         result={'state':self.state,'error':self.error}
+        if self.daily_error:result['daily_error']=self.daily_error
         if self.range_error:result['range_error']=self.range_error
         return result
     def _on_connect(self,client,userdata,flags,reason,properties):
@@ -146,6 +150,13 @@ class MqttOutput:
             except Exception:
                 self.range_error='range_publication_failed'
                 self.range_key=None
+
+            if self.daily:
+                try:
+                    self.daily.publish(self,snapshot)
+                    self.daily_error=None
+                except Exception:
+                    self.daily_error="daily_publication_failed"
 
     def _publish_range(self,snapshot):
         from mqtt_consumption import fresh_range
@@ -242,3 +253,4 @@ class MqttOutput:
                     self.state='error';self.close()
                 self.stop.wait(5 if self.state!='error' else 30)
         finally:self.close()
+

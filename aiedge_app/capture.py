@@ -67,6 +67,8 @@ class Store:
             db.execute('SELECT camera,frame_id,clock_id,monotonic_us FROM capture_clocks LIMIT 0')
             db.execute('CREATE INDEX IF NOT EXISTS capture_events_camera ON capture_events(camera,event_id)')
             db.execute('CREATE INDEX IF NOT EXISTS frames_sha256 ON frames(sha256)')
+            db.execute('CREATE TABLE IF NOT EXISTS retired_images(sha256 TEXT PRIMARY KEY,pending INTEGER NOT NULL CHECK(pending IN (0,1)))')
+            db.execute('CREATE INDEX IF NOT EXISTS ordinary_capture_event ON continuous_capture_outcomes(event_id,outcome)')
             # Add durable IDs without changing any original capture or image bytes.
             # Existing implicit frame rowids are used only for this one-time ordering.
             db.execute('INSERT INTO capture_events(camera,frame_id) SELECT f.camera,f.frame_id FROM frames f WHERE NOT EXISTS (SELECT 1 FROM capture_events e WHERE e.camera=f.camera AND e.frame_id=f.frame_id) ORDER BY f.rowid')
@@ -109,7 +111,7 @@ class Store:
             if prior:
                 prior_clock=db.execute('SELECT clock_id,monotonic_us FROM capture_clocks WHERE camera=? AND frame_id=?',(camera,frame)).fetchone()
                 if prior!=(stamp,digest) or prior_clock!=clock:raise ValueError('frame_identity_conflict')
-                if not target.exists():raise ValueError('stored_image_missing')
+                if not target.exists() and not db.execute('SELECT 1 FROM retired_images WHERE sha256=?',(digest,)).fetchone():raise ValueError('stored_image_missing')
                 return False
             self.require_space(0 if target.exists() else len(blob))
             if not target.exists():
@@ -121,6 +123,7 @@ class Store:
                     if temp.exists():temp.unlink()
             # Persist the image directory entry before committing its ledger row.
             sync_directory(target.parent)
+            db.execute('DELETE FROM retired_images WHERE sha256=?',(digest,))
             db.execute('INSERT INTO frames VALUES(?,?,?,?,?,?,0)',(camera,frame,stamp,now(),digest,len(blob)))
             event=db.execute('INSERT INTO capture_events(camera,frame_id) VALUES(?,?)',(camera,frame)).lastrowid
             if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
@@ -154,11 +157,12 @@ class Store:
         with self.lock,self.connect() as db:
             rows=db.execute("""SELECT e.event_id,f.captured_at,f.received_at,f.sha256,f.bytes,f.frame_id,
                 EXISTS(SELECT 1 FROM capture_events prior JOIN frames p ON p.camera=prior.camera AND p.frame_id=prior.frame_id
-                       WHERE prior.event_id<e.event_id AND p.sha256=f.sha256)
+                       WHERE prior.event_id<e.event_id AND p.sha256=f.sha256),
+                EXISTS(SELECT 1 FROM retired_images r WHERE r.sha256=f.sha256)
                 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id
                 """+condition+" ORDER BY e.event_id DESC LIMIT ?",parameters).fetchall()
         more=len(rows)>limit;rows=rows[:limit]
-        names=('event_id','captured_at','received_at','sha256','bytes','frame_id','duplicate_image')
+        names=('event_id','captured_at','received_at','sha256','bytes','frame_id','duplicate_image','image_expired')
         items=[dict(zip(names,row)) for row in rows]
         for item in items:item['duplicate_image']=bool(item['duplicate_image']);item['training_allowed']=False
         return {'items':items,'next_before':rows[-1][0] if more else None}
@@ -193,6 +197,7 @@ class Store:
         if not re.fullmatch(r'[a-f0-9]{64}',digest):raise ValueError('invalid_image_id')
         with self.lock,self.connect() as db:
             if not db.execute('SELECT 1 FROM frames WHERE sha256=? LIMIT 1',(digest,)).fetchone():raise FileNotFoundError(digest)
+            if db.execute('SELECT 1 FROM retired_images WHERE sha256=?',(digest,)).fetchone():raise FileNotFoundError('image_expired')
         return verified_image(self.root/'images'/(digest+'.jpg'),digest)
     def status(self):
         with self.lock,self.connect() as db:
@@ -200,7 +205,7 @@ class Store:
             row=db.execute('SELECT f.captured_at,f.received_at,f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
             failure=db.execute('SELECT received_at,error FROM failures ORDER BY rowid DESC LIMIT 1').fetchone()
             failed=db.execute('SELECT COUNT(*) FROM failures').fetchone()[0]
-        return dict(captures=total,unique_images=unique,duplicate_images=total-unique,failures=failed,latest=dict(zip(('captured_at','received_at','sha256'),row)) if row else None,last_error=dict(zip(('at','error'),failure)) if failure else None,recognition='not_connected',training_allowed=False,storage=self.storage_status())
+        return dict(captures=total,unique_images=unique,duplicate_images=total-unique,failures=failed,latest=dict(zip(('captured_at','received_at','sha256'),row)) if row else None,last_error=dict(zip(('at','error'),failure)) if failure else None,recognition='not_connected',training_allowed=False,storage=self.storage_status(),retention_error=getattr(self,'retention_error',None))
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):raise ValueError('camera_redirect_rejected')
