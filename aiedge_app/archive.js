@@ -14,7 +14,7 @@ function controls(){
 function paint(state,replace=false){
  if(!state.config||typeof state.revision!=='string')throw Error(messages.archive_unavailable);
  if(replace||!dirty){saved=state;$('archive-enabled').checked=state.config.enabled;$('archive-directory').value=state.config.directory;dirty=false;if(replace)actionError=null;}
- $('archive-counts').hidden=!state.config.enabled;$('archive-copied').textContent=state.copied_events;$('archive-pending').textContent=state.pending_events;
+ $('archive-counts').hidden=!state.config.enabled;$('archive-copied').textContent=state.copied_events+(state.expired_before_archive?' ('+state.expired_before_archive+' photos expired before archive)':'');$('archive-pending').textContent=state.pending_events;
  $('archive-retry').hidden=!state.error||state.in_progress||!state.config.enabled;
  $('archive-reload').hidden=true;
  const text=state.state==='disabled'?(state.in_progress?'Off. The current copy may finish.':'Off. Images are stored in Home Assistant.'):

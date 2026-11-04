@@ -332,9 +332,10 @@ def run_service(stop_signals):
         configuration={'state':'invalid','code':'options_mqtt_runtime_required'}
         mqtt_enabled=False;enabled=False
     if mqtt_enabled:
+        from daily_mqtt import DailyPublisher
         from mqtt_output import MqttOutput
         def publication_snapshot():return publication_state(store,recognition,reading_format,consumption)
-        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval,performance=store.performance,output_mode=options.get('mqtt_output_mode','reading'))
+        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval,daily=DailyPublisher(store),performance=store.performance,output_mode=options.get('mqtt_output_mode','reading'))
         except (OSError,ValueError,UnicodeError):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     camera=None
@@ -392,8 +393,10 @@ def run_service(stop_signals):
         except (OSError,sqlite3.Error):pass
     stop_signals.checkpoint()
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial))
+    from image_retention import ImageRetention
+    retention = ImageRetention(store,archive,consumption) if enabled and archive and reviews and collector else None
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial),signals=stop_signals).run():
+    if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
 def main():
     from lifecycle import StartupSignals,StartupStopped,lifecycle_event
@@ -401,3 +404,4 @@ def main():
         try:run_service(stop_signals)
         except StartupStopped:lifecycle_event('aiedge_stopped',phase='startup',workers=0)
 if __name__=='__main__':main()
+

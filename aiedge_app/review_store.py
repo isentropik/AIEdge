@@ -80,6 +80,8 @@ class Reviews:
             with self.store.lock,self.store.connect() as db:
                 db.execute('BEGIN IMMEDIATE')
                 capture=event(db,payload['event_id'])
+                if db.execute('SELECT 1 FROM retired_images WHERE sha256=?',(capture['sha256'],)).fetchone():
+                    raise ReviewConflict('This photo expired under image retention.')
                 # Verify inside the admission transaction without reacquiring Store.lock.
                 from capture import verified_image
                 verified_image(self.store.root/'images'/(capture['sha256']+'.jpg'),capture['sha256'])
