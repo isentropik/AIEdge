@@ -1,3 +1,7 @@
+## 0.2.0-dev49
+
+- Preserve daily gas ranges across verified app reading contexts with the same meter format and pipeline. Keep gap uncertainty and source provenance.
+
 ## 0.2.0-dev48
 
 - Publish a dated daily gas usage range from the local accounting ledger.
