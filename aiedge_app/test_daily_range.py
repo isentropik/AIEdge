@@ -4,6 +4,44 @@ from daily_range import daily_range
 
 
 class CalendarRangeTest(unittest.TestCase):
+    def transition(self, change=None):
+        rows = [self.row(t,100,180) for t in (0,2,4,8,10)]
+        for row, context, seg, amount in zip(rows[1:], ("c","c","new","new"), ("a","a","b","b"), (0,2,0,2)):
+            row["event_observation"]["context_id"] = context
+            row.update(segment_id=seg,anchor_captured_at=seg,minimum=amount,maximum=amount,upper_unbounded=False)
+        contexts = {"c": ("pipeline","f",1), "new": ("pipeline","f",9)}
+        document = dict(unit="ft3",pipeline_id="pipeline",maximum_rate_per_second=1,
+                        dials=[dict(value_per_revolution=1000)])
+        if change:
+            change(rows, contexts)
+        return daily_range(rows,date(2026,11,4),timezone.utc,document,"f",contexts)
+
+    def test_verified_update_preserves_gap_allowance(self):
+        result = self.transition()
+        self.assertEqual((result["lower"],result["upper"]),("4.00","10.00"))
+        self.assertEqual(result["before"]["context_id"],"c")
+        self.assertEqual(result["through"]["context_id"],"new")
+
+    def test_unknown_update_context_rejected(self):
+        with self.assertRaisesRegex(ValueError,"unverified"):
+            self.transition(lambda rows,contexts: contexts.pop("new"))
+
+    def test_changed_pipeline_rejected(self):
+        with self.assertRaisesRegex(ValueError,"unverified"):
+            self.transition(lambda rows,contexts: contexts.update(new=("different","f",9)))
+
+    def test_changed_format_rejected(self):
+        with self.assertRaisesRegex(ValueError,"unverified"):
+            self.transition(lambda rows,contexts: contexts.update(new=("pipeline","different",9)))
+
+    def test_backfilled_context_rejected(self):
+        with self.assertRaisesRegex(ValueError,"unverified"):
+            self.transition(lambda rows,contexts: contexts.update(new=("pipeline","f",10)))
+
+    def test_clock_change_still_rejected_with_context_registry(self):
+        with self.assertRaisesRegex(ValueError,"source changed"):
+            self.transition(lambda rows,contexts: rows[-1]["event_observation"].update(clock_id="other"))
+
     def row(self, sec, lo, hi, clock="boot"):
         minute = "2026-11-03T23:59:59" if sec == 0 else "2026-11-04T00:00:%02d" % (sec - 1)
         source = dict(event_id=sec+1, captured_at=minute+"+00:00", monotonic_us=sec*1000000,

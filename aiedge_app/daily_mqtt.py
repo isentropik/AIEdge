@@ -47,8 +47,11 @@ class DailyPublisher:
                     return
                 event = obs["event_id"]
                 with self.store.connect() as db:
+                    contexts = {context: (pipeline, format_id, first_event)
+                                for context, pipeline, format_id, first_event in db.execute(
+                                    "SELECT context,pipeline,format_id,first_event FROM event_selection_contexts")}
                     rows = daily_records(db, max(1, event - 32768), event, obs["segment_id"])
-                    result = daily_range(rows, today, zone, snapshot["format"], obs["format_id"])
+                    result = daily_range(rows, today, zone, snapshot["format"], obs["format_id"], contexts)
                 end = result["through"]
                 if any(end[k] != obs[k] for k in ("event_id", "source_sha256", "captured_at", "format_id")):
                     raise ValueError("daily endpoint changed")

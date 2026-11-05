@@ -22,7 +22,7 @@ def absolute(record, modulus):
     return min(lo for lo, hi in bands), max(hi for lo, hi in bands)
 
 
-def daily_range(records, day, zone, document, revision):
+def daily_range(records, day, zone, document, revision, contexts=None):
     midnight = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
     tomorrow = datetime.combine(day + timedelta(days=1), time.min, zone).astimezone(timezone.utc)
     rate = number(document["maximum_rate_per_second"])
@@ -43,12 +43,19 @@ def daily_range(records, day, zone, document, revision):
                 raise ValueError("record outside requested period")
             continue
         envelope = absolute(record, modulus)
-        identity = tuple(source[k] for k in ("camera", "clock_id", "format_id", "context_id"))
+        identity = tuple(source[k] for k in ("camera", "clock_id", "format_id"))
+        context = source["context_id"]
+        if contexts is not None:
+            saved = contexts.get(context)
+            if (saved is None or saved[:2] != (document["pipeline_id"], revision)
+                    or type(saved[2]) is not int or not 1 <= saved[2] <= source["event_id"]):
+                raise ValueError("unverified reading context")
         if post_midnight and stamp <= previous_stamp:
             raise ValueError("unordered measurement")
         if stamp <= midnight and envelope is not None:
             before = source
             start_identity = identity
+            start_context = context
             midnight_min, high = envelope
             low = midnight_min
             previous = source
@@ -58,7 +65,8 @@ def daily_range(records, day, zone, document, revision):
             continue
         if before is None:
             continue
-        if (identity != start_identity or source["format_id"] != revision
+        if (identity != start_identity or (contexts is None and context != start_context)
+                or source["format_id"] != revision
                 or record["unit"] != document["unit"] or stamp < previous_stamp):
             raise ValueError("source changed")
         elapsed = source["monotonic_us"] - previous["monotonic_us"]
@@ -76,7 +84,7 @@ def daily_range(records, day, zone, document, revision):
         usage_high += step_limit
         if record.get("upper_unbounded") is False:
             lo, hi = number(record["minimum"]), number(record["maximum"])
-            anchor = (record["segment_id"], record["anchor_captured_at"])
+            anchor = (context, record["segment_id"], record["anchor_captured_at"])
             if not 0 <= lo <= hi:
                 raise ValueError("invalid segment envelope")
             if anchor != segment:
