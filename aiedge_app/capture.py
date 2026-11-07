@@ -129,7 +129,7 @@ class Store:
             if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
         self.performance.admit(event,digest,request_started)
         return True
-    def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None):
+    def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None,request_timeout=False):
         if outcome not in ('rejected','unknown'):raise ValueError('capture_failure_outcome_invalid')
         with self.lock,self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -139,6 +139,9 @@ class Store:
             if attempt is not None:
                 import capture_recovery
                 capture_recovery.finish_transaction(db,attempt,outcome,error=error)
+                if request_timeout:
+                    if outcome!='unknown' or error!='camera_timeout' or context is None or transfer is not None:raise ValueError('request_timeout_invalid')
+                    db.execute('INSERT INTO capture_request_timeouts VALUES(?,?,?)',(attempt,capture_recovery.digest(capture_recovery.continuation_binding(db,attempt)),capture_recovery.digest(context)))
                 if transfer is not None:
                     if outcome!='unknown' or error!='camera_timeout' or context is None:raise ValueError('transfer_failure_invalid')
                     capture_recovery.validate_transfer_evidence(transfer)
@@ -264,9 +267,11 @@ class Camera:
         request=urllib.request.Request(self.origin+'/api/v1/capture',data=b'{}',headers=headers,method='POST')
         request.aiedge_deadline=absolute
         if time.monotonic()>=absolute:raise ValueError('capture_deadline_exceeded')
+        awaiting_response=True
         try:
             with self.performance.measure('reference_headers' if reference else 'camera_headers'):
                 response=self.opener.open(request,timeout=5)
+            awaiting_response=False
             with response as r:
                 camera_header(r.headers,'Content-Type')
                 if r.status!=200 or r.headers.get_content_type()!='image/jpeg':raise ValueError('invalid_camera_response')
@@ -314,12 +319,17 @@ class Camera:
             raise ValueError(code) from None
         except urllib.error.URLError as exc:
             if isinstance(exc.reason,ssl.SSLCertVerificationError):code='camera_certificate_invalid'
-            elif isinstance(exc.reason,(TimeoutError,socket.timeout)):code='camera_timeout'
+            elif isinstance(exc.reason,(TimeoutError,socket.timeout)):
+                if not awaiting_response:raise ValueError('camera_timeout') from None
+                from capture_recovery import RequestTimeout
+                raise RequestTimeout() from None
             elif isinstance(exc.reason,socket.gaierror):code='camera_name_unresolved'
             else:code='camera_connection_failed'
             raise ValueError(code) from None
         except (TimeoutError,socket.timeout):
-            raise ValueError('camera_timeout') from None
+            if not awaiting_response:raise ValueError('camera_timeout') from None
+            from capture_recovery import RequestTimeout
+            raise RequestTimeout() from None
 
 class Collector:
     def __init__(self,store,camera,interval,*,recovery_floor=1):
@@ -333,6 +343,15 @@ class Collector:
         import capture_recovery
         with store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,recovery_floor)
         if reason:self.recovery_state='held';self.last_error={'error':reason};self.stop.set()
+        if reason=='unknown_capture_outcome':
+            try:
+                with store.connect() as db:ident=capture_recovery.recoverable_request(db)
+                if ident:
+                    self.transfer_attempt=ident;self.recovery_state='waiting_for_transfer_recovery'
+                    self.readiness_retry_delay=6;self.transfer_not_before=time.monotonic()+max(6,self.interval)
+                    self.stop.clear()
+            except (OSError,sqlite3.Error,ValueError):pass
+
     def once(self):
         with self.control_lock:
             if self.shutdown.is_set():return
@@ -402,6 +421,7 @@ class Collector:
             result['transfer_recovery_attempt']=self.transfer_attempt
             result['transfer_failures']=self.transfer_failures
             result['transfer_recovery_policy']=capture_recovery.TRANSFER_POLICY
+            result['request_timeout_recovery_policy']=capture_recovery.REQUEST_POLICY
             if self.transfer_attempt:
                 evidence,_=capture_recovery.transfer_record(db,self.transfer_attempt)
                 result['transfer_failure_evidence']=evidence
@@ -459,9 +479,10 @@ class Collector:
             rejected=attempt is not None and isinstance(e,capture_recovery.FreshnessRejected)
             outcome='rejected' if rejected else 'unknown'
             try:
-                qualified=attempt is not None and isinstance(e,capture_recovery.BodyTimeout) and context is not None
+                typed_request=isinstance(e,capture_recovery.RequestTimeout)
+                qualified=attempt is not None and isinstance(e,(capture_recovery.BodyTimeout,capture_recovery.RequestTimeout)) and context is not None
                 if qualified:
-                    self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt,transfer=e.evidence,context=context)
+                    self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt,transfer=None if typed_request else e.evidence,context=context,request_timeout=typed_request)
                 else:self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt)
                 with self.store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,self.recovery_floor)
                 if qualified:
@@ -486,8 +507,9 @@ class Collector:
     def _recover_transfer(self):
         """Accept one evidenced missing-image gap under the deployed policy.
 
-        Called with collector/camera locks. Never captures in this cycle. A
-        restart loses the in-process identity and deliberately retains the hold.
+        Called with collector/camera locks. Never captures in this cycle.
+        Body-timeout recovery retains its original restart hold; typed request
+        timeouts can restore identity from their separate durable evidence.
         """
         import capture_recovery as recovery
         from camera_status import ReadinessTransportError,validate
@@ -520,7 +542,7 @@ class Collector:
             checked=recovery.transfer_review(db,self.recovery_floor,current,self.transfer_attempt)
             if checked!=review:raise ValueError('transfer_review_changed')
             request=dict(action='accept-gap-and-continue',attempt_id=self.transfer_attempt,
-                         review_sha256=review['review_sha256'],approval_reference=recovery.TRANSFER_POLICY)
+                         review_sha256=review['review_sha256'],approval_reference=(recovery.REQUEST_POLICY if recovery.transfer_record(db,self.transfer_attempt)[0]['stage']=='awaiting_response' else recovery.TRANSFER_POLICY))
             recovery.accept_continuation(db,self.recovery_floor,current,request,ready,transfer_policy=True)
         self.transfer_attempt=None
         self.recovery_state='waiting_for_next_slot';self.last_error=None
@@ -533,6 +555,8 @@ class Collector:
                 # No polling of the camera, no retry, and no additional runner.
                 # A reviewed continuation wakes this same lifecycle-owned worker.
                 self.shutdown.wait(.2);continue
+            if self.transfer_attempt and self.transfer_not_before>time.monotonic():
+                if self.shutdown.wait(self.transfer_not_before-time.monotonic()):break
             started=time.monotonic();self.once();current=time.monotonic()
             if self.stop.is_set():continue
             due=started+self.interval
