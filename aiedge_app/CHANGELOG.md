@@ -1,3 +1,8 @@
+## 0.2.0-dev50
+
+- Recover typed response timeouts using durable unknown gaps, readiness checks, and capped backoff; resume pending eligible recovery after app restart.
+- Preserve hard holds for untyped historical timeouts, malformed responses, and integrity/configuration faults.
+
 ## 0.2.0-dev49
 
 - Preserve daily gas ranges across verified app reading contexts with the same meter format and pipeline. Keep gap uncertainty and source provenance.
