@@ -1,3 +1,7 @@
+## 0.2.0-dev53
+
+- Preserve the last validated daily label during a temporary capture/accounting race without republishing or changing its measurement time. Durable capture blocks, changed format/segment/day, calculation failures and expiry still withhold it. Unknown-gap accounting is unchanged.
+
 ## 0.2.0-dev52
 
 - Reserve the bounded older-photo pool for saved images bracketing unknown gaps, clock breaks, rejected-reading runs and long capture intervals. Recheck protection before unlink, including pending retirement after restart.
