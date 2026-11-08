@@ -17,6 +17,7 @@ NAS_LINUX_CHECKS=frozenset(('test_archive.ArchiveLinuxTests.test_nofollow_direct
     'test_archive.ArchiveLinuxTests.test_child_lock_admits_one_process_and_parent_death_stops_it'))
 
 DECODER_CONTEXT_CHECK_GROUPS=(
+    ('test_daily_constraints.DailyConstraintsTests.',26),
     ('test_daily_publication.DailyPublicationTests.',22),
     ('test_gap_images.GapImagesTests.',15),
     ('test_timeout_restart.TimeoutRestartTests.',8),
@@ -150,3 +151,4 @@ def main():
     return 0 if report['success'] else 1
 
 if __name__=='__main__':raise SystemExit(main())
+

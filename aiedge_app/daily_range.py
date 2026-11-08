@@ -22,7 +22,7 @@ def absolute(record, modulus):
     return min(lo for lo, hi in bands), max(hi for lo, hi in bands)
 
 
-def daily_range(records, day, zone, document, revision, contexts=None):
+def _legacy_range(records, day, zone, document, revision, contexts=None):
     midnight = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
     tomorrow = datetime.combine(day + timedelta(days=1), time.min, zone).astimezone(timezone.utc)
     rate = number(document["maximum_rate_per_second"])
@@ -113,3 +113,14 @@ def daily_range(records, day, zone, document, revision, contexts=None):
 
 
 
+
+
+
+def daily_range(records, day, zone, document, revision, contexts=None):
+    from itertools import islice
+    from daily_constraints import MAX_RECORDS, tighten
+    rows = list(islice(records, MAX_RECORDS + 1))
+    if len(rows) > MAX_RECORDS:
+        raise ValueError("daily input limit exceeded")
+    baseline = _legacy_range(rows, day, zone, document, revision, contexts)
+    return tighten(rows, day, zone, document, baseline)

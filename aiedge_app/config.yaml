@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev53
+version: 0.2.0-dev54
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -49,4 +49,5 @@ schema:
     full_refresh_seconds: float?
     phase_probe_budget: float?
     uncertainty_probe_width: float?
+
 

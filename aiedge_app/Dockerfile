@@ -19,7 +19,7 @@ COPY --from=native-build /build/libaiedge_native.so /build/libaiedge_accounting.
 COPY assets ./assets
 COPY camera_auto.py auto_capture.py auto_preview.py ./
 COPY capture_trial.py capture-trial.js ./
-COPY trial_results.py image_retention.py gap_images.py daily_mqtt.py daily_records.py daily_range.py ./
+COPY trial_results.py image_retention.py gap_images.py daily_mqtt.py daily_records.py daily_range.py daily_constraints.py ./
 COPY observation_support.py wheel_capture_policy.py event_selection.py event_recognition.py event_selection_config.py event_observation_read.py selector_observation.py ./
 COPY event_mode.py ha_event_selection.py event-selection-ui.js ./
 COPY image_edit.py image-editor.js ./
@@ -29,5 +29,6 @@ COPY archive.py archive_copy.py archive.js camera_image.py camera-image.js camer
 RUN python verify_runtime.py --library /opt/aiedge/libaiedge_native.so --accounting-library /opt/aiedge/libaiedge_accounting.so
 ENV PYTHONUNBUFFERED=1
 CMD ["python", "service.py", "--data", "/data", "--bind", "0.0.0.0", "--ingress", "--native-library", "/opt/aiedge/libaiedge_native.so", "--accounting-library", "/opt/aiedge/libaiedge_accounting.so", "--models", "/opt/aiedge/assets/models"]
+
 
 

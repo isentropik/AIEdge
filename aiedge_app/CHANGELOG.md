@@ -1,3 +1,7 @@
+## 0.2.0-dev54
+
+- Tighten daily usage using all saved reading bands and verified anchor constraints, preserving unknown gaps and existing rate bounds. Bound analysis work; retain the validated wider result if its budget is exhausted.
+
 ## 0.2.0-dev53
 
 - Preserve the last validated daily label during a temporary capture/accounting race without republishing or changing its measurement time. Durable capture blocks, changed format/segment/day, calculation failures and expiry still withhold it. Unknown-gap accounting is unchanged.
@@ -392,4 +396,5 @@
 ## 0.2.0-dev3
 
 - Home Assistant app repository metadata and branch-specific installation guide.
+
 
