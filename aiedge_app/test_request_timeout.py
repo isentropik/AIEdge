@@ -61,7 +61,8 @@ class RequestRecoveryTests(unittest.TestCase):
             self.worker.once();self.worker.once()
         self.assertEqual(self.camera.calls,8);self.assertEqual(self.rows('capture_events'),[])
         self.assertEqual(len(self.rows('capture_continuations')),8)
-        self.assertEqual(self.worker.readiness_retry_delay,60)
+        self.assertEqual(self.worker.readiness_retry_delay,0)
+        self.assertEqual(self.worker.transfer_failures,8)
         self.assertTrue(all(x[1]=='unknown' for x in self.rows('continuous_capture_outcomes')))
     def test_restart_context_change_holds_before_probe(self):
         self.failed();worker=configure(Collector(Store(self.temp.name),self.camera,6))

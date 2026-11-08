@@ -66,10 +66,13 @@ class TransferRecoveryTests(unittest.TestCase):
         self.camera.results=iter([ValueError('camera_timeout'),True]);self.worker.once();self.worker.once()
         self.assertTrue(self.worker.stop.is_set());self.assertEqual(self.camera.calls,1)
         self.assertEqual(self.rows('capture_transfer_timeouts'),[])
-    def test_restart_before_acceptance_keeps_unknown_hold(self):
+    def test_restart_before_acceptance_recovers_after_ready(self):
         self.failed()
         restarted=configure(Collector(Store(self.temp.name),self.camera,6,recovery_floor=2));restarted.once()
-        self.assertTrue(restarted.stop.is_set());self.assertEqual(self.camera.calls,2)
+        self.assertFalse(restarted.stop.is_set());self.assertEqual(self.camera.calls,2)
+        restarted.once();self.assertEqual(self.camera.calls,3)
+        self.assertEqual(self.rows('continuous_capture_outcomes')[1][1],'unknown')
+        with self.store.connect() as db:self.assertTrue(r.boundary(db,2))
     def test_restart_after_acceptance_keeps_original_unknown(self):
         self.failed();self.worker.once()
         restarted=configure(Collector(Store(self.temp.name),self.camera,6,recovery_floor=2));restarted.once()

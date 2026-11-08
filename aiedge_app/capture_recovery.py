@@ -26,14 +26,18 @@ def request_record(db,ident):
     if row[0]!=digest(continuation_binding(db,ident)):raise ValueError('request_timeout_binding_changed')
     return {'stage':'awaiting_response'},row[1]
 
-def recoverable_request(db):
+def recoverable_timeout(db):
     # Only a newly typed, durably committed timeout may rearm after restart.
     accepted=accepted_continuations(db)
     unknown=[r[0] for r in db.execute("SELECT a.attempt_id FROM continuous_capture_attempts a LEFT JOIN continuous_capture_outcomes o USING(attempt_id) WHERE o.attempt_id IS NULL OR o.outcome='unknown'") if r[0] not in accepted]
     if len(unknown)!=1:return None
     ident=unknown[0]
-    if not db.execute('SELECT 1 FROM capture_request_timeouts WHERE attempt_id=?',(ident,)).fetchone():return None
-    request_record(db,ident)
+    request = db.execute('SELECT 1 FROM capture_request_timeouts WHERE attempt_id=?',(ident,)).fetchone()
+    body = db.execute('SELECT 1 FROM capture_transfer_timeouts WHERE attempt_id=?',(ident,)).fetchone()
+    # Exactly one typed record is required. Never promote an old string error,
+    # pending request, or conflicting evidence into permission to continue.
+    if bool(request) == bool(body):return None
+    transfer_record(db,ident)
     failure=continuation_binding(db,ident)['failure_boundary'][0]
     # A later hard fault must not be cleared by restarting the app. Only the
     # passive readiness transport outage handled by recovery may follow it.
