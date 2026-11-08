@@ -208,7 +208,7 @@ class Store:
             row=db.execute('SELECT f.captured_at,f.received_at,f.sha256 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 1').fetchone()
             failure=db.execute('SELECT received_at,error FROM failures ORDER BY rowid DESC LIMIT 1').fetchone()
             failed=db.execute('SELECT COUNT(*) FROM failures').fetchone()[0]
-        return dict(captures=total,unique_images=unique,duplicate_images=total-unique,failures=failed,latest=dict(zip(('captured_at','received_at','sha256'),row)) if row else None,last_error=dict(zip(('at','error'),failure)) if failure else None,recognition='not_connected',training_allowed=False,storage=self.storage_status(),retention_error=getattr(self,'retention_error',None))
+        return dict(captures=total,unique_images=unique,duplicate_images=total-unique,failures=failed,latest=dict(zip(('captured_at','received_at','sha256'),row)) if row else None,last_error=dict(zip(('at','error'),failure)) if failure else None,recognition='not_connected',training_allowed=False,storage=self.storage_status(),retention_error=getattr(self,'retention_error',None),retention_evidence=getattr(self,'retention_evidence',None))
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):raise ValueError('camera_redirect_rejected')

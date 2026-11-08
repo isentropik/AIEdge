@@ -1,3 +1,8 @@
+## 0.2.0-dev55
+
+- Retain complete available gap-photo pairs across accounting interpretations and short transitions into ambiguity; do not spend the evidence budget on orphaned pairs.
+- Report timestamped complete, missing-endpoint and budget-excluded gap coverage in app status. Keep the existing older-image count/byte limits, protected exceptions and unknown-gap ledger.
+
 ## 0.2.0-dev54
 
 - Tighten daily usage using all saved reading bands and verified anchor constraints, preserving unknown gaps and existing rate bounds. Bound analysis work; retain the validated wider result if its budget is exhausted.

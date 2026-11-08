@@ -2,6 +2,7 @@
 import re
 import sqlite3
 import threading
+from datetime import datetime, timezone
 
 from capture import verified_image
 from durable_file import sync_directory
@@ -30,7 +31,7 @@ class ImageRetention:
             raise ValueError("retention pin list invalid")
         return values
 
-    def _candidates(self, db, cutoff):
+    def _candidates(self, db, cutoff, report=None):
         pinned = self.pins()
         eligible = set()
         rows = db.execute("""SELECT e.event_id, f.sha256, f.training_allowed,
@@ -48,7 +49,10 @@ class ImageRetention:
                 pinned.add(image)
             else:
                 eligible.add(image)
-        keep = older_keep(db, eligible, pinned, DEVELOPMENT_IMAGES)
+        present = {s for s in eligible | pinned
+                   if (self.store.root/'images'/(s+'.jpg')).is_file()
+                   and not (self.store.root/'images'/(s+'.jpg')).is_symlink()}
+        keep = older_keep(db, eligible & present, pinned & present, DEVELOPMENT_IMAGES, report=report)
         return sorted(eligible - pinned - keep)
 
     def candidates(self):
@@ -132,6 +136,14 @@ class ImageRetention:
             self.retire(candidates[start:start+16],cutoff)
             self.finish_pending()
             self.stop.wait(.02)
+        # Publish a timestamped selection audit, not a promise about all history.
+        # Protected/recent images remain outside the older automatic pool.
+        report = {'checked_at':datetime.now(timezone.utc).isoformat(),
+                  'recent_events':RECENT_EVENTS, 'protected_exceptions':True}
+        with self.store.connect() as db:
+            db.execute('BEGIN')
+            self._candidates(db, cutoff, report)
+        self.store.retention_evidence = report
 
     def run(self):
         while not self.stop.is_set():
