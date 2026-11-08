@@ -1,3 +1,7 @@
+# 0.2.0-dev56
+
+- Recover from durable low-space holds after capacity returns, preserving unknown capture boundaries and retaining existing storage/photo limits.
+
 ## 0.2.0-dev55
 
 - Retain complete available gap-photo pairs across accounting interpretations and short transitions into ambiguity; do not spend the evidence budget on orphaned pairs.

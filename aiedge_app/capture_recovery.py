@@ -13,6 +13,7 @@ MAX_REJECTIONS=3
 FRESHNESS='camera_clock_changed'
 TRANSFER_POLICY='dev42-body-timeout-gap-policy-v1'
 REQUEST_POLICY='dev50-request-timeout-gap-policy-v1'
+STORAGE_POLICY='dev56-storage-gap-policy-v1'
 
 class RequestTimeout(ValueError):
     """Transport timeout while awaiting the response; execution remains unknown."""
@@ -91,11 +92,13 @@ def initialize(db):
     db.execute('CREATE TABLE IF NOT EXISTS continuous_capture_attempts(attempt_id TEXT PRIMARY KEY,first_event INTEGER NOT NULL,after_event_id INTEGER NOT NULL,started_at TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS continuous_capture_outcomes(attempt_id TEXT PRIMARY KEY,outcome TEXT NOT NULL,event_id INTEGER,error TEXT,finished_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_continuations(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,review_json TEXT NOT NULL,readiness_json TEXT NOT NULL,approval_reference TEXT NOT NULL,accepted_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
+    db.execute('CREATE TABLE IF NOT EXISTS storage_continuations(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,review_json TEXT NOT NULL,readiness_json TEXT NOT NULL,approval_reference TEXT NOT NULL,accepted_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_request_timeouts(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_transfer_timeouts(attempt_id TEXT PRIMARY KEY,evidence_json TEXT NOT NULL,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     for action in ('UPDATE','DELETE'):
         db.execute("CREATE TRIGGER IF NOT EXISTS capture_request_timeouts_no_"+action.lower()+" BEFORE "+action+" ON capture_request_timeouts BEGIN SELECT RAISE(ABORT,'capture_request_timeout_immutable'); END")
         db.execute("CREATE TRIGGER IF NOT EXISTS capture_continuations_no_"+action.lower()+" BEFORE "+action+" ON capture_continuations BEGIN SELECT RAISE(ABORT,'capture_continuation_immutable'); END")
+        db.execute("CREATE TRIGGER IF NOT EXISTS storage_continuations_no_"+action.lower()+" BEFORE "+action+" ON storage_continuations BEGIN SELECT RAISE(ABORT,'capture_continuation_immutable'); END")
         db.execute("CREATE TRIGGER IF NOT EXISTS capture_transfer_timeouts_no_"+action.lower()+" BEFORE "+action+" ON capture_transfer_timeouts BEGIN SELECT RAISE(ABORT,'capture_transfer_timeout_immutable'); END")
 
 def boundary(db,event):
@@ -199,7 +202,7 @@ def digest(value):return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 def continuation_binding(db,ident):
     row=db.execute('SELECT a.attempt_id,a.first_event,a.after_event_id,a.started_at,o.outcome,o.event_id,o.error,o.finished_at FROM continuous_capture_attempts a JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.attempt_id=?',(ident,)).fetchone()
-    if not row or row[4:7]!=('unknown',None,'camera_timeout'):
+    if not row or row[4:6]!=('unknown',None) or row[6] not in ('camera_timeout','storage_low_space'):
         raise ValueError('continuation_requires_terminal_timeout')
     try:
         start,end=(datetime.fromisoformat(row[i]) for i in (3,7))
@@ -216,8 +219,9 @@ def continuation_binding(db,ident):
 
 def accepted_continuations(db):
     result=set()
-    for ident,binding,review,ready,approval,at in db.execute('SELECT * FROM capture_continuations'):
+    for ident,binding,review,ready,approval,at in db.execute('SELECT * FROM capture_continuations UNION ALL SELECT * FROM storage_continuations'):
         try:
+            if ident in result:raise ValueError()
             saved=json.loads(review);camera=json.loads(ready)
             from camera_status import validate
             if validate(camera)['state']!='ready':raise ValueError()
@@ -246,7 +250,7 @@ def continuation_record(db,ident):
     # Validate all saved permissions before reporting one as accepted.
     accepted=accepted_continuations(db)
     if ident not in accepted:return {'state':'not_accepted','attempt_id':ident}
-    binding,review,ready,approval,at=db.execute('SELECT binding_sha256,review_json,readiness_json,approval_reference,accepted_at FROM capture_continuations WHERE attempt_id=?',(ident,)).fetchone()
+    binding,review,ready,approval,at=db.execute('SELECT binding_sha256,review_json,readiness_json,approval_reference,accepted_at FROM (SELECT * FROM capture_continuations UNION ALL SELECT * FROM storage_continuations) WHERE attempt_id=?',(ident,)).fetchone()
     return {'state':'gap_accepted','attempt_id':ident,'binding_sha256':binding,
             'review_sha256':json.loads(review)['review_sha256'],'approval_reference':approval,
             'accepted_at':at,'unknown_outcome_preserved':True,'gap_delta':None}
@@ -285,7 +289,7 @@ def continuation_review(db,first,context):
     # Hash complete ordered metadata, including all historical contexts and prior
     # acceptances. Changes while a human reviews the action invalidate its token.
     hashes={}
-    for table in ('frames','capture_events','capture_clocks','failures','capture_failure_boundaries','continuous_capture_attempts','continuous_capture_outcomes','capture_continuations','capture_transfer_timeouts','capture_request_timeouts'):
+    for table in ('frames','capture_events','capture_clocks','failures','capture_failure_boundaries','continuous_capture_attempts','continuous_capture_outcomes','capture_continuations','storage_continuations','capture_transfer_timeouts','capture_request_timeouts'):
         hashes[table]=digest(db.execute('SELECT rowid,* FROM '+table+' ORDER BY rowid').fetchall())
     review={'action':'accept-gap-and-continue','attempt_id':ident,'after_event_id':last,
             'first_event':first,'binding_sha256':digest(binding),'ledger_sha256':digest(hashes),
@@ -294,7 +298,7 @@ def continuation_review(db,first,context):
     return dict(review,review_sha256=digest(review))
 
 
-def accept_continuation(db,first,context,request,camera_status,*,transfer_policy=False):
+def accept_continuation(db,first,context,request,camera_status,*,transfer_policy=False,storage_policy=False):
     # Caller owns the collector and camera operation locks plus BEGIN IMMEDIATE.
     if not isinstance(request,dict) or set(request)!={'action','attempt_id','review_sha256','approval_reference'} or request['action']!='accept-gap-and-continue':raise ValueError('continuation_request_invalid')
     if not isinstance(request['approval_reference'],str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}',request['approval_reference']):raise ValueError('continuation_approval_reference_required')
@@ -303,10 +307,35 @@ def accept_continuation(db,first,context,request,camera_status,*,transfer_policy
         transfer_review(db,first,context,request['attempt_id'])
         evidence,_=transfer_record(db,request['attempt_id'])
         if (request['approval_reference']==REQUEST_POLICY)!=(evidence['stage']=='awaiting_response'):raise ValueError('continuation_policy_mismatch')
+    if request['approval_reference']==STORAGE_POLICY:
+        if not storage_policy:raise ValueError('continuation_reserved_policy')
+        storage_review(db,first,context,request['attempt_id'])
     from camera_status import validate
     camera_status=validate(camera_status)
     if camera_status['state']!='ready':raise ValueError('continuation_camera_not_ready')
     review=continuation_review(db,first,context)
     if request['attempt_id']!=review['attempt_id'] or request['review_sha256']!=review['review_sha256']:raise ValueError('continuation_review_changed')
-    db.execute('INSERT INTO capture_continuations VALUES(?,?,?,?,?,?)',(review['attempt_id'],review['binding_sha256'],canonical(review),canonical(camera_status),request['approval_reference'],datetime.now(timezone.utc).isoformat()))
+    table='storage_continuations' if continuation_binding(db,review['attempt_id'])['attempt'][6]=='storage_low_space' else 'capture_continuations'
+    db.execute('INSERT INTO '+table+' VALUES(?,?,?,?,?,?)',(review['attempt_id'],review['binding_sha256'],canonical(review),canonical(camera_status),request['approval_reference'],datetime.now(timezone.utc).isoformat()))
     return {'state':'gap_accepted','attempt_id':review['attempt_id'],'review_sha256':review['review_sha256'],'unknown_outcome_preserved':True,'gap_delta':None}
+
+
+def storage_review(db,first,context,ident):
+    review=continuation_review(db,first,context)
+    binding=continuation_binding(db,ident)
+    if review['attempt_id']!=ident or binding['attempt'][6]!='storage_low_space':
+        raise ValueError('storage_recovery_not_qualified')
+    # Later failures must not be swallowed by accepting this storage boundary.
+    last=db.execute('SELECT MAX(rowid) FROM failures').fetchone()[0]
+    if last!=binding['failure_boundary'][0]:raise ValueError('storage_recovery_later_failure')
+    return review
+
+
+def recoverable_storage(db):
+    accepted=accepted_continuations(db)
+    rows=[r for r in db.execute("SELECT a.attempt_id,o.outcome,o.error FROM continuous_capture_attempts a LEFT JOIN continuous_capture_outcomes o USING(attempt_id) WHERE o.attempt_id IS NULL OR o.outcome='unknown'") if r[0] not in accepted]
+    if len(rows)!=1 or rows[0][1:]!=('unknown','storage_low_space'):return None
+    ident=rows[0][0]
+    binding=continuation_binding(db,ident)
+    if db.execute('SELECT MAX(rowid) FROM failures').fetchone()[0]!=binding['failure_boundary'][0]:return None
+    return ident
