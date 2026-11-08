@@ -25,6 +25,8 @@ class ImageRetentionTests(unittest.TestCase):
             digest = hashlib.sha256(blob).hexdigest()
             self.blobs[digest] = (event,blob)
             self.store.add("fixture",blob,headers(str(event),blob))
+            with self.store.connect() as db:
+                db.execute("INSERT INTO capture_clocks VALUES(?,?,?,?)",('fixture',str(event),'clock',event*10_000_000))
             if event != 5:
                 with self.store.connect() as db:
                     db.execute("INSERT INTO continuous_capture_outcomes VALUES(?,'committed',?,NULL,'test')",(str(event),event))
@@ -46,7 +48,10 @@ class ImageRetentionTests(unittest.TestCase):
         self.assertEqual(len(self.store.history()["items"]),12)
         self.assertEqual(self.store.image(protected),self.blobs[protected][1])
         digest=candidates[0];event,blob=self.blobs[digest]
-        self.assertFalse(self.store.add("fixture",blob,headers(str(event),blob)))
+        same=headers(str(event),blob)
+        same['X-AIEdge-Clock-Id']='clock'
+        same['X-AIEdge-Capture-Monotonic-Us']=str(event*10_000_000)
+        self.assertFalse(self.store.add("fixture",blob,same))
         with self.assertRaises(FileNotFoundError):self.store.image(digest)
         self.assertTrue(self.store.add("fixture",blob,headers("new",blob)))
         self.assertEqual(self.store.image(digest),blob)

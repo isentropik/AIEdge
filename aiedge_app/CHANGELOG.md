@@ -1,3 +1,8 @@
+## 0.2.0-dev52
+
+- Reserve the bounded older-photo pool for saved images bracketing unknown gaps, clock breaks, rejected-reading runs and long capture intervals. Recheck protection before unlink, including pending retirement after restart.
+- Keep latest 500 event images plus at most 250 older routine images / 64 MiB, with newest gap pairs prioritized. Existing manual/training/reference/review/archive protections remain exceptions. Never delete gap ledger records or synthesize missing JPEGs.
+
 ## MVP timeout recovery completion (dev51 revision)
 
 - Resume durably recorded JPEG-body timeout recovery after an app restart, with a fresh readiness gate and unchanged context/evidence checks. Preserve original unknown outcomes and usage gaps.
