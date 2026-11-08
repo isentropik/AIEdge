@@ -92,7 +92,7 @@ class Store:
     def require_space(self,incoming=MAX_IMAGE):
         state=self.storage_status()
         if state['state']=='unavailable':raise ValueError('storage_unavailable')
-        if state['free_bytes']<MIN_FREE_BYTES+incoming:raise ValueError('storage_low_space')
+        if state['free_bytes']<MIN_FREE_BYTES+incoming:raise StorageLowSpace()
     def add(self,camera,blob,headers,*,request_started=None):
         with self.performance.measure('storage') as sample:
             added=self._add(camera,blob,headers,request_started=request_started)
@@ -331,6 +331,10 @@ class Camera:
             from capture_recovery import RequestTimeout
             raise RequestTimeout() from None
 
+class StorageLowSpace(ValueError):
+    def __init__(self):super().__init__('storage_low_space')
+
+
 class Collector:
     def __init__(self,store,camera,interval,*,recovery_floor=1):
         self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None;self.camera_state={'state':'not_checked'}
@@ -340,6 +344,7 @@ class Collector:
         self.recovery_floor=recovery_floor;self.recovery_state='ready'
         self.readiness_failures=0;self.readiness_retry_delay=0
         self.transfer_attempt=None;self.transfer_failures=0;self.transfer_not_before=0
+        self.storage_attempt=None;self.storage_wait=False
         import capture_recovery
         with store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,recovery_floor)
         if reason:self.recovery_state='held';self.last_error={'error':reason};self.stop.set()
@@ -351,6 +356,12 @@ class Collector:
                     self.readiness_retry_delay=6;self.transfer_not_before=time.monotonic()+max(6,self.interval)
                     self.stop.clear()
             except (OSError,sqlite3.Error,ValueError):pass
+            if self.stop.is_set():
+                try:
+                    with store.connect() as db:self.storage_attempt=capture_recovery.recoverable_storage(db)
+                    if self.storage_attempt:
+                        self.storage_wait=True;self.recovery_state='waiting_for_storage';self.stop.clear()
+                except (OSError,sqlite3.Error,ValueError):pass
 
     def once(self):
         with self.control_lock:
@@ -358,6 +369,11 @@ class Collector:
             self._controlled_once()
     def _controlled_once(self):
         if self.stop.is_set():return
+        # While storage is low, inspect only the local filesystem. Do not
+        # contact the camera or fill a nearly-full disk with repeated failures.
+        if self.storage_wait:
+            self.readiness_retry_delay=max(30,self.interval)
+            if self.store.storage_status()['state']!='ready':return
         # Serialize the whole status/capture pair against camera-setting jobs.
         from contextlib import nullcontext
         try:
@@ -389,11 +405,13 @@ class Collector:
             # Validate before any passive I/O. Revalidate in the write transaction
             # after the fresh camera check; a stale review never admits a POST.
             review=self.continuation_review()
+            self.store.require_space()
             if not isinstance(request,dict) or request.get('review_sha256')!=review['review_sha256']:raise ValueError('continuation_review_changed')
             with self.camera.operation():
                 self.camera.require_capture()
                 ready=self.camera.readiness()
                 context=self.continuation_context()
+                self.store.require_space()
                 with self.store.lock,self.store.connect() as db:
                     db.execute('BEGIN IMMEDIATE')
                     if self.shutdown.is_set() or getattr(self.store,'active_capture_attempt',None):raise ValueError('continuation_stopping_or_active')
@@ -412,10 +430,13 @@ class Collector:
             active=getattr(self.store,'active_capture_attempt',None)
             pending=[a for a in result['recent_attempts'] if a['outcome'] is None]
             if len(pending)==1 and pending[0]['attempt_id']==active and result['hold_reason']=='unknown_capture_outcome':result['state']='capturing'
-            elif (self.transfer_attempt and not self.stop.is_set() and self.recovery_state=='waiting_for_transfer_recovery'
+            elif (self.transfer_attempt and not self.storage_wait and not self.stop.is_set() and self.recovery_state=='waiting_for_transfer_recovery'
                   and result['hold_reason']=='unknown_capture_outcome'):result['state']='waiting_for_transfer_recovery'
+            elif self.storage_wait and not self.stop.is_set():result['state']='waiting_for_storage'
             elif result['hold_reason']:result['state']='held'
             else:result['state']=self.recovery_state
+            result['storage_recovery_attempt']=self.storage_attempt
+            result['storage_recovery_policy']=capture_recovery.STORAGE_POLICY
             result['readiness_failures']=self.readiness_failures
             result['readiness_retry_delay_seconds']=self.readiness_retry_delay
             result['transfer_recovery_attempt']=self.transfer_attempt
@@ -436,6 +457,10 @@ class Collector:
         attempt=None;retry_readiness=False;self.last_cycle_attempt=None;context=None
         try:
             self.store.require_space()
+            if self.storage_attempt:
+                self._recover_storage()
+                return
+            self.storage_wait=False
             if self.transfer_attempt:
                 self._recover_transfer()
                 return
@@ -475,6 +500,12 @@ class Collector:
             self.readiness_failures=0;self.readiness_retry_delay=0
             self.transfer_failures=0
         except Exception as e:
+            if isinstance(e,StorageLowSpace) and (self.storage_wait or self.transfer_attempt):
+                # An existing unresolved boundary already covers this wait.
+                # Do not append a later fault that invalidates its recovery.
+                self.storage_wait=True;self.recovery_state='waiting_for_storage'
+                self.readiness_retry_delay=max(30,self.interval)
+                return
             self.last_error={'at':now(),'error':str(e) if isinstance(e,ValueError) else type(e).__name__}
             rejected=attempt is not None and isinstance(e,capture_recovery.FreshnessRejected)
             outcome='rejected' if rejected else 'unknown'
@@ -494,6 +525,15 @@ class Collector:
                     self.recovery_state='waiting_for_transfer_recovery'
                     return
             except (OSError,sqlite3.Error,ValueError):reason='capture_failure_commit_unknown'
+            if isinstance(e,StorageLowSpace) and reason in (None,'unknown_capture_outcome'):
+                try:
+                    with self.store.connect() as db:ident=capture_recovery.recoverable_storage(db)
+                    if (attempt is None and reason is None) or ident==attempt and ident is not None:
+                        self.storage_attempt=ident;self.storage_wait=True
+                        self.readiness_retry_delay=max(30,self.interval)
+                        self.recovery_state='waiting_for_storage'
+                        return
+                except (OSError,sqlite3.Error,ValueError):pass
             if retry_readiness and attempt is None and reason is None:
                 # Retry only a typed passive-GET transport failure, after its
                 # failure/gap is durable and every existing hold is rechecked.
@@ -504,6 +544,31 @@ class Collector:
             elif rejected and reason is None:self.recovery_state='waiting_for_next_slot'
             else:self.recovery_state='held';self.stop.set()
         finally:self.store.active_capture_attempt=None
+    def _recover_storage(self):
+        """Resume new captures only after accepting the durable unknown boundary."""
+        import capture_recovery as recovery
+        from camera_status import ReadinessTransportError,validate
+        context=self.continuation_context()
+        with self.store.lock,self.store.connect() as db:
+            db.execute('BEGIN')
+            review=recovery.storage_review(db,self.recovery_floor,context,self.storage_attempt)
+        try:ready=validate(self.camera.readiness())
+        except ReadinessTransportError:return
+        if ready['state']=='busy':return
+        if ready['state']!='ready':raise ValueError('storage_recovery_camera_not_ready')
+        # Recheck capacity and the complete review immediately before acceptance.
+        self.store.require_space()
+        current=self.continuation_context()
+        with self.store.lock,self.store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if self.shutdown.is_set() or getattr(self.store,'active_capture_attempt',None):raise ValueError('storage_recovery_stopping_or_active')
+            if recovery.storage_review(db,self.recovery_floor,current,self.storage_attempt)!=review:raise ValueError('storage_recovery_review_changed')
+            request=dict(action='accept-gap-and-continue',attempt_id=self.storage_attempt,
+                         review_sha256=review['review_sha256'],approval_reference=recovery.STORAGE_POLICY)
+            recovery.accept_continuation(db,self.recovery_floor,current,request,ready,storage_policy=True)
+        self.storage_attempt=None;self.storage_wait=False
+        self.recovery_state='waiting_for_next_slot';self.last_error=None;self.readiness_retry_delay=0
+
     def _recover_transfer(self):
         """Accept one evidenced missing-image gap under the deployed policy.
 
