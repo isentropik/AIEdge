@@ -345,7 +345,7 @@ class Collector:
         if reason:self.recovery_state='held';self.last_error={'error':reason};self.stop.set()
         if reason=='unknown_capture_outcome':
             try:
-                with store.connect() as db:ident=capture_recovery.recoverable_request(db)
+                with store.connect() as db:ident=capture_recovery.recoverable_timeout(db)
                 if ident:
                     self.transfer_attempt=ident;self.recovery_state='waiting_for_transfer_recovery'
                     self.readiness_retry_delay=6;self.transfer_not_before=time.monotonic()+max(6,self.interval)
@@ -508,8 +508,8 @@ class Collector:
         """Accept one evidenced missing-image gap under the deployed policy.
 
         Called with collector/camera locks. Never captures in this cycle.
-        Body-timeout recovery retains its original restart hold; typed request
-        timeouts can restore identity from their separate durable evidence.
+        Typed body and response timeouts restore identity from their durable
+        evidence; pending or unclassified attempts remain held.
         """
         import capture_recovery as recovery
         from camera_status import ReadinessTransportError,validate
@@ -547,7 +547,12 @@ class Collector:
         self.transfer_attempt=None
         self.recovery_state='waiting_for_next_slot';self.last_error=None
         self.readiness_failures=0
-        self.transfer_not_before=time.monotonic()+max(self.interval,self.readiness_retry_delay)
+        # Backoff was already paid before this successful readiness probe.
+        # Keep consecutive transfer failures for the NEXT failure, but do not
+        # charge its delay again after durable gap acceptance. Separate cycles
+        # and the configured minimum interval still prevent overlapping POSTs.
+        self.readiness_retry_delay=0
+        self.transfer_not_before=time.monotonic()+self.interval
     def run(self):
         while not self.shutdown.is_set():
             if self.stop.is_set():

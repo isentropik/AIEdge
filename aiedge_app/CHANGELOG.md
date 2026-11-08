@@ -1,3 +1,12 @@
+## MVP timeout recovery completion (dev51 revision)
+
+- Resume durably recorded JPEG-body timeout recovery after an app restart, with a fresh readiness gate and unchanged context/evidence checks. Preserve original unknown outcomes and usage gaps.
+- Conflicting timeout evidence and later hard faults remain held. No camera settings or timeout durations changed.
+
+# 0.2.0-dev51
+
+- Avoid applying timeout backoff twice after successful readiness and durable gap acceptance. Preserve minimum spacing, failure backoff, unknown outcomes and all recovery holds.
+
 ## 0.2.0-dev50
 
 - Recover typed response timeouts using durable unknown gaps, readiness checks, and capped backoff; resume pending eligible recovery after app restart.
