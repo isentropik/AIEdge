@@ -1,3 +1,7 @@
+# 0.2.0-dev59
+
+- Publish independent rolling-hour and four adjacent 15-minute saved-reading ranges with actual endpoint times. Preserve all historical unknown gaps and existing daily/elapsed results. Missing boundary, identity or work-budget evidence withholds the new result.
+
 # 0.2.0-dev58
 
 - Remove redundant full-ledger validation during timeout continuation; batch historical event existence checks. Preserve pre/post-readiness checks, unknown gaps, deadline and backoff policy.

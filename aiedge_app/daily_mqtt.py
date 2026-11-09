@@ -16,9 +16,12 @@ class DailyPublisher:
         self.store = store
         from daily_empirical import validate
         self.evidence_policy = validate(evidence_policy or {})
+        from recent_usage import RecentPublisher
+        self.recent = RecentPublisher(store, self.evidence_policy)
         self.reset()
 
     def reset(self):
+        self.recent.reset()
         self.configured = False
         self.key = None
         self.next_refresh = 0
