@@ -1,3 +1,9 @@
+## 0.2.0-dev57
+
+- Add opt-in, format/pipeline-bound empirical daily constraints using saved inference, a household capacity ceiling and a minimum 6 ft3 relative slow-dial allowance within tested one-hour/27-ft3 scope. These are conditional estimates, not certified accuracy.
+- Publish a separate elapsed range from an explicitly selected saved event. Never label elapsed use as calendar-day use. Keep original source timestamps and unknown gaps.
+- Default disabled; no ledger migration or camera/network changes. Missing, contradictory or over-budget evidence retains the wider baseline. A separately completed elapsed calculation can survive a daily-only budget fallback.
+
 # 0.2.0-dev56
 
 - Recover from durable low-space holds after capacity returns, preserving unknown capture boundaries and retaining existing storage/photo limits.

@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev56
+version: 0.2.0-dev57
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -33,7 +33,14 @@ options:
   interval_seconds: 30
   recognition_mode: FULL
   event_selection_policy: {}
+  daily_evidence_policy: {}
 schema:
+  daily_evidence_policy:
+    elapsed_start_event: int(1,2147483647)?
+    capacity_cfh: float?
+    slow_allowance_ft3: float?
+    pipeline_id: str?
+    format_id: str?
   camera_url: str
   camera_token: password
   camera_username: str
