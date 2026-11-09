@@ -88,6 +88,7 @@ class MqttOutput:
         if output_mode not in MODES:raise ValueError('invalid_mqtt_output_mode')
         self.daily=daily
         self.daily_error=None
+        self.recent_error=None
         self.output_mode=output_mode
         self.range_error=None
         self.last_acknowledged_estimate=None
@@ -111,6 +112,7 @@ class MqttOutput:
     def status(self):
         result={'state':self.state,'error':self.error}
         if self.daily_error:result['daily_error']=self.daily_error
+        if self.recent_error:result['recent_error']=self.recent_error
         if self.range_error:result['range_error']=self.range_error
         return result
     def _on_connect(self,client,userdata,flags,reason,properties):
@@ -157,6 +159,11 @@ class MqttOutput:
                     self.daily_error=None
                 except Exception:
                     self.daily_error="daily_publication_failed"
+                try:
+                    self.daily.recent.publish(self,snapshot)
+                    self.recent_error=None
+                except Exception:
+                    self.recent_error="recent_publication_failed"
 
     def _publish_range(self,snapshot):
         from mqtt_consumption import fresh_range

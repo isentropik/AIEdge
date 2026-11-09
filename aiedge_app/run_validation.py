@@ -17,6 +17,8 @@ NAS_LINUX_CHECKS=frozenset(('test_archive.ArchiveLinuxTests.test_nofollow_direct
     'test_archive.ArchiveLinuxTests.test_child_lock_admits_one_process_and_parent_death_stops_it'))
 
 DECODER_CONTEXT_CHECK_GROUPS=(
+    ('test_recent_usage.RecentRangeTests.',14),
+    ('test_recent_usage.RecentPublicationTests.',10),
     ('test_recovery_review_cost.RecoveryReviewCostTests.',5),
     ('test_daily_empirical.DailyEmpiricalTests.',22),
     ('test_daily_empirical.EmpiricalIntegrationTests.',5),
