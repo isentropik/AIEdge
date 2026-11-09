@@ -342,7 +342,7 @@ def run_service(stop_signals):
         from daily_mqtt import DailyPublisher
         from mqtt_output import MqttOutput
         def publication_snapshot():return publication_state(store,recognition,reading_format,consumption)
-        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval,daily=DailyPublisher(store),performance=store.performance,output_mode=options.get('mqtt_output_mode','reading'))
+        try:mqtt_output=MqttOutput(args.data,publication_snapshot,interval,daily=DailyPublisher(store,options.get('daily_evidence_policy')),performance=store.performance,output_mode=options.get('mqtt_output_mode','reading'))
         except (OSError,ValueError,UnicodeError):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     camera=None

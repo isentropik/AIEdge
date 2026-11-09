@@ -6,7 +6,7 @@ from capture import Camera
 MAX_OPTIONS = 65536
 DEFAULTS = dict(camera_url='', camera_token='', camera_username='', camera_password='',
                 capture_enabled=False, mqtt_enabled=False, mqtt_output_mode='reading', interval_seconds=30,
-                recognition_mode='FULL',event_selection_policy={})
+                recognition_mode='FULL',event_selection_policy={},daily_evidence_policy={})
 
 class InvalidOptions(ValueError):
     def __init__(self, code, field=None):
@@ -20,6 +20,9 @@ def validate(document):
     if any(key not in DEFAULTS for key in document):
         raise InvalidOptions('options_unknown_field')
     options = DEFAULTS | document
+    from daily_empirical import validate as validate_daily_policy
+    try: validate_daily_policy(options['daily_evidence_policy'])
+    except (ValueError, TypeError, ArithmeticError): raise InvalidOptions('options_daily_policy_invalid') from None
     for field in ('capture_enabled', 'mqtt_enabled'):
         if type(options[field]) is not bool:
             raise InvalidOptions('options_invalid_field', field)

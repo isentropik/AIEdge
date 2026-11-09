@@ -12,8 +12,10 @@ from mqtt_consumption import fresh_range
 
 
 class DailyPublisher:
-    def __init__(self, store):
+    def __init__(self, store, evidence_policy=None):
         self.store = store
+        from daily_empirical import validate
+        self.evidence_policy = validate(evidence_policy or {})
         self.reset()
 
     def reset(self):
@@ -67,8 +69,11 @@ class DailyPublisher:
                     contexts = {context: (pipeline, format_id, first_event)
                                 for context, pipeline, format_id, first_event in db.execute(
                                     "SELECT context,pipeline,format_id,first_event FROM event_selection_contexts")}
-                    rows = daily_records(db, max(1, event - 32768), event, obs["segment_id"])
+                    rows = list(daily_records(db, max(1, event - 32768), event, obs["segment_id"]))
                     result = daily_range(rows, today, zone, snapshot["format"], obs["format_id"], contexts)
+                    if self.evidence_policy:
+                        from daily_empirical import refine
+                        result = refine(db, rows, today, zone, snapshot['format'], result, self.evidence_policy)
                 end = result["through"]
                 if any(end[k] != obs[k] for k in ("event_id", "source_sha256", "captured_at", "format_id")):
                     raise ValueError("daily endpoint changed")

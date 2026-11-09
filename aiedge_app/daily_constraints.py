@@ -109,7 +109,7 @@ movement tolerance is introduced. On bounded-work exhaustion use baseline.
         return baseline
 
 
-def _tighten(records, day, zone, document, baseline, budget):
+def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rate_ceiling=None, elapsed=False):
     if len(records) > MAX_RECORDS:
         raise WorkLimit()
     midnight = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
@@ -118,8 +118,12 @@ def _tighten(records, day, zone, document, baseline, budget):
     records = records[start:]
     modulus = number(document["dials"][0]["value_per_revolution"])
     rate = number(document["maximum_rate_per_second"])
+    if rate_ceiling is not None:
+        rate = min(rate, number(rate_ceiling))
+        if rate <= 0:
+            raise ValueError("invalid daily capacity")
     domains, edges, index = [], [], {}
-    before = after = None
+    before = after = 0 if elapsed else None
     previous = None
     for i, record in enumerate(records):
         budget.spend()
@@ -130,17 +134,17 @@ def _tighten(records, day, zone, document, baseline, budget):
                 or type(source["monotonic_us"]) is not int):
             raise ValueError("invalid daily constraint source")
         if previous:
-            elapsed = source["monotonic_us"] - previous["monotonic_us"]
-            if (elapsed <= 0 or event <= previous["event_id"]
+            interval_us = source["monotonic_us"] - previous["monotonic_us"]
+            if (interval_us <= 0 or event <= previous["event_id"]
                     or stamp <= datetime.fromisoformat(previous["captured_at"])
                     or any(source[k] != previous[k] for k in ("camera", "clock_id", "format_id"))):
                 raise ValueError("unordered daily constraint source")
-            edges.append((i - 1, i, Decimal(0), elapsed * rate / 1000000))
+            edges.append((i - 1, i, Decimal(0), interval_us * rate / 1000000))
         values = bands(record, modulus)
         domains.append(values if values is not None else [(Decimal(0), modulus)])
-        if stamp <= midnight and values is not None:
+        if not elapsed and stamp <= midnight and values is not None:
             before = i
-        if stamp >= midnight and after is None:
+        if not elapsed and stamp >= midnight and after is None:
             after = i
         index[event] = i
         previous = source
@@ -158,6 +162,13 @@ def _tighten(records, day, zone, document, baseline, budget):
                 if record["anchor_captured_at"] != records[index[anchor]]["event_observation"]["captured_at"]:
                     raise ValueError("daily anchor timestamp mismatch")
                 edges.append((index[anchor], i, lo, hi))
+    for left, right, lo, hi in extra_edges:
+        budget.spend()
+        if left in index and right in index:
+            lo, hi = number(lo), number(hi)
+            if index[left] >= index[right] or not 0 <= lo <= hi:
+                raise ValueError("invalid supplementary daily constraint")
+            edges.append((index[left], index[right], lo, hi))
     mid, end = len(domains), len(domains) - 1
     domains.append([(Decimal(0), modulus)])
     # Midnight is anywhere between its bracketing measurements, not interpolated.
