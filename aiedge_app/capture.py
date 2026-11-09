@@ -604,8 +604,8 @@ class Collector:
         with self.store.lock,self.store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             if self.shutdown.is_set() or getattr(self.store,'active_capture_attempt',None):raise ValueError('transfer_stopping_or_active')
-            checked=recovery.transfer_review(db,self.recovery_floor,current,self.transfer_attempt)
-            if checked!=review:raise ValueError('transfer_review_changed')
+            # accept_continuation recomputes the full qualified review under
+            # this write lock and compares the pre-probe token before writing.
             request=dict(action='accept-gap-and-continue',attempt_id=self.transfer_attempt,
                          review_sha256=review['review_sha256'],approval_reference=(recovery.REQUEST_POLICY if recovery.transfer_record(db,self.transfer_attempt)[0]['stage']=='awaiting_response' else recovery.TRANSFER_POLICY))
             recovery.accept_continuation(db,self.recovery_floor,current,request,ready,transfer_policy=True)
