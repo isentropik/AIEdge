@@ -268,12 +268,15 @@ def continuation_review(db,first,context):
     if db.execute('SELECT 1 FROM capture_events e LEFT JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id WHERE f.camera IS NULL').fetchone():raise ValueError('capture_recovery_ledger_invalid')
     if db.execute('SELECT 1 FROM capture_clocks c LEFT JOIN frames f ON f.camera=c.camera AND f.frame_id=c.frame_id WHERE f.camera IS NULL').fetchone():raise ValueError('capture_recovery_ledger_invalid')
     if db.execute('SELECT 1 FROM capture_failure_boundaries b LEFT JOIN failures f ON f.rowid=b.failure_id WHERE f.rowid IS NULL OR b.error!=f.error OR b.outcome NOT IN (\'rejected\',\'unknown\')').fetchone():raise ValueError('capture_recovery_ledger_invalid')
+    # One snapshot-local lookup replaces a SQL round trip per historical POST.
+    # Rebuild on every review: never cache across transactions or readiness I/O.
+    event_ids={row[0] for row in db.execute("SELECT event_id FROM capture_events")}
     unknown=[]
     for ident,floor,after,outcome,event,error in rows:
         if type(floor) is not int or floor<1 or type(after) is not int or after<0:raise ValueError('capture_recovery_ledger_invalid')
         if outcome is None:raise ValueError('continuation_pending_attempt')
         if outcome=='committed':
-            if type(event) is not int or event!=after+1 or error is not None or not db.execute('SELECT 1 FROM capture_events WHERE event_id=?',(event,)).fetchone():raise ValueError('capture_recovery_ledger_invalid')
+            if type(event) is not int or event!=after+1 or error is not None or event not in event_ids:raise ValueError('capture_recovery_ledger_invalid')
         elif outcome=='rejected':
             if event is not None or error!=FRESHNESS:raise ValueError('capture_recovery_ledger_invalid')
         elif outcome=='unknown':
@@ -302,18 +305,21 @@ def accept_continuation(db,first,context,request,camera_status,*,transfer_policy
     # Caller owns the collector and camera operation locks plus BEGIN IMMEDIATE.
     if not isinstance(request,dict) or set(request)!={'action','attempt_id','review_sha256','approval_reference'} or request['action']!='accept-gap-and-continue':raise ValueError('continuation_request_invalid')
     if not isinstance(request['approval_reference'],str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}',request['approval_reference']):raise ValueError('continuation_approval_reference_required')
+    review=None
     if request['approval_reference'] in (TRANSFER_POLICY,REQUEST_POLICY):
         if not transfer_policy:raise ValueError('continuation_reserved_policy')
-        transfer_review(db,first,context,request['attempt_id'])
+        review=transfer_review(db,first,context,request['attempt_id'])
         evidence,_=transfer_record(db,request['attempt_id'])
         if (request['approval_reference']==REQUEST_POLICY)!=(evidence['stage']=='awaiting_response'):raise ValueError('continuation_policy_mismatch')
     if request['approval_reference']==STORAGE_POLICY:
         if not storage_policy:raise ValueError('continuation_reserved_policy')
-        storage_review(db,first,context,request['attempt_id'])
+        review=storage_review(db,first,context,request['attempt_id'])
     from camera_status import validate
     camera_status=validate(camera_status)
     if camera_status['state']!='ready':raise ValueError('continuation_camera_not_ready')
-    review=continuation_review(db,first,context)
+    # The qualified review above already checked the complete ledger inside
+    # this write transaction. Do not hash the same snapshot a second time.
+    if review is None:review=continuation_review(db,first,context)
     if request['attempt_id']!=review['attempt_id'] or request['review_sha256']!=review['review_sha256']:raise ValueError('continuation_review_changed')
     table='storage_continuations' if continuation_binding(db,review['attempt_id'])['attempt'][6]=='storage_low_space' else 'capture_continuations'
     db.execute('INSERT INTO '+table+' VALUES(?,?,?,?,?,?)',(review['attempt_id'],review['binding_sha256'],canonical(review),canonical(camera_status),request['approval_reference'],datetime.now(timezone.utc).isoformat()))

@@ -1,3 +1,7 @@
+# 0.2.0-dev58
+
+- Remove redundant full-ledger validation during timeout continuation; batch historical event existence checks. Preserve pre/post-readiness checks, unknown gaps, deadline and backoff policy.
+
 ## 0.2.0-dev57
 
 - Add opt-in, format/pipeline-bound empirical daily constraints using saved inference, a household capacity ceiling and a minimum 6 ft3 relative slow-dial allowance within tested one-hour/27-ft3 scope. These are conditional estimates, not certified accuracy.
