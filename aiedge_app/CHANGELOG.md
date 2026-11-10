@@ -1,3 +1,7 @@
+# 0.2.0-dev60
+
+- Constrain each recent quarter against the full saved hour, including evidence across its boundaries. Preserve unknown gaps, source identities, configured bounds and fail-closed work limits.
+
 # 0.2.0-dev59
 
 - Publish independent rolling-hour and four adjacent 15-minute saved-reading ranges with actual endpoint times. Preserve all historical unknown gaps and existing daily/elapsed results. Missing boundary, identity or work-budget evidence withholds the new result.
