@@ -1,3 +1,11 @@
+# 0.2.0-dev64
+
+- Show acknowledged daily estimate, unresolved bounds and five recent ranges in the app, with measurement times and unavailable/expiry handling.
+- Add Settings controls for ordinary photo history and storage, with restart-free persistent saves and stale-edit protection.
+- Preserve every existing gap endpoint independently of the ordinary budget; report existing missing photos and protected storage separately. Protected evidence is not subject to an automatic total-size cap.
+- Keep the latest capture, review/reference/manual protection and archive/accounting watermarks. Never rewrite measurement history.
+- Clarify current-segment consumption and photo-expiry wording. Existing HA entity IDs, MQTT discovery and accounting calculations remain unchanged.
+
 # 0.2.0-dev63
 
 - Publish a separately labeled, assumption-based lower-bound daily estimate alongside unchanged unresolved bounds. Same endpoint and availability; no ledger or gap changes. Not a calibrated prediction.

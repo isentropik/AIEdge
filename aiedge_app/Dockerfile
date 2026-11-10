@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir --only-binary=:all: --require-hashes -r requireme
 COPY --from=native-build /build/libaiedge_native.so /build/libaiedge_accounting.so ./
 COPY assets ./assets
 COPY camera_auto.py auto_capture.py auto_preview.py ./
+COPY retention_settings.py published_usage.py integration.js ./
 COPY capture_trial.py capture-trial.js ./
 COPY trial_results.py image_retention.py gap_images.py daily_mqtt.py daily_records.py daily_range.py daily_constraints.py daily_empirical.py recent_usage.py ./
 COPY observation_support.py wheel_capture_policy.py event_selection.py event_recognition.py event_selection_config.py event_observation_read.py selector_observation.py ./

@@ -111,6 +111,10 @@ class MqttOutput:
         if self.daily:self.daily.reset()
     def status(self):
         result={'state':self.state,'error':self.error}
+        from published_usage import snapshot as usage_snapshot
+        result['usage'] = usage_snapshot(self.daily) if self.daily and self.connected.is_set() and self.state != 'error' else {}
+        if self.daily_error:result['usage'].pop('daily',None)
+        if self.recent_error:result['usage'].pop('recent',None)
         if self.daily_error:result['daily_error']=self.daily_error
         if self.recent_error:result['recent_error']=self.recent_error
         if self.range_error:result['range_error']=self.range_error

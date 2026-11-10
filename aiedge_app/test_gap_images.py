@@ -121,7 +121,9 @@ class GapImagesTests(unittest.TestCase):
         self.worker.sweep()
         with self.store.connect() as db:
             remaining=db.execute('SELECT COUNT(DISTINCT f.sha256) FROM frames f JOIN capture_events e USING(camera,frame_id) WHERE e.event_id<=10 AND e.event_id!=5 AND NOT EXISTS(SELECT 1 FROM retired_images r WHERE r.sha256=f.sha256)').fetchone()[0]
-        self.assertLessEqual(remaining,4)
+        self.assertEqual(remaining,9)  # Protected gap endpoints no longer compete for four ordinary slots.
+        self.assertEqual(self.store.retention_evidence['budget_excluded_pairs'],0)
+        self.assertLessEqual(self.store.retention_evidence['selected_older_images'],4)
 
     def test_archive_enabled_after_intent_preserves_photo(self):
         cutoff,candidates=self.worker.candidates()
