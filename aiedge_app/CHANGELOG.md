@@ -1,3 +1,9 @@
+## 0.2.0-dev65
+
+- Batch saved-reading validation and read only the existing comparison endpoints.
+- Compute equivalent band intersections and recheck only affected branch constraints.
+- Recover since-recovery ranges within the existing calculation limits; preserve source binding, unknown gaps and conservative fallback.
+
 # 0.2.0-dev64
 
 - Show acknowledged daily estimate, unresolved bounds and five recent ranges in the app, with measurement times and unavailable/expiry handling.

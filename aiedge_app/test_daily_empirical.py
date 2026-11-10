@@ -84,18 +84,18 @@ class DailyEmpiricalTests(unittest.TestCase):
         def get(db,event,sha,pipeline,context,flags):
             row=next(r for r in self.rows if r['event_observation']['event_id']==event)
             return {'result':{'state':'estimated','event_observation':copy.deepcopy(row['event_observation']),'dial_positions':[{'position':1}]*6}}
-        with patch('event_observation_read._read',side_effect=get):
+        with patch('event_observation_read.read_batch',side_effect=lambda db,sources,pipeline:[get(db,s['event_id'],s['source_sha256'],pipeline,s['context_id'],{}) for s in sources]):
             self.assertEqual(evidence(None,self.rows,self.policy,Budget()),[Decimal(100)]*3)
             self.rows[0]['observation_support']['pipeline_id']='d'*64
             with self.assertRaises(ValueError):evidence(None,self.rows,self.policy,Budget())
     def test_saved_mask_must_match_ledger_mask(self):
         r=self.rows[0];r['observation_support']['reader_observed'][0]=False
         raw=dict(state='estimated',event_observation=r['event_observation'],dial_positions=[{'position':1}]*6)
-        with patch('event_observation_read._read',return_value={'result':raw}):
+        with patch('event_observation_read.read_batch',return_value=[{'result':raw}]):
             with self.assertRaises(ValueError):evidence(None,[r],self.policy,Budget())
     def test_unobserved_dial_not_borrowed(self):
         r=self.rows[0];r['observation_support']['reader_observed'][-2]=False
-        with patch('event_observation_read._read',return_value={'result':{'state':'estimated','event_observation':r['event_observation']}}):
+        with patch('event_observation_read.read_batch',return_value=[{'result':{'state':'estimated','event_observation':r['event_observation']}}]):
             with self.assertRaises(ValueError):evidence(None,[r],self.policy,Budget())
 
 class EmpiricalIntegrationTests(unittest.TestCase):
