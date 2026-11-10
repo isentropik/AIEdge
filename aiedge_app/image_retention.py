@@ -6,7 +6,8 @@ from datetime import datetime, timezone
 
 from capture import verified_image
 from durable_file import sync_directory
-from gap_images import older_keep
+from gap_images import older_keep, gap_pairs
+from retention_settings import read as read_settings, save as save_settings
 
 RECENT_EVENTS = 500
 DEVELOPMENT_IMAGES = 250
@@ -23,6 +24,21 @@ class ImageRetention:
         self.archive = archive
         self.consumption = consumption
         self.stop = threading.Event()
+
+    def settings(self):
+        with self.store.lock:
+            result = read_settings(self.store.root)
+            result['evidence'] = getattr(self.store, 'retention_evidence', None)
+            result['error'] = getattr(self.store, 'retention_error', None)
+            return result
+
+    def save_settings(self, config, revision):
+        with self.archive.lock, self.store.lock:
+            return save_settings(self.store.root, config, revision)
+
+    def recent_events(self):
+        saved = read_settings(self.store.root)
+        return saved['config']['recent_events'] if saved['revision'] != 'default' else RECENT_EVENTS
 
     def pins(self):
         path = self.store.root / "retention-pins.txt"
@@ -52,8 +68,23 @@ class ImageRetention:
         present = {s for s in eligible | pinned
                    if (self.store.root/'images'/(s+'.jpg')).is_file()
                    and not (self.store.root/'images'/(s+'.jpg')).is_symlink()}
-        keep = older_keep(db, eligible & present, pinned & present, DEVELOPMENT_IMAGES, report=report)
-        return sorted(eligible - pinned - keep)
+        settings = read_settings(self.store.root)
+        config = settings['config']
+        # Existing gap evidence never competes with discretionary development photos.
+        # Keep a surviving endpoint even when its counterpart was already lost.
+        evidence = gap_pairs(db, with_events=True)
+        gap_members = {s for _,_,pair in evidence for s in pair} & present
+        pinned.update(gap_members)
+        slots = config['older_images'] if settings['revision'] != 'default' else DEVELOPMENT_IMAGES
+        keep = older_keep(db, eligible & present, pinned & present, slots,
+                          byte_limit=config['older_megabytes'] * 1024**2, report=report, evidence=evidence)
+        if report is not None:
+            sizes = dict(db.execute('SELECT sha256,MAX(bytes) FROM frames GROUP BY sha256'))
+            report.update(protected_gap_images=len(gap_members),
+                          protected_gap_bytes=sum(sizes[s] for s in gap_members),
+                          present_images=len(present), present_bytes=sum(sizes[s] for s in present),
+                          policy='preserve_existing_gap_endpoints', settings_revision=settings['revision'])
+        return sorted((eligible & present) - pinned - keep)
 
     def candidates(self):
         # Query worker status before taking the SQLite lock (worker lock order).
@@ -61,7 +92,7 @@ class ImageRetention:
         with self.store.connect() as db:
             db.execute("BEGIN")
             head = db.execute("SELECT COALESCE(MAX(event_id),0) FROM capture_events").fetchone()[0]
-            cutoff = head - RECENT_EVENTS
+            cutoff = head - self.recent_events()
             if consumed is not None:
                 cutoff = min(cutoff, consumed)
             return cutoff, self._candidates(db, cutoff)
@@ -102,7 +133,7 @@ class ImageRetention:
             if not rows:
                 return 0
             head = db.execute("SELECT COALESCE(MAX(event_id),0) FROM capture_events").fetchone()[0]
-            cutoff = head - RECENT_EVENTS
+            cutoff = head - self.recent_events()
             if consumed is not None:
                 cutoff = min(cutoff, consumed)
             cursor = db.execute("SELECT MIN(cursor) FROM ar.targets WHERE inflight IS NOT NULL OR directory IN (SELECT directory FROM ar.settings WHERE enabled=1)").fetchone()[0]
@@ -139,7 +170,7 @@ class ImageRetention:
         # Publish a timestamped selection audit, not a promise about all history.
         # Protected/recent images remain outside the older automatic pool.
         report = {'checked_at':datetime.now(timezone.utc).isoformat(),
-                  'recent_events':RECENT_EVENTS, 'protected_exceptions':True}
+                  'recent_events':self.recent_events(), 'protected_exceptions':True}
         with self.store.connect() as db:
             db.execute('BEGIN')
             self._candidates(db, cutoff, report)

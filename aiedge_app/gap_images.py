@@ -65,7 +65,7 @@ def gap_pairs(db, with_events=False):
     return [(rows[a][1],rows[b][1]) for a,b in ordered]
 
 
-def older_keep(db, eligible, pinned, slots, byte_limit=OLDER_BYTES, report=None):
+def older_keep(db, eligible, pinned, slots, byte_limit=OLDER_BYTES, report=None, evidence=None):
     sizes = dict(db.execute('SELECT sha256,MAX(bytes) FROM frames GROUP BY sha256'))
     kept = set()
     used = 0
@@ -82,7 +82,7 @@ def older_keep(db, eligible, pinned, slots, byte_limit=OLDER_BYTES, report=None)
             return True
         return False
     # Atomic pair selection: never spend the last slot on half a pair.
-    evidence = gap_pairs(db, with_events=True)
+    evidence = gap_pairs(db, with_events=True) if evidence is None else evidence
     pairs = [p for _,_,p in evidence]
     for pair in pairs:
         admit(pair)

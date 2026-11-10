@@ -45,7 +45,7 @@ def publication_state(store,recognition,reading_format,consumption):
     return {'_daily_publication_pending':daily_pending,'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
             '_publication_segment_id':accounted.get('segment_id') if accounted else None}
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None):
     from review_store import ReviewConflict
     from archive import ArchiveConflict
     token=secrets.token_urlsafe(32)
@@ -76,7 +76,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from event_mode import edit_allowed
                 try:edit_allowed(recognition)
                 except ValueError as exc:self.reply({'error':str(exc),'code':'event_selection_restart_required'},409);return
-            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/capture-trial','/api/capture-continuation'):self.send_error(404);return
+            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/retention','/api/capture-trial','/api/capture-continuation'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -118,6 +118,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 elif route=='/api/setup/meter':
                     if not isinstance(data,dict) or set(data)!={'profile','revision'}:raise ValueError('meter_profile_invalid')
                     result=setup.meter.save(data['profile'],data['revision'])
+                elif route=='/api/retention':
+                    if retention is None:self.reply({'error':'retention_unavailable'},503);return
+                    if not isinstance(data,dict) or set(data)!={'config','revision'}:raise ValueError('retention_settings_invalid')
+                    result=retention.save_settings(data['config'],data['revision'])
                 elif route=='/api/archive':
                     if archive is None:self.reply({'error':'archive_unavailable'},503);return
                     if not isinstance(data,dict):raise ValueError('archive_action_invalid')
@@ -222,6 +226,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from reading_format import reconcile_reading
                 state['reading']=reconcile_reading(state['reading'],state['consumption'])
                 body=json.dumps(state).encode();kind='application/json'
+            elif route=='/api/retention':
+                try:state=retention.settings() if retention else {'error':'retention_unavailable'}
+                except (ValueError,UnicodeError):self.reply({'error':'retention_settings_invalid'},503);return
+                self.reply(state,200 if retention else 503);return
             elif route=='/api/archive':
                 state=archive.status() if archive else {'state':'unavailable','error':'archive_unavailable'}
                 body=json.dumps(state).encode();kind='application/json'
@@ -242,7 +250,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/event-selection-ui.js','/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js'):
+            elif route in ('/event-selection-ui.js','/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js','/integration.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -294,7 +302,6 @@ def run_service(stop_signals):
     collector=None;recognition=None;setup=None;reading_format=None;mqtt_output=None
     if not storage_error and any((args.native_library,args.models,(args.calibration_profile or args.calibration_file))):
         if not all((args.native_library,args.models)):raise ValueError('recognition_requires_library_and_models')
-        from reader import Reader
         from recognition import Recognition
         initial=create_reader(args.native_library,args.models,args.calibration_profile,args.calibration_file) if (args.calibration_profile or args.calibration_file) else None
         stop_signals.checkpoint()
@@ -302,7 +309,11 @@ def run_service(stop_signals):
             recognition=Recognition(store,initial)
             from setup_store import Setup
             if initial and (Path(args.data)/'calibration.json').exists():raise ValueError('explicit_profile_conflicts_with_saved_setup')
-            setup=Setup(args.data,lambda document:Reader(args.native_library,args.models,document),recognition)
+            def configured_reader(document):
+                # Storage validation and the recovery UI do not need inference.
+                from reader import Reader
+                return Reader(args.native_library,args.models,document)
+            setup=Setup(args.data,configured_reader,recognition)
             stop_signals.checkpoint()
             from reading_format import FormatStore
             reading_format=FormatStore(args.data,recognition,setup.meter)
@@ -399,11 +410,11 @@ def run_service(stop_signals):
         try:trial=CaptureTrial(store,camera,trial_allowed,context=trial_context)
         except (OSError,sqlite3.Error):pass
     stop_signals.checkpoint()
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial))
     from image_retention import ImageRetention
-    retention = ImageRetention(store,archive,consumption) if enabled and archive and reviews and collector else None
+    retention = ImageRetention(store,archive,consumption) if store and archive and reviews else None
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention),signals=stop_signals).run():
+    if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention if enabled and collector else None),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
 def main():
     from lifecycle import StartupSignals,StartupStopped,lifecycle_event
