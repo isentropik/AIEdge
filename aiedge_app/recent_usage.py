@@ -18,6 +18,47 @@ MAX_RECORDS = 4097
 BOUNDARY_SLACK = 90  # Report actual saved endpoints; never interpolate a reading.
 
 
+# At most 64 real saved endpoints and 2,016 additional pairs per hour.
+# Selecting extrema improves coverage without evaluating every record pair.
+MAX_COMPARISON_ANCHORS = 64
+
+
+def recent_comparisons(rows, values, allowance, budget):
+    edges = comparisons(rows, values, allowance, budget)
+    buckets = {}
+    origin = rows[0]['event_observation']['monotonic_us']
+    for i, row in enumerate(rows):
+        budget.spend()
+        source = row['event_observation']
+        key = (source['camera'], source['clock_id'], source['context_id'],
+               source['format_id'], (source['monotonic_us'] - origin) // 120000000)
+        # Context churn cannot create an unbounded set of candidate anchors.
+        if key not in buckets:
+            if len(buckets) >= MAX_COMPARISON_ANCHORS // 2:
+                continue  # Omitted evidence leaves conservative wider bounds.
+            buckets[key] = [i, i]
+        low, high = buckets[key]
+        if values[i] < values[low]:
+            buckets[key][0] = i
+        if values[i] > values[high]:
+            buckets[key][1] = i
+    anchors = sorted({i for pair in buckets.values() for i in pair})
+    for j_at, j in enumerate(anchors):
+        source = rows[j]['event_observation']
+        for i in anchors[:j_at]:
+            budget.spend()
+            previous = rows[i]['event_observation']
+            if (not 0 < source['monotonic_us'] - previous['monotonic_us'] <= 3600000000
+                    or any(source[k] != previous[k] for k in
+                           ('camera', 'clock_id', 'context_id', 'format_id'))):
+                continue
+            delta = values[j] - values[i]
+            if abs(delta) <= 27:
+                edges.append((previous['event_id'], source['event_id'],
+                              max(Decimal(0), delta - allowance), delta + allowance))
+    return edges
+
+
 def recent_ranges(db, rows, document, contexts, zone, policy=None):
     if not rows or len(rows) > MAX_RECORDS:
         raise ValueError('recent_history_limit')
@@ -69,7 +110,7 @@ def recent_ranges(db, rows, document, contexts, zone, policy=None):
                     or number(document['dials'][-1]['value_per_revolution']) != 5):
                 raise ValueError('recent_unsupported_geometry')
             values = evidence(db, rows, policy, budget)
-            edges = comparisons(rows, values, number(policy['slow_allowance_ft3']), budget)
+            edges = recent_comparisons(rows, values, number(policy['slow_allowance_ft3']), budget)
             rate = min(rate, number(policy['capacity_cfh']) / 3600)
 
         def interval(left, right, hour=None):

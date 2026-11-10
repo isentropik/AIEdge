@@ -1,3 +1,7 @@
+## 0.2.0-dev61
+
+- Tighten recent-hour and quarter ranges with bounded source-bound slow-dial extrema comparisons. Preserve unknown gaps and existing empirical allowances.
+
 # 0.2.0-dev60
 
 - Constrain each recent quarter against the full saved hour, including evidence across its boundaries. Preserve unknown gaps, source identities, configured bounds and fail-closed work limits.
