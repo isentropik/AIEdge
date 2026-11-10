@@ -28,7 +28,7 @@ DECODER_CONTEXT_CHECK_GROUPS=(
     ('test_storage_recovery.StorageAccountingTests.',1),
     ('test_gap_evidence.GapEvidenceTests.',14),
     ('test_daily_constraints.DailyConstraintsTests.',26),
-    ('test_daily_publication.DailyPublicationTests.',22),
+    ('test_daily_publication.DailyPublicationTests.',28),
     ('test_gap_images.GapImagesTests.',15),
     ('test_timeout_restart.TimeoutRestartTests.',8),
     ('test_recovery_schedule.RecoveryScheduleTests.',5),

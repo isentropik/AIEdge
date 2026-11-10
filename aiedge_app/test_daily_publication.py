@@ -26,6 +26,41 @@ class DailyPublicationTests(unittest.TestCase):
                   patch('daily_mqtt.daily_records',return_value=[]),
                   patch('daily_mqtt.daily_range',side_effect=lambda *a,**k:copy.deepcopy(self.result))):
             p.start();self.addCleanup(p.stop)
+    def test_estimate_separate_bounds_and_identity_unchanged(self):
+        self.result.update(lower='52.04',upper='62.24')
+        original=copy.deepcopy(self.result); snapshot=copy.deepcopy(self.snapshot)
+        self.publish(); payload=self.payloads()[-1]
+        self.assertEqual(payload['label'],'52.04–62.24 ft³')
+        self.assertEqual(payload['low_use_estimate']['label'],'≈52 ft³')
+        self.assertEqual(payload['low_use_estimate']['value_ft3'],'52.04')
+        for key,value in original.items(): self.assertEqual(payload[key],value)
+        self.assertEqual(self.result,original);self.assertEqual(self.snapshot,snapshot)
+    def test_estimate_explicit_assumption_not_likelihood(self):
+        self.prime(); e=self.payloads()[-1]['low_use_estimate']
+        self.assertEqual(e['method'],'lower_bound_assumption_v1')
+        self.assertIn('assumes no additional consumption',e['assumption'])
+        self.assertIn('Not a measured total',e['assumption'])
+        self.assertIn('Unknown gaps remain unknown',e['assumption'])
+    def test_estimate_zero_is_not_missing_or_filled_gap(self):
+        self.result.update(lower='0.00',upper='25.00');self.publish()
+        self.assertEqual(self.payloads()[-1]['low_use_estimate']['label'],'≈0 ft³')
+        self.assertEqual(self.payloads()[-1]['upper'],'25.00')
+        self.assertIsNone(self.snapshot['consumption']['unresolved_gap']['delta'])
+    def test_estimate_invalid_bounds_fail_closed(self):
+        for lo,hi in [('NaN','10'),('0','Infinity'),('-1','10'),('11','10')]:
+            with self.subTest(lo=lo,hi=hi):
+                self.publisher.reset();self.result.update(lower=lo,upper=hi);self.publish()
+                self.assertEqual(self.payloads()[-1],{})
+    def test_estimate_updates_with_qualified_range(self):
+        self.prime();self.clock+=301;self.result.update(lower='53.47',upper='63.67')
+        self.publish();p=self.payloads()[-1]
+        self.assertEqual(p['low_use_estimate']['value_ft3'],'53.47')
+        self.assertEqual(p['through'],self.result['through'])
+    def test_estimate_removed_when_daily_unavailable(self):
+        self.prime();self.clock+=301
+        with patch('daily_mqtt.daily_range',side_effect=ValueError('no midnight bracket')):self.publish()
+        self.assertEqual(self.payloads()[-1],{})
+
     def payloads(self):
         return [json.loads(c.args[1]) for c in self.output._publish.call_args_list if c.args[0]=='meter/daily_range']
     def publish(self,s=None):self.publisher.publish(self.output,s if s is not None else self.snapshot)

@@ -1,3 +1,7 @@
+# 0.2.0-dev63
+
+- Publish a separately labeled, assumption-based lower-bound daily estimate alongside unchanged unresolved bounds. Same endpoint and availability; no ledger or gap changes. Not a calibrated prediction.
+
 ## 0.2.0-dev61
 
 - Tighten recent-hour and quarter ranges with bounded source-bound slow-dial extrema comparisons. Preserve unknown gaps and existing empirical allowances.

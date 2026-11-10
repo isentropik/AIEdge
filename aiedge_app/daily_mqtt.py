@@ -3,12 +3,33 @@ import json
 import os
 import sqlite3
 import time
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from daily_records import daily_records
 from daily_range import daily_range
 from mqtt_consumption import fresh_range
+
+
+ESTIMATE_ASSUMPTION = (
+    "Uses the lower bound; assumes no additional consumption within unresolved uncertainty. "
+    "Not a measured total or a probability-based prediction. Unknown gaps remain unknown."
+)
+
+
+def low_use_estimate(result):
+    """Presentation only: never fill ledger gaps or alter accounting bounds.
+
+    The lower envelope is a convention, not proof of a feasible point trajectory.
+    Do not select a midpoint or infer a likelihood from a capacity ceiling or bill.
+    """
+    lower, upper = Decimal(result['lower']), Decimal(result['upper'])
+    if not lower.is_finite() or not upper.is_finite() or not 0 <= lower <= upper:
+        raise ValueError('invalid estimate bounds')
+    return dict(value_ft3=str(lower),
+                label='≈' + str(lower.quantize(Decimal('1'), rounding=ROUND_HALF_UP)) + ' ft³',
+                method='lower_bound_assumption_v1', assumption=ESTIMATE_ASSUMPTION)
 
 
 class DailyPublisher:
@@ -83,7 +104,8 @@ class DailyPublisher:
                 if result["segment_id"] != obs["segment_id"]:
                     raise ValueError("daily endpoint segment changed")
                 payload = dict(result, timezone=zone.key,
-                               label=result["lower"] + "–" + result["upper"] + " ft³")
+                               label=result["lower"] + "–" + result["upper"] + " ft³",
+                               low_use_estimate=low_use_estimate(result))
         except (ValueError, ArithmeticError, KeyError, TypeError, sqlite3.Error, ZoneInfoNotFoundError):
             pass
         if not payload and self.key == ("offline", key) and now < self.next_refresh:
