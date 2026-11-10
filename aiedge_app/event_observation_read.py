@@ -55,15 +55,15 @@ def _result(state,source,pipeline,error=None,evidence=None):
     value={'state':state,'source_sha256':source,'pipeline_id':pipeline,'accuracy_verified':False,'training_allowed':False}
     if error:value['error']=error
     return {'processed_at':None,'result':value,'decision_evidence':evidence or _evidence(state,error=error)}
-def _read(db,event,source,pipeline,context,evidence=None):
+def _read(db,event,source,pipeline,context,evidence=None,*,records=None):
     if evidence is None:evidence=_evidence('unavailable')
-    row=db.execute('SELECT pipeline,format_id,first_event FROM event_selection_contexts WHERE context=?',(context,)).fetchone()
+    row=records['context'] if records is not None else db.execute('SELECT pipeline,format_id,first_event FROM event_selection_contexts WHERE context=?',(context,)).fetchone()
     _check(row is not None and row[0]==pipeline and isinstance(row[1],str) and re.fullmatch('[a-f0-9]{64}',row[1]) and type(row[2]) is int and 1<=row[2]<=event,'event_historical_context')
     format_id=row[1]
-    row=db.execute('SELECT e.event_id,e.camera,e.frame_id,f.sha256,f.captured_at,c.clock_id,c.monotonic_us FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id LEFT JOIN capture_clocks c ON c.camera=e.camera AND c.frame_id=e.frame_id WHERE e.event_id=?',(event,)).fetchone()
+    row=records['acquisition'] if records is not None else db.execute('SELECT e.event_id,e.camera,e.frame_id,f.sha256,f.captured_at,c.clock_id,c.monotonic_us FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id LEFT JOIN capture_clocks c ON c.camera=e.camera AND c.frame_id=e.frame_id WHERE e.event_id=?',(event,)).fetchone()
     _check(row is not None and row[3]==source,'event_historical_acquisition')
     acquisition=dict(zip(('event_id','camera','frame_id','source_sha256','captured_at','clock_id','monotonic_us'),row))
-    row=db.execute('SELECT CASE WHEN length(CAST(request AS BLOB))<=? THEN request END,request_sha FROM event_recognition_requests WHERE event_id=? AND pipeline=? AND context=?',(MAX_REQUEST_BYTES,event,pipeline,context)).fetchone()
+    row=records['request'] if records is not None else db.execute('SELECT CASE WHEN length(CAST(request AS BLOB))<=? THEN request END,request_sha FROM event_recognition_requests WHERE event_id=? AND pipeline=? AND context=?',(MAX_REQUEST_BYTES,event,pipeline,context)).fetchone()
     evidence.update(request_exists=row is not None)
     if row is None:return _result('pending',source,pipeline,evidence=_evidence('pending',False))
     request=_decode(row[0],MAX_REQUEST_BYTES);request_sha=row[1]
@@ -82,11 +82,11 @@ def _read(db,event,source,pipeline,context,evidence=None):
     mode=request['recommendation'].get('requested_mode');_check(mode in ('FULL','LAST_TWO') and (all(mask) if mode=='FULL' else sum(mask)==min(2,len(mask))),'event_historical_mode_mask')
     # Preserve historical decisions; never re-run old policy against current code/config.
     mask_sha=_digest(mask)
-    binding=db.execute('SELECT source_sha,mask_sha,result_sha,request_sha FROM event_recognition_bindings WHERE event_id=? AND pipeline=? AND context=?',(event,pipeline,context)).fetchone()
+    binding=records['binding'] if records is not None else db.execute('SELECT source_sha,mask_sha,result_sha,request_sha FROM event_recognition_bindings WHERE event_id=? AND pipeline=? AND context=?',(event,pipeline,context)).fetchone()
     evidence['completion_exists']=binding is not None
     if binding is None:return _result('pending',source,pipeline,evidence=_evidence('pending',True,False))
     _check(binding[0]==source and binding[1]==mask_sha and binding[3]==request_sha,'event_historical_completion_binding')
-    cache=db.execute('SELECT CASE WHEN length(CAST(mask AS BLOB))<=? THEN mask END,CASE WHEN length(CAST(result AS BLOB))<=? THEN result END,result_sha FROM event_recognition_cache WHERE source_sha=? AND pipeline=? AND mask_sha=?',(MAX_REQUEST_BYTES,MAX_RESULT_BYTES,source,pipeline,mask_sha)).fetchone()
+    cache=records['cache'] if records is not None else db.execute('SELECT CASE WHEN length(CAST(mask AS BLOB))<=? THEN mask END,CASE WHEN length(CAST(result AS BLOB))<=? THEN result END,result_sha FROM event_recognition_cache WHERE source_sha=? AND pipeline=? AND mask_sha=?',(MAX_REQUEST_BYTES,MAX_RESULT_BYTES,source,pipeline,mask_sha)).fetchone()
     _check(cache is not None,'event_historical_cache_missing')
     stored_mask=_decode(cache[0],MAX_REQUEST_BYTES)
     _check(stored_mask==mask and isinstance(stored_mask,list) and all(type(x) is bool for x in stored_mask) and _digest(stored_mask)==mask_sha,'event_historical_cache_mask')
@@ -110,6 +110,42 @@ def _read(db,event,source,pipeline,context,evidence=None):
     else:
         value.update(decision=decision,decision_evidence=_evidence('complete',True,True,True))
     return value
+def read_batch(db, sources, pipeline):
+    """One bounded SELECT; release its cursor before validating saved evidence.
+
+    Uses the same validator as single-event reads. No transaction spans batches,
+    no persistent cache, no weakened hash/mask/acquisition checks.
+    """
+    if not sources or len(sources)>64:raise ValueError('historical batch size')
+    wanted=[(s['event_id'],s['context_id']) for s in sources]
+    if len(set(wanted))!=len(wanted):raise ValueError('duplicate historical batch')
+    sql='''WITH wanted(event,context) AS (VALUES %s)
+      SELECT w.event,w.context,x.pipeline,x.format_id,x.first_event,
+       e.event_id,e.camera,e.frame_id,f.sha256,f.captured_at,c.clock_id,c.monotonic_us,
+       r.event_id,CASE WHEN length(CAST(r.request AS BLOB))<=32768 THEN r.request END,r.request_sha,
+       b.event_id,b.source_sha,b.mask_sha,b.result_sha,b.request_sha,
+       k.source_sha,CASE WHEN length(CAST(k.mask AS BLOB))<=32768 THEN k.mask END,
+       CASE WHEN length(CAST(k.result AS BLOB))<=? THEN k.result END,k.result_sha
+      FROM wanted w
+      LEFT JOIN event_selection_contexts x ON x.context=w.context
+      LEFT JOIN capture_events e ON e.event_id=w.event
+      LEFT JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id
+      LEFT JOIN capture_clocks c ON c.camera=e.camera AND c.frame_id=e.frame_id
+      LEFT JOIN event_recognition_requests r ON r.event_id=w.event AND r.context=w.context AND r.pipeline=?
+      LEFT JOIN event_recognition_bindings b ON b.event_id=w.event AND b.context=w.context AND b.pipeline=?
+      LEFT JOIN event_recognition_cache k ON k.source_sha=b.source_sha AND k.mask_sha=b.mask_sha AND k.pipeline=?
+    ''' % ','.join('(?,?)' for _ in wanted)
+    params=[v for pair in wanted for v in pair]+[MAX_RESULT_BYTES,pipeline,pipeline,pipeline]
+    rows=db.execute(sql,params).fetchall()
+    if len(rows)!=len(wanted):raise ValueError('ambiguous historical batch')
+    bound={(r[0],r[1]):dict(context=r[2:5] if r[2] is not None else None,
+        acquisition=r[5:12] if r[5] is not None else None,
+        request=r[13:15] if r[12] is not None else None,
+        binding=r[16:20] if r[15] is not None else None,
+        cache=r[21:24] if r[20] is not None else None) for r in rows}
+    return [_read(db,s['event_id'],s['source_sha256'],pipeline,s['context_id'],{},
+                  records=bound[(s['event_id'],s['context_id'])]) for s in sources]
+
 def read_event(store,event,digest,pipeline,context):
     """Returns unavailable on invalid identity/evidence; never legacy digest fallback."""
     evidence=_evidence('unavailable')

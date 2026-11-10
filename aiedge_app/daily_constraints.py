@@ -63,10 +63,10 @@ def bands(record, modulus):
     return merge(values)
 
 
-def propagate(domains, edges, links, budget):
+def propagate(domains, edges, links, budget, initial=None):
     # Nested lists are never mutated. Branches share immutable Decimal tuples.
     domains = list(domains)
-    queue = deque(range(len(edges)))
+    queue = deque(range(len(edges)) if initial is None else initial)
     queued = set(queue)
     while queue:
         edge = queue.popleft()
@@ -74,13 +74,7 @@ def propagate(domains, edges, links, budget):
         i, j, lo, hi = edges[edge]
         for target, source, lower, upper in ((j, i, lo, hi), (i, j, -hi, -lo)):
             budget.spend(len(domains[target]) * len(domains[source]))
-            values = []
-            for a, b in domains[target]:
-                for x, y in domains[source]:
-                    left, right = max(a, x + lower), min(b, y + upper)
-                    if left <= right:
-                        values.append((left, right))
-            values = merge(values)
+            values = supported(domains[target], domains[source], lower, upper)
             if not values:
                 return None
             if len(values) > MAX_BANDS:
@@ -92,6 +86,29 @@ def propagate(domains, edges, links, budget):
                         queue.append(neighbor)
                         queued.add(neighbor)
     return domains
+
+
+def supported(target, source, lower, upper):
+    """Same intersection as the Cartesian loop, using ordered disjoint bands."""
+    expanded = []
+    for a, b in source:
+        a, b = a + lower, b + upper
+        if expanded and a <= expanded[-1][1]:
+            expanded[-1] = (expanded[-1][0], max(expanded[-1][1], b))
+        else:
+            expanded.append((a, b))
+    values = []
+    i = j = 0
+    while i < len(target) and j < len(expanded):
+        a, b = target[i]; x, y = expanded[j]
+        left, right = max(a, x), min(b, y)
+        if left <= right:
+            values.append((left, right))
+        if b < y:
+            i += 1
+        else:
+            j += 1
+    return merge(values)
 
 
 def tighten(records, day, zone, document, baseline):
@@ -196,7 +213,10 @@ def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rat
     for band in base[branch_start]:
         branch = list(base)
         branch[branch_start] = [band]
-        result = propagate(branch, edges, links, budget)
+        # base is already a fixed point. Only this domain changed, so only
+        # incident edges can start further reductions; cascades queue normally.
+        initial = links[branch_start] if len(base[branch_start]) > 1 else ()
+        result = propagate(branch, edges, links, budget, initial)
         if result is not None:
             limits.append((result[end][0][0] - result[mid][-1][1],
                            result[end][-1][1] - result[mid][0][0]))

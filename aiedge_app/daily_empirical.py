@@ -31,17 +31,20 @@ def validate(policy):
 def evidence(db, rows, policy, budget):
     # Reuse the historical getter's request, cache, mask and acquisition checks.
     # It reads committed saved inference only: no camera, inference or writes.
-    from event_observation_read import _read
+    from event_observation_read import read_batch
     from observation_support import observed_rows
     values = []
-    for row in rows:
+    def batches():
+        for start in range(0,len(rows),64):
+            budget.spend()
+            group=rows[start:start+64]
+            yield from zip(group,read_batch(db,[r['event_observation'] for r in group],policy['pipeline_id']))
+    for row,saved in batches():
         budget.spend()
         source = row['event_observation']
         support = row.get('observation_support') or {}
         if source['format_id'] != policy['format_id'] or support.get('pipeline_id') != policy['pipeline_id']:
             raise ValueError('daily evidence identity changed')
-        saved = _read(db, source['event_id'], source['source_sha256'], policy['pipeline_id'],
-                      source['context_id'], {})
         result = saved['result']
         if result.get('state') != 'estimated' or result.get('event_observation') != source:
             raise ValueError('daily evidence unavailable')
@@ -54,9 +57,9 @@ def evidence(db, rows, policy, budget):
     return values
 
 
-def comparisons(rows, values, allowance, budget):
+def comparison_pairs(rows, budget):
     ticks = [r['event_observation']['monotonic_us'] for r in rows]
-    edges = []
+    pairs = []
     last_selected = None
     for j, row in enumerate(rows):
         budget.spend()
@@ -77,11 +80,20 @@ def comparisons(rows, values, allowance, budget):
             if not 0 < ticks[j] - ticks[i] <= 3600000000 or any(
                     source[k] != previous[k] for k in ('camera', 'clock_id', 'context_id', 'format_id')):
                 continue
-            # Do not infer a revolution of the slower dial or extend the tested scope.
-            delta = values[j] - values[i]
-            if abs(delta) > 27:
-                continue
-            edges.append((previous['event_id'], source['event_id'], max(Decimal(0), delta - allowance), delta + allowance))
+            pairs.append((i, j))
+    return pairs
+
+
+def comparisons(rows, values, allowance, budget):
+    edges = []
+    for i, j in comparison_pairs(rows, budget):
+        previous = rows[i]['event_observation']
+        source = rows[j]['event_observation']
+        # Do not infer a revolution of the slower dial or extend the tested scope.
+        delta = values[j] - values[i]
+        if abs(delta) > 27:
+            continue
+        edges.append((previous['event_id'], source['event_id'], max(Decimal(0), delta - allowance), delta + allowance))
     return edges
 
 
@@ -105,7 +117,9 @@ def refine(db, rows, day, zone, document, baseline, policy):
         with localcontext() as context:
             context.prec = 50
             evidence_rows = [r for r in selected if r['event_observation']['event_id'] >= policy.get('elapsed_start_event', 1)]
-            values = evidence(db, evidence_rows, policy, budget)
+            needed = sorted({i for pair in comparison_pairs(evidence_rows, budget) for i in pair})
+            verified = evidence(db, [evidence_rows[i] for i in needed], policy, budget)
+            values = dict(zip(needed, verified))
             edges = comparisons(evidence_rows, values, number(policy['slow_allowance_ft3']), budget)
             if not edges:
                 raise ValueError('no compatible empirical comparisons')
