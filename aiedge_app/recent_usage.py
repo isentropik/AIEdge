@@ -72,7 +72,7 @@ def recent_ranges(db, rows, document, contexts, zone, policy=None):
             edges = comparisons(rows, values, number(policy['slow_allowance_ft3']), budget)
             rate = min(rate, number(policy['capacity_cfh']) / 3600)
 
-        def interval(left, right):
+        def interval(left, right, hour=None):
             selected = rows[left:right+1]
             start, end = selected[0]['event_observation'], selected[-1]['event_observation']
             duration = number(end['monotonic_us'] - start['monotonic_us']) / 1000000
@@ -80,18 +80,26 @@ def recent_ranges(db, rows, document, contexts, zone, policy=None):
             initial = bands(selected[0], modulus)
             if initial is None or initial[-1][1] + duration*rate >= modulus:
                 raise ValueError('recent_possible_register_rollover')
-            baseline = dict(before=start, after=start, through=end,
-                            segment_id=selected[-1]['segment_id'], lower='0', upper=str(duration*rate))
-            result = _tighten(selected, stamps[right].astimezone(zone).date(), zone,
-                              document, baseline, budget, edges, rate, elapsed=True)
+            graph = rows if hour else selected
+            origin = graph[0]['event_observation']
+            upper = min(duration*rate, number(hour['upper'])) if hour else duration*rate
+            baseline = dict(before=origin, after=origin, through=end,
+                            segment_id=selected[-1]['segment_id'], lower='0', upper=str(upper))
+            graph_edges = edges + [(hour['start']['event_id'], hour['through']['event_id'],
+                                   hour['lower'], hour['upper'])] if hour else edges
+            objective = (start['event_id'], end['event_id']) if hour else None
+            result = _tighten(graph, stamps[right].astimezone(zone).date(), zone,
+                              document, baseline, budget, graph_edges, rate, elapsed=True,
+                              objective_events=objective)
             return dict(start=start, through=end, lower=result['lower'], upper=result['upper'],
                         duration_seconds=str(duration))
 
         hour = interval(0, len(rows)-1)
-        quarters = [interval(a, b) for a, b in zip(indices, indices[1:])]
+        quarters = [interval(a, b, hour) for a, b in zip(indices, indices[1:])]
     return dict(hour=hour, quarters=quarters, through=identity, timezone=zone.key,
                 segment_id=rows[-1]['segment_id'],
                 accuracy_verified=False, unknown_gaps_preserved=True,
+                quarter_constraint_scope='full_hour_saved_readings',
                 window_basis='saved_endpoints_at_or_before_15_minute_boundaries',
                 boundary_slack_seconds=BOUNDARY_SLACK,
                 constraint_assumptions=policy, constraint_basis='empirical_dial_and_household_capacity' if policy else 'saved_readings',

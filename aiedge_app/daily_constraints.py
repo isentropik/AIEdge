@@ -109,7 +109,7 @@ movement tolerance is introduced. On bounded-work exhaustion use baseline.
         return baseline
 
 
-def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rate_ceiling=None, elapsed=False):
+def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rate_ceiling=None, elapsed=False, objective_events=None):
     if len(records) > MAX_RECORDS:
         raise WorkLimit()
     midnight = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
@@ -173,6 +173,16 @@ def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rat
     domains.append([(Decimal(0), modulus)])
     # Midnight is anywhere between its bracketing measurements, not interpolated.
     edges.extend(((before, mid, Decimal(0), modulus), (mid, after, Decimal(0), modulus)))
+    branch_start = before
+    if objective_events is not None:
+        # Project an interior interval while retaining the entire input graph.
+        # No prefix/suffix evidence is dropped and no likely path is selected.
+        if (not elapsed or len(objective_events) != 2
+                or any(type(e) is not int or e not in index for e in objective_events)
+                or index[objective_events[0]] >= index[objective_events[1]]):
+            raise ValueError('invalid constraint objective')
+        mid, end = (index[e] for e in objective_events)
+        branch_start = mid
     links = [[] for _ in domains]
     for k, (i, j, _, _) in enumerate(edges):
         links[i].append(k)
@@ -183,9 +193,9 @@ def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rat
     limits = []
     # Enumerate every surviving pre-midnight band. Never select a likely band.
     # This exposes correlations that taking only the global min/max loses.
-    for band in base[before]:
+    for band in base[branch_start]:
         branch = list(base)
-        branch[before] = [band]
+        branch[branch_start] = [band]
         result = propagate(branch, edges, links, budget)
         if result is not None:
             limits.append((result[end][0][0] - result[mid][-1][1],
