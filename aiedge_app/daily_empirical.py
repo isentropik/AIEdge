@@ -97,57 +97,91 @@ def comparisons(rows, values, allowance, budget):
     return edges
 
 
+def interval_edges(db, rows, policy, budget):
+    needed = sorted({i for pair in comparison_pairs(rows, budget) for i in pair})
+    verified = evidence(db, [rows[i] for i in needed], policy, budget)
+    return comparisons(rows, dict(zip(needed, verified)), number(policy['slow_allowance_ft3']), budget)
+
+
 def refine(db, rows, day, zone, document, baseline, policy):
+    """Two independently completed results; each has an 8-second/20M-work budget.
+
+    Total empirical work is bounded by two such budgets. No partial solver result
+    or historical timestamp is substituted when either calculation fails.
+    """
     if not policy:
         return baseline
     fallback = dict(baseline, constraint_basis='saved_readings',
                     empirical_constraints_applied=False, empirical_fallback='unavailable')
+    errors = (ValueError, KeyError, TypeError, IndexError, ArithmeticError,
+              sqlite3.Error, StopIteration, AttributeError, RecursionError, OSError)
     try:
         policy = validate(policy)
-        budget = Budget()
-        start = next(i for i, r in enumerate(rows) if r['event_observation']['event_id'] == baseline['before']['event_id'])
-        if policy.get('elapsed_start_event'):
-            earlier = next((i for i,r in enumerate(rows) if r['event_observation']['event_id'] == policy['elapsed_start_event']), start)
-            start = min(start, earlier)
-        selected = rows[start:]
         dials = document['dials']
         if (len(dials) != 6 or number(dials[-2]['value_per_revolution']) != 1000
                 or number(dials[-1]['value_per_revolution']) != 5):
             raise ValueError('daily dial geometry outside reviewed scope')
+        daily_start = next(i for i,r in enumerate(rows)
+                           if r['event_observation']['event_id'] == baseline['before']['event_id'])
+    except errors:
+        return fallback
+    elapsed = None
+    elapsed_reason = 'start_not_in_saved_window'
+    origin = next((i for i,r in enumerate(rows) if r['event_observation']['event_id'] == policy.get('elapsed_start_event')), None)
+    if origin is not None:
+        try:
+            budget = Budget()
+            selected = rows[origin:]
+            with localcontext() as context:
+                context.prec = 50
+                edges = interval_edges(db, selected, policy, budget)
+                if not edges:
+                    raise ValueError('no compatible elapsed comparisons')
+                source = selected[0]['event_observation']
+                seconds = number(selected[-1]['event_observation']['monotonic_us']-source['monotonic_us'])/1000000
+                initial = dict(baseline,before=source,after=source,lower='0',
+                               upper=str(seconds*number(document['maximum_rate_per_second'])))
+                bounded = _tighten(selected,day,zone,document,initial,budget,edges,
+                                   number(policy['capacity_cfh'])/3600,elapsed=True)
+                elapsed = dict(start=source,through=bounded['through'],lower=bounded['lower'],upper=bounded['upper'])
+                elapsed_reason = None
+        except WorkLimit:
+            elapsed_reason = 'work_limit'
+        except errors:
+            elapsed_reason = 'unavailable'
+    applied, reason, result = False, 'unavailable', baseline
+    used, review_state, count = [], 'none', 0
+    try:
+        budget = Budget()  # Elapsed work cannot consume the day's budget.
+        selected = rows[daily_start:]
         with localcontext() as context:
             context.prec = 50
-            evidence_rows = [r for r in selected if r['event_observation']['event_id'] >= policy.get('elapsed_start_event', 1)]
-            needed = sorted({i for pair in comparison_pairs(evidence_rows, budget) for i in pair})
-            verified = evidence(db, [evidence_rows[i] for i in needed], policy, budget)
-            values = dict(zip(needed, verified))
-            edges = comparisons(evidence_rows, values, number(policy['slow_allowance_ft3']), budget)
+            edges = interval_edges(db,selected,policy,budget)
             if not edges:
-                raise ValueError('no compatible empirical comparisons')
-            elapsed = None
-            origin = next((r for r in selected if r['event_observation']['event_id'] == policy.get('elapsed_start_event')), None)
-            if origin is not None:
-                source = origin['event_observation']
-                seconds = number(selected[-1]['event_observation']['monotonic_us'] - source['monotonic_us']) / 1000000
-                elapsed_base = dict(baseline, before=source, after=source, lower='0',
-                                    upper=str(seconds * number(document['maximum_rate_per_second'])))
-                bounded = _tighten(selected, day, zone, document, elapsed_base, budget,
-                                   edges, number(policy['capacity_cfh']) / 3600, elapsed=True)
-                elapsed = dict(start=source, through=bounded['through'], lower=bounded['lower'], upper=bounded['upper'])
-            # The elapsed result is a separately completed calculation. A day
-            # calculation exhausting the remaining budget must not relabel it
-            # as a daily result or throw away this independently valid interval.
+                raise ValueError('no compatible daily comparisons')
+            from reviewed_photo import constraints
             try:
-                result = _tighten(selected, day, zone, document, baseline, budget,
-                                  edges, number(policy['capacity_cfh']) / 3600)
-                applied, reason = True, None
-            except WorkLimit:
-                result, applied, reason = baseline, False, 'work_limit'
-        return dict(result, constraint_basis='empirical_dial_and_household_capacity' if applied else 'saved_readings',
-                    empirical_constraints_applied=applied, empirical_fallback=reason, accuracy_verified=False,
-                    constraint_assumptions=policy, empirical_comparisons=len(edges),
-                    unconstrained_lower=baseline['lower'], unconstrained_upper=baseline['upper'],
-                    elapsed_range=elapsed, elapsed_unavailable_reason=None if elapsed else 'start_not_in_saved_window')
+                photo_edges, reviewed = constraints(db,selected,document,policy,budget)
+                review_state = 'verified' if reviewed else 'none'
+            except errors:
+                photo_edges, reviewed, review_state = [], [], 'unavailable'
+            count = len(edges)
+            result = _tighten(selected,day,zone,document,baseline,budget,edges+photo_edges,
+                              number(policy['capacity_cfh'])/3600)
+            applied, reason, used = True, None, reviewed
     except WorkLimit:
-        return dict(fallback, empirical_fallback='work_limit')
-    except (ValueError, KeyError, TypeError, IndexError, ArithmeticError, sqlite3.Error, StopIteration, AttributeError, RecursionError):
-        return fallback
+        reason = 'work_limit'
+    except errors:
+        pass
+    return dict(result, constraint_basis=('empirical_dial_household_capacity_and_reviewed_photo' if used
+                else 'empirical_dial_and_household_capacity') if applied else 'saved_readings',
+                empirical_constraints_applied=applied,empirical_fallback=reason,accuracy_verified=False,
+                constraint_assumptions=policy,empirical_comparisons=count,
+                unconstrained_lower=baseline['lower'],unconstrained_upper=baseline['upper'],
+                elapsed_range=elapsed,elapsed_unavailable_reason=elapsed_reason,
+                reviewed_photo_constraints=used,reviewed_photo_evidence_state=review_state,
+                unknown_gaps_preserved=True)
+
+
+
+

@@ -19,7 +19,9 @@ class DailyEmpiricalTests(unittest.TestCase):
             r['observation_support']={'pipeline_id':'a'*64,'reader_observed':[True]*6}
         self.base=dict(day='2026-11-07',lower='0.00',upper='12.00',before=self.rows[0]['event_observation'],after=self.rows[1]['event_observation'],through=self.rows[-1]['event_observation'],segment_id='s')
     def solve(self, values=None, policy=None):
-        with patch('daily_empirical.evidence',return_value=values or [Decimal(0)]*2):
+        supplied=values or [Decimal(0)]*2
+        mapping={1:supplied[0],2:supplied[0],3:supplied[-1]}
+        with patch('daily_empirical.evidence',side_effect=lambda db,rows,p,b:[mapping[r['event_observation']['event_id']] for r in rows]):
             return refine(None,self.rows,self.f.day,timezone.utc,self.doc,self.base,self.policy if policy is None else policy)
     def test_default_disabled(self):self.assertEqual(self.solve(policy={}),self.base)
     def test_complete_policy(self):self.assertEqual(validate(self.policy),self.policy)
@@ -45,7 +47,9 @@ class DailyEmpiricalTests(unittest.TestCase):
         r=self.solve();self.assertEqual(r['elapsed_range']['start']['event_id'],2)
         self.assertEqual(r['before']['event_id'],1);self.assertEqual(r['elapsed_range']['through'],self.base['through'])
     def test_missing_elapsed_origin_does_not_invent_one(self):
-        r=self.solve(policy=dict(self.policy,elapsed_start_event=999));self.assertFalse(r['empirical_constraints_applied'])
+        r=self.solve(policy=dict(self.policy,elapsed_start_event=999))
+        self.assertTrue(r['empirical_constraints_applied']);self.assertIsNone(r['elapsed_range'])
+        self.assertEqual(r['elapsed_unavailable_reason'],'start_not_in_saved_window')
     def test_outward_and_no_false_accuracy(self):
         r=self.solve();self.assertFalse(r['accuracy_verified']);self.assertEqual(r['unconstrained_upper'],'12.00')
     def test_contradiction_returns_original_wider_range(self):
