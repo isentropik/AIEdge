@@ -30,6 +30,8 @@ DECODER_CONTEXT_CHECK_GROUPS=(
     ('test_recovery_review_cost.RecoveryReviewCostTests.',5),
     ('test_daily_empirical.DailyEmpiricalTests.',22),
     ('test_daily_empirical.EmpiricalIntegrationTests.',5),
+    ('test_reviewed_photo.PhotoTests.',14),
+    ('test_reviewed_photo.IndependentBudgetTests.',3),
     ('test_storage_recovery.StorageRecoveryTests.',16),
     ('test_storage_recovery.StorageAccountingTests.',1),
     ('test_gap_evidence.GapEvidenceTests.',14),

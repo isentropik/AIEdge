@@ -1,3 +1,9 @@
+## 0.2.0-dev66
+
+- Give daily and since-recovery refinements independent bounded calculation budgets.
+- Apply explicitly reviewed, source-verified intermediate photo sectors to daily ranges without changing accepted readings or unknown gaps.
+- Protect reviewed photos from ordinary expiry; reject invalid evidence and retain conservative fallback ranges.
+
 ## 0.2.0-dev65
 
 - Batch saved-reading validation and read only the existing comparison endpoints.

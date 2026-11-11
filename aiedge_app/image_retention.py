@@ -45,6 +45,10 @@ class ImageRetention:
         values = set(path.read_text(encoding="utf-8-sig").splitlines()) if path.exists() else set()
         if any(not DIGEST.fullmatch(v) for v in values):
             raise ValueError("retention pin list invalid")
+        # Reviewed photo constraints are explicit protected evidence. A malformed
+        # manifest stops retirement through the existing fail-closed error path.
+        from reviewed_photo import load
+        values.update(r['source_sha256'] for r in load(self.store.root))
         return values
 
     def _candidates(self, db, cutoff, report=None):
