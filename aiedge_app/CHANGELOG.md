@@ -1,3 +1,8 @@
+## 0.2.0-dev68
+
+- Reconcile a sole abandoned capture intent at startup into an append-only unknown interruption; resume only after the existing fresh readiness and ledger/context gates. Never replay the interrupted request or fill its usage gap. Conflicting events, additional unknowns, hard faults, clock inconsistencies and active requests remain held.
+- Log failure-journal commit errors without credentials or response bodies.
+
 ## 0.2.0-dev67
 
 - Calculate since-recovery from its saved origin using bounded chunks and an in-memory checkpoint, independent of the rolling daily window. Preserve unknown gaps; restart rebuilds from the ledger. Chunk bounds are conservative and may be wider than a whole-history solve.

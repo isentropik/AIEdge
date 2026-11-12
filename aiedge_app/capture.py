@@ -363,6 +363,21 @@ class Collector:
                         self.storage_wait=True;self.recovery_state='waiting_for_storage';self.stop.clear()
                 except (OSError,sqlite3.Error,ValueError):pass
 
+    def recover_interrupted_startup(self):
+        """Service calls once before worker launch; performs no camera I/O."""
+        import capture_recovery as recovery
+        if self.shutdown.is_set() or not self.stop.is_set() or self.recovery_state!='held':return
+        try:
+            self.store.require_space()
+            ident=recovery.seal_interrupted_startup(self.store,self.recovery_floor,self.continuation_context())
+            if ident:
+                self.transfer_attempt=ident;self.recovery_state='waiting_for_transfer_recovery'
+                self.readiness_retry_delay=6;self.transfer_not_before=time.monotonic()+max(6,self.interval)
+                self.stop.clear()
+        except (OSError,sqlite3.Error,ValueError,TypeError):
+            # Fail closed; never clear a hold on uncertain local bookkeeping.
+            pass
+
     def once(self):
         with self.control_lock:
             if self.shutdown.is_set():return
@@ -524,7 +539,12 @@ class Collector:
                     self.transfer_not_before=time.monotonic()+max(self.interval,self.readiness_retry_delay)
                     self.recovery_state='waiting_for_transfer_recovery'
                     return
-            except (OSError,sqlite3.Error,ValueError):reason='capture_failure_commit_unknown'
+            except (OSError,sqlite3.Error,ValueError) as commit_error:
+                reason='capture_failure_commit_unknown'
+                from lifecycle import lifecycle_event
+                lifecycle_event('capture_failure_commit_unknown',attempt_id=attempt,
+                                error_type=type(commit_error).__name__,
+                                sqlite_errorname=getattr(commit_error,'sqlite_errorname',None))
             if isinstance(e,StorageLowSpace) and reason in (None,'unknown_capture_outcome'):
                 try:
                     with self.store.connect() as db:ident=capture_recovery.recoverable_storage(db)
@@ -607,7 +627,7 @@ class Collector:
             # accept_continuation recomputes the full qualified review under
             # this write lock and compares the pre-probe token before writing.
             request=dict(action='accept-gap-and-continue',attempt_id=self.transfer_attempt,
-                         review_sha256=review['review_sha256'],approval_reference=(recovery.REQUEST_POLICY if recovery.transfer_record(db,self.transfer_attempt)[0]['stage']=='awaiting_response' else recovery.TRANSFER_POLICY))
+                         review_sha256=review['review_sha256'],approval_reference=recovery.transfer_policy_for(recovery.transfer_record(db,self.transfer_attempt)[0]))
             recovery.accept_continuation(db,self.recovery_floor,current,request,ready,transfer_policy=True)
         self.transfer_attempt=None
         self.recovery_state='waiting_for_next_slot';self.last_error=None

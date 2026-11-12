@@ -396,6 +396,7 @@ def run_service(stop_signals):
                     'camera_controls':{name:hashlib.sha256((Path(args.data)/name).read_bytes()).hexdigest() if (Path(args.data)/name).is_file() else None
                                        for name in ('camera-lighting-operation.json','camera-image-operation.json','camera-auto-operation.json','camera-auto.json')}}
         collector.continuation_context=continuation_context
+        collector.recover_interrupted_startup()
     preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls,auto_control) if store and configuration.get('state')=='ready' else None
     trial=None
     if store and camera and setup and recognition and reading_format:

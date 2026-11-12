@@ -1,7 +1,8 @@
 """Durable capture boundaries and bounded recovery of explicit rejections.
 
 Never retries a request: a terminal freshness rejection permits a later slot.
-Pending/unclassified attempts hold across restarts. Typed response timeouts may
+Unclassified attempts hold; qualified startup interruptions retain unknown gaps.
+Typed response timeouts may
 resume a readiness-gated recovery with the original unknown gap intact.
 """
 import hashlib,json,re,sqlite3,uuid
@@ -14,6 +15,7 @@ FRESHNESS='camera_clock_changed'
 TRANSFER_POLICY='dev42-body-timeout-gap-policy-v1'
 REQUEST_POLICY='dev50-request-timeout-gap-policy-v1'
 STORAGE_POLICY='dev56-storage-gap-policy-v1'
+INTERRUPTION_POLICY='dev68-interrupted-capture-gap-policy-v1'
 
 class RequestTimeout(ValueError):
     """Transport timeout while awaiting the response; execution remains unknown."""
@@ -37,7 +39,8 @@ def recoverable_timeout(db):
     body = db.execute('SELECT 1 FROM capture_transfer_timeouts WHERE attempt_id=?',(ident,)).fetchone()
     # Exactly one typed record is required. Never promote an old string error,
     # pending request, or conflicting evidence into permission to continue.
-    if bool(request) == bool(body):return None
+    interrupted = db.execute('SELECT 1 FROM capture_interruptions WHERE attempt_id=?',(ident,)).fetchone()
+    if sum(map(bool,(request,body,interrupted))) != 1:return None
     transfer_record(db,ident)
     failure=continuation_binding(db,ident)['failure_boundary'][0]
     # A later hard fault must not be cleared by restarting the app. Only the
@@ -70,7 +73,12 @@ def validate_transfer_evidence(value):
 
 def transfer_record(db,ident):
     row=db.execute('SELECT evidence_json,binding_sha256,context_sha256 FROM capture_transfer_timeouts WHERE attempt_id=?',(ident,)).fetchone()
-    if not row:return request_record(db,ident)
+    if not row:
+        interrupted=db.execute('SELECT binding_sha256,context_sha256 FROM capture_interruptions WHERE attempt_id=?',(ident,)).fetchone()
+        if interrupted:
+            if interrupted[0]!=digest(continuation_binding(db,ident)):raise ValueError('interrupted_capture_binding_changed')
+            return {'stage':'interrupted_capture'},interrupted[1]
+        return request_record(db,ident)
     try:evidence=json.loads(row[0]);validate_transfer_evidence(evidence)
     except (TypeError,ValueError):raise ValueError('transfer_evidence_invalid') from None
     if row[1]!=digest(continuation_binding(db,ident)):raise ValueError('transfer_binding_changed')
@@ -95,7 +103,9 @@ def initialize(db):
     db.execute('CREATE TABLE IF NOT EXISTS storage_continuations(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,review_json TEXT NOT NULL,readiness_json TEXT NOT NULL,approval_reference TEXT NOT NULL,accepted_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_request_timeouts(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_transfer_timeouts(attempt_id TEXT PRIMARY KEY,evidence_json TEXT NOT NULL,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
+    db.execute('CREATE TABLE IF NOT EXISTS capture_interruptions(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     for action in ('UPDATE','DELETE'):
+        db.execute("CREATE TRIGGER IF NOT EXISTS capture_interruptions_no_"+action.lower()+" BEFORE "+action+" ON capture_interruptions BEGIN SELECT RAISE(ABORT,'capture_interruption_immutable'); END")
         db.execute("CREATE TRIGGER IF NOT EXISTS capture_request_timeouts_no_"+action.lower()+" BEFORE "+action+" ON capture_request_timeouts BEGIN SELECT RAISE(ABORT,'capture_request_timeout_immutable'); END")
         db.execute("CREATE TRIGGER IF NOT EXISTS capture_continuations_no_"+action.lower()+" BEFORE "+action+" ON capture_continuations BEGIN SELECT RAISE(ABORT,'capture_continuation_immutable'); END")
         db.execute("CREATE TRIGGER IF NOT EXISTS storage_continuations_no_"+action.lower()+" BEFORE "+action+" ON storage_continuations BEGIN SELECT RAISE(ABORT,'capture_continuation_immutable'); END")
@@ -202,7 +212,7 @@ def digest(value):return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 def continuation_binding(db,ident):
     row=db.execute('SELECT a.attempt_id,a.first_event,a.after_event_id,a.started_at,o.outcome,o.event_id,o.error,o.finished_at FROM continuous_capture_attempts a JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.attempt_id=?',(ident,)).fetchone()
-    if not row or row[4:6]!=('unknown',None) or row[6] not in ('camera_timeout','storage_low_space'):
+    if not row or row[4:6]!=('unknown',None) or row[6] not in ('camera_timeout','storage_low_space','capture_interrupted'):
         raise ValueError('continuation_requires_terminal_timeout')
     try:
         start,end=(datetime.fromisoformat(row[i]) for i in (3,7))
@@ -228,9 +238,9 @@ def accepted_continuations(db):
             if (saved['attempt_id']!=ident or saved['binding_sha256']!=binding
                     or binding!=digest(continuation_binding(db,ident))
                     or not approval or datetime.fromisoformat(at).tzinfo is None):raise ValueError()
-            if approval in (TRANSFER_POLICY,REQUEST_POLICY):
+            if approval in (TRANSFER_POLICY,REQUEST_POLICY,INTERRUPTION_POLICY):
                 evidence,context_hash=transfer_record(db,ident)
-                if (approval==REQUEST_POLICY)!=(evidence['stage']=='awaiting_response'):raise ValueError()
+                if approval!=transfer_policy_for(evidence):raise ValueError()
                 if saved['context_sha256']!=context_hash:raise ValueError()
         except (KeyError,TypeError,ValueError):raise ValueError('capture_continuation_invalid') from None
         result.add(ident)
@@ -292,7 +302,7 @@ def continuation_review(db,first,context):
     # Hash complete ordered metadata, including all historical contexts and prior
     # acceptances. Changes while a human reviews the action invalidate its token.
     hashes={}
-    for table in ('frames','capture_events','capture_clocks','failures','capture_failure_boundaries','continuous_capture_attempts','continuous_capture_outcomes','capture_continuations','storage_continuations','capture_transfer_timeouts','capture_request_timeouts'):
+    for table in ('frames','capture_events','capture_clocks','failures','capture_failure_boundaries','continuous_capture_attempts','continuous_capture_outcomes','capture_continuations','storage_continuations','capture_transfer_timeouts','capture_request_timeouts','capture_interruptions'):
         hashes[table]=digest(db.execute('SELECT rowid,* FROM '+table+' ORDER BY rowid').fetchall())
     review={'action':'accept-gap-and-continue','attempt_id':ident,'after_event_id':last,
             'first_event':first,'binding_sha256':digest(binding),'ledger_sha256':digest(hashes),
@@ -306,11 +316,11 @@ def accept_continuation(db,first,context,request,camera_status,*,transfer_policy
     if not isinstance(request,dict) or set(request)!={'action','attempt_id','review_sha256','approval_reference'} or request['action']!='accept-gap-and-continue':raise ValueError('continuation_request_invalid')
     if not isinstance(request['approval_reference'],str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}',request['approval_reference']):raise ValueError('continuation_approval_reference_required')
     review=None
-    if request['approval_reference'] in (TRANSFER_POLICY,REQUEST_POLICY):
+    if request['approval_reference'] in (TRANSFER_POLICY,REQUEST_POLICY,INTERRUPTION_POLICY):
         if not transfer_policy:raise ValueError('continuation_reserved_policy')
         review=transfer_review(db,first,context,request['attempt_id'])
         evidence,_=transfer_record(db,request['attempt_id'])
-        if (request['approval_reference']==REQUEST_POLICY)!=(evidence['stage']=='awaiting_response'):raise ValueError('continuation_policy_mismatch')
+        if request['approval_reference']!=transfer_policy_for(evidence):raise ValueError('continuation_policy_mismatch')
     if request['approval_reference']==STORAGE_POLICY:
         if not storage_policy:raise ValueError('continuation_reserved_policy')
         review=storage_review(db,first,context,request['attempt_id'])
@@ -345,3 +355,42 @@ def recoverable_storage(db):
     binding=continuation_binding(db,ident)
     if db.execute('SELECT MAX(rowid) FROM failures').fetchone()[0]!=binding['failure_boundary'][0]:return None
     return ident
+
+
+def transfer_policy_for(evidence):
+    return {'awaiting_response':REQUEST_POLICY,'jpeg_body':TRANSFER_POLICY,
+            'interrupted_capture':INTERRUPTION_POLICY}[evidence['stage']]
+
+
+def seal_interrupted_startup(store, first, context):
+    """Startup only, before any workers: append uncertainty, never infer a capture.
+
+    Only the single latest pending intent, with no saved event after it, qualifies.
+    Existing faults, conflicting rows, or a still-owned attempt remain held.
+    All inserts commit together; a failure leaves the original pending intent.
+    """
+    if getattr(store,'active_capture_attempt',None):raise ValueError('interrupted_capture_active')
+    with store.lock,store.connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        accepted=accepted_continuations(db)
+        rows=db.execute("SELECT a.attempt_id,a.first_event,a.after_event_id,a.started_at,o.outcome FROM continuous_capture_attempts a LEFT JOIN continuous_capture_outcomes o USING(attempt_id) ORDER BY a.rowid").fetchall()
+        pending=[r for r in rows if r[4] is None]
+        if not pending:return None
+        if len(pending)!=1 or rows[-1]!=pending[0]:raise ValueError('interrupted_capture_conflict')
+        ident,floor,after,started,_=pending[0]
+        if floor!=first or any(r[4]=='unknown' and r[0] not in accepted for r in rows):raise ValueError('interrupted_capture_conflict')
+        if db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]!=after:raise ValueError('interrupted_capture_saved_event')
+        start=datetime.fromisoformat(started);end=datetime.now(timezone.utc)
+        if start.tzinfo is None or start>end:raise ValueError('interrupted_capture_time')
+        # Do not silently override a later fault or evidence of a terminal response.
+        if any(datetime.fromisoformat(t)>=start for t, in db.execute('SELECT received_at FROM failures')):raise ValueError('interrupted_capture_later_fault')
+        if any(db.execute('SELECT 1 FROM '+t+' WHERE attempt_id=?',(ident,)).fetchone() for t in ('capture_request_timeouts','capture_transfer_timeouts','capture_interruptions')):raise ValueError('interrupted_capture_conflict')
+        failure=db.execute('INSERT INTO failures VALUES(?,?)',(end.isoformat(),'capture_interrupted')).lastrowid
+        db.execute('INSERT INTO capture_failure_boundaries VALUES(?,?,?,?)',(failure,after,'capture_interrupted','unknown'))
+        finish_transaction(db,ident,'unknown',error='capture_interrupted')
+        binding=digest(continuation_binding(db,ident))
+        db.execute('INSERT INTO capture_interruptions VALUES(?,?,?)',(ident,binding,digest(context)))
+        # Validate the complete review before commit. Three rejections or corrupt
+        # historical bindings cannot be bypassed by sealing a pending intent.
+        transfer_review(db,first,context,ident)
+        return ident
