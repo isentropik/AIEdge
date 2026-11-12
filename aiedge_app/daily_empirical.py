@@ -103,7 +103,7 @@ def interval_edges(db, rows, policy, budget):
     return comparisons(rows, dict(zip(needed, verified)), number(policy['slow_allowance_ft3']), budget)
 
 
-def refine(db, rows, day, zone, document, baseline, policy):
+def refine(db, rows, day, zone, document, baseline, policy, *, include_elapsed=True):
     """Two independently completed results; each has an 8-second/20M-work budget.
 
     Total empirical work is bounded by two such budgets. No partial solver result
@@ -128,7 +128,7 @@ def refine(db, rows, day, zone, document, baseline, policy):
     elapsed = None
     elapsed_reason = 'start_not_in_saved_window'
     origin = next((i for i,r in enumerate(rows) if r['event_observation']['event_id'] == policy.get('elapsed_start_event')), None)
-    if origin is not None:
+    if include_elapsed and origin is not None:
         try:
             budget = Budget()
             selected = rows[origin:]

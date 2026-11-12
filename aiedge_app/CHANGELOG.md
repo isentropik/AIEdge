@@ -1,3 +1,7 @@
+## 0.2.0-dev67
+
+- Calculate since-recovery from its saved origin using bounded chunks and an in-memory checkpoint, independent of the rolling daily window. Preserve unknown gaps; restart rebuilds from the ledger. Chunk bounds are conservative and may be wider than a whole-history solve.
+
 ## 0.2.0-dev66
 
 - Give daily and since-recovery refinements independent bounded calculation budgets.
