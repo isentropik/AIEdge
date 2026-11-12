@@ -39,6 +39,8 @@ class DailyPublisher:
         self.evidence_policy = validate(evidence_policy or {})
         from recent_usage import RecentPublisher
         self.recent = RecentPublisher(store, self.evidence_policy)
+        from recovery_range import RecoveryRange
+        self.recovery = RecoveryRange()
         self.reset()
 
     def reset(self):
@@ -97,7 +99,10 @@ class DailyPublisher:
                     result = daily_range(rows, today, zone, snapshot["format"], obs["format_id"], contexts)
                     if self.evidence_policy:
                         from daily_empirical import refine
-                        result = refine(db, rows, today, zone, snapshot['format'], result, self.evidence_policy)
+                        result = refine(db, rows, today, zone, snapshot['format'], result, self.evidence_policy, include_elapsed=False)
+                        if self.evidence_policy.get('elapsed_start_event'):
+                            elapsed, reason = self.recovery.calculate(db, today, zone, snapshot['format'], result, self.evidence_policy, contexts)
+                            result.update(elapsed_range=elapsed, elapsed_unavailable_reason=reason)
                 end = result["through"]
                 if any(end[k] != obs[k] for k in ("event_id", "source_sha256", "captured_at", "format_id")):
                     raise ValueError("daily endpoint changed")
@@ -114,6 +119,6 @@ class DailyPublisher:
         from copy import deepcopy
         self.last_good = (deepcopy(payload), now, deepcopy(snapshot["format"])) if payload else None
         self.key = key if payload else ("offline", key)
-        self.next_refresh = now + (300 if payload else 30)
+        self.next_refresh = now + (30 if not payload or payload.get('elapsed_unavailable_reason') == 'rebuilding_saved_history' else 300)
 
 
