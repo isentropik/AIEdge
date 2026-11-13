@@ -60,4 +60,16 @@ class InterruptionTests(unittest.TestCase):
  def test_unknown_after_later_event_not_accepted(self):
   w=self.restart();w.recover_interrupted_startup();blob,headers=self.camera.capture();self.store.add(self.camera.origin,blob,headers);w.once()
   self.assertTrue(w.stop.is_set());self.assertEqual(self.rows('capture_continuations'),[])
+class ContextInterruptionTests(InterruptionTests):
+ def restart(self):return configure(Collector(Store(self.tmp.name),self.camera,6,recovery_floor=2))
+ def test_rebased_context_preserves_original_floor(self):
+  before=self.rows('continuous_capture_attempts');w=self.restart();w.recover_interrupted_startup()
+  self.assertFalse(w.stop.is_set());w.once();w.once()
+  self.assertEqual(self.rows('continuous_capture_attempts')[:len(before)],before)
+  self.assertEqual(self.rows('continuous_capture_attempts')[-1][1],2)
+  self.assertEqual(self.rows('continuous_capture_outcomes')[-2][1:4],('unknown',None,'capture_interrupted'))
+ def test_unrelated_floor_remains_held(self):
+  w=configure(Collector(Store(self.tmp.name),self.camera,6,recovery_floor=3));w.recover_interrupted_startup()
+  self.assertTrue(w.stop.is_set());self.assertEqual(self.rows('capture_interruptions'),[])
 if __name__=='__main__':unittest.main()
+
