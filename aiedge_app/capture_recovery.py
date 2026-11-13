@@ -378,7 +378,13 @@ def seal_interrupted_startup(store, first, context):
         if not pending:return None
         if len(pending)!=1 or rows[-1]!=pending[0]:raise ValueError('interrupted_capture_conflict')
         ident,floor,after,started,_=pending[0]
-        if floor!=first or any(r[4]=='unknown' and r[0] not in accepted for r in rows):raise ValueError('interrupted_capture_conflict')
+        # A new reading context starts at the next unsaved event on restart.
+        # Keep the old intent's floor immutable; bind recovery to the current
+        # context below. Arbitrary or invalid floors still cannot qualify.
+        if (type(floor) is not int or type(first) is not int or not 1<=floor<=after+1
+                or first not in (floor,after+1)
+                or any(r[4]=='unknown' and r[0] not in accepted for r in rows)):
+            raise ValueError('interrupted_capture_conflict')
         if db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]!=after:raise ValueError('interrupted_capture_saved_event')
         start=datetime.fromisoformat(started);end=datetime.now(timezone.utc)
         if start.tzinfo is None or start>end:raise ValueError('interrupted_capture_time')

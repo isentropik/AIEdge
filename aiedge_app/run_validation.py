@@ -18,6 +18,7 @@ NAS_LINUX_CHECKS=frozenset(('test_archive.ArchiveLinuxTests.test_nofollow_direct
 
 DECODER_CONTEXT_CHECK_GROUPS=(
     ('test_capture_interruption.InterruptionTests.',12),
+    ('test_capture_interruption.ContextInterruptionTests.',14),
     ('test_recovery_range.RecoveryTests.',12),
     ('test_calculation_work.CalculationWorkTests.',3),
     ('test_calculation_work.SavedBatchTests.',5),
