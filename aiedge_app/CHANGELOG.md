@@ -1,3 +1,7 @@
+## 0.2.0-dev69
+
+- Recover an interrupted capture when restart advances the reading context to the next unsaved event. Preserve the original attempt and unknown gap, retain all conflict checks, and bind readiness to the current context.
+
 ## 0.2.0-dev68
 
 - Reconcile a sole abandoned capture intent at startup into an append-only unknown interruption; resume only after the existing fresh readiness and ledger/context gates. Never replay the interrupted request or fill its usage gap. Conflicting events, additional unknowns, hard faults, clock inconsistencies and active requests remain held.
