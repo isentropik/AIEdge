@@ -89,6 +89,7 @@ class MqttOutput:
         self.daily=daily
         self.daily_error=None
         self.recent_error=None
+        self.resumed_error=None
         self.output_mode=output_mode
         self.range_error=None
         self.last_acknowledged_estimate=None
@@ -115,6 +116,8 @@ class MqttOutput:
         result['usage'] = usage_snapshot(self.daily) if self.daily and self.connected.is_set() and self.state != 'error' else {}
         if self.daily_error:result['usage'].pop('daily',None)
         if self.recent_error:result['usage'].pop('recent',None)
+        if self.resumed_error:result['usage'].pop('resumed',None)
+        if self.resumed_error:result['resumed_error']=self.resumed_error
         if self.daily_error:result['daily_error']=self.daily_error
         if self.recent_error:result['recent_error']=self.recent_error
         if self.range_error:result['range_error']=self.range_error
@@ -168,6 +171,11 @@ class MqttOutput:
                     self.recent_error=None
                 except Exception:
                     self.recent_error="recent_publication_failed"
+                try:
+                    self.daily.resumed.publish(self,snapshot)
+                    self.resumed_error=None
+                except Exception:
+                    self.resumed_error="resumed_publication_failed"
 
     def _publish_range(self,snapshot):
         from mqtt_consumption import fresh_range

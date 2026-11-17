@@ -1,3 +1,7 @@
+## 0.2.0-dev70
+
+- Publish an independent saved-reading range from the reviewed capture-resumption anchor, without waiting for midnight or a full hour. Preserve unknown gaps and show actual start/through times in the app and MQTT.
+
 ## 0.2.0-dev69
 
 - Recover an interrupted capture when restart advances the reading context to the next unsaved event. Preserve the original attempt and unknown gap, retain all conflict checks, and bind readiness to the current context.

@@ -13,10 +13,12 @@ def validate(policy):
         raise ValueError('invalid daily evidence policy')
     if not policy:
         return {}
-    if set(policy) - {'elapsed_start_event'} != FIELDS:
+    if set(policy) - {'elapsed_start_event', 'resumed_start_event'} != FIELDS:
         raise ValueError('incomplete daily evidence policy')
     if 'elapsed_start_event' in policy and (type(policy['elapsed_start_event']) is not int or policy['elapsed_start_event'] <= 0):
         raise ValueError('invalid elapsed start event')
+    if 'resumed_start_event' in policy and (type(policy['resumed_start_event']) is not int or not 1 <= policy['resumed_start_event'] <= 2147483647):
+        raise ValueError('invalid resumed start event')
     for key in ('capacity_cfh', 'slow_allowance_ft3'):
         if isinstance(policy[key], bool) or not isinstance(policy[key], (int, float, str, Decimal)):
             raise ValueError('invalid daily policy number')

@@ -1,7 +1,7 @@
 (() => {
 'use strict';
 const $=id=>document.getElementById(id);
-const stamp=value=>value?new Date(value).toLocaleString():'Unknown time';
+const stamp=(value,zone)=>value?new Date(value).toLocaleString(undefined,zone?{timeZone:zone}:undefined):'Unknown time';
 let revision=null;
 const form=$('retention-form'),message=$('retention-message');
 async function request(path, options={}) {
@@ -40,6 +40,10 @@ $('retention-reload').onclick=load;
 window.addEventListener('hashchange',()=>{if(location.hash==='#settings'&&revision===null)load();});
 function render(state) {
  const usage=state?.mqtt?.usage||{},daily=usage.daily,recent=usage.recent;
+ const resumed=usage.resumed;
+ $('usage-resumed').textContent=resumed?resumed.label:'Range unavailable';
+ $('usage-resumed-time').textContent=resumed?`${stamp(resumed.start.captured_at,resumed.timezone)} to ${stamp(resumed.through.captured_at,resumed.timezone)} · ${resumed.timezone} · Event ${resumed.through.event_id}`:'';
+ $('usage-resumed-note').textContent=resumed?.explanation||'Earlier unknown usage remains unknown.';
  const estimate=daily?.low_use_estimate;
  $('usage-estimate').textContent=estimate?.method==='lower_bound_assumption_v1'?'Low-use estimate: '+estimate.label:'Estimate unavailable';
  $('usage-bounds').textContent=daily?'Unresolved bounds: '+daily.label:'Daily range unavailable';

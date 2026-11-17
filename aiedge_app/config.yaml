@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev69
+version: 0.2.0-dev70
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -37,6 +37,7 @@ options:
 schema:
   daily_evidence_policy:
     elapsed_start_event: int(1,2147483647)?
+    resumed_start_event: int(1,2147483647)?
     capacity_cfh: float?
     slow_allowance_ft3: float?
     pipeline_id: str?
