@@ -39,12 +39,15 @@ class DailyPublisher:
         self.evidence_policy = validate(evidence_policy or {})
         from recent_usage import RecentPublisher
         self.recent = RecentPublisher(store, self.evidence_policy)
+        from resumed_usage import ResumedPublisher
+        self.resumed = ResumedPublisher(store, self.evidence_policy)
         from recovery_range import RecoveryRange
         self.recovery = RecoveryRange()
         self.reset()
 
     def reset(self):
         self.recent.reset()
+        self.resumed.reset()
         self.configured = False
         self.key = None
         self.next_refresh = 0

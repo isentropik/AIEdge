@@ -10,7 +10,9 @@ def snapshot(publisher, *, now=None, wall=None):
     now = time.monotonic() if now is None else now
     wall = datetime.now(timezone.utc) if wall is None else wall
     result = {}
-    for name, source in (('daily', publisher), ('recent', publisher.recent)):
+    for name, source in (('daily', publisher), ('recent', publisher.recent), ('resumed', getattr(publisher, 'resumed', None))):
+        if source is None:
+            continue
         saved = source.last_good
         if not isinstance(saved, tuple) or len(saved) < 2:
             continue
