@@ -10,16 +10,22 @@ import os
 import sqlite3
 import time
 from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from daily_records import daily_records
 from mqtt_consumption import fresh_range
 from recovery_range import RecoveryRange
+from daily_constraints import Budget, WorkLimit
+from resumed_evidence import gap_edges, reviewed_edges
 
 
 class ResumedPublisher:
     def __init__(self, store, policy):
         self.store, self.policy = store, copy.deepcopy(policy)
         self.engine = RecoveryRange()
+        self.gap_engine = RecoveryRange()
+        self.photo_engine = RecoveryRange()
         self.reset()
 
     def reset(self):
@@ -27,6 +33,48 @@ class ResumedPublisher:
         self.last_good = None
         self.next_refresh = 0
         self.key = None
+
+    def refine(self, db, day, zone, document, baseline, policy, contexts, result, budget):
+        if Decimal(result['upper'])-Decimal(result['lower']) < 4:
+            return result
+        args = (db, day, zone, document, baseline, policy, contexts)
+        # Share the original publication budget. Keep only the most recent group's
+        # comparisons for the second solve at the same immutable endpoint.
+        cached = {}
+        def compare(conn, rows, policy, work):
+            key = (rows[0]['event_id'], rows[-1]['event_id'])
+            if key not in cached:
+                cached.clear()
+                cached[key] = gap_edges(conn,rows,policy,work)
+            return list(cached[key])
+        tighter, _ = self.gap_engine.calculate(*args,compare=compare,budget=budget)
+        if not tighter:
+            return result
+        lower = max(result['lower'],tighter['lower'],key=Decimal)
+        upper = min(result['upper'],tighter['upper'],key=Decimal)
+        if Decimal(lower)>Decimal(upper):
+            return result
+        result = dict(result,lower=lower,upper=upper,method='saved_gap_comparisons_v1')
+        if Decimal(upper)-Decimal(lower) < 4:
+            return result
+        try:
+            root = Path(db.execute('PRAGMA database_list').fetchone()[2]).parent
+            edges, identity, allowance = reviewed_edges(db,root,policy,result['start']['event_id'],
+                result['through']['event_id'],baseline['segment_id'],budget)
+            def with_reviews(conn, rows, policy, work):
+                ids = {r['event_id'] for r in rows}
+                return compare(conn,rows,policy,work)+[e for e in edges if e[0] in ids and e[1] in ids]
+            fit, _ = self.photo_engine.calculate(*args,compare=with_reviews,evidence_key=identity,budget=budget)
+            if fit:
+                lo=max(Decimal(result['lower']),Decimal(fit['lower']))
+                hi=min(Decimal(result['upper']),Decimal(fit['upper']))
+                if 0 <= hi-lo <= 1 and (lo>Decimal(result['lower']) or hi<Decimal(result['upper'])):
+                    midpoint=((lo+hi)/2).quantize(Decimal('.1'))
+                    result=dict(result,estimate=dict(value=str(midpoint),lower=str(lo),upper=str(hi),
+                        review_sha256=identity,assumption=f'Assumes the reviewed movements are each accurate within {allowance} ft³.'))
+        except (ValueError, WorkLimit, OSError, TypeError, KeyError, IndexError, ArithmeticError, sqlite3.Error, RecursionError):
+            pass
+        return result
 
     def calculate(self, db, document, obs, zone):
         origin = self.policy.get('resumed_start_event')
@@ -44,10 +92,12 @@ class ResumedPublisher:
         policy.pop('resumed_start_event')
         policy['elapsed_start_event'] = origin
         day = datetime.fromisoformat(source['captured_at']).astimezone(zone).date()
-        result, reason = self.engine.calculate(db, day, zone, document,
-            dict(through=source, segment_id=obs['segment_id']), policy, contexts)
+        args = (db, day, zone, document, dict(through=source, segment_id=obs['segment_id']), policy, contexts)
+        budget = Budget()
+        result, reason = self.engine.calculate(*args,budget=budget)
         if not result:
             return None, reason
+        result = self.refine(*args,result,budget)
         return dict(result, timezone=zone.key, segment_id=obs['segment_id'],
             label=result['lower']+'–'+result['upper']+' ft³',
             scope='since_capture_resumed',

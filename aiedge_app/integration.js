@@ -41,9 +41,14 @@ window.addEventListener('hashchange',()=>{if(location.hash==='#settings'&&revisi
 function render(state) {
  const usage=state?.mqtt?.usage||{},daily=usage.daily,recent=usage.recent;
  const resumed=usage.resumed;
- $('usage-resumed').textContent=resumed?resumed.label:'Range unavailable';
+ const movement=resumed?.estimate;
+ $('usage-resumed').textContent=movement?'Photo-supported estimate · about '+movement.value+' ft³':
+   resumed?'Unresolved bounds · '+resumed.label:'Range unavailable';
  $('usage-resumed-time').textContent=resumed?`${stamp(resumed.start.captured_at,resumed.timezone)} to ${stamp(resumed.through.captured_at,resumed.timezone)} · ${resumed.timezone} · Event ${resumed.through.event_id}`:'';
- $('usage-resumed-note').textContent=resumed?.explanation||'Earlier unknown usage remains unknown.';
+ $('usage-resumed-note').textContent=movement?
+   'Photo-supported range '+movement.lower+'–'+movement.upper+' ft³. '+movement.assumption+
+   ' Unresolved bounds '+resumed.label+'. '+resumed.explanation:
+   resumed?.explanation||'Earlier unknown usage remains unknown.';
  const estimate=daily?.low_use_estimate;
  $('usage-estimate').textContent=estimate?.method==='lower_bound_assumption_v1'?'Low-use estimate: '+estimate.label:'Estimate unavailable';
  $('usage-bounds').textContent=daily?'Unresolved bounds: '+daily.label:'Daily range unavailable';
