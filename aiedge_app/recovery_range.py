@@ -22,9 +22,11 @@ class RecoveryRange:
         self.segment = None
         self.checkpoint = None
 
-    def calculate(self, db, day, zone, document, baseline, policy, contexts):
+    def calculate(self, db, day, zone, document, baseline, policy, contexts,
+                  *, compare=None, evidence_key=None, budget=None):
         try:
-            return self._calculate(db, day, zone, document, baseline, policy, contexts), None
+            return self._calculate(db, day, zone, document, baseline, policy, contexts,
+                                   compare, evidence_key, budget), None
         except WorkLimit:
             return None, 'rebuilding_saved_history'
         except (ValueError, KeyError, TypeError, IndexError, ArithmeticError,
@@ -32,7 +34,7 @@ class RecoveryRange:
             self.key = self.checkpoint = None
             return None, 'unavailable'
 
-    def _calculate(self, db, day, zone, document, baseline, policy, contexts):
+    def _calculate(self, db, day, zone, document, baseline, policy, contexts, compare, evidence_key, budget):
         policy = validate(policy)
         origin = policy['elapsed_start_event']
         target = baseline['through']['event_id']
@@ -41,7 +43,7 @@ class RecoveryRange:
             raise ValueError('invalid recovery period')
         if [number(d['value_per_revolution']) for d in document['dials']][-2:] != [1000, 5]:
             raise ValueError('unsupported recovery geometry')
-        key = json.dumps([document, policy, contexts], sort_keys=True, default=str)
+        key = json.dumps([document, policy, contexts, evidence_key], sort_keys=True, default=str)
         if key != self.key or (self.checkpoint and self.checkpoint[1]['event_id'] > target):
             self.key, self.checkpoint = key, None
         if self.checkpoint and self.segment != segment:
@@ -56,7 +58,7 @@ class RecoveryRange:
             if not inherited:
                 self.checkpoint = None
         self.segment = segment
-        budget = Budget()
+        budget = budget or Budget()
         with localcontext() as context:
             context.prec = 50
             if self.checkpoint is None:
@@ -101,7 +103,7 @@ class RecoveryRange:
                     raise ValueError('possible recovery register rollover')
                 initial = dict(baseline, before=start, after=start, through=end,
                                lower=str(lower), upper=str(upper+seconds*rate))
-                edges = interval_edges(db, rows, policy, budget)
+                edges = (compare or interval_edges)(db, rows, policy, budget)
                 if not edges:
                     raise ValueError('no compatible recovery evidence')
                 if boundary != start:

@@ -1,3 +1,7 @@
+## 0.2.0-dev71
+
+- Compare saved readings around potential missed turns. Show a separate estimate for reviewed movement intervals when their sources still match and both endpoint photos are available.
+
 ## 0.2.0-dev70
 
 - Publish an independent saved-reading range from the reviewed capture-resumption anchor, without waiting for midnight or a full hour. Preserve unknown gaps and show actual start/through times in the app and MQTT.
