@@ -1,3 +1,7 @@
+## 0.2.0-dev76
+
+- Organize the app Overview by usage period. Show the photo assumption, unresolved bounds and actual measurement times, with expandable 15-minute readings and source details.
+
 ## 0.2.0-dev75
 
 - Carry the reviewed photo range forward with saved five-foot dial readings. Show the review assumption and the independent unresolved bounds at their measurement times.
