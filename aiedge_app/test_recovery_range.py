@@ -87,6 +87,44 @@ class RecoveryTests(unittest.TestCase):
             result,reason=self.engine.calculate(db,f.f.day,timezone.utc,f.doc,f.base,f.policy,self.contexts)
         self.assertEqual((result,reason),(None,'unavailable'))
         self.assertIsNone(self.engine.checkpoint)
+    def sparse_fixture(self):
+        self.rows = [self.f.f.row(2, 0, [(100, 100)]),
+                     self.f.f.row(18590, 3700, [(105, 105), (110, 110)])]
+        for row in self.rows:
+            row['event_observation']['format_id'] = 'b' * 64
+
+    def test_sparse_absolute_endpoints_preserve_all_feasible_turns(self):
+        self.sparse_fixture()
+        original = copy.deepcopy(self.rows)
+        result, reason = self.run_range()
+        self.assertIsNone(reason)
+        self.assertEqual((result['lower'], result['upper']), ('5.00', '10.00'))
+        self.assertEqual(result['start'], self.rows[0]['event_observation'])
+        self.assertEqual(result['through'], self.rows[1]['event_observation'])
+        self.assertTrue(result['unknown_gaps_preserved'])
+        self.assertEqual(original, self.rows)
+
+    def test_sparse_rejects_changed_clock_and_missing_absolute_evidence(self):
+        self.sparse_fixture()
+        self.rows[-1]['event_observation']['clock_id'] = 'later boot'
+        self.assertEqual(self.run_range(), (None, 'unavailable'))
+        self.sparse_fixture()
+        self.rows[-1]['absolute'] = {}
+        self.assertEqual(self.run_range(), (None, 'unavailable'))
+
+    def test_sparse_scan_resumes_after_work_limit(self):
+        self.sparse_fixture()
+        original = self.rows[0]['event_observation']
+        def exhaust(*args):
+            if self.engine.empty_through and self.engine.empty_through[1] > 4096:
+                raise WorkLimit()
+        with patch('daily_constraints.Budget.spend', side_effect=exhaust):
+            self.assertEqual(self.run_range(), (None, 'rebuilding_saved_history'))
+        self.assertEqual(self.engine.checkpoint[1], original)
+        result, reason = self.run_range()
+        self.assertIsNone(reason)
+        self.assertEqual((result['lower'], result['upper']), ('5.00', '10.00'))
+
     def test_mqtt_uses_recovery_and_short_rebuild_retry(self):
         from test_daily_publication import DailyPublicationTests
         f=DailyPublicationTests();f.setUp()

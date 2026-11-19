@@ -1,3 +1,7 @@
+## 0.2.0-dev72
+
+- Continue looking for accepted meter readings across empty calculation windows. Bound unknown usage using qualified endpoints and the existing capacity limit.
+
 ## 0.2.0-dev71
 
 - Compare saved readings around potential missed turns. Show a separate estimate for reviewed movement intervals when their sources still match and both endpoint photos are available.

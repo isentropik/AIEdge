@@ -21,6 +21,7 @@ class RecoveryRange:
         self.key = None
         self.segment = None
         self.checkpoint = None
+        self.empty_through = None
 
     def calculate(self, db, day, zone, document, baseline, policy, contexts,
                   *, compare=None, evidence_key=None, budget=None):
@@ -32,6 +33,7 @@ class RecoveryRange:
         except (ValueError, KeyError, TypeError, IndexError, ArithmeticError,
                 sqlite3.Error, StopIteration, AttributeError, OSError):
             self.key = self.checkpoint = None
+            self.empty_through = None
             return None, 'unavailable'
 
     def _calculate(self, db, day, zone, document, baseline, policy, contexts, compare, evidence_key, budget):
@@ -46,7 +48,9 @@ class RecoveryRange:
         key = json.dumps([document, policy, contexts, evidence_key], sort_keys=True, default=str)
         if key != self.key or (self.checkpoint and self.checkpoint[1]['event_id'] > target):
             self.key, self.checkpoint = key, None
+            self.empty_through = None
         if self.checkpoint and self.segment != segment:
+            self.empty_through = None
             # Reuse only if the new segment explicitly inherits the entire
             # completed prefix. No guessed continuity across interpretations.
             inherited = db.execute("""WITH RECURSIVE lineage(s,e) AS (
@@ -78,9 +82,21 @@ class RecoveryRange:
                 budget.spend(len(rows))
                 if not rows or rows[0]['event_observation'] != boundary:
                     raise ValueError('recovery boundary changed')
-                # Do not scan unbounded empty event spans or substitute a timestamp.
+                sparse = len(rows) == 1
+                if sparse and self.empty_through and self.empty_through[0] == boundary['event_id']:
+                    stop = min(target, max(stop, self.empty_through[1]))
+                while len(rows) == 1 and stop < target:
+                    budget.spend()
+                    page_end = min(stop + CHUNK_EVENTS, target)
+                    rows.extend(daily_records(db, stop + 1, page_end, segment))
+                    if len(rows) == 1:
+                        # Only a scan cursor. The quantity and timestamp stay at the
+                        # last proven checkpoint until an actual endpoint is solved.
+                        self.empty_through = (boundary['event_id'], page_end)
+                    stop = page_end
+                    budget.spend(len(rows))
                 if len(rows) < 2:
-                    raise ValueError('no accepted recovery endpoint in chunk')
+                    raise ValueError('recovery endpoint missing')
                 modulus = number(document['dials'][0]['value_per_revolution'])
                 if stop < target:
                     split = next((i for i in range(len(rows)-1, 0, -1) if bands(rows[i], modulus)), None)
@@ -104,7 +120,10 @@ class RecoveryRange:
                 initial = dict(baseline, before=start, after=start, through=end,
                                lower=str(lower), upper=str(upper+seconds*rate))
                 edges = (compare or interval_edges)(db, rows, policy, budget)
-                if not edges:
+                # Slow-dial comparisons are calibrated only over short intervals.
+                # Across an empty window both absolute register readings can still
+                # constrain usage, subject to the same source, rate and rollover checks.
+                if not edges and not (sparse and bands(rows[-1], modulus)):
                     raise ValueError('no compatible recovery evidence')
                 if boundary != start:
                     edges.append((start['event_id'], boundary['event_id'], lower, upper))
