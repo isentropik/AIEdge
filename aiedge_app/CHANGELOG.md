@@ -1,3 +1,7 @@
+## 0.2.0-dev73
+
+- Show independently verified register bounds for usage since capture resumed when fine dial comparisons conflict. Preserve the original start, measurement time and unknown gaps.
+
 ## 0.2.0-dev72
 
 - Continue looking for accepted meter readings across empty calculation windows. Bound unknown usage using qualified endpoints and the existing capacity limit.

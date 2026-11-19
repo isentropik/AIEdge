@@ -23,7 +23,8 @@ from resumed_evidence import gap_edges, reviewed_edges
 class ResumedPublisher:
     def __init__(self, store, policy):
         self.store, self.policy = store, copy.deepcopy(policy)
-        self.engine = RecoveryRange()
+        self.engine = RecoveryRange(report_conflicts=True)
+        self.register_engine = None
         self.gap_engine = RecoveryRange()
         self.photo_engine = RecoveryRange()
         self.reset()
@@ -94,15 +95,37 @@ class ResumedPublisher:
         day = datetime.fromisoformat(source['captured_at']).astimezone(zone).date()
         args = (db, day, zone, document, dict(through=source, segment_id=obs['segment_id']), policy, contexts)
         budget = Budget()
+        # After a contradiction, give the independent register calculation first
+        # use of the next refresh's budget. Neither engine borrows checkpoints.
+        register_result = None
+        if self.register_engine is not None:
+            register_result, register_reason = self.register_engine.calculate(*args, budget=budget)
         result, reason = self.engine.calculate(*args,budget=budget)
-        if not result:
+        explanation = 'Starts at the saved reading after resumption. Earlier unknown usage is excluded, not zero. Unknown gaps within this period remain in the bounds.'
+        if result:
+            self.register_engine = None
+            result = self.refine(*args,result,budget)
+        elif reason == 'conflicting_saved_constraints' or (reason == 'rebuilding_saved_history' and register_result):
+            if self.register_engine is None:
+                self.register_engine = RecoveryRange(register_only=True)
+                register_result, register_reason = self.register_engine.calculate(*args, budget=budget)
+            if not register_result:
+                return None, register_reason
+            result = dict(register_result, refinement_status=reason)
+            explanation += ' These bounds use the saved register endpoints, segment usage limits and meter capacity.'
+            if result['method'] == 'saved_register_envelopes_v1':
+                explanation += ' Intermediate register readings are compared at 100 ft³ resolution.'
+            if reason == 'conflicting_saved_constraints':
+                explanation += ' The finer dial constraints disagree.'
+            else:
+                explanation += ' The finer dial calculation is still rebuilding.'
+        else:
             return None, reason
-        result = self.refine(*args,result,budget)
         return dict(result, timezone=zone.key, segment_id=obs['segment_id'],
             label=result['lower']+'–'+result['upper']+' ft³',
             scope='since_capture_resumed',
             prior_gap_included=False,
-            explanation='Starts at the saved reading after resumption. Earlier unknown usage is excluded, not zero. Unknown gaps within this period remain in the bounds.'), None
+            explanation=explanation), None
 
     def publish(self, output, snapshot):
         topic = output.base + '/resumed_range'
