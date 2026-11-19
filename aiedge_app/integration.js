@@ -38,35 +38,97 @@ form.addEventListener('submit',async event=>{
 });
 $('retention-reload').onclick=load;
 window.addEventListener('hashchange',()=>{if(location.hash==='#settings'&&revision===null)load();});
-function render(state) {
- const usage=state?.mqtt?.usage||{},daily=usage.daily,recent=usage.recent;
- const resumed=usage.resumed;
- const movement=resumed?.estimate;
- $('usage-resumed').textContent=movement?'Photo-supported estimate · about '+movement.value+' ft³':
-   resumed?'Unresolved bounds · '+resumed.label:'Range unavailable';
- $('usage-resumed-time').textContent=resumed?`${stamp(resumed.start.captured_at,resumed.timezone)} to ${stamp(resumed.through.captured_at,resumed.timezone)} · ${resumed.timezone} · Event ${resumed.through.event_id}`:'';
- $('usage-resumed-note').textContent=movement?
-   'Photo-supported range '+movement.lower+'–'+movement.upper+' ft³. '+movement.assumption+
-   ' Unresolved bounds '+resumed.label+'. '+resumed.explanation:
-   resumed?.explanation||'Earlier unknown usage remains unknown.';
- const photo=resumed?.photo_supported;
- const review=$('usage-reviewed');
- review.hidden=!photo;
- review.textContent=photo?
-   'Photo-supported range '+photo.lower+'–'+photo.upper+' ft³ through '+
-   stamp(photo.through.captured_at,resumed.timezone)+' · '+resumed.timezone+' · Event '+photo.through.event_id+
-   '. '+photo.assumption+
-   (photo.through.event_id!==resumed.through.event_id?' Unresolved bounds at that event: '+photo.unresolved_lower+'–'+photo.unresolved_upper+' ft³.':''):'';
- const estimate=daily?.low_use_estimate;
- $('usage-estimate').textContent=estimate?.method==='lower_bound_assumption_v1'?'Low-use estimate: '+estimate.label:'Estimate unavailable';
- $('usage-bounds').textContent=daily?'Unresolved bounds: '+daily.label:'Daily range unavailable';
- $('usage-assumption').textContent=estimate?.assumption||'';
- $('usage-time').textContent=daily?`${daily.day} (${daily.timezone}) · Measured ${stamp(daily.through.captured_at)} · Event ${daily.through.event_id}`:'';
- $('usage-hour').textContent=recent?`${recent.label} · ${stamp(recent.hour.start.captured_at)} to ${stamp(recent.through.captured_at)}`:'Last hour unavailable';
- const list=$('usage-quarters');list.replaceChildren();
- for(const q of recent?.quarters||[]) {
-  const item=document.createElement('li');item.textContent=`${q.lower}–${q.upper} ft³ · ${stamp(q.start.captured_at)} to ${stamp(q.through.captured_at)}`;list.append(item);
+function setOptional(id, text) {
+ const node = $(id);
+ node.textContent = text || '';
+ node.hidden = !text;
+}
+
+function measurementTime(endpoint, timezone) {
+ if (!endpoint?.captured_at) return 'Measurement time unavailable';
+ const options = {year:'numeric', month:'short', day:'numeric', hour:'numeric', minute:'2-digit',
+                  second:'2-digit', timeZoneName:'short'};
+ if (timezone) options.timeZone = timezone;
+ return new Date(endpoint.captured_at).toLocaleString(undefined, options);
+}
+
+function interval(start, end, timezone, onDay) {
+ if (!start?.captured_at || !end?.captured_at) return 'Measurement time unavailable';
+ const first = new Date(start.captured_at), last = new Date(end.captured_at);
+ const day = new Intl.DateTimeFormat(undefined, {timeZone:timezone, year:'numeric', month:'short', day:'numeric'});
+ const offset = new Intl.DateTimeFormat('en', {timeZone:timezone, timeZoneName:'shortOffset'});
+ const zoneOf = date => offset.formatToParts(date).find(part => part.type === 'timeZoneName').value;
+ if (day.format(first) !== day.format(last) || zoneOf(first) !== zoneOf(last)) {
+   return measurementTime(start, timezone) + ' → ' + measurementTime(end, timezone);
  }
+ const clock = new Intl.DateTimeFormat(undefined, {timeZone:timezone, hour:'numeric', minute:'2-digit', second:'2-digit'});
+ if (onDay && day.format(new Date(onDay)) === day.format(first) && zoneOf(new Date(onDay)) === zoneOf(first)) {
+   return clock.formatRange(first, last);
+ }
+ const zone = new Intl.DateTimeFormat(undefined, {timeZone:timezone,timeZoneName:'short'})
+   .formatToParts(last).find(part => part.type === 'timeZoneName').value;
+ return day.format(last) + ' · ' + clock.formatRange(first, last) + ' ' + zone;
+}
+
+function renderDaily(daily) {
+ const estimate = daily?.low_use_estimate;
+ const hasEstimate = estimate?.method === 'lower_bound_assumption_v1';
+ $('usage-estimate').textContent = hasEstimate ? estimate.label : daily?.label || 'Daily usage unavailable';
+ setOptional('usage-assumption', hasEstimate ? 'Low-use estimate assuming no extra gas in the gaps.' : daily ? 'Unresolved bounds' : '');
+ setOptional('usage-bounds', hasEstimate ? 'Unresolved bounds · ' + daily.label : '');
+ setOptional('usage-time', daily ? 'Measured ' + measurementTime(daily.through, daily.timezone) : '');
+ $('daily-details').hidden = !daily;
+ $('daily-method').textContent = daily ? [daily.day + ' · ' + daily.timezone + ' · Event ' + daily.through.event_id,
+   hasEstimate ? estimate.assumption : daily.explanation].filter(Boolean).join('. ') : '';
+}
+
+function renderResumed(resumed) {
+ const photo = resumed?.photo_supported;
+ const estimate = resumed?.estimate;
+ const zone = resumed?.timezone;
+ const historical = photo && photo.through.event_id !== resumed.through.event_id;
+ setOptional('usage-reviewed', photo ? photo.lower + '–' + photo.upper + ' ft³' :
+             estimate ? 'About ' + estimate.value + ' ft³' : '');
+ setOptional('photo-assumption', photo ? 'Photo-supported range. ' + photo.assumption.split(' Carried forward from reviewed event ')[0] :
+             estimate ? 'Photo-supported estimate. ' + estimate.assumption : '');
+ setOptional('photo-time', historical ? 'Photo result through ' + measurementTime(photo.through, zone) : '');
+ $('usage-resumed').textContent = resumed ? 'Unresolved bounds · ' + resumed.label : 'Resumed usage unavailable';
+ setOptional('usage-resumed-time', resumed ? 'Measured ' + measurementTime(resumed.through, zone) : '');
+ const details = [];
+ if (resumed) {
+   details.push('From ' + measurementTime(resumed.start, zone) + ' through event ' + resumed.through.event_id + '.');
+   if (photo) details.push('Photo result through event ' + photo.through.event_id + '. ' + photo.assumption);
+   if (historical) details.push('Unresolved bounds at that earlier event · ' + photo.unresolved_lower + '–' + photo.unresolved_upper + ' ft³.');
+   if (estimate) details.push('Photo-supported estimate of about ' + estimate.value + ' ft³ (' + estimate.lower + '–' + estimate.upper + ' ft³). ' + estimate.assumption);
+   if (resumed.explanation) details.push(resumed.explanation);
+ }
+ $('usage-resumed-note').textContent = details.join(' ');
+ $('resumed-details').hidden = !resumed;
+}
+
+function renderRecent(recent) {
+ const zone = recent?.timezone;
+ $('usage-hour').textContent = recent?.label || 'Hourly usage unavailable';
+ setOptional('hour-time', recent ? interval(recent.hour.start, recent.through, zone) : '');
+ const list = $('usage-quarters');
+ list.replaceChildren();
+ for (const quarter of recent?.quarters || []) {
+   const row = document.createElement('li');
+   const times = document.createElement('span');
+   times.textContent = interval(quarter.start, quarter.through, zone, recent.through.captured_at);
+   const amount = document.createElement('strong');
+   amount.textContent = quarter.lower + '–' + quarter.upper + ' ft³';
+   row.append(times, amount);
+   list.append(row);
+ }
+ $('recent-details').hidden = !recent?.quarters?.length;
+}
+
+function render(state) {
+ const usage = state?.mqtt?.usage;
+ renderDaily(usage?.daily);
+ renderResumed(usage?.resumed);
+ renderRecent(usage?.recent);
 }
 window.AIEdgeIntegration={render};
 if(location.hash==='#settings')load();
