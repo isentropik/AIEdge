@@ -20,6 +20,7 @@ DECODER_CONTEXT_CHECK_GROUPS=(
     ('test_resumed_evidence.ResumedEvidenceTests.',8),
     ('test_resumed_usage.ResumedTests.',20),
     ('test_resumed_usage.ReviewSnapshotTests.',5),
+    ('test_photo_forward.PhotoForwardTests.',7),
     ('test_capture_interruption.InterruptionTests.',12),
     ('test_capture_interruption.ContextInterruptionTests.',14),
     ('test_recovery_range.RecoveryTests.',15),

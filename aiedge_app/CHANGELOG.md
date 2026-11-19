@@ -1,3 +1,7 @@
+## 0.2.0-dev75
+
+- Carry the reviewed photo range forward with saved five-foot dial readings. Show the review assumption and the independent unresolved bounds at their measurement times.
+
 ## 0.2.0-dev74
 
 - Display a reviewed photo-supported range at its own meter event alongside the ongoing unresolved bounds. Each photo comparison has an explicit movement allowance.
