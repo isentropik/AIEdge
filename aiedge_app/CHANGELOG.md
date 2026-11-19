@@ -1,3 +1,7 @@
+## 0.2.0-dev74
+
+- Display a reviewed photo-supported range at its own meter event alongside the ongoing unresolved bounds. Each photo comparison has an explicit movement allowance.
+
 ## 0.2.0-dev73
 
 - Show independently verified register bounds for usage since capture resumed when fine dial comparisons conflict. Preserve the original start, measurement time and unknown gaps.

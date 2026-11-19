@@ -158,3 +158,53 @@ def reviewed_edges(db, root, policy, start, through, segment, budget):
     if not has_photo or len(allowances)!=1:
         raise ValueError('estimate requires photos and a common reviewed allowance')
     return out, hashlib.sha256(body).hexdigest(), allowances.pop()
+
+
+def reviewed_snapshot(db, root, policy, current, segment):
+    """Read a local reviewed conclusion at its original endpoint, without updating accounting."""
+    import re
+    import sqlite3
+    from decimal import Decimal
+    from daily_records import daily_records
+
+    try:
+        raw = bounded_read(Path(root) / 'reviewed-resumed-range.json', 8192)
+        envelope = json.loads(raw)
+        record = envelope['review']
+        canonical = json.dumps(record, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
+        identity = hashlib.sha256(canonical).hexdigest()
+        if (envelope['sha256'] != identity or record['method'] != 'reviewed_optical_path_v1'
+                or record['photo_allowance_ft3'] != '4' or record['policy'] != policy
+                or record['start'] != current['start'] or not current['unknown_gaps_preserved']
+                or record['start']['event_id'] != policy['resumed_start_event']
+                or any(not re.fullmatch(r'[a-f0-9]{64}', record['evidence'][name]) for name in
+                       ('saved_readings', 'photo_pairs', 'controls', 'replay_result'))):
+            return None
+        end = record['through']
+        event = end['event_id']
+        live_event = current['through']['event_id']
+        if type(event) is not int or not current['start']['event_id'] < event <= live_event:
+            return None
+        fields = ('unresolved_lower', 'lower', 'upper', 'unresolved_upper')
+        if any(not re.fullmatch(r'(0|[1-9][0-9]{0,15})\.[0-9]{2}', record[key]) for key in fields):
+            return None
+        lo, reviewed_lo, reviewed_hi, hi = (Decimal(record[key]) for key in fields)
+        if not lo <= reviewed_lo <= reviewed_hi <= hi or reviewed_lo > Decimal(current['upper']):
+            return None
+        if event == live_event and (current['through'] != end or lo != Decimal(current['lower'])
+                                    or hi != Decimal(current['upper']) or segment != record['segment_id']):
+            return None
+        # Verify the reviewed endpoint still belongs to this publication's accepted lineage.
+        rows = list(daily_records(db, event, event, segment))
+        if (len(rows) != 1 or rows[0]['event_observation'] != end
+                or rows[0]['segment_id'] != record['segment_id']
+                or rows[0]['observation_support']['pipeline_id'] != policy['pipeline_id']
+                or end['format_id'] != policy['format_id']):
+            return None
+        return dict(lower=record['lower'], upper=record['upper'], unresolved_lower=record['unresolved_lower'],
+                    unresolved_upper=record['unresolved_upper'], through=dict(event_id=event,
+                    captured_at=end['captured_at'], source_sha256=end['source_sha256']), review_sha256=identity,
+                    assumption='Assumes each slow-pointer photo comparison is accurate within ±4 ft³.')
+    except (OSError, ValueError, TypeError, KeyError, ArithmeticError, RecursionError, sqlite3.Error):
+        # An absent or incompatible private review affects only the optional annotation.
+        return None

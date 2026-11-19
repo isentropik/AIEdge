@@ -121,6 +121,12 @@ class ResumedPublisher:
                 explanation += ' The finer dial calculation is still rebuilding.'
         else:
             return None, reason
+        root = getattr(self.store, 'root', None)
+        if root is not None:
+            from resumed_evidence import reviewed_snapshot
+            photo = reviewed_snapshot(db, root, self.policy, result, obs['segment_id'])
+            if photo:
+                result = dict(result, photo_supported=photo)
         return dict(result, timezone=zone.key, segment_id=obs['segment_id'],
             label=result['lower']+'–'+result['upper']+' ft³',
             scope='since_capture_resumed',

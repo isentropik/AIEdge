@@ -49,6 +49,14 @@ function render(state) {
    'Photo-supported range '+movement.lower+'–'+movement.upper+' ft³. '+movement.assumption+
    ' Unresolved bounds '+resumed.label+'. '+resumed.explanation:
    resumed?.explanation||'Earlier unknown usage remains unknown.';
+ const photo=resumed?.photo_supported;
+ const review=$('usage-reviewed');
+ review.hidden=!photo;
+ review.textContent=photo?
+   'Photo-supported range '+photo.lower+'–'+photo.upper+' ft³ through '+
+   stamp(photo.through.captured_at,resumed.timezone)+' · '+resumed.timezone+' · Event '+photo.through.event_id+
+   '. '+photo.assumption+
+   (photo.through.event_id!==resumed.through.event_id?' Unresolved bounds at that event: '+photo.unresolved_lower+'–'+photo.unresolved_upper+' ft³.':''):'';
  const estimate=daily?.low_use_estimate;
  $('usage-estimate').textContent=estimate?.method==='lower_bound_assumption_v1'?'Low-use estimate: '+estimate.label:'Estimate unavailable';
  $('usage-bounds').textContent=daily?'Unresolved bounds: '+daily.label:'Daily range unavailable';
