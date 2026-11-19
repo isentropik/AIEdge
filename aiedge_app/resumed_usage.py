@@ -17,6 +17,7 @@ from daily_records import daily_records
 from mqtt_consumption import fresh_range
 from recovery_range import RecoveryRange
 from daily_constraints import Budget, WorkLimit
+from photo_forward import PhotoForward
 from resumed_evidence import gap_edges, reviewed_edges
 
 
@@ -30,6 +31,7 @@ class ResumedPublisher:
         self.reset()
 
     def reset(self):
+        self.photo_forward = PhotoForward()
         self.configured = False
         self.last_good = None
         self.next_refresh = 0
@@ -124,7 +126,8 @@ class ResumedPublisher:
         root = getattr(self.store, 'root', None)
         if root is not None:
             from resumed_evidence import reviewed_snapshot
-            photo = reviewed_snapshot(db, root, self.policy, result, obs['segment_id'])
+            photo = reviewed_snapshot(db, root, self.policy, result, obs['segment_id'],
+                                      carry=self.photo_forward, document=document)
             if photo:
                 result = dict(result, photo_supported=photo)
         return dict(result, timezone=zone.key, segment_id=obs['segment_id'],

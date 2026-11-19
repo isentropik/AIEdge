@@ -160,7 +160,7 @@ def reviewed_edges(db, root, policy, start, through, segment, budget):
     return out, hashlib.sha256(body).hexdigest(), allowances.pop()
 
 
-def reviewed_snapshot(db, root, policy, current, segment):
+def reviewed_snapshot(db, root, policy, current, segment, *, carry=None, document=None):
     """Read a local reviewed conclusion at its original endpoint, without updating accounting."""
     import re
     import sqlite3
@@ -201,10 +201,13 @@ def reviewed_snapshot(db, root, policy, current, segment):
                 or rows[0]['observation_support']['pipeline_id'] != policy['pipeline_id']
                 or end['format_id'] != policy['format_id']):
             return None
-        return dict(lower=record['lower'], upper=record['upper'], unresolved_lower=record['unresolved_lower'],
+        photo = dict(lower=record['lower'], upper=record['upper'], unresolved_lower=record['unresolved_lower'],
                     unresolved_upper=record['unresolved_upper'], through=dict(event_id=event,
                     captured_at=end['captured_at'], source_sha256=end['source_sha256']), review_sha256=identity,
                     assumption='Assumes each slow-pointer photo comparison is accurate within ±4 ft³.')
+        if carry is not None and live_event > event:
+            return carry.advance(db, document, policy, current, segment, record, photo)
+        return photo
     except (OSError, ValueError, TypeError, KeyError, ArithmeticError, RecursionError, sqlite3.Error):
         # An absent or incompatible private review affects only the optional annotation.
         return None
