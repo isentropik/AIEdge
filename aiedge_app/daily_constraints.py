@@ -19,6 +19,10 @@ class WorkLimit(Exception):
     """Leave the already validated wider result unchanged; no partial result."""
 
 
+class InconsistentConstraints(ValueError):
+    """The validated measurements have no common solution at this resolution."""
+
+
 class Budget:
     def __init__(self):
         self.work = 0
@@ -126,7 +130,17 @@ movement tolerance is introduced. On bounded-work exhaustion use baseline.
         return baseline
 
 
-def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rate_ceiling=None, elapsed=False, objective_events=None):
+def register_bands(record, modulus, fine_endpoints=None):
+    values = bands(record, modulus)
+    if fine_endpoints is None or not values or record["event_observation"]["event_id"] in fine_endpoints:
+        return values
+    # The supported 1,000 ft³/revolution register has ten numbered divisions.
+    # Keep every hundred bucket touched, including both sides of a carry.
+    return merge([(lo // 100 * 100, min(modulus, (hi // 100 + 1) * 100))
+                  for lo, hi in values])
+
+
+def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rate_ceiling=None, elapsed=False, objective_events=None, fine_endpoints=None):
     if len(records) > MAX_RECORDS:
         raise WorkLimit()
     midnight = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
@@ -157,7 +171,7 @@ def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rat
                     or any(source[k] != previous[k] for k in ("camera", "clock_id", "format_id"))):
                 raise ValueError("unordered daily constraint source")
             edges.append((i - 1, i, Decimal(0), interval_us * rate / 1000000))
-        values = bands(record, modulus)
+        values = register_bands(record, modulus, fine_endpoints)
         domains.append(values if values is not None else [(Decimal(0), modulus)])
         if not elapsed and stamp <= midnight and values is not None:
             before = i
@@ -206,7 +220,7 @@ def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rat
         links[j].append(k)
     base = propagate(domains, edges, links, budget)
     if base is None:
-        raise ValueError("inconsistent full-day constraints")
+        raise InconsistentConstraints("inconsistent full-day constraints")
     limits = []
     # Enumerate every surviving pre-midnight band. Never select a likely band.
     # This exposes correlations that taking only the global min/max loses.
@@ -221,11 +235,11 @@ def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rat
             limits.append((result[end][0][0] - result[mid][-1][1],
                            result[end][-1][1] - result[mid][0][0]))
     if not limits:
-        raise ValueError("inconsistent full-day alternatives")
+        raise InconsistentConstraints("inconsistent full-day alternatives")
     lower = max(number(baseline["lower"]), min(lo for lo, _ in limits), Decimal(0))
     upper = min(number(baseline["upper"]), max(hi for _, hi in limits))
     if lower > upper:
-        raise ValueError("inconsistent full-day range")
+        raise InconsistentConstraints("inconsistent full-day range")
     return dict(baseline, before=records[before]["event_observation"],
                 after=records[after]["event_observation"],
                 lower=str(lower.quantize(Decimal(".01"), rounding=ROUND_FLOOR)),

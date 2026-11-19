@@ -9,7 +9,7 @@ import json
 import sqlite3
 from datetime import datetime
 from decimal import Decimal, localcontext
-from daily_constraints import Budget, WorkLimit, _tighten, number, bands
+from daily_constraints import Budget, WorkLimit, InconsistentConstraints, _tighten, number, bands, register_bands
 from daily_records import daily_records
 from daily_empirical import interval_edges, validate
 
@@ -17,7 +17,9 @@ CHUNK_EVENTS = 2048
 
 
 class RecoveryRange:
-    def __init__(self):
+    def __init__(self, *, register_only=False, report_conflicts=False):
+        self.register_only = register_only
+        self.report_conflicts = report_conflicts
         self.key = None
         self.segment = None
         self.checkpoint = None
@@ -31,9 +33,11 @@ class RecoveryRange:
         except WorkLimit:
             return None, 'rebuilding_saved_history'
         except (ValueError, KeyError, TypeError, IndexError, ArithmeticError,
-                sqlite3.Error, StopIteration, AttributeError, OSError):
+                sqlite3.Error, StopIteration, AttributeError, OSError) as error:
             self.key = self.checkpoint = None
             self.empty_through = None
+            if self.report_conflicts and isinstance(error, InconsistentConstraints):
+                return None, 'conflicting_saved_constraints'
             return None, 'unavailable'
 
     def _calculate(self, db, day, zone, document, baseline, policy, contexts, compare, evidence_key, budget):
@@ -41,12 +45,17 @@ class RecoveryRange:
         origin = policy['elapsed_start_event']
         target = baseline['through']['event_id']
         segment = baseline['segment_id']
+        fine_endpoints = (origin, target) if self.register_only else None
         if target < origin or document['unit'] != 'ft3':
             raise ValueError('invalid recovery period')
         if [number(d['value_per_revolution']) for d in document['dials']][-2:] != [1000, 5]:
             raise ValueError('unsupported recovery geometry')
         key = json.dumps([document, policy, contexts, evidence_key], sort_keys=True, default=str)
-        if key != self.key or (self.checkpoint and self.checkpoint[1]['event_id'] > target):
+        # An internal coarse checkpoint must be solved again at full endpoint
+        # resolution if a later request targets that exact checkpoint.
+        past_target = self.checkpoint and (self.checkpoint[1]['event_id'] > target or
+                      (self.register_only and self.checkpoint[1]['event_id'] == target))
+        if key != self.key or past_target:
             self.key, self.checkpoint = key, None
             self.empty_through = None
         if self.checkpoint and self.segment != segment:
@@ -75,6 +84,7 @@ class RecoveryRange:
             original = list(daily_records(db, origin, origin, segment))
             if len(original) != 1 or original[0]['event_observation'] != start:
                 raise ValueError('recovery origin changed')
+            method = 'saved_prefix_constraints_v1'
             while boundary['event_id'] < target:
                 budget.spend()
                 stop = min(target, boundary['event_id'] + CHUNK_EVENTS)
@@ -114,21 +124,38 @@ class RecoveryRange:
                 seconds = number(end['monotonic_us'] - boundary['monotonic_us']) / 1000000
                 rate = min(number(document['maximum_rate_per_second']), number(policy['capacity_cfh'])/3600)
                 modulus = number(document['dials'][0]['value_per_revolution'])
-                first_bands = bands(rows[0], modulus)
+                first_bands = register_bands(rows[0], modulus, fine_endpoints)
                 if not first_bands or first_bands[-1][1] + seconds*rate >= modulus:
                     raise ValueError('possible recovery register rollover')
                 initial = dict(baseline, before=start, after=start, through=end,
                                lower=str(lower), upper=str(upper+seconds*rate))
-                edges = (compare or interval_edges)(db, rows, policy, budget)
+                if self.register_only:
+                    if not bands(rows[-1], modulus):
+                        raise ValueError('register endpoint unavailable')
+                    edges = []
+                else:
+                    edges = (compare or interval_edges)(db, rows, policy, budget)
                 # Slow-dial comparisons are calibrated only over short intervals.
                 # Across an empty window both absolute register readings can still
                 # constrain usage, subject to the same source, rate and rollover checks.
-                if not edges and not (sparse and bands(rows[-1], modulus)):
+                if not self.register_only and not edges and not (sparse and bands(rows[-1], modulus)):
                     raise ValueError('no compatible recovery evidence')
                 if boundary != start:
                     edges.append((start['event_id'], boundary['event_id'], lower, upper))
                     rows = original + rows
-                result = _tighten(rows, day, zone, document, initial, budget, edges, rate, elapsed=True)
+                result = _tighten(rows, day, zone, document, initial, budget, edges, rate,
+                                  elapsed=True, fine_endpoints=fine_endpoints)
+                if self.register_only:
+                    method = 'saved_register_envelopes_v1'
+                    # Try all fine register bands in the final window without any
+                    # slow-dial comparisons. Only the coarse prefix is cached.
+                    if end == baseline['through']:
+                        try:
+                            result = _tighten(rows, day, zone, document, initial, budget,
+                                              edges, rate, elapsed=True)
+                            method = 'saved_register_bands_v1'
+                        except (InconsistentConstraints, WorkLimit):
+                            pass
                 lower = number(result['lower'])
                 upper = number(result['upper'])
                 boundary = end
@@ -140,4 +167,4 @@ class RecoveryRange:
                 raise ValueError('recovery publication source changed')
             return dict(start=start, through=boundary, lower=str(lower.quantize(Decimal('.01'))),
                         upper=str(upper.quantize(Decimal('.01'))),
-                        method='saved_prefix_constraints_v1', unknown_gaps_preserved=True)
+                        method=method, unknown_gaps_preserved=True)
