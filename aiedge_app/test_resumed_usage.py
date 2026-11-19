@@ -184,3 +184,80 @@ class ResumedTests(unittest.TestCase):
             self.assertEqual(snapshot(pub,now=11,wall=wall),{'resumed':result})
             self.assertEqual(snapshot(pub,now=671,wall=wall),{})
 
+
+class ReviewSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.policy = dict(resumed_start_event=1, pipeline_id='p', format_id='f')
+        start = dict(event_id=1)
+        end = dict(event_id=3, captured_at='2026-01-02T12:00:00+00:00', source_sha256='c'*64, format_id='f')
+        self.record = dict(method='reviewed_optical_path_v1', photo_allowance_ft3='4', policy=self.policy,
+                           start=start, through=end, segment_id='s', lower='2.00', upper='2.20',
+                           unresolved_lower='1.00', unresolved_upper='7.20',
+                           evidence=dict.fromkeys(('saved_readings','photo_pairs','controls','replay_result'),'d'*64))
+        self.current = dict(start=start, through=end, lower='1.00', upper='7.20', unknown_gaps_preserved=True)
+        self.rows = [dict(event_observation=end, segment_id='s', observation_support=dict(pipeline_id='p'))]
+        self.store_review()
+
+    def store_review(self):
+        import hashlib
+        canonical = json.dumps(self.record, sort_keys=True, separators=(',', ':')).encode()
+        self.file = self.root / 'reviewed-resumed-range.json'
+        self.file.write_text(json.dumps(dict(sha256=hashlib.sha256(canonical).hexdigest(), review=self.record)))
+
+    def read(self, **changes):
+        from resumed_evidence import reviewed_snapshot
+        with patch('daily_records.daily_records', return_value=self.rows):
+            return reviewed_snapshot(None, self.root, self.policy, dict(self.current, **changes), 's')
+
+    def test_same_event_separate_range(self):
+        original = copy.deepcopy(self.current)
+        review = self.read()
+        self.assertEqual((review['lower'], review['upper']), ('2.00', '2.20'))
+        self.assertIn('±4 ft³', review['assumption'])
+        self.assertEqual(review['through']['captured_at'], self.current['through']['captured_at'])
+        self.assertEqual(self.current, original)
+        self.assertIsNone(self.read(lower='1.02'))
+
+    def test_later_reading_keeps_original_time_and_bounds(self):
+        later = self.read(through=dict(event_id=7), lower='12.00', upper='19.20')
+        self.assertEqual(later['through']['event_id'], 3)
+        self.assertEqual(later['unresolved_upper'], '7.20')
+        self.assertIsNone(self.read(through=dict(event_id=2)))
+        self.assertIsNone(self.read(start=dict(event_id=2)))
+        self.assertIsNone(self.read(unknown_gaps_preserved=False))
+
+    def test_changed_ledger_identity_or_missing_review(self):
+        self.rows[0] = dict(self.rows[0], event_observation=dict(self.record['through'], source_sha256='e'*64))
+        self.assertIsNone(self.read())
+        self.rows.clear()
+        self.assertIsNone(self.read())
+        self.file.unlink()
+        self.assertIsNone(self.read())
+
+    def test_mismatched_policy_segment_or_pipeline(self):
+        self.record['policy'] = dict(self.policy, pipeline_id='other')
+        self.store_review()
+        self.assertIsNone(self.read())
+        self.record['policy'] = self.policy
+        self.store_review()
+        self.rows[0]['segment_id'] = 'other'
+        self.assertIsNone(self.read())
+        self.rows[0].update(segment_id='s', observation_support=dict(pipeline_id='other'))
+        self.assertIsNone(self.read())
+
+    def test_invalid_record_never_overwrites_bounds(self):
+        for changes in (dict(upper='1.00'), dict(lower='NaN'), dict(upper='8.20'),
+                        dict(photo_allowance_ft3='5'), dict(evidence={})):
+            original = self.record
+            self.record = dict(original, **changes)
+            self.store_review()
+            self.assertIsNone(self.read())
+            self.record = original
+        self.store_review()
+        self.file.write_text(self.file.read_text().replace('"2.20"', '"2.25"'))
+        self.assertIsNone(self.read())
+        self.file.write_text('x'*8193)
+        self.assertIsNone(self.read())
