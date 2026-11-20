@@ -18,15 +18,28 @@ ESTIMATE_ASSUMPTION = (
 )
 
 
+def _decimal_bounds(result):
+    lower, upper = Decimal(result['lower']), Decimal(result['upper'])
+    if not lower.is_finite() or not upper.is_finite() or not 0 <= lower <= upper:
+        raise ValueError('invalid estimate bounds')
+    return lower, upper
+
+
+def nominal_estimate(result):
+    lower, upper = _decimal_bounds(result)
+    middle = ((lower + upper) / 2).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    return dict(value_ft3=str(middle), method='range_midpoint_v1',
+                assumption='Midpoint of the unresolved daily bounds, rounded to 0.01 ft³. '
+                           'Individual meter readings or a whole-turn count may support only parts of this range.')
+
+
 def low_use_estimate(result):
     """Presentation only: never fill ledger gaps or alter accounting bounds.
 
     The lower envelope is a convention, not proof of a feasible point trajectory.
     Do not select a midpoint or infer a likelihood from a capacity ceiling or bill.
     """
-    lower, upper = Decimal(result['lower']), Decimal(result['upper'])
-    if not lower.is_finite() or not upper.is_finite() or not 0 <= lower <= upper:
-        raise ValueError('invalid estimate bounds')
+    lower, _ = _decimal_bounds(result)
     return dict(value_ft3=str(lower),
                 label='≈' + str(lower.quantize(Decimal('1'), rounding=ROUND_HALF_UP)) + ' ft³',
                 method='lower_bound_assumption_v1', assumption=ESTIMATE_ASSUMPTION)
@@ -113,7 +126,8 @@ class DailyPublisher:
                     raise ValueError("daily endpoint segment changed")
                 payload = dict(result, timezone=zone.key,
                                label=result["lower"] + "–" + result["upper"] + " ft³",
-                               low_use_estimate=low_use_estimate(result))
+                               low_use_estimate=low_use_estimate(result),
+                               nominal_estimate=nominal_estimate(result))
         except (ValueError, ArithmeticError, KeyError, TypeError, sqlite3.Error, ZoneInfoNotFoundError):
             pass
         if not payload and self.key == ("offline", key) and now < self.next_refresh:

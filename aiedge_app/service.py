@@ -26,6 +26,7 @@ def publication_state(store,recognition,reading_format,consumption):
     if reading.get('format_id')!=saved['revision']:reading={'state':'unavailable','value':None}
     from reading_format import reconcile_reading
     accounted=consumption.status() if consumption else None
+    raw_reading=reading
     reading=reconcile_reading(reading,accounted)
     after,_=store.publication_frame()
     blocked=store.publication_blocked(after)
@@ -42,7 +43,8 @@ def publication_state(store,recognition,reading_format,consumption):
                                                     'estimated', 'within_noise', 'bounded', 'ambiguous')
                          and (after != event or accounted.get('event_id') != event
                               or accounted.get('state') in ('pending', 'recovering')))
-    return {'_daily_publication_pending':daily_pending,'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
+    return {'_raw_meter_reading':raw_reading if not blocked and after==event else None,
+            '_daily_publication_pending':daily_pending,'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
             '_publication_segment_id':accounted.get('segment_id') if accounted else None}
 
 def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None):
