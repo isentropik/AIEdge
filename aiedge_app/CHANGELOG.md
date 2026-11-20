@@ -1,3 +1,9 @@
+## 0.2.0-dev77
+
+- Expose a retained absolute Gas meter reading in ft³ at the dial's available precision. Its attributes include candidate bands, coverage and the meter event. Checkpoint each accepted reading across restarts and reject backward changes, implausible jumps and unsupported whole turns.
+
+- Add one default numeric estimate for gas used today. A failed daily calculation holds the last estimate with its measurement time. Qualified segment readings can advance it during partial coverage. The retained estimate survives reconnects and starts each local day at its midnight opening balance. The other new gas sensors are opt-in. Check the coarse register against a durable previous reading before publishing a cumulative total.
+
 ## 0.2.0-dev76
 
 - Organize the app Overview by usage period. Show the photo assumption, unresolved bounds and actual measurement times, with expandable 15-minute readings and source details.

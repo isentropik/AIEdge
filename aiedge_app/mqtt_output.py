@@ -86,6 +86,11 @@ class MqttOutput:
     def __init__(self,directory,snapshot,interval,provider=supervisor_mqtt,client_factory=mqtt.Client,*,performance=None,clock=time.monotonic,output_mode='reading',daily=None):
         from mqtt_consumption import MODES
         if output_mode not in MODES:raise ValueError('invalid_mqtt_output_mode')
+        from ha_gas_sensors import GasSensors
+        self.gas_sensors=GasSensors(directory)
+        from nominal_daily import NominalPublisher
+        self.nominal = NominalPublisher(self.gas_sensors.checkpoint)
+        self.nominal_error = None
         self.daily=daily
         self.daily_error=None
         self.recent_error=None
@@ -109,6 +114,8 @@ class MqttOutput:
         self.last_payload=None;self.last_key=None;self.last_state_ack=None
         self.range_configured=False;self.range_key=None
         self.register_configured=False
+        self.gas_sensors.reset_connection()
+        self.nominal.sent = None
         if self.daily:self.daily.reset()
     def status(self):
         result={'state':self.state,'error':self.error}
@@ -119,6 +126,7 @@ class MqttOutput:
         if self.resumed_error:result['usage'].pop('resumed',None)
         if self.resumed_error:result['resumed_error']=self.resumed_error
         if self.daily_error:result['daily_error']=self.daily_error
+        if self.nominal_error:result['nominal_error']=self.nominal_error
         if self.recent_error:result['recent_error']=self.recent_error
         if self.range_error:result['range_error']=self.range_error
         return result
@@ -166,6 +174,17 @@ class MqttOutput:
                     self.daily_error=None
                 except Exception:
                     self.daily_error="daily_publication_failed"
+                if (snapshot.get('format') or {}).get('unit') == 'ft3':
+                    from mqtt_consumption import fresh_range
+                    from zoneinfo import ZoneInfo
+                    try:
+                        zone = ZoneInfo(os.environ['TZ'])
+                        obs = fresh_range(snapshot, max(90, self.interval * 3))
+                        good = self.daily.last_good if not self.daily_error else None
+                        self.nominal.publish(self, obs, good[0] if good else None, datetime.now(zone).date(), zone.key)
+                        self.nominal_error = None
+                    except Exception:
+                        self.nominal_error = 'nominal_publication_failed'
                 try:
                     self.daily.recent.publish(self,snapshot)
                     self.recent_error=None
@@ -198,6 +217,8 @@ class MqttOutput:
             self._publish('homeassistant/sensor/'+uid+'/config',json.dumps(cfg),True)
             self.register_configured=True
         obs=fresh_range(snapshot,max(90,self.interval*3))
+        if (snapshot.get("format") or {}).get("unit") == "ft3":
+            self.gas_sensors.publish(self,snapshot,obs)
         prior=self.last_acknowledged_estimate
         if obs and prior and prior['segment_id']==obs['segment_id'] and prior['format_id']==obs['format_id'] and prior['event_id']<=obs['event_id']:
             obs['last_acknowledged_estimate']=prior
