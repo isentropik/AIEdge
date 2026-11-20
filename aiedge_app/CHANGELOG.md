@@ -1,3 +1,7 @@
+## 0.2.0-dev81
+
+- Simplify gas readings on the overview, preserve full sensor values and event IDs in details, and improve small-screen and keyboard layouts.
+
 ## 0.2.0-dev80
 
 - The AIEdge overview brings the daily estimate, absolute meter reading, recent intervals and saved gas history together. Readings retain their measurement time and uncertainty.

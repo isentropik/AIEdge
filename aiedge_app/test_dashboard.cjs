@@ -255,3 +255,40 @@ test('Overview reports disabled MQTT as Off rather than a Home Assistant disconn
  const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
  assert.ok(html.includes('<dt>MQTT output</dt><dd id="mqtt-state">'));
 });
+
+function gasOverview() {
+ const elements = new Map();
+ const get = id => {
+   if (!elements.has(id)) elements.set(id, new Element());
+   return elements.get(id);
+ };
+ const document = {getElementById:get, createElement:()=>new Element()};
+ const window = {addEventListener(){}};
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'), {document,window,location:{hash:''},Intl,Date});
+ return {get,render:usage=>window.AIEdgeIntegration.render({mqtt:{usage}})};
+}
+
+test('absolute presentation rounds decimal text and preserves the source and outward bounds',()=>{
+ const ui = gasOverview();
+ const absolute_nominal = {event_id:31, measured_at:'2025-03-03T12:00:00Z',source_sha256:'1'.repeat(64),
+   value_ft3:'9999999999999999.95', bands_ft3:[['1.001','1.009']],status:'partial_coverage'};
+ ui.render({absolute_nominal});
+ assert.equal(ui.get('absolute-value').textContent,'10,000,000,000,000,000.0 ft³');
+ assert.match(ui.get('absolute-raw').textContent,/9999999999999999\.95/);
+ assert.match(ui.get('absolute-event').textContent,/31/);
+ assert.equal(ui.get('absolute-bands').children[0].textContent,'1.00–1.01 ft³');
+ assert.match(ui.get('absolute-status').textContent,/Partial/);
+ ui.render({});
+ assert.ok(ui.get('absolute-details').hidden);
+ assert.equal(ui.get('absolute-raw').textContent,'');
+});
+
+test('historical segment precision is a display choice with the original measurement available',()=>{
+ const ui = gasOverview();
+ const historical = {value:0.123456789,event_id:8,captured_at:'2025-03-03T12:00:00Z',source_sha256:'2'.repeat(64),segment_started_at:'2025-03-03T09:00:00Z'};
+ ui.render({historical});
+ assert.equal(ui.get('segment-value').textContent,'0.12 ft³');
+ assert.equal(ui.get('segment-raw').textContent,'0.123456789 ft³ · Meter event 8');
+ ui.render({});
+ assert.ok(ui.get('segment-details').hidden);
+});

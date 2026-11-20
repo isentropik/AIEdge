@@ -74,12 +74,12 @@ function renderDaily(daily) {
  const nominal = daily?.nominal_estimate;
  if (nominal?.method === 'range_midpoint_v1') {
   const stale = daily.status === 'stale';
-  $('usage-estimate').textContent = nominal.value_ft3 + ' ft³';
+  $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
   setOptional('usage-assumption', stale ? 'Stale · Last supported full-day estimate' : 'Midpoint of the unresolved daily bounds.');
   setOptional('usage-bounds', 'Unresolved bounds · ' + daily.label);
-  setOptional('usage-time', 'Measured ' + sourceLine(daily.through, daily.timezone));
+  setOptional('usage-time', measuredLine(daily.through, daily.timezone));
   $('daily-details').hidden = false;
-  $('daily-method').textContent = 'Meter event ' + daily.through.event_id + '. ' + nominal.assumption +
+  $('daily-method').textContent = nominal.assumption +
     (stale ? ' Conflicting meter event ' + daily.conflict_event_id + '.' : '');
   return;
  }
@@ -118,18 +118,37 @@ function renderResumed(resumed) {
  $('resumed-details').hidden = !resumed;
 }
 
+function compactInterval(start, end, zone, reference) {
+ const first = new Date(start.captured_at), last = new Date(end.captured_at);
+ const sameDay = calendarDay(first, zone) === calendarDay(last, zone);
+ const config = {timeZone:zone, hour:'numeric', minute:'2-digit'};
+ if (!sameDay || !reference || calendarDay(first, zone) !== calendarDay(new Date(reference), zone)) {
+   Object.assign(config, {month:'short', day:'numeric'});
+ }
+ const offset = new Intl.DateTimeFormat('en', {timeZone:zone, timeZoneName:'shortOffset'});
+ const zoneOf = date => offset.formatToParts(date).find(part => part.type === 'timeZoneName').value;
+ if (zoneOf(first) !== zoneOf(last)) return interval(start, end, zone);
+ if (!reference) config.timeZoneName = 'short';
+ return new Intl.DateTimeFormat(undefined, config).formatRange(first, last);
+}
+
 function renderRecent(recent) {
  const zone = recent?.timezone;
  $('usage-hour').textContent = recent?.label || 'Hourly usage unavailable';
- setOptional('hour-time', recent ? interval(recent.hour.start, recent.through, zone) : '');
+ setOptional('hour-time', recent ? compactInterval(recent.hour.start, recent.through, zone) : '');
  const list = $('usage-quarters');
  list.replaceChildren();
+ const sources = $('quarter-sources');
+ sources.replaceChildren();
  const quarters = recent?.quarters || [];
  const maxUpper = Math.max(0, ...quarters.map(q => Number(q.upper)));
  for (const quarter of quarters) {
    const row = document.createElement('li');
    const times = document.createElement('span');
-   times.textContent = interval(quarter.start, quarter.through, zone, recent.through.captured_at);
+   times.textContent = compactInterval(quarter.start, quarter.through, zone, recent.through.captured_at);
+   const source = document.createElement('li');
+   source.textContent = interval(quarter.start, quarter.through, zone) + ' · Meter events ' + quarter.start.event_id + '–' + quarter.through.event_id;
+   sources.append(source);
    const amount = document.createElement('strong');
    amount.textContent = quarter.lower + '–' + quarter.upper + ' ft³';
    const track = document.createElement('span');
@@ -169,6 +188,7 @@ function calendarDay(date, zone) {
 }
 
 function renderOverviewDaily(nominal, daily) {
+ setOptional('daily-event', '');
  const measured = sourceOf(nominal);
  const end = sourceOf(daily?.through);
  const day = nominal?.day;
@@ -181,12 +201,13 @@ function renderOverviewDaily(nominal, daily) {
  if (midpoint && (!supported || day !== daily.day || end.event_id > measured.event_id ||
      (sameEvent(end, measured) && (daily.status === 'stale' || nominal.method !== 'range_midpoint_v1')))) {
    renderDaily(daily);
+   setOptional('daily-event', 'Meter event ' + end.event_id);
    return;
  }
  if (!supported) {
    if (numeric && nominal.status === 'opening_balance' && day === calendarDay(new Date(), zone)) {
      renderDaily(null);
-     $('usage-estimate').textContent = nominal.value_ft3 + ' ft³';
+     $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
      setOptional('usage-assumption', 'Opening balance · Partial coverage');
      setOptional('usage-time', 'Awaiting the first measurement for ' + day + '.');
    } else renderDaily(ranged ? daily : null);
@@ -196,10 +217,11 @@ function renderOverviewDaily(nominal, daily) {
  const partial = nominal.status === 'partial_coverage' || nominal.method === 'observed_increments';
  const stale = nominal.status === 'stale';
  const held = nominal.status === 'held_at_last_reading';
- $('usage-estimate').textContent = nominal.value_ft3 + ' ft³';
+ $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
  setOptional('usage-assumption', [previous ? 'Previous day’s estimate' : '', stale ? 'Stale · Last supported full-day estimate' :
-   partial ? 'Partial coverage · Observed usage only' : 'Midpoint of the unresolved daily bounds', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
- setOptional('usage-time', 'Measured ' + sourceLine(measured, zone));
+   partial ? 'Partial coverage · Observed usage only' : 'Estimated from the daily range', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
+ setOptional('usage-time', measuredLine(measured, zone));
+ setOptional('daily-event', 'Meter event ' + measured.event_id);
  const native = boundPair(nominal.lower_ft3, nominal.upper_ft3);
  let bounds = native ? 'Unresolved bounds · ' + Number(nominal.lower_ft3).toFixed(2) + '–' + Number(nominal.upper_ft3).toFixed(2) + ' ft³' : '';
  if (ranged && daily.day === day && (sameEvent(end, measured) || (!native && end.event_id !== measured.event_id))) {
@@ -210,19 +232,30 @@ function renderOverviewDaily(nominal, daily) {
  $('daily-method').textContent = [nominal.assumption, stale && nominal.conflict_event_id ? 'Conflicting meter event ' + nominal.conflict_event_id + '.' : ''].filter(Boolean).join(' ');
 }
 
+// Display rounding never feeds the ledger or the Home Assistant sensors.
+function displayedVolume(value, places, roundingMode = 'halfExpand') {
+ return new Intl.NumberFormat(undefined, {maximumFractionDigits:places, minimumFractionDigits:places, roundingMode}).format(value);
+}
+
+function measuredLine(endpoint, zone) {
+ return 'Measured ' + measurementTime(endpoint, zone);
+}
+
 function renderAbsolute(absolute, zone) {
  const end = sourceOf(absolute);
  const match = /^(\d+)(\.\d+)?$/.exec(String(absolute?.value_ft3));
  const valid = end && match;
- $('absolute-value').textContent = valid ? match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (match[2] || '') + ' ft³' : 'Awaiting a meter reading';
- setOptional('absolute-status', valid ? {partial_coverage:'Nominal reading · Partial coverage',held_at_last_reading:'Nominal reading · Held at last measurement'}[absolute.status] || 'Nominal absolute reading' : '');
- setOptional('absolute-time', valid ? 'Measured ' + sourceLine(end, zone) : '');
+ $('absolute-value').textContent = valid ? displayedVolume(absolute.value_ft3, 1) + ' ft³' : 'Awaiting a meter reading';
+ setOptional('absolute-raw', valid ? 'Full sensor value · ' + absolute.value_ft3 + ' ft³' : '');
+ setOptional('absolute-event', valid ? 'Meter event ' + end.event_id : '');
+ setOptional('absolute-status', valid ? {partial_coverage:'Partial coverage',held_at_last_reading:'Held at last measurement'}[absolute.status] || 'Nominal reading' : '');
+ setOptional('absolute-time', valid ? measuredLine(end, zone) : '');
  const list = $('absolute-bands');
  list.replaceChildren();
  for (const band of valid ? absolute.bands_ft3 || [] : []) {
    if (!Array.isArray(band) || !boundPair(...band)) continue;
    const li = document.createElement('li');
-   li.textContent = band[0] + '–' + band[1] + ' ft³';
+   li.textContent = displayedVolume(band[0], 2, 'floor') + '–' + displayedVolume(band[1], 2, 'ceil') + ' ft³';
    list.append(li);
  }
  setOptional('absolute-method', valid && absolute.assumption);
@@ -232,8 +265,10 @@ function renderAbsolute(absolute, zone) {
 function renderHistory(segment, daily, zone, policy) {
  const end = sourceOf(segment);
  const verified = end && Number.isFinite(segment.value) && segment.value > 0;
- $('segment-value').textContent = verified ? segment.value + ' ft³' : 'Awaiting a verified segment estimate';
- setOptional('segment-time', verified ? 'Measured ' + sourceLine(end, zone) : '');
+ $('segment-value').textContent = verified ? displayedVolume(segment.value, 2) + ' ft³' : 'Awaiting a verified segment estimate';
+ setOptional('segment-time', verified ? measuredLine(end, zone) : '');
+ $('segment-details').hidden = !verified;
+ setOptional('segment-raw', verified ? String(segment.value) + ' ft³ · Meter event ' + end.event_id : '');
  setOptional('segment-start', verified ? 'Gas used since ' + measurementTime({captured_at:segment.segment_started_at}, zone) : '');
  const elapsed = daily?.elapsed_range;
  const through = sourceOf(elapsed?.through);

@@ -9,7 +9,7 @@
     <p id="usage-bounds" class="usage-bounds"></p>
     <p id="usage-time" class="usage-time"></p>
     <details id="daily-details" hidden><summary>Estimate details</summary>
-      <p id="daily-method" class="usage-context"></p>
+      <p id="daily-event" class="source-data"></p><p id="daily-method" class="usage-context"></p>
     </details>
   </section>
   <section class="panel usage-card usage-register" aria-labelledby="absolute-title">
@@ -17,20 +17,21 @@
     <p id="absolute-value" class="usage-number">Awaiting a meter reading</p>
     <p id="absolute-status" class="usage-context"></p>
     <p id="absolute-time" class="usage-time"></p>
-    <details id="absolute-details" hidden><summary>Possible meter readings</summary>
-      <p id="absolute-method"></p><ul id="absolute-bands"></ul>
+    <details id="absolute-details" hidden><summary>Reading details and possible ranges</summary>
+      <p id="absolute-raw" class="source-data"></p><p id="absolute-event" class="source-data"></p><p id="absolute-method"></p><ul id="absolute-bands"></ul>
     </details>
   </section>
   <section class="panel usage-card usage-recent" aria-labelledby="recent-title">
     <h2 id="recent-title">Last hour</h2>
     <p id="usage-hour" class="usage-number">Waiting for a reading</p>
     <p id="hour-time" class="usage-time"></p>
-    <details id="recent-details" open hidden><summary>15-minute ranges</summary>
+    <details id="recent-details" open hidden><summary>15-minute breakdown</summary>
       <ol id="usage-quarters" aria-label="15-minute gas usage"></ol>
+      <details class="interval-sources"><summary>Measurement times</summary><ol id="quarter-sources"></ol></details>
     </details>
   </section>
   <details class="panel usage-card usage-history">
-    <summary>Gas usage history</summary>
+    <summary>Earlier usage and recovery</summary>
   <section class="history-section" aria-labelledby="resumed-title">
     <h2 id="resumed-title">Since capture resumed</h2>
     <p id="usage-reviewed" class="usage-number" hidden></p>
@@ -46,7 +47,7 @@
       <p id="elapsed-value"></p><p id="elapsed-time" class="usage-time"></p><p id="elapsed-method" class="usage-context"></p>
     </section>
     <section class="history-section"><h2>Last verified segment estimate</h2>
-      <p id="segment-value"></p><p id="segment-time" class="usage-time"></p><p id="segment-start" class="usage-context"></p>
+      <p id="segment-value"></p><p id="segment-time" class="usage-time"></p><p id="segment-start" class="usage-context"></p><details id="segment-details" hidden><summary>Source reading</summary><p id="segment-raw" class="source-data"></p></details>
     </section>
   </details>
 </div><details id="capture-operations"><summary>Capture diagnostics</summary><div class="summary"><div class="metric"><strong id="count">—</strong><span>captures</span></div><div class="metric"><strong id="unique">—</strong><span>unique images</span></div><div class="metric"><strong id="failures">—</strong><span>capture failures</span></div><span id="camera-status" class="status">Loading</span></div>
