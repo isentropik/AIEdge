@@ -1,3 +1,7 @@
+## 0.2.0-dev80
+
+- The AIEdge overview brings the daily estimate, absolute meter reading, recent intervals and saved gas history together. Readings retain their measurement time and uncertainty.
+
 ## 0.2.0-dev79
 
 - When a later meter reading conflicts, show the last supported full-day midpoint and unresolved bounds as stale at their original measurement time. Recover them from the saved daily readings after a restart and begin a new day at local midnight.
