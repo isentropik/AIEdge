@@ -77,7 +77,7 @@ function renderDaily(daily) {
   $('usage-estimate').textContent = nominal.value_ft3 + ' ft³';
   setOptional('usage-assumption', stale ? 'Stale · Last supported full-day estimate' : 'Midpoint of the unresolved daily bounds.');
   setOptional('usage-bounds', 'Unresolved bounds · ' + daily.label);
-  setOptional('usage-time', 'Measured ' + measurementTime(daily.through, daily.timezone));
+  setOptional('usage-time', 'Measured ' + sourceLine(daily.through, daily.timezone));
   $('daily-details').hidden = false;
   $('daily-method').textContent = 'Meter event ' + daily.through.event_id + '. ' + nominal.assumption +
     (stale ? ' Conflicting meter event ' + daily.conflict_event_id + '.' : '');
@@ -88,7 +88,7 @@ function renderDaily(daily) {
  $('usage-estimate').textContent = hasEstimate ? estimate.label : daily?.label || 'Daily usage unavailable';
  setOptional('usage-assumption', hasEstimate ? 'Low-use estimate assuming no extra gas in the gaps.' : daily ? 'Unresolved bounds' : '');
  setOptional('usage-bounds', hasEstimate ? 'Unresolved bounds · ' + daily.label : '');
- setOptional('usage-time', daily ? 'Measured ' + measurementTime(daily.through, daily.timezone) : '');
+ setOptional('usage-time', daily ? 'Measured ' + sourceLine(daily.through, daily.timezone) : '');
  $('daily-details').hidden = !daily;
  $('daily-method').textContent = daily ? [daily.day + ' · ' + daily.timezone + ' · Event ' + daily.through.event_id,
    hasEstimate ? estimate.assumption : daily.explanation].filter(Boolean).join('. ') : '';
@@ -124,23 +124,148 @@ function renderRecent(recent) {
  setOptional('hour-time', recent ? interval(recent.hour.start, recent.through, zone) : '');
  const list = $('usage-quarters');
  list.replaceChildren();
- for (const quarter of recent?.quarters || []) {
+ const quarters = recent?.quarters || [];
+ const maxUpper = Math.max(0, ...quarters.map(q => Number(q.upper)));
+ for (const quarter of quarters) {
    const row = document.createElement('li');
    const times = document.createElement('span');
    times.textContent = interval(quarter.start, quarter.through, zone, recent.through.captured_at);
    const amount = document.createElement('strong');
    amount.textContent = quarter.lower + '–' + quarter.upper + ' ft³';
-   row.append(times, amount);
+   const track = document.createElement('span');
+   track.className = 'quarter-track';
+   track.setAttribute('aria-hidden', 'true');
+   if (maxUpper > 0 && boundPair(quarter.lower, quarter.upper)) {
+     track.style.setProperty('--upper', (100 * Number(quarter.upper) / maxUpper) + '%');
+     track.style.setProperty('--lower', (100 * Number(quarter.lower) / maxUpper) + '%');
+   }
+   row.append(times, track, amount);
    list.append(row);
  }
  $('recent-details').hidden = !recent?.quarters?.length;
 }
 
+function boundPair(lo, hi) {
+ return [lo, hi].every(n => (typeof n === 'string' && n.trim() || typeof n === 'number') && Number.isFinite(Number(n))) &&
+   Number(lo) >= 0 && Number(lo) <= Number(hi);
+}
+
+function sourceOf(value) {
+ if (!value || !Number.isInteger(value.event_id) || value.event_id <= 0 || !/^[0-9a-f]{64}$/.test(value.source_sha256)) return null;
+ const time = value.measured_at || value.captured_at;
+ return Number.isFinite(Date.parse(time)) ? {event_id:value.event_id, source_sha256:value.source_sha256, captured_at:time} : null;
+}
+
+function sameEvent(a, b) {
+ return a && b && a.event_id === b.event_id && a.source_sha256 === b.source_sha256 && a.captured_at === b.captured_at;
+}
+
+function sourceLine(endpoint, zone) {
+ return measurementTime(endpoint, zone) + ' · Meter event ' + endpoint.event_id;
+}
+
+function calendarDay(date, zone) {
+ return new Intl.DateTimeFormat('sv-SE', {timeZone:zone, year:'numeric', month:'2-digit', day:'2-digit'}).format(date);
+}
+
+function renderOverviewDaily(nominal, daily) {
+ const measured = sourceOf(nominal);
+ const end = sourceOf(daily?.through);
+ const day = nominal?.day;
+ const zone = nominal?.timezone;
+ const numeric = boundPair(nominal?.value_ft3, nominal?.value_ft3);
+ const supported = measured && numeric && day === calendarDay(new Date(measured.captured_at), zone);
+ const ranged = end && daily.day === calendarDay(new Date(), daily.timezone) &&
+   daily.day === calendarDay(new Date(end.captured_at), daily.timezone) && boundPair(daily.lower, daily.upper);
+ const midpoint = ranged && daily.nominal_estimate?.method === 'range_midpoint_v1';
+ if (midpoint && (!supported || day !== daily.day || end.event_id > measured.event_id ||
+     (sameEvent(end, measured) && (daily.status === 'stale' || nominal.method !== 'range_midpoint_v1')))) {
+   renderDaily(daily);
+   return;
+ }
+ if (!supported) {
+   if (numeric && nominal.status === 'opening_balance' && day === calendarDay(new Date(), zone)) {
+     renderDaily(null);
+     $('usage-estimate').textContent = nominal.value_ft3 + ' ft³';
+     setOptional('usage-assumption', 'Opening balance · Partial coverage');
+     setOptional('usage-time', 'Awaiting the first measurement for ' + day + '.');
+   } else renderDaily(ranged ? daily : null);
+   return;
+ }
+ const previous = day !== calendarDay(new Date(), zone);
+ const partial = nominal.status === 'partial_coverage' || nominal.method === 'observed_increments';
+ const stale = nominal.status === 'stale';
+ const held = nominal.status === 'held_at_last_reading';
+ $('usage-estimate').textContent = nominal.value_ft3 + ' ft³';
+ setOptional('usage-assumption', [previous ? 'Previous day’s estimate' : '', stale ? 'Stale · Last supported full-day estimate' :
+   partial ? 'Partial coverage · Observed usage only' : 'Midpoint of the unresolved daily bounds', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
+ setOptional('usage-time', 'Measured ' + sourceLine(measured, zone));
+ const native = boundPair(nominal.lower_ft3, nominal.upper_ft3);
+ let bounds = native ? 'Unresolved bounds · ' + Number(nominal.lower_ft3).toFixed(2) + '–' + Number(nominal.upper_ft3).toFixed(2) + ' ft³' : '';
+ if (ranged && daily.day === day && (sameEvent(end, measured) || (!native && end.event_id !== measured.event_id))) {
+   bounds = 'Unresolved bounds · ' + daily.label + (sameEvent(end, measured) ? '' : ' · ' + sourceLine(end, zone));
+ }
+ setOptional('usage-bounds', bounds || (partial ? 'Full-day bounds pending' : ''));
+ $('daily-details').hidden = false;
+ $('daily-method').textContent = [nominal.assumption, stale && nominal.conflict_event_id ? 'Conflicting meter event ' + nominal.conflict_event_id + '.' : ''].filter(Boolean).join(' ');
+}
+
+function renderAbsolute(absolute, zone) {
+ const end = sourceOf(absolute);
+ const match = /^(\d+)(\.\d+)?$/.exec(String(absolute?.value_ft3));
+ const valid = end && match;
+ $('absolute-value').textContent = valid ? match[1].replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (match[2] || '') + ' ft³' : 'Awaiting a meter reading';
+ setOptional('absolute-status', valid ? {partial_coverage:'Nominal reading · Partial coverage',held_at_last_reading:'Nominal reading · Held at last measurement'}[absolute.status] || 'Nominal absolute reading' : '');
+ setOptional('absolute-time', valid ? 'Measured ' + sourceLine(end, zone) : '');
+ const list = $('absolute-bands');
+ list.replaceChildren();
+ for (const band of valid ? absolute.bands_ft3 || [] : []) {
+   if (!Array.isArray(band) || !boundPair(...band)) continue;
+   const li = document.createElement('li');
+   li.textContent = band[0] + '–' + band[1] + ' ft³';
+   list.append(li);
+ }
+ setOptional('absolute-method', valid && absolute.assumption);
+ $('absolute-details').hidden = !valid;
+}
+
+function renderHistory(segment, daily, zone, policy) {
+ const end = sourceOf(segment);
+ const verified = end && Number.isFinite(segment.value) && segment.value > 0;
+ $('segment-value').textContent = verified ? segment.value + ' ft³' : 'Awaiting a verified segment estimate';
+ setOptional('segment-time', verified ? 'Measured ' + sourceLine(end, zone) : '');
+ setOptional('segment-start', verified ? 'Gas used since ' + measurementTime({captured_at:segment.segment_started_at}, zone) : '');
+ const elapsed = daily?.elapsed_range;
+ const through = sourceOf(elapsed?.through);
+ const qualified = sameEvent(through, sourceOf(daily?.through)) && sourceOf(elapsed?.start) &&
+   daily.day === calendarDay(new Date(), daily.timezone) && boundPair(elapsed?.lower, elapsed?.upper);
+ $('elapsed-value').textContent = qualified ? elapsed.lower + '–' + elapsed.upper + ' ft³' : 'No supported range for this recovery period';
+ setOptional('elapsed-time', qualified ? interval(elapsed.start, through, zone) + ' · Meter event ' + through.event_id : '');
+ const conditions = [];
+ if (qualified && policy?.capacity_cfh > 0) conditions.push('Household ceiling ' + policy.capacity_cfh + ' ft³/hour.');
+ if (qualified && elapsed.method === 'saved_prefix_constraints_v1' && policy?.slow_allowance_ft3 > 0) conditions.push('Slow-dial allowance ±' + policy.slow_allowance_ft3 + ' ft³.');
+ setOptional('elapsed-method', qualified ? conditions.concat('Usage during gaps is unknown.').join(' ') : '');
+}
+
 function render(state) {
- const usage = state?.mqtt?.usage;
- renderDaily(usage?.daily);
- renderResumed(usage?.resumed);
- renderRecent(usage?.recent);
+ const mqtt = state?.mqtt;
+ const usage = mqtt?.usage || {};
+ const other = mqtt?.overview_meter === 'other' || mqtt?.state === 'disabled';
+ $('gas-overview').hidden = other;
+ if (other && !$('capture-operations').dataset.initialized) $('capture-operations').open = true;
+ if (mqtt?.overview_meter || mqtt?.state === 'disabled') $('capture-operations').dataset.initialized = 'true';
+ const zone = usage.daily_nominal?.timezone || usage.daily?.timezone || usage.resumed?.timezone || usage.recent?.timezone || mqtt?.overview_timezone;
+ renderOverviewDaily(usage.daily_nominal, usage.daily);
+ renderAbsolute(usage.absolute_nominal, zone);
+ if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
+   if (sourceOf(usage.daily_nominal)) $('usage-assumption').append(' · Last published measurement');
+ }
+ if (mqtt?.overview_connected === false || mqtt?.range_error) {
+   if (sourceOf(usage.absolute_nominal)) $('absolute-status').append(' · Last published measurement');
+ }
+ renderRecent(usage.recent);
+ renderResumed(usage.resumed);
+ renderHistory(usage.historical, usage.daily, zone, mqtt?.overview_policy);
 }
 window.AIEdgeIntegration={render};
 if(location.hash==='#settings')load();

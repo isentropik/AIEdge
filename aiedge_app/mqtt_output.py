@@ -100,6 +100,11 @@ class MqttOutput:
         self.last_acknowledged_estimate=None
         self.performance=performance if performance is not None else Timings()
         self.identity=instance_id(directory);self.snapshot=snapshot;self.interval=interval
+        from overview_history import OverviewHistory
+        self.overview_history = OverviewHistory(directory, self.identity) if output_mode == 'gas_consumption' else None
+        self.overview_format = None
+        self.history_topic = None
+        self.overview_daily = self.overview_absolute = None
         self.provider=provider;self.client_factory=client_factory;self.stop=threading.Event()
         self.connected=threading.Event();self.rediscover=threading.Event();self.state='starting';self.error=None
         self.client=None;self.base=None;self.configuration=None;self.last_payload=None
@@ -121,6 +126,22 @@ class MqttOutput:
         result={'state':self.state,'error':self.error}
         from published_usage import snapshot as usage_snapshot
         result['usage'] = usage_snapshot(self.daily) if self.daily and self.connected.is_set() and self.state != 'error' else {}
+        if self.overview_history is not None and self.overview_format:
+            result['overview_meter'] = 'gas'
+            result['overview_connected'] = self.connected.is_set() and self.state != 'error'
+            result['overview_timezone'] = os.environ.get('TZ')
+            for name, saved in (('daily_nominal', self.overview_daily), ('absolute_nominal', self.overview_absolute)):
+                if saved and saved[0] == self.overview_format:
+                    result['usage'][name] = dict(saved[1])
+            policy = getattr(self.daily, 'evidence_policy', {}) or {}
+            result['overview_policy'] = {k: policy[k] for k in ('capacity_cfh', 'slow_allowance_ft3') if k in policy}
+            point = self.overview_history.latest(self.history_topic, self.overview_format)
+            if point:
+                result['usage']['historical'] = dict(point)
+            if self.overview_history.save_failed:
+                result['overview_history_error'] = 'checkpoint_unavailable'
+        elif self.output_mode != 'gas_consumption' or self.overview_format is False:
+            result['overview_meter'] = 'other'
         if self.daily_error:result['usage'].pop('daily',None)
         if self.recent_error:result['usage'].pop('recent',None)
         if self.resumed_error:result['usage'].pop('resumed',None)
@@ -133,10 +154,15 @@ class MqttOutput:
     def _on_connect(self,client,userdata,flags,reason,properties):
         if reason.is_failure:self.error='mqtt_connection_rejected';return
         self.connected.set();self.rediscover.set();client.subscribe('homeassistant/status',qos=1)
+        if self.history_topic:
+            client.subscribe(self.history_topic, qos=1)
     def _on_disconnect(self,client,userdata,flags,reason,properties):
         self.connected.clear()
         if self.state!='error':self.state='disconnected'
     def _on_message(self,client,userdata,message):
+        if client is self.client and self.history_topic and message.topic == self.history_topic:
+            self.overview_history.receive(self.history_topic, message.payload)
+            return
         if message.topic=='homeassistant/status' and message.payload==b'online':self.rediscover.set()
     def _publish(self,topic,payload,retain=False):
         info=self.client.publish(topic,payload,qos=1,retain=retain)
@@ -144,6 +170,8 @@ class MqttOutput:
         if not info.is_published():raise ValueError('mqtt_publish_unconfirmed')
     def connect(self,document):
         credentials=self.provider();self.configuration,self.base,self.config=self._discovery(document)
+        self.history_topic = ('aiedge/history/' + self.config['unique_id'] + '_historical_estimate'
+                              if self.overview_history is not None and document.get('unit') == 'ft3' else None)
         self.connected.clear()
         client=self.client_factory(mqtt.CallbackAPIVersion.VERSION2,client_id='aiedge-'+self.identity[:16],protocol=mqtt.MQTTv311)
         self.client=client
@@ -182,6 +210,8 @@ class MqttOutput:
                         obs = fresh_range(snapshot, max(90, self.interval * 3))
                         good = self.daily.last_good if not self.daily_error else None
                         self.nominal.publish(self, obs, good[0] if good else None, datetime.now(zone).date(), zone.key)
+                        if self.nominal.sent and self.overview_format:
+                            self.overview_daily = self.overview_format, self.nominal.sent
                         self.nominal_error = None
                     except Exception:
                         self.nominal_error = 'nominal_publication_failed'
@@ -219,6 +249,9 @@ class MqttOutput:
         obs=fresh_range(snapshot,max(90,self.interval*3))
         if (snapshot.get("format") or {}).get("unit") == "ft3":
             self.gas_sensors.publish(self,snapshot,obs)
+            delivered = self.gas_sensors.absolute.sent
+            if self.overview_format and delivered and delivered[0] == self.config['unique_id']:
+                self.overview_absolute = self.overview_format, delivered[1]
         prior=self.last_acknowledged_estimate
         if obs and prior and prior['segment_id']==obs['segment_id'] and prior['format_id']==obs['format_id'] and prior['event_id']<=obs['event_id']:
             obs['last_acknowledged_estimate']=prior
@@ -228,6 +261,8 @@ class MqttOutput:
             self.range_key=key
     def _publish_snapshot(self,snapshot):
         document=snapshot.get('format')
+        if self.overview_history is not None:
+            self.overview_format = validate(document)[1] if document and document.get('unit') == 'ft3' else False
         if not document:
             if self.client and self.connected.is_set():self._publish(self.base+'/availability','offline',True)
             self._reset_dedup()
@@ -271,6 +306,9 @@ class MqttOutput:
             if self.output_mode=='gas_consumption' and state['value']>0:
                 self.last_acknowledged_estimate={k:state[k] for k in
                     ('value','event_id','source_sha256','captured_at','format_id','segment_id')}
+                if self.overview_format and state['format_id'] == self.overview_format:
+                    self.overview_history.acknowledge(dict(self.last_acknowledged_estimate,
+                                                          segment_started_at=state['last_reset']))
             self.performance.publication_ack(snapshot.get('_timing_event_id'),state['source_sha256'])
         self.state='publishing';self.error=None
         return outcome
