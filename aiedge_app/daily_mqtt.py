@@ -8,7 +8,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from daily_records import daily_records
-from daily_range import daily_range
+from daily_range import COARSE_BASIS, daily_range
 from mqtt_consumption import fresh_range
 
 
@@ -28,9 +28,11 @@ def _decimal_bounds(result):
 def nominal_estimate(result):
     lower, upper = _decimal_bounds(result)
     middle = ((lower + upper) / 2).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-    return dict(value_ft3=str(middle), method='range_midpoint_v1',
-                assumption='Midpoint of the unresolved daily bounds, rounded to 0.01 ft³. '
-                           'Individual meter readings or a whole-turn count may support only parts of this range.')
+    assumption = ('Midpoint of the unresolved daily bounds, rounded to 0.01 ft³. '
+                  'Individual meter readings or a whole-turn count may support only parts of this range.')
+    if result.get('constraint_basis') == COARSE_BASIS:
+        assumption += ' Recovered from midnight using the coarse register and saved segment bounds. Gap usage is unknown.'
+    return dict(value_ft3=str(middle), method='range_midpoint_v1', assumption=assumption)
 
 
 def low_use_estimate(result):
@@ -112,10 +114,15 @@ class DailyPublisher:
                                 for context, pipeline, format_id, first_event in db.execute(
                                     "SELECT context,pipeline,format_id,first_event FROM event_selection_contexts")}
                     rows = list(daily_records(db, max(1, event - 32768), event, obs["segment_id"]))
-                    result = daily_range(rows, today, zone, snapshot["format"], obs["format_id"], contexts)
+                    policy = self.evidence_policy
+                    capacity = (policy.get('capacity_cfh') if policy.get('format_id') == obs['format_id']
+                                and policy.get('pipeline_id') == snapshot['format'].get('pipeline_id') else None)
+                    result = daily_range(rows, today, zone, snapshot["format"], obs["format_id"],
+                                         contexts, recovery_capacity_cfh=capacity)
                     if self.evidence_policy:
-                        from daily_empirical import refine
-                        result = refine(db, rows, today, zone, snapshot['format'], result, self.evidence_policy, include_elapsed=False)
+                        if result.get('constraint_basis') != COARSE_BASIS:
+                            from daily_empirical import refine
+                            result = refine(db, rows, today, zone, snapshot['format'], result, self.evidence_policy, include_elapsed=False)
                         if self.evidence_policy.get('elapsed_start_event'):
                             elapsed, reason = self.recovery.calculate(db, today, zone, snapshot['format'], result, self.evidence_policy, contexts)
                             result.update(elapsed_range=elapsed, elapsed_unavailable_reason=reason)

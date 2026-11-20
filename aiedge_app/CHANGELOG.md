@@ -1,3 +1,7 @@
+## 0.2.0-dev78
+
+- Recover Gas used today from the saved readings on both sides of midnight when fine register turn counts conflict. Use the coarse register and measured segment bounds, check the five-foot dial for forward movement within the rate limit, and keep the original measurement time and unresolved gaps.
+
 ## 0.2.0-dev77
 
 - Expose a retained absolute Gas meter reading in ft³ at the dial's available precision. Its attributes include candidate bands, coverage and the meter event. Checkpoint each accepted reading across restarts and reject backward changes, implausible jumps and unsupported whole turns.
