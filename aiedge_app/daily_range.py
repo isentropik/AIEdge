@@ -7,6 +7,13 @@ from daily_constraints import InconsistentConstraints, bands, merge, register_ba
 COARSE_BASIS = "coarse_register_after_turn_conflict"
 
 
+class ReadingConflict(InconsistentConstraints):
+    """A particular observation made the sequential constraints incompatible."""
+    def __init__(self, message, event_id):
+        super().__init__(message)
+        self.event_id = event_id
+
+
 def number(value):
     result = Decimal(str(value))
     if not result.is_finite():
@@ -88,7 +95,7 @@ def _legacy_range(records, day, zone, document, revision, contexts=None, *, coar
             low = max(low, envelope[0])
             high = min(high, envelope[1])
         if low > high:
-            raise InconsistentConstraints("inconsistent meter readings")
+            raise ReadingConflict("inconsistent meter readings", source["event_id"])
         step_limit = elapsed * rate / 1000000
         usage_high += step_limit
         if record.get("upper_unbounded") is False:
@@ -188,7 +195,7 @@ def _check_turn_continuity(records, first, modulus, turn, rate, budget):
                     earliest_bucket = max(earliest_bucket, lo // 100)
                     break
             else:
-                raise InconsistentConstraints("coarse register moved backwards")
+                raise ReadingConflict("coarse register moved backwards", obs["event_id"])
             buckets = register_bands(record, modulus, ())
             measured = _possible_turns(values, buckets, turn, budget)
             reachable = supported(measured, reachable, Decimal(0), Decimal(0))
@@ -199,7 +206,7 @@ def _check_turn_continuity(records, first, modulus, turn, rate, budget):
             lower, upper = number(record["minimum"]), number(record["maximum"])
             reachable = supported(reachable, anchors[anchor], lower, upper)
         if not reachable:
-            raise InconsistentConstraints("finest dial positions conflict even without turn counts")
+            raise ReadingConflict("finest dial positions conflict even without turn counts", obs["event_id"])
         prior_tick = tick
 
 

@@ -71,6 +71,18 @@ function interval(start, end, timezone, onDay) {
 }
 
 function renderDaily(daily) {
+ const nominal = daily?.nominal_estimate;
+ if (nominal?.method === 'range_midpoint_v1') {
+  const stale = daily.status === 'stale';
+  $('usage-estimate').textContent = nominal.value_ft3 + ' ft³';
+  setOptional('usage-assumption', stale ? 'Stale · Last supported full-day estimate' : 'Midpoint of the unresolved daily bounds.');
+  setOptional('usage-bounds', 'Unresolved bounds · ' + daily.label);
+  setOptional('usage-time', 'Measured ' + measurementTime(daily.through, daily.timezone));
+  $('daily-details').hidden = false;
+  $('daily-method').textContent = 'Meter event ' + daily.through.event_id + '. ' + nominal.assumption +
+    (stale ? ' Conflicting meter event ' + daily.conflict_event_id + '.' : '');
+  return;
+ }
  const estimate = daily?.low_use_estimate;
  const hasEstimate = estimate?.method === 'lower_bound_assumption_v1';
  $('usage-estimate').textContent = hasEstimate ? estimate.label : daily?.label || 'Daily usage unavailable';
