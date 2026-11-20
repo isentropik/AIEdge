@@ -23,8 +23,34 @@ def advance(previous, obs, full, today, zone):
     state = previous['state']
     if obs and datetime.fromisoformat(obs['captured_at']).astimezone(ZoneInfo(zone)).date() != today:
         obs = None
+    if full and full.get('status') == 'stale' and (full['day'], full['timezone']) == (day, zone):
+        through = full['through']
+        checked = full['checked_through']
+        if (obs and obs['segment_id'] == full['checked_segment_id']
+                and through['format_id'] == checked['format_id'] == obs['format_id']
+                and through['event_id'] < checked['event_id'] <= obs['event_id']
+                and (checked['event_id'] != obs['event_id'] or
+                     (checked['source_sha256'], checked['captured_at']) == (obs['source_sha256'], obs['captured_at']))
+                and (state['method'] != 'range_midpoint_v1' or state['event_id'] < through['event_id']
+                     or (state['event_id'], state['source_sha256'], state['measured_at']) ==
+                        (through['event_id'], through['source_sha256'], through['captured_at']))):
+            nominal = full['nominal_estimate']
+            held = dict(state, status='stale', value_ft3=nominal['value_ft3'], method=nominal['method'],
+                        assumption=nominal['assumption'], lower_ft3=float(full['lower']), upper_ft3=float(full['upper']),
+                        low_use_estimate_ft3=float(full['low_use_estimate']['value_ft3']),
+                        event_id=through['event_id'], measured_at=through['captured_at'], source_sha256=through['source_sha256'],
+                        conflict_event_id=full['conflict_event_id'])
+            return dict(state=held, anchor=None, stale_source=[obs['format_id'], obs['segment_id']])
+        return previous
+    if state['status'] == 'stale' and not full:
+        if (not obs or obs['event_id'] <= state['event_id']
+                or previous.get('stale_source') == [obs['format_id'], obs['segment_id']]):
+            return previous
+        # A different measurement series cannot inherit the held total.
+        state = opening(day, zone)
+        previous = dict(state=state, anchor=None)
     if not obs:
-        if state['event_id'] is None:
+        if state['event_id'] is None or state['status'] == 'stale':
             return previous
         return dict(previous, state=dict(state, status='held_at_last_reading'))
     event = obs['event_id']
@@ -45,6 +71,8 @@ def advance(previous, obs, full, today, zone):
                    assumption=nominal['assumption'], status='daily_range', lower_ft3=float(full['lower']),
                    upper_ft3=float(full['upper']), low_use_estimate_ft3=float(full['low_use_estimate']['value_ft3']))
         anchor = dict(identity=identity, base=new['value_ft3'], upper=str(obs['maximum']))
+    elif state['status'] == 'stale':
+        return previous
     elif full and state['method'] == 'range_midpoint_v1' and through.get('event_id') == state['event_id']:
         # The full publisher runs less frequently than capture. Keep its actual timestamp.
         return dict(previous, state=dict(state, status='daily_range'))
@@ -66,6 +94,7 @@ def advance(previous, obs, full, today, zone):
                    assumption='Adds only supported segment increases to the previous estimate. Unobserved usage is excluded.',
                    lower_ft3=None, upper_ft3=None, low_use_estimate_ft3=None)
     new.update(event_id=event, measured_at=obs['captured_at'], source_sha256=obs['source_sha256'])
+    new.pop('conflict_event_id', None)
     return dict(state=new, anchor=anchor)
 
 

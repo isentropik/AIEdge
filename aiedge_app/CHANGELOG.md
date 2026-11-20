@@ -1,3 +1,7 @@
+## 0.2.0-dev79
+
+- When a later meter reading conflicts, show the last supported full-day midpoint and unresolved bounds as stale at their original measurement time. Recover them from the saved daily readings after a restart and begin a new day at local midnight.
+
 ## 0.2.0-dev78
 
 - Recover Gas used today from the saved readings on both sides of midnight when fine register turn counts conflict. Use the coarse register and measured segment bounds, check the five-foot dial for forward movement within the rate limit, and keep the original measurement time and unresolved gaps.
