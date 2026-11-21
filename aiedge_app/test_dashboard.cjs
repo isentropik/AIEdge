@@ -341,7 +341,7 @@ test('hour stops keep unknown hours empty, bound usage conservatively and distin
  const data={day,zone:timezone,midnight,groups,status:'ready',identity:[day,timezone,'meter','format',before.source_sha256,after.source_sha256,1,before.captured_at,2,after.captured_at]};
  const ui=gasOverview(async()=>response(data),Clock);
  ui.render({daily});await tick();
- const chart=ui.get('day-curve'),label=()=>ui.get('day-hour-readout').textContent,key=k=>chart.onkeydown({key:k,preventDefault(){}});
+ const chart=ui.get('day-curve'),label=()=>chart.attributes['aria-valuetext'],key=k=>chart.onkeydown({key:k,preventDefault(){}});
  assert.equal(chart.attributes['aria-valuemax'],4);
  key('Home');assert.match(label(),/0?1\.00–3\.00 ft³ used/);
  key('ArrowRight');assert.match(label(),/1:00 AM PDT.*1:00 AM PST.*2\.00–7\.00 ft³ used/);
@@ -358,7 +358,7 @@ test('hour stops keep unknown hours empty, bound usage conservatively and distin
  key('ArrowRight');key('ArrowRight');assert.match(label(),/Hourly range unavailable/);
  assert.match(chart.attributes['aria-valuetext'],/No meter reading/);
  key('End');assert.match(label(),/1\.00–10\.00 ft³ used/);assert.equal(chart.dataset.endEvent,'9');
- assert.match(ui.get('day-readout').textContent,/15\.50 ft³ estimated/);
+ assert.match(chart.attributes['aria-valuetext'],/15\.50 ft³ estimated/);
 });
 
 test('the daily chart follows the displayed publication through delayed history, gaps and stale readings',async()=>{
@@ -383,17 +383,17 @@ test('the daily chart follows the displayed publication through delayed history,
  const lengths=()=>paths('plot-estimate').map(p=>p.attributes.d.split(' L').length);
  const assertEnd=id=>{
   assert.equal(chart.dataset.endEvent,String(id));assert.equal(chart.dataset.endTime,source(id).captured_at);
-  assert.equal(ui.get('daily-event').textContent,'Meter event '+id);
+  assert.equal(ui.get('usage-estimate').dataset.eventId,String(id));
  };
  ui.render({daily:range(8),daily_nominal:nominal(7,4)});assertEnd(8);assert.deepEqual(lengths(),[1]);
  answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2,1]);
  ui.render({daily:range(8),daily_nominal:nominal(9,5)});assertEnd(9);
- assert.match(ui.get('day-readout').textContent,/5.00 ft³ estimated/);assert.equal(reads,1);
+ assert.match(chart.attributes['aria-valuetext'],/5.00 ft³ estimated/);assert.equal(reads,1);
  // The independent nominal is a separate point until its own daily range is linked.
  assert.equal(paths('plot-band').length,2);
  const partial={...nominal(10,7),method:'observed_increments',status:'partial_coverage',lower_ft3:null,upper_ft3:null};
  ui.render({daily:range(8),daily_nominal:partial});assertEnd(10);assert.deepEqual(lengths(),[1,2,1]);
- assert.match(ui.get('day-readout').textContent,/7.00 ft³ estimated · Partial coverage$/);
+ assert.match(chart.attributes['aria-valuetext'],/7.00 ft³ estimated.*Partial coverage$/);
  assert.equal(paths('plot-band').length,1);
  // Earlier bounded readings share a ribbon; the isolated partial estimate remains outside it.
  const ribbonX=paths('plot-band')[0].attributes.d.match(/(?:M|L)([\d.]+)/g).map(v=>Number(v.slice(1)));
@@ -402,7 +402,7 @@ test('the daily chart follows the displayed publication through delayed history,
  data=history(8);now+=125000;
  ui.render({daily:{...range(8),status:'stale',checked_through:source(15)},daily_nominal:nominal(6,4)});
  answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2]);
- assert.match(ui.get('day-readout').textContent,/Stale$/);
+ assert.match(chart.attributes['aria-valuetext'],/Stale$/);
  // Same millisecond and event number are insufficient to join a different source.
  data={...data,last_captured_at:data.last_captured_at.replace('.000Z','.000001Z')};now+=125000;
  ui.render({daily:range(8)});answer();await tick();assert.deepEqual(lengths(),[1,1,1]);
@@ -411,7 +411,7 @@ test('the daily chart follows the displayed publication through delayed history,
  data=history(12);now+=125000;
  ui.render({daily:range(8)});answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,1,1]);
  ui.render({daily_nominal:{...partial,value_ft3:0}});assertEnd(10);assert.deepEqual(lengths(),[1]);
- assert.match(ui.get('day-readout').textContent,/0.00 ft³ estimated · Partial coverage/);
+ assert.match(chart.attributes['aria-valuetext'],/0.00 ft³ estimated.*Partial coverage/);
  ui.render({daily_nominal:{day,timezone,status:'opening_balance',value_ft3:'0.00'}});
  assert.equal(chart.dataset.endEvent,undefined);assert.equal(chart.hidden,true);
  assert.match(ui.get('usage-time').textContent,/Awaiting the first measurement/);
@@ -436,19 +436,37 @@ test('contradictory daily bounds leave a break in both the line and its ribbon',
  }
 });
 
-test('absolute presentation rounds decimal text and preserves the source and outward bounds',()=>{
+test('the daily clock axis aligns in a fractional-offset zone and inspection stays transient',async()=>{
+ const zone='Asia/Kathmandu',day='2026-11-21',midnight=Date.parse(day+'T00:00:00+05:45');
+ const source=(id,dt)=>({camera:'meter',format_id:'fmt',event_id:id,source_sha256:String(id).repeat(64),captured_at:new Date(midnight+dt).toISOString()});
+ const before=source(1,-500),after=source(2,500),through=source(9,24000000);
+ const Clock=class extends Date{constructor(...args){super(...(args.length?args:[through.captured_at]));}};
+ const groups=[[[midnight,0,0,0,2],[midnight+18000000,4,1,7,6],[Date.parse(through.captured_at),5,2,8,9]]];
+ const daily={day,timezone:zone,before,after,through,lower:2,upper:8,label:'2–8 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:5}};
+ const ui=gasOverview(async()=>response({day,zone,midnight,groups,status:'ready',identity:[day,zone,'meter','fmt',before.source_sha256,after.source_sha256,1,before.captured_at,2,after.captured_at],last_digest:through.source_sha256,last_captured_at:through.captured_at}),Clock);
+ const host=ui.get('day-curve');host.clientWidth=300;
+ ui.render({daily});await tick();
+ assert.deepEqual(host.children[0].children.filter(n=>n.attributes.class==='time-tick').map(n=>n.textContent),['12 AM','2 AM','4 AM','6 AM']);
+ const tip=ui.get('day-tip');assert(tip.hidden);
+ host.onfocus();assert.equal(tip.hidden,false);
+ host.onkeydown({key:'End',preventDefault(){}});assert.match(host.attributes['aria-valuetext'],/5.00 ft³ estimated/);
+ host.onpointerleave({pointerType:'mouse'});assert(tip.hidden);
+ host.onfocus();host.onpointercancel();assert(tip.hidden);
+});
+
+test('absolute presentation rounds decimal text and preserves the exact source',()=>{
  const ui = gasOverview();
  const absolute_nominal = {event_id:31, measured_at:'2025-03-03T12:00:00Z',source_sha256:'1'.repeat(64),
    value_ft3:'9999999999999999.95', bands_ft3:[['1.001','1.009']],status:'partial_coverage'};
  ui.render({absolute_nominal});
  assert.equal(ui.get('absolute-value').textContent,'10,000,000,000,000,000.0 ft³');
- assert.match(ui.get('absolute-raw').textContent,/9999999999999999\.95/);
- assert.match(ui.get('absolute-event').textContent,/31/);
- assert.equal(ui.get('absolute-bands').children[0].textContent,'1.00–1.01 ft³');
+ assert.match(ui.get('absolute-value').dataset.fullValue,/9999999999999999\.95/);
+ assert.match(ui.get('absolute-value').dataset.eventId,/31/);
+ assert.equal(ui.get('absolute-value').dataset.measuredAt,absolute_nominal.measured_at);
  assert.match(ui.get('absolute-status').textContent,/Partial/);
  ui.render({});
-assert.ok(ui.get('absolute-details').hidden);
- assert.equal(ui.get('absolute-raw').textContent,'');
+ assert.equal(ui.get('absolute-value').dataset.eventId,undefined);
+ assert.equal(ui.get('absolute-value').dataset.fullValue,undefined);
 });
 
 test('historical segment precision is a display choice with the original measurement available',()=>{
@@ -456,9 +474,9 @@ test('historical segment precision is a display choice with the original measure
  const historical = {value:0.123456789,event_id:8,captured_at:'2025-03-03T12:00:00Z',source_sha256:'2'.repeat(64),segment_started_at:'2025-03-03T09:00:00Z'};
  ui.render({historical});
  assert.equal(ui.get('segment-value').textContent,'0.12 ft³');
- assert.equal(ui.get('segment-raw').textContent,'0.123456789 ft³ · Meter event 8');
+ assert.equal(ui.get('segment-value').dataset.fullValue,'0.123456789');
  ui.render({});
- assert.ok(ui.get('segment-details').hidden);
+ assert.equal(ui.get('segment-value').dataset.eventId,undefined);
 });
 
 test('clock buckets display a real zero, preserve missing amounts and reject a mismatched endpoint',async()=>{
@@ -473,15 +491,16 @@ test('clock buckets display a real zero, preserve missing amounts and reject a m
  assert.equal(ui.get('usage-hour').textContent,'1.50 ft³');
  assert.equal(ui.get('recent-bounds').textContent,'Bounds · 1.00–2.00 ft³');
  assert.equal(ui.get('recent-metric-label').textContent,'Nominal use');
- assert.equal(ui.get('usage-quarters').children[0].children[1].textContent,'0.00–0.00 ft³');
- assert.equal(ui.get('usage-quarters').children[2].children[1].textContent,'Range unavailable');
  const chart=ui.get('hour-curve'),fig=chart.children[0].children;
  assert.equal(fig.filter(n=>n.attributes.class==='plot-estimate').length,2);
  assert.equal(fig.filter(n=>n.attributes.class==='plot-band').length,2);
  assert.equal(fig.filter(n=>n.attributes.class==='plot-upper').length,0);
  const key=k=>chart.onkeydown({key:k,preventDefault(){}});
- key('Home');assert.match(ui.get('hour-readout').textContent,/0\.00 ft³ nominal · Bounds 0\.00–0\.00 ft³/);
- key('ArrowRight');key('ArrowRight');assert.match(ui.get('hour-readout').textContent,/Range unavailable$/);
+ key('Home');assert.match(chart.attributes['aria-valuetext'],/0\.00 ft³ nominal · Bounds 0\.00–0\.00 ft³/);
+ key('ArrowRight');key('ArrowRight');assert.match(chart.attributes['aria-valuetext'],/Range unavailable/);
+ assert.equal(ui.get('hour-tip').hidden,false);
+ key('Escape');assert.equal(ui.get('hour-tip').hidden,true);
+ assert.equal(fig.filter(n=>n.attributes.class==='time-tick').length>1,true);
  result.periods['1'].lower='58.18';result.periods['1'].upper='66.31';
  ui.get('usage-period').value='1';ui.render({recent});
  assert.equal(ui.get('usage-hour').textContent,'62.25 ft³');

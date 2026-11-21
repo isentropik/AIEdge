@@ -9,9 +9,114 @@ function svg(tag, attrs = {}, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
-function clock(t, zone, exact=false) {
-  return new Date(t).toLocaleTimeString(undefined,{timeZone:zone,hour:'numeric',minute:'2-digit',
-    ...(exact ? {second:'2-digit',timeZoneName:'short'} : {})});
+const centsFormats=Object.fromEntries(['floor','ceil'].map(mode=>[mode,new Intl.NumberFormat('en-US',{
+  useGrouping:false,maximumFractionDigits:2,roundingMode:mode
+})]));
+const cents=(value,mode)=>Math.round(100*Number(centsFormats[mode].format(value)));
+const formats=new Map();
+function timeFormat(zone,style) {
+  const key=zone+'|'+style;
+  if(!formats.has(key)){
+    const options={timeZone:zone,hour:'numeric',minute:'2-digit'};
+    if(style==='seconds'||style==='exact')options.second='2-digit';
+    if(style==='range'||style==='exact')options.timeZoneName='short';
+    if(style==='offset')options.timeZoneName='longOffset';
+    formats.set(key,new Intl.DateTimeFormat(style==='offset'?'en-US':undefined,options));
+  }
+  return formats.get(key);
+}
+function clock(t,zone,exact=false) {
+  return timeFormat(zone,exact?'exact':'minute').format(t);
+}
+function zonePart(format,t) {
+  return format.formatToParts(t).find(p=>p.type==='timeZoneName').value;
+}
+function clockSpan(from,to,zone) {
+  const format=timeFormat(zone,'range');
+  return zonePart(format,from)===zonePart(format,to)?format.formatRange(from,to):format.format(from)+' – '+format.format(to);
+}
+function offsetAt(t,zone) {
+  const match=/([+-])(\d\d):(\d\d)/.exec(zonePart(timeFormat(zone,'offset'),t));
+  return match?(match[1]==='-'?-1:1)*(Number(match[2])*60+Number(match[3]))*60000:0;
+}
+// Align to local wall time even for fractional-hour offsets and clock changes.
+function axisTicks(start,end,width,zone) {
+  const span=end-start;
+  if(span<=0)return [{time:start,label:clock(start,zone)}];
+  const labelWidth=span<120000?88:50;
+  const slots=Math.max(1,Math.min(7,Math.floor(width/labelWidth)));
+  const minStep=span/slots;
+  const step=([1,2,5,10,15,30,60,120,300,600,900,1800,3600,7200,10800,14400,21600,43200,86400]
+    .map(seconds=>seconds*1000).find(ms=>ms>=minStep)||86400000);
+  const labelFormat=timeFormat(zone,step<60000?'seconds':'minute');
+  const ticks=[];
+  const add=(from,to,offset)=>{
+    for(let t=Math.ceil((from+offset)/step)*step-offset;t<=to;t+=step){
+      const label=labelFormat.format(t);
+      ticks.push({time:t,label:step>=3600000?label.replace(':00',''):label});
+    }
+  };
+  const first=offsetAt(start,zone),last=offsetAt(end,zone);
+  if(first===last)add(start,end,first);
+  else{
+    let lo=start,hi=end;
+    while(hi-lo>1){
+      const mid=Math.floor((lo+hi)/2);
+      if(offsetAt(mid,zone)===first)lo=mid;else hi=mid;
+    }
+    add(start,lo,first);add(hi,end,last);
+    const seen=new Set(),repeated=new Set();
+    for(const t of ticks){if(seen.has(t.label))repeated.add(t.label);seen.add(t.label);}
+    for(const t of ticks)if(repeated.has(t.label))t.label+=' '+zonePart(timeFormat(zone,'range'),t.time);
+  }
+  return ticks;
+}
+// Fit the outer edge in screen space. Interior display anchors may move one
+// pixel outward so a staircase can become a gentle slope. Pin every gap corner.
+function bandPath(points,k,x,y,move) {
+  const side=k===3?-1:1,baseline=y(0);
+  const levels=points.map(p=>side*y(p[k]));
+  const coord=(t,v)=>x(t).toFixed(2)+' '+(side*v).toFixed(2);
+  const vertex=(i,v=levels[i])=>coord(points[i][0],v);
+  const path=[move+vertex(0)];
+  function fit(a,b,left,right){
+    if(b<=a)return;
+    const t0=points[a][0],dt=points[b][0]-t0,rise=right-left;
+    let bow=0,pivot=0;
+    for(let i=a+1;i<b;i++){
+      const u=(points[i][0]-t0)/dt;
+      const required=(levels[i]-left-rise*u)/(4*u*(1-u));
+      if(required>bow){bow=required;pivot=i;}
+    }
+    // A quadratic minus a linear input edge is concave in the outward
+    // direction. Its maximum is at an endpoint or where the slopes agree.
+    let split=bow>Math.abs(rise)/4?pivot:0;
+    for(let i=a+1;!split&&i<=b;i++){
+      const u=(points[i-1][0]-t0)/dt,v=(points[i][0]-t0)/dt;
+      const slope=(levels[i]-levels[i-1])/(v-u);
+      const at=bow?Math.max(u,Math.min(v,(rise+4*bow-slope)/(8*bow))):rise>slope?v:u;
+      const slack=left+rise*at+4*bow*at*(1-at)-levels[i-1]-slope*(at-u);
+      if(slack>2&&b>a+1)split=pivot||Math.min(b-1,Math.max(a+1,at-u<v-at?i-1:i));
+    }
+    if(split){
+      // Stay inside the endpoint levels on a monotone stretch whenever
+      // possible and never draw a lower gas bound below zero.
+      const adjusted=Math.max(levels[split],Math.min(levels[split]+1,Math.max(left,right),side===1?baseline:Infinity));
+      fit(a,split,left,adjusted);fit(split,b,adjusted,right);return;
+    }
+    path.push(bow>.000001?'Q'+coord(t0+dt/2,left+rise/2+2*bow)+' '+vertex(b,right):'L'+vertex(b,right));
+  }
+  let start=0;
+  for(let i=1;i<points.length;i++){
+    if(points[i][0]===points[i-1][0]||Math.abs(levels[i]-levels[i-1])>8){
+      fit(start,i-1,levels[start],levels[i-1]);path.push('L'+vertex(i));start=i;
+    }else if(i-start===64){
+      // Bound the work per sample even for a long day of dense readings.
+      fit(start,i,levels[start],levels[i]);start=i;
+    }
+  }
+  fit(start,points.length-1,levels[start],levels.at(-1));
+  return path.join(' ');
 }
 // Bound consumption at a clock boundary from the saved daily totals on either side.
 // The line keeps every measurement. Only its inspection targets are grouped.
@@ -39,7 +144,7 @@ function dayHours(points, midnight, recent) {
     if(point&&(!final||eligible(last))&&left[0]<=left[1]&&right[0]<=right[1]&&left[0]<=right[1]&&Number.isFinite(right[1])){
       // Recorder bounds are published in hundredths. Round their difference
       // outwards for any source that supplies finer precision.
-      const cents=(v,mode)=>Math.round(100*Number(v.toLocaleString('en-US',{useGrouping:false,maximumFractionDigits:2,roundingMode:mode})));
+
       range=[Math.max(0,cents(right[0],'floor')-cents(left[1],'ceil'))/100,
              (cents(right[1],'ceil')-cents(left[0],'floor'))/100];
       if(recent){
@@ -109,43 +214,50 @@ function bucketStroke(group) {
   return [[first[5],...first.slice(1)],...group.map(p=>[center(p),...p.slice(1)]),last];
 }
 function chart(kind) {
-  const host = $(kind+'-curve'), readout = $(kind+'-readout'), isDay = kind === 'day';
-  const graphic = svg('svg',{'aria-hidden':'true'});
+  const host=$(kind+'-curve'),tip=$(kind+'-tip'),isDay=kind==='day';
+  const title=$(kind+'-tip-title'),amount=$(kind+'-tip-amount'),bounds=$(kind+'-tip-bounds'),note=$(kind+'-tip-note');
+  const graphic=svg('svg',{'aria-hidden':'true'});
   host.append(graphic);
-  let model, chosen, atX, atY;
-  function pick(index) {
-    if (!model?.points.length) return;
-    const i = Math.max(0,Math.min(index,model.stops.length-1)), stop=model.stops[i], p=stop.point;
-    chosen = stop.from??stop.to;
-    const cursor=graphic.querySelector('.plot-cursor');
+  let model,chosen,atX,atY,cursor,dot,active=-1,inspecting=false,drawnWidth=0,plotBottom=0;
+  function hide(){
+    inspecting=false;tip.hidden=true;
+    if(cursor)cursor.setAttribute('visibility','hidden');
+    if(dot)dot.setAttribute('visibility','hidden');
+  }
+  function pick(index,show=true){
+    if(!model?.points.length)return;
+    const i=Math.max(0,Math.min(index,model.stops.length-1)),stop=model.stops[i],p=stop.point;
+    if(i===active&&show===inspecting)return;
+    active=i;inspecting=show;chosen=stop.from??stop.to;
     if(isDay){
-      const format=new Intl.DateTimeFormat(undefined,{timeZone:model.zone,hour:'numeric',minute:'2-digit',timeZoneName:'short'});
-      let span='';
-      if(stop.from!=null){
-        const offset=t=>format.formatToParts(t).find(part=>part.type==='timeZoneName').value;
-        span=(offset(stop.from)===offset(stop.to)?format.formatRange(stop.from,stop.to):format.format(stop.from)+' – '+format.format(stop.to))+' · ';
-      }
-      $('day-hour-readout').textContent=span+(stop.range?number.format(stop.range[0])+'–'+number.format(stop.range[1])+' ft³ used':'Hourly range unavailable');
+      const interval=stop.from==null?'':clockSpan(stop.from,stop.to,model.zone);
+      const used=stop.range?number.format(stop.range[0])+'–'+number.format(stop.range[1])+' ft³ used':'Hourly range unavailable';
+      title.textContent=p?clock(p[0],model.zone,true):interval;
+      amount.textContent=p?.[1]!=null?number.format(p[1])+' ft³ estimated':p?'':'No meter reading in this hour.';
+      bounds.textContent=p?.[2]!=null&&p[3]!=null?'Bounds '+number.format(p[2])+'–'+number.format(p[3])+' ft³':'';
+      note.textContent=[p&&interval,interval&&used,p?.[5]].filter(Boolean).join(' · ');
+    }else{
+      title.textContent=clockSpan(p[5],p[0],model.zone);
+      amount.textContent=p[1]!=null?number.format(p[1])+' ft³ nominal':p[2]>0?'At least '+number.format(p[2])+' ft³ · partial coverage':'Range unavailable';
+      bounds.textContent=p[3]!=null?'Bounds '+number.format(p[2])+'–'+number.format(p[3])+' ft³':'';
+      note.textContent=p[0]%60000?'Through '+clock(p[0],model.zone,true):'';
     }
     host.setAttribute('aria-valuenow',i);
-    if(!p){
-      readout.textContent='No meter reading in this hour.';
-      host.setAttribute('aria-valuetext',$('day-hour-readout').textContent+' · '+readout.textContent);
-      if(cursor)cursor.setAttribute('visibility','hidden');
-      return;
+    host.setAttribute('aria-valuetext',[title,amount,bounds,note].map(el=>el.textContent).filter(Boolean).join(' · '));
+    tip.hidden=!show;
+    const px=atX(isDay?p?.[0]??stop.to:center(p)),level=p?.[1]??p?.[2];
+    const py=level==null?plotBottom/2:atY(level);
+    if(show){
+      const position=px<drawnWidth/2?(px+9)+'px':'calc('+(px-9)+'px - var(--tip-width))';
+      tip.style.left='clamp(0px, '+position+', calc(100% - var(--tip-width)))';
+      const height=tip.offsetHeight||0;
+      const preferred=py>height+10?py-height-8:py+8;
+      tip.style.top=Math.max(0,Math.min(preferred,plotBottom-height))+'px';
     }
-    const amounts = p[3]==null ? (isDay?'':p[2]>0?'At least '+number.format(p[2])+' ft³ · partial coverage':'Range unavailable') : number.format(p[2])+'–'+number.format(p[3])+' ft³';
-    const time = isDay ? clock(p[0],model.zone,true) : clock(p[5],model.zone)+' – '+clock(p[0],model.zone,true);
-    const estimate = p[1]==null ? '' : number.format(p[1])+' ft³ estimated';
-    const value = isDay ? [estimate,amounts,p[5]].filter(Boolean).join(' · ') :
-      p[1]==null?amounts:number.format(p[1])+' ft³ nominal · Bounds '+amounts;
-    readout.textContent = (isDay?'Day total at ':'')+time+' · '+value;
-    host.setAttribute('aria-valuetext',(isDay?$('day-hour-readout').textContent+' · ':'')+readout.textContent);
-    if(cursor) {
-      cursor.setAttribute('visibility',!isDay&&p[1]==null?'hidden':'visible');
-      cursor.setAttribute('transform','translate('+atX(isDay?p[0]:center(p))+' 0)');
-      cursor.querySelectorAll('circle').forEach(dot=>dot.setAttribute('cy',atY(p[1]??p[2])));
-    }
+    cursor.setAttribute('visibility',show?'visible':'hidden');
+    cursor.setAttribute('transform','translate('+px+' 0)');
+    dot.setAttribute('visibility',show&&p?.[1]!=null?'visible':'hidden');
+    dot.setAttribute('cy',py);
   }
   function draw() {
     if (!model?.points.length || !host.clientWidth) return;
@@ -158,7 +270,7 @@ function chart(kind) {
     const ceiling=Math.max(step,Math.ceil(peak/step)*step);
     const end=points.at(-1)[0], span=Math.max(1,end-start);
     const x=t=>end===start?(left+right)/2:left+(right-left)*(t-start)/span, y=v=>bottom-(bottom-top)*v/ceiling;
-    atX=x; atY=y;
+    atX=x; atY=y; drawnWidth=w; plotBottom=bottom;
     graphic.setAttribute('viewBox','0 0 '+w+' '+h);
     graphic.style.height=h+'px';
     const nodes=[];
@@ -171,7 +283,9 @@ function chart(kind) {
     const strokes=isDay?groups:groups.map(bucketStroke);
     const ribbons=isDay?dailyRibbons(groups):strokes;
     for(const g of ribbons){
-      nodes.push(svg('path',{d:line(g,3)+' L'+[...g].reverse().map(p=>coords(p,2)).join(' L')+' Z',class:'plot-band'}));
+      const back=[...g].reverse();
+      const d=isDay?bandPath(g,3,x,y,'M')+' '+bandPath(back,2,x,y,'L'):line(g,3)+' L'+back.map(p=>coords(p,2)).join(' L');
+      nodes.push(svg('path',{d:d+' Z',class:'plot-band'}));
     }
     for(const g of strokes){
       if(g[0][1]==null)continue;
@@ -181,59 +295,49 @@ function chart(kind) {
         nodes.push(svg('circle',{cx:x(p[0]),cy:y(p[1]),r:1.9,class:'plot-estimate-dot'}));
       }
     }
-    const clockTicks=[start];
-    if(model.clockBins){
-      const spacing=w<440?80:110;
-      for(const p of points.slice(0,-1)){
-        if(x(p[0])-x(clockTicks.at(-1))>=spacing && x(end)-x(p[0])>=spacing)clockTicks.push(p[0]);
-      }
-      clockTicks.push(end);
+    for(const tick of axisTicks(start,end,right-left,zone)){
+      const px=x(tick.time);
+      const halfLabel=tick.label.length*3.4;
+      const anchor=px<halfLabel?'start':px>w-halfLabel?'end':'middle';
+      nodes.push(svg('line',{x1:px,x2:px,y1:bottom,y2:bottom+4,class:'plot-tick'}),
+        svg('text',{x:px,y:h-6,'text-anchor':anchor,class:'time-tick'},tick.label));
     }
-    const tickTimes=isDay?[start,...[.333,.667].map(f=>{
-      const hour=3600000;
-      return start+Math.round(span*f/hour)*hour;
-    }).filter(t=>t>start+span*.12 && t<end-span*.12),end]:model.clockBins?clockTicks:points.map(p=>p[0]);
-    const ticks=[...new Set(tickTimes)];
-    ticks.forEach((t,i)=>{
-      let label=clock(t,zone);
-      if(isDay && span<120000)label=new Date(t).toLocaleTimeString(undefined,{timeZone:zone,hour:'numeric',minute:'2-digit',second:'2-digit'});
-      else if(isDay && w<440 && !i)label='Midnight';
-      else if(isDay && w<440 && i<ticks.length-1)label=label.replace(':00','');
-      nodes.push(svg('text',{x:x(t),y:h-6,'text-anchor':ticks.length===1?'middle':i===0?'start':i===ticks.length-1?'end':'middle'},label));
-    });
-    const cursor=svg('g',{class:'plot-cursor'});
-    cursor.append(svg('line',{x1:0,x2:0,y1:top,y2:bottom}));
-    cursor.append(svg('circle',{cx:0,r:4.3,class:'plot-estimate-dot'}));
+    cursor=svg('g',{class:'plot-cursor',visibility:'hidden'});
+    dot=svg('circle',{cx:0,r:4.3,class:'plot-estimate-dot'});
+    cursor.append(svg('line',{x1:0,x2:0,y1:top,y2:bottom}),dot);
     nodes.push(cursor);
     graphic.replaceChildren(...nodes);
     const i=model.stops.findIndex(s=>(s.from??s.to)===chosen);
-    pick(i<0 ? model.stops.length-1 : i);
+    active=-1;pick(i<0 ? model.stops.length-1 : i,inspecting);
   }
   function locate(e) {
     if(!model || !atX)return;
     const px=e.clientX-host.getBoundingClientRect().left;
-    if(isDay||model.clockBins){
-      const i=model.stops.findIndex(s=>px<atX(s.to));
-      pick(i<0?model.stops.length-1:i);return;
-    }
-    let best=0;
-    model.points.forEach((p,i)=>{if(Math.abs(atX(p[0])-px)<Math.abs(atX(model.points[best][0])-px))best=i;});
-    pick(best);
+    const i=model.stops.findIndex(s=>px<atX(s.to));
+    pick(i<0?model.stops.length-1:i);
   }
   host.addEventListener('pointerdown',locate);
   host.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||e.buttons)locate(e);});
+  host.addEventListener('pointerleave',e=>{if(e.pointerType==='mouse')hide();});
+  host.addEventListener('pointercancel',hide);
+  host.addEventListener('blur',hide);
+  host.addEventListener('focus',()=>{if(!inspecting)pick(active<0?0:active);});
+  document.addEventListener?.('pointerdown',e=>{if(inspecting&&!host.contains(e.target))hide();});
   host.addEventListener('keydown',e=>{
+    if(e.key==='Escape'){hide();return;}
     if(!model)return;
     const i=model.stops.findIndex(s=>(s.from??s.to)===chosen);
     const next={ArrowLeft:i-1,ArrowRight:i+1,Home:0,End:model.stops.length-1}[e.key];
     if(next!==undefined){e.preventDefault();pick(next);}
   });
-  new ResizeObserver(draw).observe(host);
+  new ResizeObserver(()=>{if(host.clientWidth!==drawnWidth)draw();}).observe(host);
   return function update(groups, start, zone, key, empty, midnight, recent, clockBins) {
     if(!groups?.length&&!clockBins?.length){
       model=null; chosen=null; graphic.replaceChildren(); host.hidden=true;
-      if(isDay)$('day-hour-readout').textContent='';
-      readout.textContent=empty||''; return;
+      hide();active=-1;cursor=null;dot=null;drawnWidth=0;
+      host.setAttribute('aria-valuetext','');
+      if(isDay)$('day-history-status').textContent=empty||'';
+      return;
     }
     if(model?.key===key)return;
     const previous=model?.stops.at(-1);
@@ -280,8 +384,7 @@ function showDay(){
   const visible=recorded ? [...groups.slice(0,-1),[...groups.at(-1).slice(0,-1),point]] :
     [...groups.map(g=>g.filter(p=>p[0]<stamp&&p[4]<event)).filter(g=>g.length),[point]];
   host.dataset.endEvent=String(event);host.dataset.endTime=source.captured_at;
-  $('day-history-status').textContent=saved?.status==='unavailable'?'History refresh delayed':
-    !recorded&&visible.length>1?'Showing the latest measurement as a separate point.':'';
+  $('day-history-status').textContent=saved?.status==='unavailable'?'History refresh delayed':'';
   drawDay(visible,history?.midnight??stamp,zone,JSON.stringify([identity,history?.revision,latest,recentWindow]),null,history?.midnight,recentWindow);
 }
 async function day(daily,headline,recent){

@@ -214,11 +214,23 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .trend-chart svg {display:block; width:100%; height:175px; overflow:visible; stroke:none; fill:none; stroke-width:1; stroke-linecap:round; stroke-linejoin:round;}
 .trend-chart text {fill:var(--sub); font:11.5px system-ui,sans-serif; font-variant-numeric:tabular-nums;}
 .plot-grid {stroke:var(--grid); stroke-width:1; stroke-dasharray:2 5;}
-.plot-band {fill:var(--band); stroke:color-mix(in srgb,var(--series) 48%,transparent); stroke-width:.8;}
+.plot-band {fill:var(--band); stroke:none;}
 .plot-estimate {fill:none; stroke:var(--series); stroke-width:2.7;}
 .plot-estimate-dot {fill:var(--series);}
+.plot-frame {position:relative; --tip-width:min(15rem,100%);}
+.plot-tip {
+  position:absolute; z-index:1; width:var(--tip-width); box-sizing:border-box;
+  display:grid; gap:3px; padding:10px 12px; border-radius:9px;
+  border:1px solid var(--edge); border-inline-start:3px solid var(--series);
+  background:var(--paper); color:var(--ink); box-shadow:0 3px 12px #0003;
+  font-size:.82rem; line-height:1.35; font-variant-numeric:tabular-nums; pointer-events:none;
+}
+.plot-tip strong {color:var(--sub); font-size:.78rem; font-weight:560;}
+.plot-tip span:first-of-type {font-size:1.05rem; font-weight:650;}
+.plot-tip small {color:var(--sub); font-size:.76rem;}
+.plot-tip :empty {display:none;}
+.plot-tick {stroke:var(--edge);}
 .plot-cursor {stroke:var(--series); stroke-opacity:.5; stroke-dasharray:2 3;}
-.usage-card .trend-readout {color:var(--sub); font-size:.96rem; margin-top:.8rem; font-variant-numeric:tabular-nums; min-height:1.5em;}
 #day-history-status {font-size:.9rem; color:var(--sub);}
 .usage-recent {--series:light-dark(#16746e,#70cdb9); --band:color-mix(in srgb,var(--series) 26%,transparent); --grid:var(--edge);}
 .usage-recent .hour-summary {display:grid; grid-template-columns:1fr auto; align-items:end; gap:.25rem 1rem; border-bottom:1px solid var(--edge); padding-bottom:1.25rem; margin-bottom:1.25rem;}
@@ -236,13 +248,9 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 #restart-setup {margin-top:1rem;}
 .usage-recent .period-choice,.hour-summary .usage-time {grid-column:1;}
 .usage-register .usage-time {margin:.35rem 0;}
-.usage-register > details {margin-top:.3rem;}
 .usage-overview .usage-history {grid-column:1/-1; padding-block:5px;}
 .usage-history > summary,#capture-operations > summary {min-height:44px; align-content:center;}
 .history-section {border-top:1px solid var(--edge); margin-top:12px; padding-block:14px;}
-#usage-quarters,#absolute-bands {list-style:none; padding:0;}
-#usage-quarters li {display:flex; justify-content:space-between; gap:.5rem; border-bottom:1px solid var(--edge); padding:6px 0;}
-#quarter-sources {padding-left:1.35rem; color:var(--sub);}
 @media(max-width:900px){
   .usage-overview {grid-template-columns:minmax(0,1fr);}
   .usage-overview .usage-today {grid-template-columns:minmax(0,1fr); gap:20px;}
@@ -253,9 +261,18 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .usage-overview {gap:12px;}
   .usage-overview .usage-card {padding:18px; border-radius:16px;}
   .usage-overview .usage-history {padding-block:4px;}
-  .usage-recent .hour-summary {display:block;}
-  .period-choice {margin-block:.35rem;}
-  .recent-metric {margin-top:.85rem; text-align:start;}
+  .usage-recent .hour-summary {grid-template-columns:minmax(0,1fr) auto; gap:.45rem .5rem; align-items:center; padding-bottom:1rem; margin-bottom:1rem;}
+  .usage-recent .period-choice {grid-column:2; grid-row:1; justify-self:end;}
+  .period-choice select {font-size:.88rem; min-height:44px;}
+  .recent-metric {grid-column:1/-1; grid-row:2; text-align:start; margin:.2rem 0;}
+  .hour-summary .usage-time {grid-column:1/-1; grid-row:3;}
+  .usage-summary .day-summary {margin-top:.8rem; padding-top:.8rem;}
+  .usage-card .usage-time {font-size:.83rem; margin-top:.35rem;}
+  .usage-overview .usage-today {gap:14px;}
+  .trend-figure figcaption {margin-bottom:6px;}
+  .trend-legend {font-size:.8rem; gap:4px;}
+  .usage-overview .usage-card {padding-inline:clamp(12px,3.6vw,18px);}
+  .plot-tip {--tip-width:min(13rem,100%);}
   .usage-card summary {min-height:44px; align-content:center;}
   .trend-chart text {font-size:10.5px;}
 }
