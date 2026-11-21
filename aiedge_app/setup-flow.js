@@ -5,7 +5,7 @@ const $=id=>document.getElementById(id);
 const steps=['meter','lighting','image','alignment','dials','format','data','finish'];
 const headings={meter:'Meter and units',lighting:'Lighting',image:'Image',alignment:'Alignment markers',dials:'Analog dials',format:'Number format',data:'Data',finish:'Finish setup'};
 const form=$('reading-form'),formatHome=$('page-format');
-let step='image',active=false,busy=false,navigating=false,camera=null,polling=false,viewGeneration=0,routeGeneration=0,statusSnapshot=null;
+let step='image',active=false,busy=false,navigating=false,loadingStep=false,camera=null,polling=false,viewGeneration=0,routeGeneration=0,statusSnapshot=null;
 const messages={camera_not_configured:'Set the camera address in AIEdge app configuration, or choose a saved image.',camera_not_ready:'The camera is not ready. Check its connection and saved settings.',camera_setup_busy:'A camera request is already running. Wait for it to finish.',camera_authentication_failed:'Camera login was rejected. Check its credentials in app configuration.',camera_api_unavailable:'This firmware does not support remote capture.',camera_connection_failed:'Could not reach the camera. Check its power and network connection.',camera_timeout:'The camera did not respond in time.',camera_setup_failed:'The picture could not be verified. Your current reference has been kept.',camera_certificate_invalid:'The camera certificate could not be verified.',reference_must_be_640x480:'Choose a 640 × 480 reference image.'};
 Object.assign(messages,{camera_busy:'The camera is busy. Wait for the current request to finish.',camera_lighting_unsupported:'This camera does not support app lighting controls.',camera_lighting_config_unsupported:'The saved lighting configuration is unsupported or ambiguous. Check it on the camera.',camera_lighting_pin_unavailable:'That pin is unavailable. Choose a free lighting pin.',camera_lighting_conflict:'Camera settings changed. Load the current settings before applying your choices.',camera_lighting_choice_invalid:'Check the light source, pin, LED count and channel values.',camera_lighting_unverified:'Lighting activation is unverified. Load and activate the saved lighting before taking a picture.',camera_lighting_connection_failed:'The camera connection failed. Load the saved settings to check the result; the request was not retried.',camera_lighting_activation_unverified:'Settings were saved, but activation is unverified. Load and activate the saved lighting before taking a picture.',camera_lighting_save_unverified:'The lighting save is unverified. Load the current settings before continuing.',camera_lighting_rejected:'The camera rejected the lighting request. Load the current settings before continuing.',camera_lighting_response_invalid:'The camera returned an invalid lighting response. Load the current settings before continuing.',camera_lighting_storage_unavailable:'The app could not save its lighting operation record. No further camera changes can be made until storage is repaired.'});
 Object.assign(messages,{camera_image_unsupported:'This camera firmware does not support app image controls.',camera_image_config_unsupported:'The saved image settings are incomplete or ambiguous. Check them on the camera.',camera_image_conflict:'Camera settings changed. Load them again before applying.',camera_image_unverified:'Image settings could not be verified. Load and activate the saved settings before taking a picture.',camera_image_reference_required:'Take a picture in the new orientation and save its calibration before resuming scheduled capture.',camera_image_orientation_unverified:'The picture orientation could not be verified. Your saved calibration has been kept.',camera_image_choice_invalid:'Check the exposure and gain values.',camera_image_storage_unavailable:'The app could not save the image-settings operation. Repair app storage before changing the camera.',camera_image_activation_unverified:'Image settings were saved, but activation could not be verified. Load and activate the saved settings.',camera_image_save_unverified:'The image settings save could not be verified. Load the settings before continuing.',camera_image_connection_failed:'Could not reach the camera. The image-settings request was not retried.',camera_image_response_invalid:'The camera returned an invalid image-settings response.',camera_image_rejected:'The camera rejected the image settings.'});
@@ -25,14 +25,14 @@ function editor(){return window.AIEdgeCalibration?.status()||{};}
 function controls(){
  const state=editor(),index=steps.indexOf(step);
  window.AIEdgeImageEditor?.setBusy(busy||navigating||!!state.busy);
- $('setup-back').disabled=busy||navigating||index===0;$('setup-next').disabled=busy||navigating||!!state.busy;
+ $('setup-back').disabled=busy||navigating||loadingStep||index===0;$('setup-next').disabled=busy||navigating||loadingStep||!!state.busy;
  $('setup-next').hidden=step==='finish';$('setup-next').textContent=busy?'Applying…':'Next';
  $('setup-next').setAttribute('aria-busy',String(busy));
  $('step-count').textContent=`Step ${index+1} of ${steps.length}`;
  $('setup-progress').textContent=step==='alignment'?'3 fixed markers':step==='dials'?(state.dial_count||0)+' dials':'';
  for(const button of document.querySelectorAll('.setup-steps button')){
   const current=button.dataset.step===step;button.setAttribute('aria-current',current?'step':'false');
-  button.disabled=busy||navigating||!!state.busy;button.dataset.completed=String(steps.indexOf(button.dataset.step)<index);
+  button.disabled=busy||navigating||loadingStep||!!state.busy;button.dataset.completed=String(steps.indexOf(button.dataset.step)<index);
  }
  const selected=document.querySelector?.('.setup-steps button[aria-current="step"]'),nav=document.querySelector?.('.setup-steps');
  if(selected&&nav&&nav.scrollWidth>nav.clientWidth)nav.scrollTo({left:Math.max(0,selected.offsetLeft-nav.offsetLeft-(nav.clientWidth-selected.offsetWidth)/2),behavior:'auto'});
@@ -58,18 +58,22 @@ function moveFormat(inWizard){
  $('reload-format').hidden=inWizard;
 }
 async function show(next,updateHash=false){
- if(!steps.includes(next))next='meter';
+ const saved=next==='saved';
+ if(!saved&&!steps.includes(next))next='meter';
  const generation=++viewGeneration;
  active=true;step=next;window.showAppPage('setup');
  if(updateHash&&location.hash!=='#setup/'+step){location.hash='setup/'+step;return;}
- $('setup-heading').textContent=headings[step];
+ loadingStep=true;
+ $('setup-heading').textContent=saved?'Saved setup':headings[step];
+ $('setup-steps').hidden=saved;$('step-count').hidden=saved;$('setup-actions').hidden=saved;
+ if(saved)$('setup-summary').replaceChildren();
  $('setup-meter').hidden=step!=='meter';
  $('setup-lighting').hidden=step!=='lighting';
  $('setup-editor').hidden=!['image','alignment','dials'].includes(step);
  $('image-controls').hidden=step!=='image';$('placement-controls').hidden=step==='image';
  window.AIEdgeImageControls?.setStep(step);
  $('selected-label').firstChild.textContent=step==='alignment'?'Marker':'Dial';
- for(const id of ['format','data','finish'])$('setup-'+(id==='format'?'format-host':id)).hidden=step!==id;
+ for(const id of ['format','data','finish'])$('setup-'+(id==='format'?'format-host':id)).hidden=step!==id&&!(saved&&id==='finish');
  moveFormat(step==='format');
  window.AIEdgeNotices?.sync();
  controls();
@@ -81,15 +85,19 @@ async function show(next,updateHash=false){
  if(next==='meter')await window.AIEdgeMeter.load();
  if(next==='format')await window.openReadingFormat();
  if(next==='data')await window.AIEdgeArchive.load();
- if(next==='finish')await summary();
- if(active&&generation===viewGeneration)controls();
+ if(next==='finish'||saved)await summary(generation,saved);
+ if(active&&generation===viewGeneration){loadingStep=false;controls();}
 }
 function fail(message){note(message,true);return false;}
 async function leave(){
  const state=editor();
  if(['image','alignment','dials'].includes(step)&&state.loaded===false)return false;
  if(step==='meter')return await window.AIEdgeMeter.save();
- if(step==='lighting')return await window.AIEdgeCameraControls?.apply()??true;
+ if(step==='lighting'){
+  const lighting=window.AIEdgeCameraControls?.status?.();
+  if(lighting?.needs_activation&&!lighting.dirty)return fail('Review the pending lighting activation before continuing.');
+  return await window.AIEdgeCameraControls?.apply()??true;
+ }
  if(step==='image'){
   if(!(state.has_image&&!window.AIEdgeCameraControls?.requiresPicture()&&!window.AIEdgeImageControls?.requiresPicture()))return fail(state.has_image?'Take a picture with the changed camera settings before continuing.':'Take a picture or choose an image before continuing.');
   return window.AIEdgeImageEditor?await window.AIEdgeImageEditor.save():true;
@@ -101,7 +109,7 @@ async function leave(){
  return true;
 }
 async function go(target){
- if(busy||navigating||editor().busy||!steps.includes(target))return;
+ if(busy||navigating||loadingStep||editor().busy||!steps.includes(target))return;
  const generation=routeGeneration;
  const index=steps.indexOf(step),to=steps.indexOf(target);
  if(to<=index){note('');await show(target,true);return;}
@@ -213,28 +221,52 @@ function renderStatus(s){
  const summaryMqtt=$('setup-summary-mqtt');if(summaryMqtt)summaryMqtt.textContent=mqtt==='disabled'?'Off':mqtt.replaceAll('_',' ');
  $('setup-mqtt-note').textContent=mqtt==='disabled'?'MQTT output is off. No Home Assistant readings are published.':mqtt==='connected'?'MQTT output is connected.':'MQTT output: '+mqtt.replaceAll('_',' ');
 }
-async function summary(){
+async function summary(generation,entry){
  try{
-  const [calibration,format]=await Promise.all([json('api/setup'),json('api/reading-format')]);
+  const [calibration,format,archive]=await Promise.all([json('api/setup'),json('api/reading-format'),json('api/archive').catch(()=>null)]);
+  if(!active||generation!==viewGeneration)return;
+  if(entry&&!calibration.calibration&&!calibration.meter?.profile&&!format.format&&!calibration.recovery&&!calibration.meter?.recovery&&!format.recovery)
+   return show('meter');
   const ready=!!calibration.calibration&&!calibration.recovery;
-  const profile=calibration.meter?.profile;
-  const bound=!!format.format&&!format.recovery&&!calibration.meter?.recovery&&format.format.pipeline_id===format.pipeline_id&&(!profile||format.format.unit===profile.unit);
+  const profile=window.AIEdgeMeter.selectedProfile?.(calibration,format)??calibration.meter?.profile;
+  const bound=!!format.format&&!!format.pipeline_id&&!format.recovery&&!calibration.meter?.recovery&&format.format.pipeline_id===format.pipeline_id&&(!profile||format.format.unit===profile.unit);
   const mqtt=statusSnapshot?.mqtt?.state;
   const types={gas:'Gas',water:'Water',electric:'Electric'};
-  const rows=[['Meter',profile&&!calibration.meter.recovery?types[profile.type]:'Needs review'],['Reference and dials',ready?'Saved':'Incomplete'],['Number format',bound?'Saved':'Needs review'],['Capture',camera?(camera.capture_enabled?'On':'Off'):'Unknown'],['MQTT',mqtt?(mqtt==='disabled'?'Off':mqtt.replaceAll('_',' ')):'Unknown']];
-  $('setup-summary').replaceChildren();
-  for(const [name,value] of rows){const row=document.createElement('div'),key=document.createElement('dt'),text=document.createElement('dd');if(name==='MQTT')text.id='setup-summary-mqtt';key.textContent=name;text.textContent=value;row.append(key,text);$('setup-summary').append(row);}
- }catch(error){note(error.message,true);}
+  const units={ft3:'ft³',m3:'m³',L:'L',gal_us:'US gal',kWh:'kWh'};
+  const unit=units[profile?.unit||format.format?.unit];
+  const rows=[['Meter',profile&&!calibration.meter?.recovery?types[profile.type]:'Needs review'],['Units',unit||'Needs review'],
+   ['Reference and dials',ready&&calibration.calibration.dials?calibration.calibration.dials.length+' dials · '+calibration.calibration.markers.length+' markers':ready?'Saved':'Incomplete'],['Number format',bound?'Saved':'Needs review']];
+  const scales=[];
+  if(ready&&bound)for(const scale of format.format.dials||[]){
+   const dial=calibration.calibration.dials?.[scale.index];
+   if(dial)scales.push([dial.name,scale.value_per_revolution.toLocaleString(undefined,{maximumSignificantDigits:15})+' '+unit+'/revolution · '+(dial.direction==='ccw'?'counterclockwise':'clockwise')]);
+  }
+  if(bound&&format.format.maximum_rate_per_second!=null)
+   rows.push(['Maximum rate',(format.format.maximum_rate_per_second*60).toLocaleString(undefined,{maximumSignificantDigits:5})+' '+unit+'/min']);
+  const light=camera?.settings?.lighting;
+  if(light)rows.push(['Last loaded lighting',(light.source==='builtin'?'Built-in flash':light.type+' strip')+' · '+light.intensity+'%']);
+  if(typeof camera?.auto_settings?.automatic==='boolean')rows.push(['Image setup',camera.auto_settings.automatic?'Automatic':'Manual']);
+  rows.push(['Capture',camera?(camera.capture_enabled?'On':'Off'):'Unknown']);
+  if(camera?.capture_enabled)rows.push(['Capture interval',camera.interval_seconds+' seconds']);
+  if(archive?.config)rows.push(['Archive',archive.config.enabled?archive.config.directory:'Off']);
+  rows.push(['MQTT',mqtt?(mqtt==='disabled'?'Off':mqtt.replaceAll('_',' ')):'Unknown']);
+  function list(id,items){
+   const host=$(id);host.replaceChildren();
+   for(const [name,value] of items){const row=document.createElement('div'),key=document.createElement('dt'),text=document.createElement('dd');if(name==='MQTT')text.id='setup-summary-mqtt';key.textContent=name;text.textContent=value;row.append(key,text);host.append(row);}
+  }
+  list('setup-summary',rows);list('setup-scales',scales);$('setup-dial-details').hidden=!scales.length;
+ }catch(error){if(active&&generation===viewGeneration)note(error.message,true);}
 }
 function route(hash){
  routeGeneration++;viewGeneration++;
  if(hash==='#settings'){active=false;moveFormat(false);window.showAppPage('settings');loadCamera();return true;}
- if(hash==='#calibration'||hash==='#setup'||hash.startsWith('#setup/')){show(hash==='#calibration'?'image':hash.split('/')[1]||'meter');return true;}
+ if(hash==='#calibration'||hash==='#setup'||hash.startsWith('#setup/')){show(hash==='#calibration'?'image':hash==='#setup'?'saved':hash.split('/')[1]||'meter');return true;}
  if(active){active=false;moveFormat(false);}
  return false;
 }
 $('setup-next').onclick=()=>go(steps[Math.min(steps.length-1,steps.indexOf(step)+1)]);
 $('setup-back').onclick=()=>go(steps[Math.max(0,steps.indexOf(step)-1)]);
+$('restart-setup').onclick=()=>{location.hash='setup/meter';location.reload();};
 for(const button of document.querySelectorAll('.setup-steps button'))button.onclick=()=>go(button.dataset.step);
 $('image-take-picture').onclick=()=>cameraAction('picture');$('take-reference').onclick=()=>cameraAction('picture');$('retake-reference').onclick=()=>cameraAction('picture');
 $('check-camera').onclick=()=>cameraAction('check');$('use-latest').onclick=latest;

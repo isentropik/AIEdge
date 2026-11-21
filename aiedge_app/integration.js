@@ -309,7 +309,7 @@ function render(state) {
  if (mqtt?.overview_meter || mqtt?.state === 'disabled') $('capture-operations').dataset.initialized = 'true';
  const zone = usage.daily_nominal?.timezone || usage.daily?.timezone || usage.resumed?.timezone || usage.recent?.timezone || mqtt?.overview_timezone;
  const headline = renderOverviewDaily(usage.daily_nominal, usage.daily);
- if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily,other ? null : headline);
+ if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily,other ? null : headline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
    if (sourceOf(usage.daily_nominal)) $('usage-assumption').append(' · Last published measurement');

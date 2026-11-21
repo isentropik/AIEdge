@@ -14,7 +14,7 @@
     </div>
     <figure class="trend-figure" aria-label="Cumulative gas use today">
       <figcaption><h3>Cumulative use</h3><span class="trend-legend"><i class="line-key"></i>Estimate <i class="shade-key"></i>Bounds</span></figcaption>
-      <div id="day-curve" class="trend-chart"></div><p id="day-readout" class="trend-readout">Waiting for saved readings</p><span id="day-history-status" role="status"></span>
+      <div id="day-curve" class="trend-chart"></div><p id="day-hour-readout" class="trend-readout"></p><p id="day-readout" class="usage-time">Waiting for saved readings</p><span id="day-history-status" role="status"></span>
     </figure>
   </section>
   <section class="panel usage-card usage-recent" aria-labelledby="recent-title">
@@ -65,7 +65,7 @@
 <div class="layout"><section class="panel"><div class="panel-title"><h2>Latest image</h2></div><div class="image-stage"><img id="latest-image" alt="Latest meter capture" hidden><div id="empty-image" class="empty"><svg class="camera-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h5l2-3h4l2 3h5v15H3Z"/><circle cx="12" cy="13" r="4"/></svg><strong>No captures yet</strong><p>Camera capture is not enabled.</p></div></div><div class="caption" id="capture-time">Waiting for the first image</div></section>
 <aside class="details"><section class="reading"><div class="reading-label">Image reading</div><div class="value" id="meter-value">—</div><div class="reading-label" id="meter-unit"></div><p id="reading-status" class="muted">Recognition is not configured.</p><details id="reading-bounds" class="reading-bounds" hidden><summary id="reading-bounds-label">Possible ranges</summary><ul id="reading-ranges"></ul><p id="reading-bounds-note" class="muted"></p></details><dl id="dial-results" hidden></dl></section><section class="consumption"><h2>Current segment</h2><p id="consumption-status" class="muted">Waiting for an image.</p><dl><div><dt>Since anchor</dt><dd id="consumption-value">&#8212;</dd></div><div><dt>Average rate</dt><dd id="consumption-rate">&#8212;</dd></div></dl><p id="consumption-anchor" class="note" hidden></p></section><section><h2>Capture status</h2><dl><div><dt>Schedule</dt><dd id="schedule">Loading…</dd></div><div><dt>MQTT output</dt><dd id="mqtt-state">—</dd></div><div><dt>Local storage</dt><dd id="storage-state">—</dd></div><div><dt>Free space</dt><dd id="storage-free">—</dd></div><div><dt>Missed captures</dt><dd id="missed">—</dd></div><div><dt>Last received</dt><dd id="received">—</dd></div></dl></section><p class="note"><span id="checked-at">Connecting…</span><br>Stored images stay excluded from training until review and split checks are complete.</p><a class="diagnostics-link" href="api/diagnostics" download="aiedge-diagnostics.json">Download diagnostics</a></aside></div></details></div>
 <section id="page-setup" hidden>
-  <nav class="setup-steps" aria-label="Setup steps">
+  <nav id="setup-steps" class="setup-steps" aria-label="Setup steps">
     <button data-step="meter" aria-current="step"><span>1</span>Meter</button>
     <button data-step="lighting"><span>2</span>Lighting</button>
     <button data-step="image"><span>3</span>Image</button>
@@ -190,8 +190,8 @@
       <div class="actions"><button id="archive-retry" type="button" hidden>Retry copies</button><button id="archive-reload" type="button" hidden>Load saved settings</button></div>
     </div>
   </section>
-  <section id="setup-finish" class="panel finish-card" hidden><h3>Setup summary</h3><dl id="setup-summary"></dl><p>Changes apply in the app. The camera does not need to restart.</p><a class="button primary" href="#overview">Open overview</a></section>
-  <footer class="step-actions"><button id="setup-back" type="button">Back</button><span id="setup-progress"></span><button id="setup-next" class="primary" type="button">Next</button></footer>
+  <section id="setup-finish" class="panel finish-card" hidden><dl id="setup-summary"></dl><details id="setup-dial-details" hidden><summary>Dial settings</summary><dl id="setup-scales"></dl></details><p>Restart setup to walk through your saved choices from the beginning.</p><button id="restart-setup" type="button">Restart setup</button> <a class="button primary" href="#overview">Open overview</a></section>
+  <footer id="setup-actions" class="step-actions"><button id="setup-back" type="button">Back</button><span id="setup-progress"></span><button id="setup-next" class="primary" type="button">Next</button></footer>
 </section>
 <section id="page-format" hidden>
 <form id="reading-form">

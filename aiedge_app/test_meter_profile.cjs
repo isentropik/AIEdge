@@ -12,7 +12,7 @@ class Element {
  append(child){this.children.push(child);}replaceChildren(){this.children=[];}
  addEventListener(name,fn){this.listeners[name]=fn;}focus(){this.focused=true;}
 }
-function fixture({profile=null,unit='ft3',loadFailure=false,saveFailure=false,unverified=false}={}){
+function fixture({profile=null,unit='ft3',type=null,pipeline='current',loadFailure=false,saveFailure=false,unverified=false}={}){
  const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
  const posts=[],events=[];let failed=loadFailure;
  const fetch=async(url,options={})=>{
@@ -21,7 +21,7 @@ function fixture({profile=null,unit='ft3',loadFailure=false,saveFailure=false,un
    const value=JSON.parse(options.body);posts.push(value);
    return {ok:!saveFailure,json:async()=>saveFailure?{error:'meter_profile_changed_reload'}:{revision:'saved',profile:unverified?null:value.profile}};
   }
-  return {ok:true,json:async()=>url==='api/setup'?{available:true,token:'fixture',meter:{profile,revision:profile?'original':null}}:{format:{unit}}};
+  return {ok:true,json:async()=>url==='api/setup'?{available:true,token:'fixture',configured_meter_type:type,meter:{profile,revision:profile?'original':null}}:{format:{unit,pipeline_id:pipeline},pipeline_id:'current'}};
  };
  const window={dispatchEvent:event=>events.push(event.type)};
  vm.runInContext(source,vm.createContext({document:{getElementById:get,createElement:()=>new Element()},window,fetch,AbortSignal,Event}));
@@ -68,7 +68,15 @@ test('unverified readback never marks meter choices saved',async()=>{
 
 test('unchanged Next still checks the server revision without a new type assumption',async()=>{
  const app=fixture({profile:{version:1,type:'water',unit:'ft3'}});await app.window.AIEdgeMeter.load();
- assert.equal(await app.window.AIEdgeMeter.save(),true);assert.equal(app.posts[0].revision,'original');
- assert.equal(app.posts[0].profile.type,'water');
+ assert.equal(await app.window.AIEdgeMeter.save(),true);assert.deepEqual(app.posts,[]);
+ app.setLoadFailure(true);assert.equal(await app.window.AIEdgeMeter.save(),false);
  assert.deepEqual(app.events,[]);
+});
+test('configured legacy gas and a matching saved format work without creating a new profile',async()=>{
+ const app=fixture({type:'gas'});await app.window.AIEdgeMeter.load();
+ assert.equal(app.get('meter-type').value,'gas');assert.equal(app.get('profile-unit').value,'ft3');
+ assert.equal(await app.window.AIEdgeMeter.save(),true);assert.deepEqual(app.posts,[]);
+ for(const opts of [{type:'gas',pipeline:'old'},{type:'gas',unit:'L'}]){
+  const invalid=fixture(opts);await invalid.window.AIEdgeMeter.load();assert.equal(invalid.get('meter-type').value,'');
+ }
 });

@@ -7,6 +7,19 @@ from service import handler
 class Tests(unittest.TestCase):
     setUp=test_setup.Tests.setUp
     tearDown=test_setup.Tests.tearDown
+    def test_setup_exposes_configured_gas_mode_without_creating_meter_profile(self):
+        from types import SimpleNamespace
+        output=SimpleNamespace(output_mode='gas_consumption')
+        server=ThreadingHTTPServer(('127.0.0.1',0),handler(self.store,False,None,self.worker,self.setup,mqtt_output=output))
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        try:
+            for mode in ('gas_consumption','reading'):
+                output.output_mode=mode
+                with urllib.request.urlopen('http://127.0.0.1:'+str(server.server_port)+'/api/setup') as r:
+                    result=json.load(r)
+                self.assertEqual(result.get('configured_meter_type'),'gas' if mode=='gas_consumption' else None)
+                self.assertIsNone(result['meter']['profile'])
+        finally:server.shutdown();thread.join();server.server_close()
     def test_historical_failure_does_not_look_like_current_failure(self):
         from capture import Collector
         from unittest.mock import Mock

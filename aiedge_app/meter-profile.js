@@ -17,6 +17,14 @@ function choices(){
  for(const key of allowed){const option=document.createElement('option');option.value=key;option.textContent=units[key];$('profile-unit').append(option);}
  $('profile-unit').value=allowed.includes(selected)?selected:allowed.length===1?allowed[0]:'';controls();
 }
+function selectedProfile(setup,format){
+ if(setup.meter?.recovery)return null;
+ if(setup.meter?.profile)return setup.meter.profile;
+ const type=setup.configured_meter_type,unit=format.format?.unit;
+ if(!format.recovery&&format.pipeline_id&&format.format?.pipeline_id===format.pipeline_id&&supported[type]?.includes(unit))
+  return {type,unit};
+ return null;
+}
 async function request(path,options={}){
  const response=await fetch(path,{cache:'no-store',signal:AbortSignal.timeout(10000),...options});
  const result=await response.json().catch(()=>({error:'The app returned an unreadable response.'}));
@@ -29,7 +37,7 @@ async function load(force=false){
  try{
   const [setup,format]=await Promise.all([request('api/setup'),request('api/reading-format')]);
   if(!setup.available||!setup.token||!setup.meter)throw Error('Meter setup is unavailable. Check the app and retry.');
-  token=setup.token;revision=setup.meter.revision;profile=setup.meter.profile;
+  token=setup.token;revision=setup.meter.revision;profile=selectedProfile(setup,format);
   suggestedUnit=profile?.unit||format.format?.unit||'';
   $('meter-type').value=profile?.type||'';$('profile-unit').value='';loaded=true;choices();
   note(setup.meter.recovery?'The saved meter choices could not be read. Select replacements; the original file will be kept.':'',!!setup.meter.recovery);
@@ -44,8 +52,16 @@ async function save(event){
  const type=$('meter-type').value,unit=$('profile-unit').value;
  if(!supported[type]?.includes(unit)){note(errors.meter_profile_invalid,true);$('meter-type').value?$('profile-unit').focus():$('meter-type').focus();return false;}
  const unitChanged=profile?.unit!==unit;
- busy=true;controls();note('Saving…');
+ const unchanged=type===profile?.type&&unit===profile.unit;
+ busy=true;controls();note(unchanged?'Checking saved choices…':'Saving…');
  try{
+  if(unchanged){
+   const saved=await request('api/setup');
+   const current=revision?saved.meter?.profile:selectedProfile(saved,await request('api/reading-format'));
+   if(!saved.available||saved.meter?.recovery||saved.meter?.revision!==revision||current?.type!==type||current.unit!==unit)
+    throw Error(errors.meter_profile_changed_reload);
+   note('');return true;
+  }
   const result=await request('api/setup/meter',{method:'POST',headers:{'Content-Type':'application/json','X-AIEdge-Setup':token},body:JSON.stringify({revision,profile:{version:1,type,unit}})});
   if(!result.revision||result.profile?.type!==type||result.profile?.unit!==unit)throw Error('The meter choices save could not be verified. Reload before trying again.');
   profile=result.profile;revision=result.revision;note('');if(unitChanged)window.dispatchEvent(new Event('aiedge-meter-saved'));return true;
@@ -54,5 +70,5 @@ async function save(event){
 }
 $('meter-type').addEventListener('change',()=>{choices();note('');});$('profile-unit').addEventListener('change',()=>note(''));
 $('meter-retry').onclick=()=>load(true);form.onsubmit=save;
-window.AIEdgeMeter={load,save,status:()=>({loaded,busy,profile})};controls();
+window.AIEdgeMeter={load,save,selectedProfile,status:()=>({loaded,busy,profile})};controls();
 })();
