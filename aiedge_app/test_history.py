@@ -8,6 +8,39 @@ from service import handler
 from test_capture import JPEG,headers
 
 class HistoryTests(unittest.TestCase):
+    def test_overview_reads_the_published_value_while_full_status_is_blocked(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from unittest.mock import Mock
+        from types import SimpleNamespace
+        entered=threading.Event()
+        release=threading.Event()
+        mqtt={'state':'connected','overview_meter':'gas','usage':{'daily_nominal':{'event_id':17,'value_ft3':'9.41'}}}
+        store=Mock()
+        def blocked_status():
+            entered.set()
+            release.wait(10)
+            raise sqlite3.OperationalError('busy')
+        store.status.side_effect=blocked_status
+        server=ThreadingHTTPServer(('127.0.0.1',0),handler(store,False,None,mqtt_output=SimpleNamespace(status=lambda:mqtt)))
+        thread=threading.Thread(target=server.serve_forever);thread.start()
+        def read(path):
+            with urllib.request.urlopen(f'http://127.0.0.1:{server.server_port}/api/'+path,timeout=3) as response:
+                self.assertEqual(response.headers['Cache-Control'],'no-store')
+                return json.load(response)
+        try:
+            with ThreadPoolExecutor(1) as pool:
+                diagnostic=pool.submit(read,'status')
+                try:
+                    self.assertTrue(entered.wait(2))
+                    self.assertEqual(read('overview'),{'mqtt':mqtt})
+                    self.assertEqual(store.method_calls,[unittest.mock.call.status()])
+                    self.assertFalse(diagnostic.done())
+                finally:release.set()
+                with self.assertRaises(urllib.error.HTTPError) as error:diagnostic.result()
+                self.assertEqual(error.exception.code,503)
+        finally:
+            release.set();server.shutdown();thread.join();server.server_close()
+
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.store=Store(self.root)
     def tearDown(self):self.temp.cleanup()

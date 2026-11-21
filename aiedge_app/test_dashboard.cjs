@@ -16,6 +16,9 @@ class Element {
  querySelectorAll(){return [];}
 }
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+function showCaptures(app){
+ app.location.hash='#captures';app.listeners.hashchange();
+}
 const response=value=>({ok:true,status:200,json:async()=>value});
 const state={captures:1,unique_images:1,failures:0,capture_enabled:true,interval_seconds:30,missed_slots:0,
  latest:null,recognition:{state:'estimated',dial_positions:[]},reading:{state:'estimated',value:123},
@@ -65,6 +68,7 @@ test('deferred scroll reset cannot jump a later page when an older route finishe
 });
 test('failed history does not clear a successful current reading',async()=>{
  const app=fixture(async url=>{if(url.includes('capture-history'))throw new TypeError('network');return response(state);});
+ showCaptures(app);
  await tick();
  assert.equal(app.get('meter-value').textContent,'123');
  assert.equal(app.get('camera-status').textContent,'Camera ready');
@@ -76,12 +80,14 @@ test('failed history does not clear a successful current reading',async()=>{
 test('stalled history does not hold back status rendering',async()=>{
  let finish;
  const app=fixture(url=>url.includes('capture-history')?new Promise(resolve=>finish=resolve):Promise.resolve(response(state)));
+ showCaptures(app);
  await tick();assert.equal(app.get('meter-value').textContent,'123');
  assert.equal(app.get('camera-status').textContent,'Camera ready');
  finish(response(page));await tick();assert.equal(app.get('refresh').disabled,false);
 });
 test('status failure clears the current value while successful history remains available',async()=>{
  const app=fixture(async url=>{if(url==='api/status')throw new TypeError('offline');return response(page);});
+ showCaptures(app);
  await tick();assert.equal(app.get('meter-value').textContent,'—');
  assert.equal(app.get('camera-status').textContent,'Connection lost');
  assert.equal(app.get('history-error').hidden,true);
@@ -90,6 +96,7 @@ test('status failure clears the current value while successful history remains a
 test('history recovery clears only its own error',async()=>{
  let fail=true;
  const app=fixture(async url=>{if(url.includes('capture-history')){if(fail)throw new Error('history');return response(page);}return response(state);});
+ showCaptures(app);
  await tick();assert.equal(app.get('history-error').hidden,false);
  fail=false;app.get('refresh').onclick();await tick();
  assert.equal(app.get('history-error').hidden,true);
@@ -100,6 +107,7 @@ test('failed older page preserves cards and restores cursor controls',async()=>{
  let calls=0;
  const row={sha256:'a'.repeat(64),bytes:100,frame_id:'a',captured_at:'2026-01-01T00:00:00Z',received_at:'2026-01-01T00:00:01Z'};
  const app=fixture(async url=>{if(url.includes('capture-history')){calls++;if(url.includes('before='))throw new Error('page unavailable');return response({items:[row],next_before:9});}return response(state);});
+ showCaptures(app);
  await tick();const original=app.get('gallery').children[0];
  await app.get('history-older').onclick();
  assert.equal(app.get('gallery').children[0],original);
@@ -254,6 +262,51 @@ test('Overview reports disabled MQTT as Off rather than a Home Assistant disconn
  assert.equal(app.get('mqtt-state').textContent,'Off');
  const html=fs.readFileSync(path.join(__dirname,'index.html'),'utf8');
  assert.ok(html.includes('<dt>MQTT output</dt><dd id="mqtt-state">'));
+});
+
+test('overview retries independently of a stalled diagnostic request and loads history only on Captures',async()=>{
+ const urls=[],renders=[];let finish,event=41;
+ const app=fixture(url=>{
+   urls.push(url);
+   if(url==='api/overview')return Promise.resolve(response({mqtt:{state:'publishing',overview_meter:'gas',usage:{daily_nominal:{event_id:event}}}}));
+   if(url==='api/status')return new Promise(resolve=>finish=resolve);
+   return Promise.resolve(response(page));
+ },false,{AIEdgeIntegration:{render:s=>renders.push(s.mqtt.usage.daily_nominal.event_id)}});
+ await tick();assert.deepEqual(renders,[41]);event=42;
+ app.get('refresh').onclick();await tick();
+ assert.deepEqual(renders,[41,42]);assert.deepEqual(urls,['api/overview','api/status','api/overview']);
+ showCaptures(app);await tick();assert.equal(urls.filter(url=>url.startsWith('api/capture-history')).length,1);
+ finish(response(state));await tick();assert.equal(app.get('count').textContent,1);
+});
+
+test('a transport failure retains a sourced measurement until recovery, and authoritative empty data clears it',async()=>{
+ let mode='cold',event=70;const renders=[];
+ const app=fixture(async url=>{
+   if(url!=='api/overview')return response(state);
+   if(mode==='cold'||mode==='offline')throw TypeError('network');
+   const usage=mode==='empty'?{}:{daily_nominal:{value_ft3:'14.00',event_id:event,measured_at:'2025-04-01T12:00:00Z'}};
+   return response({mqtt:{state:'connected',overview_meter:'gas',usage}});
+ },false,{AIEdgeIntegration:{render:s=>renders.push(s?.mqtt.usage.daily_nominal||null)}});
+ async function refresh(as){mode=as;app.get('refresh').onclick();await tick();}
+ await tick();assert.equal(renders.at(-1),null);assert.match(app.get('usage-connection').textContent,/could not be loaded/);
+ await refresh('ok');const first=renders.at(-1);await refresh('offline');
+ assert.deepEqual(renders.at(-1),first);assert.match(app.get('usage-connection').textContent,/Stale/);
+ assert.equal(app.get('usage-connection').hidden,false);
+ event++;await refresh('ok');assert.equal(renders.at(-1).event_id,event);assert.equal(app.get('usage-connection').hidden,true);
+ await refresh('empty');await refresh('offline');assert.equal(renders.at(-1),null);assert.doesNotMatch(app.get('usage-connection').textContent,/Stale/);
+});
+
+test('other meters use full status and a switch back to gas re-enables overview polling',async()=>{
+ const calls=[];let meter='other';
+ const app=fixture(async url=>{
+   calls.push(url);
+   return response({...state,mqtt:{state:'connected',overview_meter:meter,usage:{}}});
+ },false,{AIEdgeIntegration:{render(){}}});
+ await tick();assert.deepEqual(calls,['api/overview','api/status']);
+ calls.length=0;meter='gas';app.get('refresh').onclick();await tick();
+ assert.deepEqual(calls,['api/status']);
+ calls.length=0;app.get('refresh').onclick();await tick();
+ assert.deepEqual(calls,['api/overview']);
 });
 
 function gasOverview() {

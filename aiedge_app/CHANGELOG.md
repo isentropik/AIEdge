@@ -1,3 +1,7 @@
+## 0.2.0-dev82
+
+- Load the gas overview independently of capture diagnostics and the photo gallery. A failed refresh keeps the last received gas readings visible with their original measurement times and a stale notice until the next successful update.
+
 ## 0.2.0-dev81
 
 - Simplify gas readings on the overview, preserve full sensor values and event IDs in details, and improve small-screen and keyboard layouts.
