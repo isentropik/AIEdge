@@ -566,11 +566,17 @@ test('one plot switches windows immediately, keeps real zero whiskers and reject
  filter.value='1';filter.onchange();assert.equal(reads,1);
  const marks=()=>chart.children[0].children.filter(n=>n.attributes.class==='plot-usage-dot');
  assert.equal(marks().length,4);  // Native quarters paint before the recorder returns.
- const x=i=>36+(chart.clientWidth-48)*i/4;
+ const x=i=>36+(chart.clientWidth-72)*i/4;
  const closeChecks=(indices)=>{
    const nodes=chart.children[0].children,stems=nodes.filter(n=>n.attributes.class==='plot-whisker');
+   const left=nodes.filter(n=>n.attributes.class==='total-tick'),right=nodes.filter(n=>n.attributes.class==='use-tick');
+   assert(+left.at(-1).textContent>+right.at(-1).textContent);
+   assert.equal(+right[0].textContent,0);
+   const y=v=>+right[0].attributes.y-4+(right.at(-1).attributes.y-right[0].attributes.y)*v/Number(right.at(-1).textContent);
+   assert.equal(marks()[0].attributes.cy,y(0));
+   assert(Math.abs(+marks()[1].attributes.cy-y(.5))<.01);
    assert.deepEqual(marks().map(n=>n.attributes.cx),indices.map(x));
-   assert.deepEqual(stems.map(n=>Number(/ M([^ ]+) /.exec(n.attributes.d)[1])),indices.map(x));
+   assert.deepEqual(stems.map(n=>Number(/ M([^ ]+) /.exec(n.attributes.d)[1])),indices.filter(i=>i!==1).map(x));
    const ticks=nodes.filter(n=>n.attributes.class==='time-tick');
    assert(ticks.length>0&&ticks.every(n=>[1,2,3,4].map(x).includes(n.attributes.x)));
  };

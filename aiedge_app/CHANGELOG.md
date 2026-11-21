@@ -1,3 +1,8 @@
+## 0.2.0-dev93
+
+- Edit saved lighting and image controls locally and apply them explicitly.
+- Give interval gas use its own chart axis and simplify the hover label. Use compatible saved hourly limits when available.
+
 ## 0.2.0-dev92
 
 - Open Lighting and Image with the last saved controls, including while capture is busy. Show a dated backup when available on upgrade.

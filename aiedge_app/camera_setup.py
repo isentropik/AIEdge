@@ -76,6 +76,47 @@ class CameraSetup:
             self.condition.notify()
             return dict(self.snapshot)
 
+    def apply_controls(self, panel, driver, revision, choice):
+        saved = self.controls.display().get(panel, {}) if self.controls else {}
+        conflict = 'camera_lighting_conflict' if panel == 'settings' else 'camera_image_conflict'
+        if not saved.get('backup_date') or saved['revision'] != revision:
+            try:
+                return driver.apply(revision, choice)
+            except ValueError as error:
+                if str(error) != conflict or not self.controls or driver.needs_attention():
+                    raise
+                current = driver.load()
+                with self.condition:
+                    self.controls.record({panel:current}, None)
+                    self.snapshot[panel] = current
+                raise
+
+        # The backup describes the editable starting values, not current hardware.
+        # Read current capabilities and rebase only the fields explicitly edited.
+        current = driver.load()
+        lighting = panel == 'settings'
+        field = 'lighting' if lighting else 'controls'
+        base, live = saved[field], current[field]
+        if set(choice) != set(base):
+            raise ValueError('camera_lighting_choice_invalid' if lighting else 'camera_image_choice_invalid')
+        edits = {k:v for k,v in choice.items() if v != base[k]}
+        if lighting and edits.get('source') == 'builtin':
+            edits['pin'] = current['capabilities']['builtin_pin']
+        related = (('source','pin'), ('type','channels')) if lighting else (
+            ('auto_gain','gain','gain_limit'), ('auto_exposure','dsp_exposure','exposure','compensation'))
+        watched = set(edits)
+        for group in related:
+            if watched.intersection(group):
+                watched.update(group)
+        if any(live[k] != base[k] and live[k] != edits.get(k,base[k]) for k in watched):
+            # Expose the freshly read baseline for review, without any camera write.
+            with self.condition:
+                self.controls.record({panel:current}, None)
+                self.snapshot[panel] = current
+            raise ValueError(conflict)
+        result = driver.apply(current['revision'], {**live, **edits})
+        return {**result, 'previous_revision': current['revision']}
+
     def once(self):
         with self.condition:
             if self.pending is None or self.stop.is_set():
@@ -96,10 +137,10 @@ class CameraSetup:
                 elif action == 'auto-recover':
                     result = self.auto_control.recover(revision)
                 elif action.startswith('lighting-'):
-                    settings = self.lighting.load() if action == 'lighting-load' else self.lighting.apply(revision,lighting)
+                    settings = self.lighting.load() if action == 'lighting-load' else self.apply_controls('settings',self.lighting,revision,lighting)
                     result = {'settings': settings, 'camera_settings_supported': True}
                 elif action.startswith('image-'):
-                    settings = self.image_controls.load() if action == 'image-load' else self.image_controls.apply(revision,controls)
+                    settings = self.image_controls.load() if action == 'image-load' else self.apply_controls('image_settings',self.image_controls,revision,controls)
                     result = {'image_settings':settings,'image_settings_supported':True}
                     if action == 'image-load' and self.auto_control:
                         result['auto_settings'] = self.auto_control.load()
@@ -124,7 +165,8 @@ class CameraSetup:
                                       image_sha256=digest, image_orientation=orientation)
             with self.condition:
                 if self.controls and ('settings' in result or 'image_settings' in result):
-                    self.controls.record(result, revision)
+                    panel = result.get('settings') or result['image_settings']
+                    self.controls.record(result, panel.get('previous_revision',revision))
                 self.snapshot.update(state='ready', **result)
         except Exception as error:
             # Expose only bounded, known codes; never remote response bodies.

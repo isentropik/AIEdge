@@ -173,10 +173,11 @@ function renderRecent(recent,daily){
  const next=completeHour(recent)?recent:null,ref=next||daily;
  const key=periodFamily(ref);
  if(key!==family){family=key;periodData=null;retryPeriods=0;}
- if(next&&!sameEvent(sourceOf(next.through),sourceOf(periodSource?.through)))retryPeriods=0;
+ const today=$('usage-period').value==='today';
+ if(!today&&next&&!sameEvent(sourceOf(next.through),sourceOf(periodSource?.through)))retryPeriods=0;
  periodSource=next;latestDaily=daily;
  paintPeriod();
- if(!key||!['1','6','12','24'].includes($('usage-period').value)||!['','#overview'].includes(location.hash)||periodRequest||Date.now()<retryPeriods)return;
+ if(!key||!(today?daily?.through?.clock_id:['1','6','12','24'].includes($('usage-period').value))||!['','#overview'].includes(location.hash)||periodRequest||Date.now()<retryPeriods)return;
  periodRequest=request('api/gas-periods').then(data=>{
    if(key!==family)return;
    if(data.status==='ready'&&compatible(data,periodSource||latestDaily)){

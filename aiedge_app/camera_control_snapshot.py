@@ -36,7 +36,7 @@ def panel(key, value, backup=False):
         if not backup:
             result['capabilities'] = image_capabilities({**caps, 'mode': 'remote-camera', 'saved_controls_apply': True})
         # Backups can provide saved values without identifying the sensor.
-        # Use the widest supported range solely for a read-only display.
+        # The draft accepts the union of supported ranges. Apply validates the actual model.
         result['controls'] = validate_image(value['controls'], 'OV5640' if backup else caps['model'])
     else:
         raise ValueError('invalid_panel')

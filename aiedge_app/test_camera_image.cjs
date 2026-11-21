@@ -21,7 +21,7 @@ test('sensor ranges reject invalid types, unknown sensors and unknown fields',()
  assert.equal(logic.validate({...controls,compensation:5},'OV5640'),true);assert.equal(logic.validate(controls,'unknown'),false);
 });
 test('persistent Auto mode collapses manual settings without changing sensor AEC or AGC',async()=>{
- const {image,get,calls,automatic}=fixture();get('image-auto').checked=true;await get('image-auto').onchange();
+ const {image,get,calls,automatic}=fixture();get('image-auto').checked=true;await get('image-auto').onchange();assert.deepEqual(calls,[]);await get('apply-saved-image-controls').onclick();
  assert.equal(get('image-manual-controls').hidden,true);assert.equal(get('image-sensor').textContent,'OV2640');
  assert.equal(image.status().automatic,true);assert.equal(automatic.at(-1),true);
  assert.equal(get('image-auto-exposure').checked,false);assert.equal(get('image-auto-gain').checked,false);
