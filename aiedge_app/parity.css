@@ -230,6 +230,8 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .plot-tip small {color:var(--sub); font-size:.76rem;}
 .plot-tip :empty {display:none;}
 .plot-tick {stroke:var(--edge);}
+.trend-chart .total-tick {fill:var(--series);}
+.trend-chart .use-tick {fill:var(--interval);}
 .plot-cursor {stroke:var(--series); stroke-opacity:.5; stroke-dasharray:2 3;}
 #day-history-status {font-size:.9rem; color:var(--sub);}
 .usage-recent {--series:light-dark(#16746e,#70cdb9); --band:color-mix(in srgb,var(--series) 26%,transparent); --grid:var(--edge);}

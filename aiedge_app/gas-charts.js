@@ -91,7 +91,7 @@ function intervalTicks(stops,start,end,width,zone){
 }
 // Bound consumption at a clock boundary from the saved daily totals on either side.
 // Each completed hour selects its last actual measurement; the final hour uses the headline.
-function dayHours(points, midnight, recent) {
+function dayHours(points, midnight, recent, hourly) {
   const last=points.at(-1), hour=3600000;
   if(midnight==null)return [{point:last,from:null,to:last[0]}];
   const stops=[];
@@ -128,6 +128,11 @@ function dayHours(points, midnight, recent) {
         const upper=Math.min(range[1],...recent.filter(covers).map(q=>q.high));
         range=lower<=upper?[lower,upper]:null;
       }
+    }
+    const measured=hourly?.get(from);
+    if(measured&&range&&measured.end===to){
+      const lo=Math.max(range[0],measured.range[0]),hi=Math.min(range[1],measured.range[1]);
+      range=lo<=hi?[lo,hi]:null;
     }
     stops.push({point,from,to,range});
     if(final)break;
@@ -200,7 +205,7 @@ function trendPaths(run,x,y){
 
 function chart(){
   const host=$('day-curve'),tip=$('day-tip');
-  const title=$('day-tip-title'),amount=$('day-tip-amount'),bounds=$('day-tip-bounds'),note=$('day-tip-note');
+  const title=$('day-tip-title'),amount=$('day-tip-amount'),note=$('day-tip-note');
   const graphic=svg('svg',{'aria-hidden':'true'});
   host.append(graphic);
   let model,chosen,atX,atY,cursor,dot,active=-1,inspecting=false,drawnWidth=0,plotBottom=0;
@@ -215,15 +220,18 @@ function chart(){
     if(i===active&&show===inspecting)return;
     active=i;inspecting=show;chosen=stop.from??stop.to;
     const interval=stop.from==null?'':clockSpan(stop.from,stop.to,model.zone);
-    const used=stop.range?number.format((stop.range[0]+stop.range[1])/2)+' ft³ used ('+
-      number.format(stop.range[0])+'–'+number.format(stop.range[1])+')':stop.low>0?'At least '+number.format(stop.low)+' ft³ used':'Interval unavailable';
+    let used=stop.low>0?'At least '+number.format(stop.low)+' ft³ used':'Interval unavailable';
+    if(stop.range){
+      const [lo,hi]=stop.range;
+      used=lo===0&&hi>0?'Up to '+number.format(hi)+' ft³ used':number.format((lo+hi)/2)+' ft³ used';
+    }
     title.textContent=interval||clock(stop.to,model.zone,true);
     amount.textContent=p?.[1]!=null?'Total '+number.format(p[1])+' ft³':'Total unavailable';
-    bounds.textContent=p?.[2]!=null&&p[3]!=null?number.format(p[2])+'–'+number.format(p[3])+' ft³':'';
-    const gaps=(stop.gaps||[]).map(([from,to])=>clock(from,model.zone,true)+' – '+clock(to,model.zone,true));
-    note.textContent=[used,p&&clock(p[0],model.zone,true),...gaps,p?.[5]].filter(Boolean).join(' · ');
+    note.textContent=used;
     host.setAttribute('aria-valuenow',i);
-    host.setAttribute('aria-valuetext',[title,amount,bounds,note].map(el=>el.textContent).filter(Boolean).join(' · '));
+    const rangeText=(lo,hi)=>lo!=null&&hi!=null?number.format(lo)+'–'+number.format(hi)+' ft³':'';
+    host.setAttribute('aria-valuetext',[title.textContent,amount.textContent,rangeText(p?.[2],p?.[3]),used,
+      stop.range&&rangeText(...stop.range),p?.[5]].filter(Boolean).join(' · '));
     tip.hidden=!show;
     const px=atX(stop.to),level=p?.[1]??p?.[2];
     const py=level==null?plotBottom/2:atY(level);
@@ -245,20 +253,30 @@ function chart(){
     if (!model?.points.length || !host.clientWidth) return;
     const {groups,points,start,zone} = model;
     const w=host.clientWidth,h=w<440?226:320;
-    const left=36,right=w-12,top=12,bottom=h-27;
-    const peak=Math.max(0,...points.map(p=>p[3]??p[1]??0),...model.stops.map(s=>s.range?.[1]??0));
-    const raw=(peak||1)/3, unit=10**Math.floor(Math.log10(raw));
-    const step=([1,2,2.5,5,10].find(v=>v*unit>=raw)||10)*unit;
-    const ceiling=Math.max(step,Math.ceil(peak/step)*step);
+    const left=36,right=w-36,top=12,bottom=h-27;
+    function scale(peak){
+      const raw=(peak||1)/3,unit=10**Math.floor(Math.log10(raw));
+      const step=([1,2,2.5,5,10].find(v=>v*unit>=raw)||10)*unit;
+      const max=Math.max(step,Math.ceil(peak/step)*step);
+      return {step,max,y:v=>bottom-(bottom-top)*v/max};
+    }
+    const total=scale(Math.max(0,...points.map(p=>p[3]??p[1]??0)));
+    const intervals=model.stops.filter(s=>s.range);
+    const usage=scale(Math.max(0,...intervals.map(s=>s.range[1])));
     const end=model.stops.at(-1).to, span=Math.max(1,end-start);
-    const x=t=>end===start?(left+right)/2:left+(right-left)*(t-start)/span, y=v=>bottom-(bottom-top)*v/ceiling;
+    const x=t=>end===start?(left+right)/2:left+(right-left)*(t-start)/span,y=total.y;
     atX=x; atY=y; drawnWidth=w; plotBottom=bottom;
     graphic.setAttribute('viewBox','0 0 '+w+' '+h);
     graphic.style.height=h+'px';
     const nodes=[];
-    for(let i=0;i<=Math.round(ceiling/step);i++){
-      const v=i*step, pos=y(v);
-      nodes.push(svg('line',{x1:left,x2:right,y1:pos,y2:pos,class:'plot-grid'}),svg('text',{x:left-8,y:pos+4,'text-anchor':'end'},Number(v.toPrecision(6)).toLocaleString()));
+    const tickLabel=v=>Number(v.toPrecision(6)).toLocaleString(undefined,{maximumSignificantDigits:4,notation:v>=1000?'compact':'standard'});
+    for(let i=0;i<=Math.round(total.max/total.step);i++){
+      const v=i*total.step, pos=y(v);
+      nodes.push(svg('line',{x1:left,x2:right,y1:pos,y2:pos,class:'plot-grid'}),svg('text',{x:left-7,y:pos+4,'text-anchor':'end',class:'total-tick'},tickLabel(v)));
+    }
+    if(intervals.length)for(let i=0;i<=Math.round(usage.max/usage.step);i++){
+      const v=i*usage.step;
+      nodes.push(svg('text',{x:right+7,y:usage.y(v)+4,class:'use-tick'},tickLabel(v)));
     }
     const runs=model.rolling?groups:hourlyRuns(groups,model.stops);
     const lines=[];
@@ -282,8 +300,8 @@ function chart(){
     for(const stop of model.stops){
       if(!stop.range||stop.from==null)continue;
       const [lo,hi]=stop.range,px=x(stop.to),cap=Math.min(4,Math.max(1,(x(stop.to)-x(stop.from))/4));
-      nodes.push(svg('path',{class:'plot-whisker',d:'M'+(px-cap)+' '+y(hi)+'h'+(cap*2)+' M'+px+' '+y(hi)+'V'+y(lo)+' M'+(px-cap)+' '+y(lo)+'h'+(cap*2)}),
-        svg('circle',{class:'plot-usage-dot',cx:px,cy:y((lo+hi)/2),r:3.1}));
+      if(hi>lo)nodes.push(svg('path',{class:'plot-whisker',d:'M'+(px-cap)+' '+usage.y(hi)+'h'+(cap*2)+' M'+px+' '+usage.y(hi)+'V'+usage.y(lo)+' M'+(px-cap)+' '+usage.y(lo)+'h'+(cap*2)}));
+      nodes.push(svg('circle',{class:'plot-usage-dot',cx:px,cy:usage.y((lo+hi)/2),r:3.1}));
     }
     const ticks=model.rolling?intervalTicks(model.stops,start,end,right-left,zone):axisTicks(start,end,right-left,zone);
     for(const tick of ticks){
@@ -323,7 +341,7 @@ function chart(){
     if(next!==undefined){e.preventDefault();pick(next);}
   });
   new ResizeObserver(()=>{if(host.clientWidth!==drawnWidth)draw();}).observe(host);
-  return function update(groups, start, zone, key, empty, midnight, recent, clockBins, gaps=[]) {
+  return function update(groups, start, zone, key, empty, midnight, recent, clockBins, gaps=[], hourly=null) {
     if(!groups?.length&&!clockBins?.length){
       model=null; chosen=null; graphic.replaceChildren(); host.hidden=true;
       hide();active=-1;cursor=null;dot=null;drawnWidth=0;
@@ -334,11 +352,8 @@ function chart(){
     if(model?.key===key)return;
     const previous=model?.stops.at(-1);
     if(!previous || chosen===(previous.from??previous.to))chosen=null;
-    const stops=clockBins||dayHours(groups.flat(),midnight,recent);
+    const stops=clockBins||dayHours(groups.flat(),midnight,recent,hourly);
     const points=clockBins?stops.map(s=>s.point||[s.to,null,null,null]):groups.flat();
-    if(gaps.length){
-      for(const s of stops)s.gaps=gaps.filter(([from,to])=>from<s.to&&to>s.from);
-    }
     model={groups,points,stops,start,zone,key,rolling:!!clockBins,gaps};
     host.hidden=false; host.tabIndex=0;
     host.setAttribute('role','slider');
@@ -378,7 +393,10 @@ function showDay(){
     method==='lower_bound_assumption_v1'?'Lower-bound assumption':'';
   const point=[stamp,estimate,bounds?Number(lower):null,bounds?Number(upper):null,event,label,latest.sameDailyBounds];
   const history=latest.historyCompatible&&saved?.day===day&&saved.zone===zone?saved:null;
-  const key=JSON.stringify([identity,history?.revision,latest,recentWindow]);
+  const periods=rolling?.compatibleWithDay&&latest.sameDailyBounds&&rolling.zone===zone&&
+    (rolling.through.event_id<event&&Date.parse(rolling.through.captured_at)<stamp||
+     rolling.through.event_id===event&&rolling.through.captured_at===source.captured_at&&rolling.through.source_sha256===source.source_sha256)?rolling:null;
+  const key=JSON.stringify([identity,history?.revision,latest,recentWindow,periods?.key]);
   if(dayView?.key===key&&dayView.historyStatus===saved?.status){
     if(selection!=='today'){showRolling();return;}
     if(host.dataset.endEvent===String(event)&&activeSelection==='today')return;
@@ -397,7 +415,16 @@ function showDay(){
   activeSelection='today';host.dataset.endEvent=String(event);host.dataset.endTime=source.captured_at;
   $('interval-key').textContent='Hourly use';
   $('day-history-status').textContent=saved?.status==='unavailable'?'Saved history · refresh delayed':'';
-  drawDay(visible,history?.midnight??stamp,zone,key,null,history?.midnight,recentWindow,null,gaps);
+  const hourly=new Map();
+  const exactMs=t=>!/[1-9]/.test((/\.(\d+)/.exec(t)?.[1]||'').slice(3));
+  for(const b of periods?.periods?.['24']?.bins||[]){
+    const range=pair(b.lower,b.upper);
+    // Clock bins start on exact local hours; the two outer partials may have microseconds.
+    if(range&&exactMs(b.start)&&(b.end===source.captured_at||exactMs(b.end))){
+      hourly.set(Date.parse(b.start),{end:Date.parse(b.end),range});
+    }
+  }
+  drawDay(visible,history?.midnight??stamp,zone,key,null,history?.midnight,recentWindow,null,gaps,hourly);
 
 }
 async function day(daily,headline,recent){
@@ -551,10 +578,10 @@ function showRolling(){
 }
 function period(selectionValue,data){
   const next=['1','6','12','24'].includes(selectionValue)?selectionValue:'today';
-  const changed=selection!==next;
+  const changed=selection!==next,previousKey=rolling?.key,wasCompatible=rolling?.compatibleWithDay;
   selection=next;rolling=data;
   if(selection==='today'){
-    if(changed){rollingDrawKey='';showDay();}
+    if(changed||previousKey!==data?.key||wasCompatible!==data?.compatibleWithDay){rollingDrawKey='';showDay();}
   }else showRolling();
 }
 window.AIEdgeCharts={day,period};

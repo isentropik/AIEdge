@@ -145,15 +145,15 @@ test('changed image controls block Next with one message and no capture',async()
  assert.equal(app.location.hash,'#setup/image');assert.deepEqual(app.posts,[]);
  assert.equal(app.get('image-take-picture').hidden,false);assert.match(app.get('setup-status').textContent,/changed camera settings/);
 });
-test('explicit picture applies lighting and image choices before binding its proven orientation',async()=>{
+test('explicit picture uses applied settings and binds its proven orientation',async()=>{
  const order=[],app=fixture({configured:true,imageControls:{apply:async()=>{order.push('image');return true;},pictureTaken:orientation=>order.push('orientation:'+orientation)},lightingControls:{apply:async()=>{order.push('light');return true;},pictureTaken:()=>order.push('lighting-photo')}});
  await tick();await app.get('image-take-picture').onclick();
- assert.deepEqual(order,['light','image','lighting-photo','orientation:1']);
+ assert.deepEqual(order,['lighting-photo','orientation:1']);
  assert.equal(app.posts.length,1);assert.equal(JSON.parse(app.posts[0].body).action,'picture');
  assert.equal(app.calls.includes('reference:'+'b'.repeat(64)),true);assert.equal(app.get('setup-status').hidden,true);
 });
 test('failed image activation does not request or bind a picture',async()=>{
- const app=fixture({configured:true,imageControls:{apply:async()=>false,pictureTaken:()=>assert.fail('No verified photo')}});
+ const app=fixture({configured:true,imageControls:{status:()=>({dirty:true}),apply:async()=>assert.fail('Implicit Apply'),pictureTaken:()=>assert.fail('No verified photo')}});
  await tick();await app.get('image-take-picture').onclick();assert.deepEqual(app.posts,[]);assert.equal(app.calls.some(c=>c.startsWith('reference:')),false);
 });
 test('failed picture verification never clears the stale gate or replaces the reference',async()=>{

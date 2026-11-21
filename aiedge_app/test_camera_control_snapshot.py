@@ -86,8 +86,11 @@ class ControlSnapshotTests(unittest.TestCase):
         self.job('lighting-apply',revision='d'*64,lighting=self.lighting['lighting'])
         self.assertEqual(self.reopen().status()['saved_controls']['image_settings']['revision'],'b'*64)
         self.image.apply.side_effect = ValueError('camera_image_conflict')
-        self.job('image-apply',revision='b'*64,controls=self.sensor['controls'])
-        self.assertEqual(self.reopen().status()['saved_controls']['image_settings']['revision'],'b'*64)
+        res=self.job('image-apply',revision='b'*64,controls=self.sensor['controls'])
+        self.assertEqual(res['error'],'camera_image_conflict')
+        self.image.apply.assert_called_once()
+        self.assertEqual(self.reopen().status()['saved_controls']['image_settings'],self.image.load.return_value)
+        self.assertEqual(self.reopen().status()['saved_controls']['settings']['revision'],'c'*64)
 
     def test_invalid_or_oversized_cache_falls_back_to_scoped_backup(self):
         archive = self.backup()
@@ -109,6 +112,33 @@ class ControlSnapshotTests(unittest.TestCase):
         self.assertEqual(self.reopen().status()['saved_controls'], {'settings':self.lighting})
         self.assertFalse(self.worker.once())
         self.image.load.assert_called_once()
+
+    def test_apply_backup_edits_only_changed_fields_at_the_current_revision(self):
+        self.backup()
+        self.worker = self.reopen()
+        base = self.sensor['controls']
+        current = {**base, 'gain':base['gain']+1}
+        self.image.load.return_value = {**self.sensor,'revision':'b'*64,'controls':current}
+        edited = {**base, 'exposure':base['exposure']+1}
+        wanted = {**current,'exposure':edited['exposure']}
+        self.image.apply.return_value = {**self.sensor,'controls':wanted,'revision':'c'*64}
+        result = self.job('image-apply', revision='a'*64, controls=edited)
+        self.assertEqual(result['state'],'ready')
+        self.image.apply.assert_called_once_with('b'*64,wanted)
+        self.assertEqual(self.reopen().status()['saved_controls']['image_settings']['controls'],wanted)
+
+    def test_apply_backup_stops_on_overlapping_changes_or_busy_camera(self):
+        self.backup()
+        self.worker = self.reopen()
+        base = self.lighting['lighting']
+        current = {**self.lighting,'revision':'b'*64,'lighting':{**base,'intensity':17}}
+        self.light.load.side_effect = [ValueError('camera_busy'),current]
+        choice = {**base,'intensity':22}
+        self.assertEqual(self.job('lighting-apply',revision='a'*64,lighting=choice)['error'],'camera_busy')
+        res = self.job('lighting-apply',revision='a'*64,lighting=choice)
+        self.assertEqual(res['error'],'camera_lighting_conflict')
+        self.assertEqual(res['saved_controls']['settings']['lighting'],current['lighting'])
+        self.light.apply.assert_not_called()
 
     def test_original_lowercase_gain_label(self):
         raw = IMAGE_CONFIG.replace(b'CamGainceiling = X4', b'CamGainceiling = x8')
