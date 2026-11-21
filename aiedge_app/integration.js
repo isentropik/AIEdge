@@ -151,10 +151,19 @@ function periodAmount(span) {
  if(boundPair(span?.lower,span?.upper))return span.lower+'–'+span.upper+' ft³';
  return Number(span?.lower)>0?'At least '+span.lower+' ft³ · partial coverage':'Range unavailable';
 }
+function periodMidpoint(span) {
+ if(!boundPair(span?.lower,span?.upper))return null;
+ // Keep half-hundredths of a cubic foot until the value is formatted for display.
+ return (Math.round(Number(span.lower)*100)+Math.round(Number(span.upper)*100))/200;
+}
 function paintPeriod() {
  const hours=$('usage-period').value||'1', data=periodData?.periods?.[hours], zone=periodSource?.timezone;
  const native=hours==='1'&&periodSource?.hour;
- $('usage-hour').textContent=data?periodAmount(data):native?periodSource.label:periodSource?'Waiting for saved ranges':'Usage unavailable';
+ const published=data||native, nominal=periodMidpoint(published);
+ $('recent-metric-label').textContent=nominal!=null?'Nominal use':'Gas use';
+ $('usage-hour').textContent=nominal!=null?displayedVolume(nominal,2)+' ft³':
+   data?periodAmount(data):native?periodSource.label:periodSource?'Waiting for saved ranges':'Usage unavailable';
+ setOptional('recent-bounds',nominal!=null?'Bounds · '+periodAmount(published):'');
  const span=data||native&&{start:native.start.captured_at,end:native.through.captured_at};
  setOptional('hour-time',span?compactInterval({captured_at:span.start},{captured_at:span.end},zone):'');
  const minutes=data?.minutes||(hours==='1'?15:hours==='6'?30:60);
@@ -162,7 +171,7 @@ function paintPeriod() {
  const list=$('usage-quarters'),sources=$('quarter-sources');
  list.replaceChildren();sources.replaceChildren();
  $('quarter-plot').hidden=!data?.bins.length;
- window.AIEdgeCharts?.hour(data,zone);
+ window.AIEdgeCharts?.hour(data,zone,periodMidpoint);
  for(const bin of data?.bins||[]){
    const row=document.createElement('li'),times=document.createElement('span'),amount=document.createElement('strong');
    times.textContent=compactInterval({captured_at:bin.start},{captured_at:bin.end},zone,data.end);
