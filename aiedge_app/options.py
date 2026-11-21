@@ -6,7 +6,8 @@ from capture import Camera
 MAX_OPTIONS = 65536
 DEFAULTS = dict(camera_url='', camera_token='', camera_username='', camera_password='',
                 capture_enabled=False, mqtt_enabled=False, mqtt_output_mode='reading', interval_seconds=30,
-                recognition_mode='FULL',event_selection_policy={},daily_evidence_policy={})
+                recognition_mode='FULL',event_selection_policy={},daily_evidence_policy={},
+                daily_history_entity='sensor.aiedge_gas_used_today')
 
 class InvalidOptions(ValueError):
     def __init__(self, code, field=None):

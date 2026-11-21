@@ -70,15 +70,6 @@ function interval(start, end, timezone, onDay) {
  return day.format(last) + ' · ' + clock.formatRange(first, last) + ' ' + zone;
 }
 
-function plotDailyEstimate(low, high, estimate) {
- const plot = $('daily-plot');
- plot.hidden = !boundPair(low, estimate) || !boundPair(estimate, high) || Number(high) === Number(low);
- if (plot.hidden) return;
- $('daily-low').textContent = displayedVolume(low, 2, 'floor') + ' ft³';
- $('daily-high').textContent = displayedVolume(high, 2, 'ceil') + ' ft³';
- $('daily-marker').style.left = (100 * ((Number(estimate) - Number(low)) / (Number(high) - Number(low)))) + '%';
-}
-
 function renderDaily(daily) {
  const nominal = daily?.nominal_estimate;
  if (nominal?.method === 'range_midpoint_v1') {
@@ -86,7 +77,6 @@ function renderDaily(daily) {
   $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
   setOptional('usage-assumption', stale ? 'Stale · Last supported full-day estimate' : 'Midpoint of the unresolved daily bounds.');
   setOptional('usage-bounds', 'Unresolved bounds · ' + daily.label);
-  plotDailyEstimate(daily.lower, daily.upper, nominal.value_ft3);
   setOptional('usage-time', measuredLine(daily.through, daily.timezone));
   $('daily-details').hidden = false;
   $('daily-method').textContent = nominal.assumption +
@@ -142,52 +132,15 @@ function compactInterval(start, end, zone, reference) {
  return new Intl.DateTimeFormat(undefined, config).formatRange(first, last);
 }
 
-function plotQuarters(recent) {
- const plot = $('quarter-plot'), quarters = recent?.quarters;
+function completeHour(recent) {
+ const quarters = recent?.quarters;
  // Only put four adjacent, source-bound intervals on a common time axis.
- const complete = Array.isArray(quarters) && quarters.length === 4 && quarters.every((q, i) => {
+ return Array.isArray(quarters) && quarters.length === 4 && quarters.every((q, i) => {
    const start = sourceOf(q?.start), end = sourceOf(q?.through);
    return start && end && boundPair(q.lower, q.upper) && start.event_id < end.event_id &&
      Date.parse(start.captured_at) < Date.parse(end.captured_at) &&
      sameEvent(start, sourceOf(i ? quarters[i-1].through : recent.hour?.start));
  }) && sameEvent(sourceOf(quarters[3].through), sourceOf(recent.through));
- plot.hidden = !complete;
- if (!complete) return;
- const peak = Math.max(...quarters.map(q => Number(q.upper)));
- const unit = peak > 0 ? 10 ** Math.floor(Math.log10(peak)) : 1;
- const top = peak > 0 ? Math.ceil(peak / unit) * unit : 1;
- const format = new Intl.NumberFormat(undefined, {maximumSignificantDigits:6});
- $('quarter-top').textContent = format.format(top);
- $('quarter-mid').textContent = format.format(top / 2);
- const zone = recent.timezone;
- const offset = new Intl.DateTimeFormat('en', {timeZone:zone,timeZoneName:'shortOffset'});
- const zoneAt = t => offset.formatToParts(new Date(t)).find(part => part.type === 'timeZoneName').value;
- const crossesClockChange = zoneAt(quarters[0].start.captured_at) !== zoneAt(recent.through.captured_at);
- const clock = new Intl.DateTimeFormat(undefined, {timeZone:zone,hour:'numeric',minute:'2-digit',
-   ...(crossesClockChange ? {timeZoneName:'short'} : {})});
- const columns = [], labels = [];
- for (const q of quarters) {
-   const column = document.createElement('div');
-   column.className = 'quarter-column';
-   const bar = document.createElement('div');
-   bar.className = 'quarter-bar';
-   bar.style.height = (100 * (Number(q.upper) / top)) + '%';
-   const minimum = document.createElement('span');
-   minimum.style.height = (Number(q.upper) > 0 ? 100 * (Number(q.lower) / Number(q.upper)) : 0) + '%';
-   bar.append(minimum);
-   column.append(bar);
-   columns.push(column);
-   const label = document.createElement('div');
-   label.setAttribute('role', 'listitem');
-   const amount = document.createElement('b');
-   amount.textContent = Number(q.lower) === Number(q.upper) ? String(q.lower) : q.lower + '–' + q.upper;
-   const time = document.createElement('span');
-   time.textContent = clock.format(new Date(q.start.captured_at));
-   label.append(amount, time);
-   labels.push(label);
- }
- $('quarter-columns').replaceChildren(...columns);
- $('quarter-labels').replaceChildren(...labels);
 }
 
 function renderRecent(recent) {
@@ -199,7 +152,9 @@ function renderRecent(recent) {
  const sources = $('quarter-sources');
  sources.replaceChildren();
  const quarters = Array.isArray(recent?.quarters) ? recent.quarters : [];
- plotQuarters(recent);
+ const complete = completeHour(recent);
+ $('quarter-plot').hidden = !complete;
+ window.AIEdgeCharts?.hour(complete ? recent : null);
  for (const quarter of quarters) {
    const row = document.createElement('li');
    const times = document.createElement('span');
@@ -240,7 +195,6 @@ function calendarDay(date, zone) {
 }
 
 function renderOverviewDaily(nominal, daily) {
- $('daily-plot').hidden = true;
  setOptional('daily-event', '');
  const measured = sourceOf(nominal);
  const end = sourceOf(daily?.through);
@@ -281,10 +235,6 @@ function renderOverviewDaily(nominal, daily) {
    bounds = 'Unresolved bounds · ' + daily.label + (sameEvent(end, measured) ? '' : ' · ' + sourceLine(end, zone));
  }
  setOptional('usage-bounds', bounds || (partial ? 'Full-day bounds pending' : ''));
- if (!partial && nominal.method === 'range_midpoint_v1') {
-   if (ranged && sameEvent(end, measured)) plotDailyEstimate(daily.lower, daily.upper, nominal.value_ft3);
-   else if (native) plotDailyEstimate(nominal.lower_ft3, nominal.upper_ft3, nominal.value_ft3);
- }
  $('daily-details').hidden = false;
  $('daily-method').textContent = [nominal.assumption, stale && nominal.conflict_event_id ? 'Conflicting meter event ' + nominal.conflict_event_id + '.' : ''].filter(Boolean).join(' ');
 }
@@ -348,6 +298,7 @@ function render(state) {
  if (mqtt?.overview_meter || mqtt?.state === 'disabled') $('capture-operations').dataset.initialized = 'true';
  const zone = usage.daily_nominal?.timezone || usage.daily?.timezone || usage.resumed?.timezone || usage.recent?.timezone || mqtt?.overview_timezone;
  renderOverviewDaily(usage.daily_nominal, usage.daily);
+ if (!other && ['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(usage.daily);
  renderAbsolute(usage.absolute_nominal, zone);
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
    if (sourceOf(usage.daily_nominal)) $('usage-assumption').append(' · Last published measurement');

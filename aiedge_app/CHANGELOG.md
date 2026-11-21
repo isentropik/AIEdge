@@ -1,3 +1,7 @@
+## 0.2.0-dev84
+
+- Plot the day's recorded cumulative gas estimates with their bounds, and show the last four 15-minute usage ranges as lines. Inspect individual readings with a pointer, touch, or keyboard.
+
 ## 0.2.0-dev83
 
 - Show where the daily estimate falls between its bounds and compare four 15-minute gas ranges on a shared scale. Both charts use the readings already loaded by the overview.
