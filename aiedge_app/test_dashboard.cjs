@@ -345,3 +345,57 @@ test('historical segment precision is a display choice with the original measure
  ui.render({});
  assert.ok(ui.get('segment-details').hidden);
 });
+
+test('daily marker uses the bounds of the displayed event and clears on partial, missing or exact coverage',()=>{
+ const ui = gasOverview();
+ const measured = new Date();
+ const nominal = {event_id:31, source_sha256:'a'.repeat(64), measured_at:measured.toISOString(),
+   timezone:'UTC', day:measured.toISOString().slice(0,10), value_ft3:'12.00',
+   lower_ft3:10, upper_ft3:18, status:'daily_range', method:'range_midpoint_v1'};
+ const show = (overrides, daily) => ui.render({daily_nominal:{...nominal,...overrides},daily});
+ show({});
+ assert.equal(ui.get('daily-marker').style.left,'25%');
+ assert.equal(ui.get('daily-plot').hidden,false);
+ const through = {captured_at:nominal.measured_at, event_id:31, source_sha256:nominal.source_sha256};
+ const daily = {through,day:nominal.day,timezone:'UTC',lower:11,upper:13,label:'11–13 ft³',
+   nominal_estimate:{method:'range_midpoint_v1',value_ft3:12}};
+ show({lower_ft3:null,upper_ft3:null},daily);
+ assert.equal(ui.get('daily-marker').style.left,'50%');
+ show({lower_ft3:null,upper_ft3:null},{...daily,through:{...through,event_id:30}});
+ assert.equal(ui.get('daily-plot').hidden,true);
+ show({}, {...daily,status:'stale'});
+ assert.equal(ui.get('daily-plot').hidden,false);
+ assert.match(ui.get('usage-assumption').textContent,/Stale/);
+ for (const overrides of [{status:'partial_coverage'}, {value_ft3:30}, {lower_ft3:12,upper_ft3:12}]) {
+   show(overrides);
+   assert.equal(ui.get('daily-plot').hidden,true);
+ }
+ ui.render({});
+ assert.equal(ui.get('daily-plot').hidden,true);
+});
+
+test('15-minute chart shares a zero baseline, uses saved endpoints and distinguishes zero from missing data',()=>{
+ const ui = gasOverview();
+ const points = Array.from({length:5}, (_,i)=>({event_id:i+10,source_sha256:'c'.repeat(64),
+   captured_at:new Date(Date.UTC(2026,10,1,8,30+i*15)).toISOString()}));
+ const quarters = [[0,0],[1,2],[2,2],[1,4]].map(([lower,upper],i)=>({lower,upper,start:points[i],through:points[i+1]}));
+ const recent = {hour:{start:points[0]},through:points[4],timezone:'America/Los_Angeles',quarters};
+ ui.render({recent});
+ assert.equal(ui.get('quarter-plot').hidden,false);
+ const bars = ui.get('quarter-columns').children.map(el=>el.children[0]);
+ assert.deepEqual(bars.map(b=>b.style.height),['0%','50%','50%','100%']);
+ assert.deepEqual(bars.map(b=>b.children[0].style.height),['0%','50%','100%','25%']);
+ const labels = ui.get('quarter-labels').children;
+ assert.equal(labels[3].children[0].textContent,'1–4');
+ assert.notEqual(labels[0].children[1].textContent.split(' ').at(-1), labels[3].children[1].textContent.split(' ').at(-1));
+ ui.render({recent:{...recent,quarters:quarters.map(q=>({...q,lower:0,upper:0}))}});
+ assert.equal(ui.get('quarter-plot').hidden,false);
+ for (const bar of ui.get('quarter-columns').children) assert.equal(bar.children[0].style.height,'0%');
+ for (const changed of [quarters.slice(1),[...quarters.slice(0,3),{...quarters[3],upper:null}],
+   [quarters[0],{...quarters[1],start:{...points[1],source_sha256:'e'.repeat(64)}},...quarters.slice(2)]]) {
+   ui.render({recent:{...recent,quarters:changed}});
+   assert.equal(ui.get('quarter-plot').hidden,true);
+ }
+ ui.render({});
+ assert.equal(ui.get('recent-details').hidden,true);
+});
