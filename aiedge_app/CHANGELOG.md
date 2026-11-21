@@ -1,3 +1,8 @@
+## 0.2.0-dev94
+
+- Gas used today follows the accepted meter reading from a saved daily starting value. Changes to the uncertainty bounds have their own measurement time.
+- The Today chart uses the same movement-based estimate as the headline. Unknown intervals retain their uncertainty.
+
 ## 0.2.0-dev93
 
 - Edit saved lighting and image controls locally and apply them explicitly.

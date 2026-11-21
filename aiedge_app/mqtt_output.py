@@ -128,11 +128,16 @@ class MqttOutput:
         result['usage'] = usage_snapshot(self.daily) if self.daily and self.connected.is_set() and self.state != 'error' else {}
         if self.overview_history is not None and self.overview_format:
             result['overview_meter'] = 'gas'
+            result['overview_daily_method'] = 'nominal_meter_movement_v1'
             result['overview_connected'] = self.connected.is_set() and self.state != 'error'
             result['overview_timezone'] = os.environ.get('TZ')
             for name, saved in (('daily_nominal', self.overview_daily), ('absolute_nominal', self.overview_absolute)):
                 if saved and saved[0] == self.overview_format:
                     result['usage'][name] = dict(saved[1])
+            record = self.nominal.record or {}
+            if record.get('movement') and result['usage'].get('daily_nominal') == record['state']:
+                movement = record['movement']
+                result['usage']['movement_history'] = dict(midnight=movement['midnight'], points=movement['points'])
             policy = getattr(self.daily, 'evidence_policy', {}) or {}
             result['overview_policy'] = {k: policy[k] for k in ('capacity_cfh', 'slow_allowance_ft3') if k in policy}
             point = self.overview_history.latest(self.history_topic, self.overview_format)
@@ -189,6 +194,7 @@ class MqttOutput:
         with self.performance.measure('mqtt_publication') as sample:
             sample.outcome=self._publish_snapshot(snapshot)
         if self.output_mode=='gas_consumption' and self.client and self.connected.is_set():
+            previous_register = self.gas_sensors.absolute.sent
             try:
                 self._publish_range(snapshot)
                 self.range_error=None
@@ -209,7 +215,11 @@ class MqttOutput:
                         zone = ZoneInfo(os.environ['TZ'])
                         obs = fresh_range(snapshot, max(90, self.interval * 3))
                         good = self.daily.last_good if not self.daily_error else None
-                        self.nominal.publish(self, obs, good[0] if good else None, datetime.now(zone).date(), zone.key)
+                        key = self.config['unique_id']
+                        register = self.gas_sensors.absolute.sent
+                        self.nominal.publish(self, obs, good[0] if good else None, datetime.now(zone).date(), zone.key,
+                                             register[1] if register and register[0] == key else None,
+                                             previous_register[1] if previous_register and previous_register[0] == key else None)
                         if self.nominal.sent and self.overview_format:
                             self.overview_daily = self.overview_format, self.nominal.sent
                         self.nominal_error = None

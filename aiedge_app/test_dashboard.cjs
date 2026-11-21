@@ -328,7 +328,7 @@ function gasOverview(trend, date=Date) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'gas-charts.js'),'utf8'),context);
  }
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'),context);
- return {get,render:usage=>window.AIEdgeIntegration.render({mqtt:{usage}})};
+ return {get,render:(usage,metadata={})=>window.AIEdgeIntegration.render({mqtt:{usage,...metadata}})};
 }
 
 function ribbonSides(d){
@@ -600,4 +600,34 @@ test('one plot switches windows immediately, keeps real zero whiskers and reject
  answer(response({...result,through:{...src(5),source_sha256:'f'.repeat(64)}}));await tick();
  assert.equal(chart.dataset.endTime,src(4).captured_at);
  filter.value='today';filter.onchange();assert.equal(chart.hidden,true);
+});
+
+test('movement headline and chart stay on their meter event when range-only publications change',async()=>{
+ const day='2026-11-21',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
+ const src=id=>({camera:'meter',format_id:'profile',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),
+   captured_at:new Date(midnight+id*3600000).toISOString()});
+ class Clock extends Date{constructor(...args){super(...(args.length?args:[midnight+8*3600000]));}static now(){return midnight+8*3600000;}}
+ const range=(id,lower,upper)=>({day,timezone,through:src(id),before:src(1),after:src(2),lower,upper,
+   label:lower+'–'+upper+' ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:(lower+upper)/2}});
+ const ui=gasOverview(async()=>response({status:'unavailable'}),Clock),through=src(5);
+ const nominal={...through,day,timezone,measured_at:through.captured_at,value_ft3:'17.15',method:'nominal_meter_movement_v1',
+   status:'partial_coverage',lower_ft3:8,upper_ft3:12,bounds_event_id:4,bounds_measured_at:src(4).captured_at,bounds_source_sha256:src(4).source_sha256};
+ const movement_history={midnight,points:[[Date.parse(src(3).captured_at),16.02,3,0],[Date.parse(through.captured_at),17.15,5,1]]};
+ ui.render({daily:range(6,9,11),daily_nominal:nominal,movement_history});await tick();
+ const host=ui.get('day-curve'),nodes=()=>host.children[0].children;
+ assert.equal(ui.get('usage-estimate').textContent,'17.15 ft³');
+ assert.equal(host.dataset.endTime,through.captured_at);
+ assert.match(ui.get('usage-bounds').textContent,/9–11.*Meter event 6/);
+ assert.deepEqual(nodes().filter(n=>n.attributes.class==='plot-estimate-dot').map(n=>n.attributes['data-event']),[3,5]);
+ assert(nodes().filter(n=>n.attributes.class==='plot-estimate').every(n=>!n.attributes.d.includes(' C')));
+ assert.equal(nodes().filter(n=>n.attributes.class==='plot-band').length,0);
+ ui.render({daily:range(5,8,12),daily_nominal:nominal,movement_history});
+ assert.equal(host.dataset.endEvent,'5');assert.equal(ui.get('usage-estimate').textContent,'17.15 ft³');
+ assert(nodes().some(n=>n.attributes.class==='plot-band'));
+ host.onkeydown({key:'End',preventDefault(){}});
+ assert.match(host.attributes['aria-valuetext'],/17.15.*8.00–12.00/);
+ ui.render({daily:range(6,9,11)},{overview_daily_method:'nominal_meter_movement_v1'});
+ assert(!ui.get('usage-estimate').textContent.includes('10.00'));
+ assert.match(ui.get('usage-bounds').textContent,/9–11.*Meter event 6/);
+ assert.equal(host.dataset.endEvent,undefined);
 });

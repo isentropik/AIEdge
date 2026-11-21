@@ -90,7 +90,8 @@ class DailyStaleTests(TestCase):
         next_row['event_observation'].update(event_id=5,source_sha256='5'*64,captured_at=stamp,monotonic_us=72000000)
         newer=self.rows[:-1]+[next_row]
         full,s=self.publish(newer)
-        self.assertEqual((s['event_id'],s['status']),(5,'daily_range'))
+        self.assertEqual((s['event_id'],s['status'],s['value_ft3']),(5,'partial_coverage','3.00'))
+        self.assertEqual(full['nominal_estimate']['value_ft3'], '35.50')
         self.assertNotIn('conflict_event_id',s)
         self.assertNotIn('status',full)
 
