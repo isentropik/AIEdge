@@ -206,6 +206,11 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     self.reply({'error':'trial_request_id_invalid'},400);return
                 result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
                 self.reply(result);return
+            if route=='/api/overview':
+                # The gas cards use broker-acknowledged values already in memory.
+                # Keep ledger scans, recognition and recovery checks off this path.
+                self.reply({'mqtt':mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}})
+                return
             if route=='/api/status':
                 state=store.status();state.update(capture_enabled=collector is not None,missed_slots=collector.missed_slots if collector else 0)
                 state['configuration']=configuration or {'state':'ready'}

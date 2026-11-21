@@ -43,6 +43,7 @@ function applyTheme(){
 theme.onchange=applyTheme;applyTheme();
 let activePage='overview';
 function page(name){
+  const changed=activePage!==name;
   activePage=name;
   $('error').hidden=!$('error').textContent||$('error').dataset.owner===name;
   for(const id of ['overview','captures','setup','format','settings']){
@@ -50,6 +51,7 @@ function page(name){
   }
   $('title').textContent={overview:'Overview',captures:'Captures',setup:'Setup',format:'Number format',settings:'Settings'}[name];
   window.AIEdgeNotices?.sync();
+  if(changed)refresh();
 }
 window.showAppPage=page;
 const routes={setup:'setup',settings:'settings',overview:'overview',captures:'captures',calibration:'setup',format:'format'};
@@ -70,18 +72,17 @@ for(const [hash,name] of Object.entries(routes).filter(([hash])=>hash!=='calibra
  if(location.hash==='#'+hash)route();else location.hash=hash;
 };
 window.addEventListener('hashchange',route);
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',route,{once:true});
-else route();
 let busy=false,timer=null,galleryKey=null,imageHash=null,imageFailed=false;
 let historyPage=null,historyCursors=[null],historyBusy=false,historyFailed=false;
+let usageBusy=false,lastGas=null,nextHealthCheck=0,gasMode=null;
 function historyPath(){const before=historyCursors[historyCursors.length-1];return 'api/capture-history'+(before?'?before='+before:'');}
 function historyControls(){
  $('history-newer').disabled=historyBusy||historyCursors.length===1;
  $('history-older').disabled=historyBusy||!historyPage?.next_before;
- $('history-summary').textContent=historyPage?.items.length?(historyCursors.length===1?'Latest captures':'Earlier captures')+' · '+historyPage.items.length:'No stored captures';
+ $('history-summary').textContent=historyPage?.items.length?(historyCursors.length===1?'Latest captures':'Earlier captures')+' · '+historyPage.items.length:historyFailed&&!historyPage?'History unavailable':'No stored captures';
 }
 async function moveHistory(older){
- if(historyBusy||busy)return;
+ if(historyBusy)return;
  const previous=[...historyCursors];
  if(older){if(!historyPage?.next_before)return;historyCursors.push(historyPage.next_before);}
  else{if(historyCursors.length===1)return;historyCursors.pop();}
@@ -169,9 +170,8 @@ function gallery(rows){
     body.append(stamp,received,meta,action);card.append(image,body);$('gallery').append(card);
   }
 }
-function render(s,rows){
+function render(s){
   window.renderEventSelection?.(s.event_selection,s.configuration);
-  window.AIEdgeIntegration?.render(s);
   renderConsumption(s.consumption);
   renderRecognition(s.recognition);window.latestReading=s.reading;window.latestRecognition=s.recognition;
   window.renderPhysicalReading?.(s.reading,s.recognition);
@@ -189,11 +189,15 @@ function render(s,rows){
     $('empty-image').querySelector('p').textContent=s.capture_enabled?'Waiting for the camera to return an image.':'Camera capture is not enabled.';
   }
   $('latest-image').hidden=!s.latest||imageFailed;$('empty-image').hidden=!!s.latest&&!imageFailed;
-  if(s.latest?.sha256!==imageHash){
+  if(activePage==='overview' && $('capture-operations').open && s.latest?.sha256!==imageHash){
     imageHash=s.latest?.sha256||null;
     if(imageHash){imageFailed=false;$('latest-image').src='image/'+imageHash;}
   }
-  gallery(rows);
+  renderIssue(s);
+  window.AIEdgeFlow?.renderStatus(s);
+  $('checked-at').textContent='Checked '+new Date().toLocaleTimeString();
+}
+function renderIssue(s){
   const configIssue=s.configuration?.state==='invalid';
   const issue=configIssue?(s.configuration.code==='setup_storage_unavailable'?'Setup storage could not be opened. Capture and MQTT are stopped. Check the data volume, then restart AIEdge.':s.configuration.code==='mqtt_identity_unavailable'?'The saved MQTT identity could not be loaded. Capture and MQTT are stopped. Restore the identity from backup, then restart AIEdge.':'App configuration could not be loaded. Capture and MQTT are stopped. Correct the app options and restart AIEdge.'):
     s.recognition?.error==='stored_result_invalid'?'The stored recognition result is damaged. Its image and original record have been kept.':
@@ -206,23 +210,38 @@ function render(s,rows){
   $('error').dataset.owner=configIssue?'':s.setup_recovery?'setup':s.format_recovery?'format':'';
   $('error').dataset.noticeKind='action';
   $('error').hidden=!issue||$('error').dataset.owner===activePage;$('error').textContent=issue;
-  window.AIEdgeFlow?.renderStatus(s);
-  $('checked-at').textContent='Checked '+new Date().toLocaleTimeString();
+  window.AIEdgeNotices?.sync();
 }
-async function refresh(){
-  if(busy)return;
-  clearTimeout(timer);busy=true;$('refresh').disabled=true;
-  const historyRequest=historyBusy?Promise.resolve():get(historyPath()).then(page=>{
-    historyPage=page;historyControls();gallery(page.items);historyError(null);
-  },error=>historyError(error));
+async function refreshHistory(){
+  if(historyBusy)return;
+  historyBusy=true;historyControls();
   try {
-    // History may time out independently. Render a successful status promptly.
+    historyPage=await get(historyPath());
+    gallery(historyPage.items);historyError(null);
+  } catch(error){historyError(error);}
+  finally{historyBusy=false;historyControls();}
+}
+function compactOverview(){
+  return activePage==='overview' && gasMode==='gas' && !$('capture-operations').open;
+}
+async function refreshStatus(){
+  if(busy)return;
+  busy=true;
+  try {
     const state=await get('api/status');
-    render(state,historyPage?.items||[]);
+    if(activePage==='overview' && gasMode==='other')acceptUsage(state);
+    if(compactOverview())renderIssue(state);
+    else render(state);
   } catch(error){
-    // Keep historical images visible, but do not leave an old value looking live.
+    // A diagnostic outage has its own scope. Gas has a separate request and timestamp.
+    if(compactOverview()){
+      $('error').dataset.owner='';
+      const storage=error.code==='storage_startup_failed'||error.code==='storage_unavailable';
+      $('error').textContent=storage?error.message:'Capture diagnostics could not be refreshed.';
+      $('error').dataset.noticeKind=storage?'action':'connection';
+      $('error').hidden=false;window.AIEdgeNotices?.sync();return;
+    }
     window.AIEdgeFlow?.statusUnavailable();
-    window.AIEdgeIntegration?.render(null);
     renderConsumption({state:'unavailable',value:null});
     $('consumption-status').textContent='Status unavailable.';
     window.latestReading={state:'unavailable',value:null};
@@ -240,18 +259,55 @@ async function refresh(){
     $('error').dataset.noticeKind=window.AIEdgeNotices?(window.AIEdgeNotices.connection(error)&&!storageFailed&&!storageUnavailable?'connection':'action'):'connection';
     $('error').textContent=error.name==='TimeoutError'?'The app did not respond. Retrying automatically.':error instanceof TypeError?'Connection to the app was lost. Retrying automatically.':error.message;
     window.AIEdgeNotices?.sync();
-  } finally {
-    await historyRequest;
-    busy=false;$('refresh').disabled=false;
-    if(!document.hidden)timer=setTimeout(refresh,5000);
-  }
+  } finally {busy=false;}
 }
+function acceptUsage(state){
+  if(!state?.mqtt || typeof state.mqtt.state!=='string')throw Error('Invalid overview response.');
+  window.AIEdgeIntegration.render(state);
+  gasMode=state.mqtt.overview_meter || (state.mqtt.state==='disabled'?'other':null);
+  lastGas=gasMode==='gas' && Object.values(state.mqtt.usage||{}).some(p=>p?.event_id||p?.through?.event_id)?state:null;
+  const notice=$('usage-connection');
+  notice.hidden=true;notice.textContent='';
+}
+async function refreshUsage(){
+  if(usageBusy)return;
+  usageBusy=true;
+  try {
+    const state=await get('api/overview');
+    acceptUsage(state);
+    if(activePage==='overview' && !$('capture-operations').open && (!compactOverview() || Date.now()>=nextHealthCheck)){
+      nextHealthCheck=Date.now()+60000;
+      refreshStatus();
+    }
+  } catch(error){
+    const notice=$('usage-connection');
+    if(error.status===401||error.status===403)lastGas=null;
+    if(lastGas)window.AIEdgeIntegration.render(lastGas);
+    else if(gasMode!=='other')window.AIEdgeIntegration.render(null);
+    const detail=error.status===401||error.status===403?'Reopen AIEdge from Home Assistant.':
+      error.code==='storage_startup_failed'||error.code==='storage_unavailable'?error.message:'Retrying automatically.';
+    notice.textContent=(lastGas?'Stale · Showing the last received gas readings. ':'Gas readings could not be loaded. ')+detail;
+    notice.hidden=false;
+  } finally {usageBusy=false;}
+}
+function refresh(){
+  clearTimeout(timer);
+  if(activePage==='overview' && window.AIEdgeIntegration && gasMode!=='other'){
+    refreshUsage();
+    if($('capture-operations').open)refreshStatus();
+  } else refreshStatus();
+  if(activePage==='captures')refreshHistory();
+  if(!document.hidden)timer=setTimeout(refresh,5000);
+}
+$('capture-operations').addEventListener('toggle',()=>{if(activePage==='overview')refresh();});
 $('refresh').onclick=()=>{if(imageFailed){imageHash=null;$('latest-image').removeAttribute('src');}galleryKey=null;window.dispatchEvent(new CustomEvent('aiedge-refresh-images',{detail:activePage}));refresh();};
 window.addEventListener('aiedge-reading-format-saved',refresh);
 window.addEventListener('aiedge-calibration-saved',refresh);
 document.addEventListener('visibilitychange',()=>{
   clearTimeout(timer);if(!document.hidden)refresh();
 });
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',route,{once:true});
+else route();
 refresh();
 })();
 
