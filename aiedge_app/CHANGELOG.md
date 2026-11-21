@@ -1,3 +1,7 @@
+## 0.2.0-dev85
+
+- End the cumulative gas graph at the headline's measured event. Show a separate point until recorder history supports a connecting line.
+
 ## 0.2.0-dev84
 
 - Plot the day's recorded cumulative gas estimates with their bounds, and show the last four 15-minute usage ranges as lines. Inspect individual readings with a pointer, touch, or keyboard.

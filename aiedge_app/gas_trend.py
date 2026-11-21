@@ -49,6 +49,7 @@ def series(history, entity, daily, anchor=None):
     groups = []
     anchor_position = None
     previous = None
+    last_captured_at = None
     broken = True
     if not isinstance(history, list) or len(history) > 1 or (history and not isinstance(history[0], list)):
         raise ValueError('unexpected_history')
@@ -86,14 +87,15 @@ def series(history, entity, daily, anchor=None):
             if broken:
                 groups.append([])
             groups[-1].append(point)
-            if anchor is not None and (point,digest) == anchor:
+            if anchor is not None and (point,digest,src['captured_at']) == anchor:
                 anchor_position = len(groups)-1,len(groups[-1])-1
             previous = point,digest,context
+            last_captured_at = src['captured_at']
             broken = False
         except (KeyError, TypeError, ValueError, OverflowError):
             broken = True
     result = {'day':day,'zone':zone,'identity':list(identity),'midnight':round(midnight.timestamp()*1000),
-              'groups':groups,'last_digest':previous[1] if previous else None}
+              'groups':groups,'last_digest':previous[1] if previous else None,'last_captured_at':last_captured_at}
     if anchor is not None:
         result['anchor_position'] = anchor_position
     return result
@@ -107,7 +109,7 @@ def load_day(fetch, entity, daily, cached):
         anchor = cached['groups'][-1][-1]
         overlap = datetime.fromtimestamp(anchor[0]/1000, timezone.utc) - timedelta(minutes=12)
         if overlap > start:
-            tail = series(fetch(entity,overlap,end), entity, daily, (anchor,cached['last_digest']))
+            tail = series(fetch(entity,overlap,end), entity, daily, (anchor,cached['last_digest'],cached['last_captured_at']))
             # Extend the cached day only where both projections contain the same meter evidence.
             position = tail.pop('anchor_position')
             if position is not None:

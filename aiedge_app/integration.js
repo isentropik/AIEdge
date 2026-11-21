@@ -81,7 +81,8 @@ function renderDaily(daily) {
   $('daily-details').hidden = false;
   $('daily-method').textContent = nominal.assumption +
     (stale ? ' Conflicting meter event ' + daily.conflict_event_id + '.' : '');
-  return;
+  return {source:sourceOf(daily.through), day:daily.day, zone:daily.timezone, value:nominal.value_ft3,
+    lower:daily.lower, upper:daily.upper, status:daily.status, method:nominal.method};
  }
  const estimate = daily?.low_use_estimate;
  const hasEstimate = estimate?.method === 'lower_bound_assumption_v1';
@@ -92,6 +93,8 @@ function renderDaily(daily) {
  $('daily-details').hidden = !daily;
  $('daily-method').textContent = daily ? [daily.day + ' · ' + daily.timezone + ' · Event ' + daily.through.event_id,
    hasEstimate ? estimate.assumption : daily.explanation].filter(Boolean).join('. ') : '';
+ return daily && {source:sourceOf(daily.through), day:daily.day, zone:daily.timezone,
+   value:hasEstimate ? estimate.value_ft3 : null, lower:daily.lower, upper:daily.upper, status:daily.status, method:estimate?.method};
 }
 
 function renderResumed(resumed) {
@@ -207,9 +210,8 @@ function renderOverviewDaily(nominal, daily) {
  const midpoint = ranged && daily.nominal_estimate?.method === 'range_midpoint_v1';
  if (midpoint && (!supported || day !== daily.day || end.event_id > measured.event_id ||
      (sameEvent(end, measured) && (daily.status === 'stale' || nominal.method !== 'range_midpoint_v1')))) {
-   renderDaily(daily);
    setOptional('daily-event', 'Meter event ' + end.event_id);
-   return;
+   return renderDaily(daily);
  }
  if (!supported) {
    if (numeric && nominal.status === 'opening_balance' && day === calendarDay(new Date(), zone)) {
@@ -217,7 +219,10 @@ function renderOverviewDaily(nominal, daily) {
      $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
      setOptional('usage-assumption', 'Opening balance · Partial coverage');
      setOptional('usage-time', 'Awaiting the first measurement for ' + day + '.');
-   } else renderDaily(ranged ? daily : null);
+   } else {
+     if (ranged) setOptional('daily-event', 'Meter event ' + end.event_id);
+     return renderDaily(ranged ? daily : null);
+   }
    return;
  }
  const previous = day !== calendarDay(new Date(), zone);
@@ -237,6 +242,12 @@ function renderOverviewDaily(nominal, daily) {
  setOptional('usage-bounds', bounds || (partial ? 'Full-day bounds pending' : ''));
  $('daily-details').hidden = false;
  $('daily-method').textContent = [nominal.assumption, stale && nominal.conflict_event_id ? 'Conflicting meter event ' + nominal.conflict_event_id + '.' : ''].filter(Boolean).join(' ');
+ // Only bounds measured at the selected meter event belong to this plotted point.
+ const matching = ranged && daily.day === day && daily.timezone === zone && sameEvent(end,measured);
+ return {source:measured, day, zone, value:nominal.value_ft3,
+   lower:matching ? daily.lower : native ? nominal.lower_ft3 : null,
+   upper:matching ? daily.upper : native ? nominal.upper_ft3 : null,
+   status:nominal.status, method:nominal.method};
 }
 
 // Display rounding never feeds the ledger or the Home Assistant sensors.
@@ -297,8 +308,8 @@ function render(state) {
  if (other && !$('capture-operations').dataset.initialized) $('capture-operations').open = true;
  if (mqtt?.overview_meter || mqtt?.state === 'disabled') $('capture-operations').dataset.initialized = 'true';
  const zone = usage.daily_nominal?.timezone || usage.daily?.timezone || usage.resumed?.timezone || usage.recent?.timezone || mqtt?.overview_timezone;
- renderOverviewDaily(usage.daily_nominal, usage.daily);
- if (!other && ['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(usage.daily);
+ const headline = renderOverviewDaily(usage.daily_nominal, usage.daily);
+ if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily,other ? null : headline);
  renderAbsolute(usage.absolute_nominal, zone);
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
    if (sourceOf(usage.daily_nominal)) $('usage-assumption').append(' · Last published measurement');

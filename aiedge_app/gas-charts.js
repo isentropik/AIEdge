@@ -22,16 +22,17 @@ function chart(kind) {
     if (!model?.points.length) return;
     const i = Math.max(0,Math.min(index,model.points.length-1)), p = model.points[i];
     chosen = p[0];
-    const amounts = number.format(p[2])+'–'+number.format(p[3])+' ft³';
+    const amounts = p[2]==null ? '' : number.format(p[2])+'–'+number.format(p[3])+' ft³';
     const time = isDay ? clock(p[0],model.zone,true) : clock(p[5],model.zone)+' – '+clock(p[0],model.zone,true);
-    const value = isDay ? number.format(p[1])+' ft³ estimated · '+amounts : amounts;
+    const estimate = p[1]==null ? '' : number.format(p[1])+' ft³ estimated';
+    const value = isDay ? [estimate,amounts,p[5]].filter(Boolean).join(' · ') : amounts;
     readout.textContent = time+' · '+value;
     host.setAttribute('aria-valuenow',i);
     host.setAttribute('aria-valuetext',readout.textContent);
     const cursor=graphic.querySelector('.plot-cursor');
     if(cursor) {
       cursor.setAttribute('transform','translate('+atX(chosen)+' 0)');
-      cursor.querySelectorAll('circle').forEach((dot,j)=>dot.setAttribute('cy',atY(p[isDay?1:j+2])));
+      cursor.querySelectorAll('circle').forEach((dot,j)=>dot.setAttribute('cy',atY(isDay ? p[1]??p[2] : p[j+2])));
     }
   }
   function draw() {
@@ -39,12 +40,12 @@ function chart(kind) {
     const {groups,points,start,zone} = model;
     const w=host.clientWidth, h=isDay ? (w<440?175:205) : (w<440?144:156);
     const left=36,right=w-12,top=12,bottom=h-27;
-    const peak=Math.max(0,...points.map(p=>p[3]));
+    const peak=Math.max(0,...points.map(p=>p[3]??p[1]));
     const raw=(peak||1)/3, unit=10**Math.floor(Math.log10(raw));
     const step=([1,2,2.5,5,10].find(v=>v*unit>=raw)||10)*unit;
     const ceiling=Math.max(step,Math.ceil(peak/step)*step);
     const end=points.at(-1)[0], span=Math.max(1,end-start);
-    const x=t=>left+(right-left)*(t-start)/span, y=v=>bottom-(bottom-top)*v/ceiling;
+    const x=t=>end===start?(left+right)/2:left+(right-left)*(t-start)/span, y=v=>bottom-(bottom-top)*v/ceiling;
     atX=x; atY=y;
     graphic.setAttribute('viewBox','0 0 '+w+' '+h);
     graphic.style.height=h+'px';
@@ -56,8 +57,9 @@ function chart(kind) {
     const coords=(p,k)=>x(p[0]).toFixed(2)+' '+y(p[k]).toFixed(2);
     const line=(g,k)=>'M'+g.map(p=>coords(p,k)).join(' L');
     for(const g of groups){
-      nodes.push(svg('path',{d:line(g,3)+' L'+[...g].reverse().map(p=>coords(p,2)).join(' L')+' Z',class:'plot-band'}));
+      if(g[0][2]!=null)nodes.push(svg('path',{d:line(g,3)+' L'+[...g].reverse().map(p=>coords(p,2)).join(' L')+' Z',class:'plot-band'}));
       for(const [k,cls] of isDay?[[1,'plot-estimate']]:[[2,'plot-estimate'],[3,'plot-upper']]){
+        if(g[0][k]==null)continue;
         nodes.push(svg('path',{d:line(g,k),class:cls}));
         const dots=!isDay||g.length===1?g:[g.at(-1)];
         for(const p of dots) nodes.push(svg('circle',{cx:x(p[0]),cy:y(p[k]),r:isDay?2.6:4,class:cls+'-dot'}));
@@ -73,7 +75,7 @@ function chart(kind) {
       if(isDay && span<120000)label=new Date(t).toLocaleTimeString(undefined,{timeZone:zone,hour:'numeric',minute:'2-digit',second:'2-digit'});
       else if(isDay && w<440 && !i)label='Midnight';
       else if(isDay && w<440 && i<ticks.length-1)label=label.replace(':00','');
-      nodes.push(svg('text',{x:x(t),y:h-6,'text-anchor':i===0?'start':i===ticks.length-1?'end':'middle'},label));
+      nodes.push(svg('text',{x:x(t),y:h-6,'text-anchor':ticks.length===1?'middle':i===0?'start':i===ticks.length-1?'end':'middle'},label));
     });
     const cursor=svg('g',{class:'plot-cursor'});
     cursor.append(svg('line',{x1:0,x2:0,y1:top,y2:bottom}));
@@ -117,23 +119,44 @@ function chart(kind) {
 const drawDay=chart('day'), drawHour=chart('hour');
 let identity='', saved=null, generation=0, due=0, pending=false, latest=null;
 function showDay(){
-  const groups=saved?.groups?.filter(g=>g.length) || [];
-  if(!groups.length){
-    const message=!latest?'Waiting for a supported full-day reading':saved?.status==='unavailable'?'Daily history could not be loaded':saved?.status==='ready'?'No matching readings in Home Assistant history':'Loading today’s saved readings…';
-    drawDay(null,null,null,null,message);return;
+  const host=$('day-curve');
+  const source=latest?.source;
+  if(!source){
+    delete host.dataset.endEvent;delete host.dataset.endTime;
+    $('day-history-status').textContent='';
+    drawDay(null,null,null,null,'Waiting for a supported measurement');return;
   }
-  const cutoff=Date.parse(latest.through.captured_at);
-  const visible=groups.map(g=>g.filter(p=>p[0]<=cutoff && p[4]<=latest.through.event_id)).filter(g=>g.length);
-  if(!visible.length){drawDay(null,null,null,null,'Waiting for matching measurement times');return;}
-  const last=visible.at(-1).at(-1);
-  $('day-history-status').textContent=saved.status==='unavailable'?'History refresh delayed':'';
-  drawDay(visible,saved.midnight,saved.zone,identity+'|'+last[4]+'|'+saved.revision);
+  const {value,lower,upper,day,zone,status,method}=latest;
+  const stamp=Date.parse(source.captured_at), event=source.event_id;
+  const numeric=v=>(typeof v==='number'||typeof v==='string'&&v.trim()!=='')&&Number.isFinite(Number(v))&&Number(v)>=0;
+  const estimate=numeric(value)?Number(value):null;
+  const bounds=numeric(lower)&&numeric(upper)&&Number(lower)<=Number(upper)&&
+    (estimate==null||Number(lower)<=estimate&&estimate<=Number(upper));
+  if(estimate==null&&!bounds){
+    delete host.dataset.endEvent;delete host.dataset.endTime;
+    $('day-history-status').textContent='';
+    drawDay(null,null,null,null,'No supported amount for this measurement');return;
+  }
+  const label=status==='stale'?'Stale':method==='observed_increments'||status==='partial_coverage'?'Partial coverage':
+    method==='lower_bound_assumption_v1'?'Lower-bound assumption':'';
+  const point=[stamp,estimate,bounds?Number(lower):null,bounds?Number(upper):null,event,label];
+  const history=saved?.day===day&&saved.zone===zone?saved:null;
+  const groups=history?.groups || [], last=groups.at(-1)?.at(-1);
+  const recorded=last && method==='range_midpoint_v1' && history.last_digest===source.source_sha256 && history.last_captured_at===source.captured_at &&
+    last.every((v,i)=>v===point[i]);
+  // Only recorder segments establish continuity. A newer published total supplies a point, never a connecting interval.
+  const visible=recorded ? [...groups.slice(0,-1),[...groups.at(-1).slice(0,-1),point]] :
+    [...groups.map(g=>g.filter(p=>p[0]<stamp&&p[4]<event)).filter(g=>g.length),[point]];
+  host.dataset.endEvent=String(event);host.dataset.endTime=source.captured_at;
+  $('day-history-status').textContent=saved?.status==='unavailable'?'History refresh delayed':
+    !recorded&&visible.length>1?'Showing the latest measurement as a separate point.':'';
+  drawDay(visible,history?.midnight??stamp,zone,JSON.stringify([identity,history?.revision,latest]));
 }
-async function day(daily){
-  const key=daily?.before&&daily.after&&daily.through ? JSON.stringify([daily.day,daily.timezone,daily.through.camera,daily.through.format_id,
+async function day(daily,headline){
+  const key=headline?.source&&daily?.before&&daily.after&&daily.through&&daily.day===headline.day&&daily.timezone===headline.zone ? JSON.stringify([daily.day,daily.timezone,daily.through.camera,daily.through.format_id,
     daily.before.source_sha256,daily.after.source_sha256,daily.before.event_id,daily.before.captured_at,daily.after.event_id,daily.after.captured_at]) : '';
   if(key!==identity){identity=key;generation++;saved=null;pending=false;due=0;$('day-history-status').textContent='';}
-  latest=daily;
+  latest=headline;
   if(!key||pending||Date.now()<due){showDay();return;}
   const current=generation;pending=true; showDay();
   try{
