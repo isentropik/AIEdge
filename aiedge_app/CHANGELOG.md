@@ -1,3 +1,7 @@
+## 0.2.0-dev89
+
+- Simplify the gas overview on phones with clock-aligned time axes, on-chart inspection and lighter cumulative uncertainty shading.
+
 ## 0.2.0-dev88
 
 - Show the recent period’s nominal use above its bounds. Plot the midpoint for each interval with a shaded bounds ribbon.

@@ -9,30 +9,29 @@
         <p id="absolute-value" class="usage-number">Awaiting a meter reading</p>
         <p id="absolute-status" class="usage-context"></p>
         <p id="absolute-time" class="usage-time"></p>
-        <details id="absolute-details" hidden><summary>Reading details</summary>
-          <p id="absolute-raw" class="source-data"></p><p id="absolute-event" class="source-data"></p><p id="absolute-method"></p><ul id="absolute-bands"></ul>
-        </details>
+
       </section>
       <div class="day-summary"><h2 id="usage-title">Gas used today</h2>
         <p id="usage-estimate" class="usage-number">Waiting for a reading</p>
         <p id="usage-assumption" class="usage-context"></p>
         <p id="usage-bounds" class="usage-bounds"></p>
         <p id="usage-time" class="usage-time"></p>
-        <details id="daily-details" hidden><summary>Estimate details</summary>
-          <p id="daily-event" class="source-data"></p><p id="daily-method" class="usage-context"></p>
-          <p>Across a gap, shading shows the possible cumulative use between the earlier lower bound and the later upper bound. The estimate line resumes at the next reading.</p>
-        </details>
+
       </div>
     </div>
     <figure class="trend-figure" aria-label="Cumulative gas use today">
       <figcaption><h3>Cumulative use</h3><span class="trend-legend"><i class="line-key"></i>Estimate <i class="shade-key"></i>Bounds</span></figcaption>
-      <div id="day-curve" class="trend-chart"></div><p id="day-hour-readout" class="trend-readout"></p><p id="day-readout" class="usage-time">Waiting for saved readings</p><span id="day-history-status" role="status"></span>
+      <div class="plot-frame"><div id="day-curve" class="trend-chart"></div>
+        <div id="day-tip" class="plot-tip" aria-hidden="true" hidden>
+          <strong id="day-tip-title"></strong><span id="day-tip-amount"></span><span id="day-tip-bounds"></span>
+          <small id="day-tip-note"></small>
+        </div></div><span id="day-history-status" role="status"></span>
     </figure>
   </section>
   <section class="panel usage-card usage-recent" aria-labelledby="recent-title">
     <div class="hour-summary">
     <h2 id="recent-title">Recent gas use</h2>
-    <label class="period-choice">Period <select id="usage-period"><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option></select></label>
+    <label class="period-choice"><select id="usage-period" aria-label="Usage period"><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option></select></label>
     <p id="hour-time" class="usage-time"></p>
     <div class="recent-metric">
       <p id="recent-metric-label">Gas use</p>
@@ -42,13 +41,13 @@
     </div>
     <figure class="trend-figure" id="quarter-plot" hidden>
       <figcaption><h3 id="period-bins">15-minute totals</h3><span class="trend-legend"><i class="line-key"></i>Nominal <i class="shade-key"></i>Bounds</span></figcaption>
-      <div id="hour-curve" class="trend-chart"></div><p id="hour-readout" class="trend-readout"></p>
+      <div class="plot-frame"><div id="hour-curve" class="trend-chart"></div>
+        <div id="hour-tip" class="plot-tip" aria-hidden="true" hidden>
+          <strong id="hour-tip-title"></strong><span id="hour-tip-amount"></span><span id="hour-tip-bounds"></span>
+          <small id="hour-tip-note"></small>
+        </div></div>
     </figure>
-    <details id="recent-details" hidden><summary>Amounts and measurement times</summary>
-      <p>Nominal use is the midpoint of the bounds for the selected period. Each chart point uses its own interval’s bounds.</p>
-      <ol id="usage-quarters" aria-label="Gas usage by interval"></ol>
-      <ol id="quarter-sources" aria-label="Source meter events"></ol>
-    </details>
+
   </section>
   <details class="panel usage-card usage-history">
     <summary>Earlier usage and recovery</summary>
@@ -59,15 +58,13 @@
     <p id="photo-time" class="usage-time" hidden></p>
     <p id="usage-resumed" class="usage-bounds">Waiting for a reading</p>
     <p id="usage-resumed-time" class="usage-time"></p>
-    <details id="resumed-details" hidden><summary>Measurement details</summary>
-      <p id="usage-resumed-note" class="usage-context"></p>
-    </details>
+
   </section>
     <section class="history-section"><h2>Since capture recovered</h2>
       <p id="elapsed-value"></p><p id="elapsed-time" class="usage-time"></p><p id="elapsed-method" class="usage-context"></p>
     </section>
     <section class="history-section"><h2>Last verified segment estimate</h2>
-      <p id="segment-value"></p><p id="segment-time" class="usage-time"></p><p id="segment-start" class="usage-context"></p><details id="segment-details" hidden><summary>Source reading</summary><p id="segment-raw" class="source-data"></p></details>
+      <p id="segment-value"></p><p id="segment-time" class="usage-time"></p><p id="segment-start" class="usage-context"></p>
     </section>
   </details>
 </div><details id="capture-operations"><summary>Capture diagnostics</summary><div class="summary"><div class="metric"><strong id="count">—</strong><span>captures</span></div><div class="metric"><strong id="unique">—</strong><span>unique images</span></div><div class="metric"><strong id="failures">—</strong><span>capture failures</span></div><span id="camera-status" class="status">Loading</span></div>
