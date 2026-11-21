@@ -71,55 +71,8 @@ function axisTicks(start,end,width,zone) {
   }
   return ticks;
 }
-// Fit the outer edge in screen space. Interior display anchors may move one
-// pixel outward so a staircase can become a gentle slope. Pin every gap corner.
-function bandPath(points,k,x,y,move) {
-  const side=k===3?-1:1,baseline=y(0);
-  const levels=points.map(p=>side*y(p[k]));
-  const coord=(t,v)=>x(t).toFixed(2)+' '+(side*v).toFixed(2);
-  const vertex=(i,v=levels[i])=>coord(points[i][0],v);
-  const path=[move+vertex(0)];
-  function fit(a,b,left,right){
-    if(b<=a)return;
-    const t0=points[a][0],dt=points[b][0]-t0,rise=right-left;
-    let bow=0,pivot=0;
-    for(let i=a+1;i<b;i++){
-      const u=(points[i][0]-t0)/dt;
-      const required=(levels[i]-left-rise*u)/(4*u*(1-u));
-      if(required>bow){bow=required;pivot=i;}
-    }
-    // A quadratic minus a linear input edge is concave in the outward
-    // direction. Its maximum is at an endpoint or where the slopes agree.
-    let split=bow>Math.abs(rise)/4?pivot:0;
-    for(let i=a+1;!split&&i<=b;i++){
-      const u=(points[i-1][0]-t0)/dt,v=(points[i][0]-t0)/dt;
-      const slope=(levels[i]-levels[i-1])/(v-u);
-      const at=bow?Math.max(u,Math.min(v,(rise+4*bow-slope)/(8*bow))):rise>slope?v:u;
-      const slack=left+rise*at+4*bow*at*(1-at)-levels[i-1]-slope*(at-u);
-      if(slack>2&&b>a+1)split=pivot||Math.min(b-1,Math.max(a+1,at-u<v-at?i-1:i));
-    }
-    if(split){
-      // Stay inside the endpoint levels on a monotone stretch whenever
-      // possible and never draw a lower gas bound below zero.
-      const adjusted=Math.max(levels[split],Math.min(levels[split]+1,Math.max(left,right),side===1?baseline:Infinity));
-      fit(a,split,left,adjusted);fit(split,b,adjusted,right);return;
-    }
-    path.push(bow>.000001?'Q'+coord(t0+dt/2,left+rise/2+2*bow)+' '+vertex(b,right):'L'+vertex(b,right));
-  }
-  let start=0;
-  for(let i=1;i<points.length;i++){
-    if(points[i][0]===points[i-1][0]||Math.abs(levels[i]-levels[i-1])>8){
-      fit(start,i-1,levels[start],levels[i-1]);path.push('L'+vertex(i));start=i;
-    }else if(i-start===64){
-      // Bound the work per sample even for a long day of dense readings.
-      fit(start,i,levels[start],levels[i]);start=i;
-    }
-  }
-  fit(start,points.length-1,levels[start],levels.at(-1));
-  return path.join(' ');
-}
 // Bound consumption at a clock boundary from the saved daily totals on either side.
-// The line keeps every measurement. Only its inspection targets are grouped.
+// Each completed hour selects its last actual measurement; the final hour uses the headline.
 function dayHours(points, midnight, recent) {
   const last=points.at(-1), hour=3600000;
   if(midnight==null)return [{point:last,from:null,to:last[0]}];
@@ -164,48 +117,69 @@ function dayHours(points, midnight, recent) {
   }
   return stops;
 }
-// Skip subpixel steps only when a straight stroke stays within one pixel and
-// within every intervening published bound. Each recorder segment is independent.
-function dailyStroke(group,y) {
-  if(group.length<3)return group;
-  const result=[group[0]];
-  let start=0, minSlope=-Infinity, maxSlope=Infinity;
-  for(let i=1;i<group.length;i++){
-    const p=group[i],origin=group[start],dt=p[0]-origin[0];
-    const base=y(origin[1]),level=y(p[1]),slope=(level-base)/dt;
-    if(i>start+1 && (dt<=0 || slope<minSlope || slope>maxSlope)){
-      result.push(group[i-1]);start=i-1;minSlope=-Infinity;maxSlope=Infinity;
-      i--;continue;
-    }
-    const top=p[3]==null?level-1:Math.max(level-1,y(p[3]));
-    const bottom=p[2]==null?level+1:Math.min(level+1,y(p[2]));
-    minSlope=Math.max(minSlope,(top-base)/dt);
-    maxSlope=Math.min(maxSlope,(bottom-base)/dt);
-  }
-  result.push(group.at(-1));
-  return result;
-}
-// Recorder breaks interrupt the estimate. A nondecreasing daily total can still
-// be bounded throughout a gap by its earlier lower and later upper limit.
-function dailyRibbons(groups) {
-  const ribbons=[];
-  let ribbon=null;
+// Drawing and inspection share the same hourly measurements. Separate runs
+// prevent interpolation across missing hours or incompatible readings.
+function hourlyRuns(groups,stops){
+  const first=groups[0][0],slots=new Map();
+  for(const [slot,s] of stops.entries())if(s.point)slots.set(s.point,slot);
+  if(!slots.has(first))slots.set(first,Math.max(0,stops.findIndex(s=>s.to>first[0])));
+  const runs=[];
+  let last=null,run=null,previousSlot=-1;
   for(const group of groups){
-    for(let i=0;i<group.length;i++){
-      const p=group[i];
-      if(p[2]==null||p[3]==null){ribbon=null;continue;}
-      if(i===0 && ribbon){
-        const prev=ribbon.at(-1);
-        // Recorder points share the day's anchor. A separately published headline must qualify too.
-        if(p[6]===false || prev[0]>=p[0] || prev[2]>p[3])ribbon=null;
-        else ribbon.push([prev[0],null,prev[2],p[3]],[p[0],null,prev[2],p[3]]);
-      }
-      if(!ribbon){ribbon=[];ribbons.push(ribbon);}
-      ribbon.push(p);
+    for(const p of group){
+      if(last&&(p[0]<=last[0]||p[2]==null||p[3]==null||last[2]==null||last[3]==null||
+         last[2]>p[3]||p[1]==null||last[1]==null||p===group[0]&&p[6]===false))run=null;
+      last=p;
+      if(!slots.has(p))continue;
+      const slot=slots.get(p);
+      if(!run||slot>previousSlot+1){run=[];runs.push(run);}
+      run.push(p);
+      previousSlot=slot;
     }
   }
-  return ribbons;
+  return runs;
 }
+
+// A shared, slope-limited tangent keeps the line and both edges smooth through
+// each actual point. Every cubic stays between its two endpoint values and the
+// nominal stays inside the ribbon, even where a bound levels off or changes sign.
+function trendPaths(run,x,y){
+  const point=(px,v)=>px.toFixed(2)+' '+y(v).toFixed(2);
+  const xx=run.map(p=>x(p[0]));
+  const slope=run.map((p,i)=>{
+    let low=Infinity,high=-Infinity;
+    for(const j of [i-1,i+1]){
+      if(j<0||j>=run.length)continue;
+      const width=xx[j]-xx[i];
+      if(!width)return 0;
+      for(let k=1;k<=3;k++){
+        const rate=(run[j][k]-p[k])/width;
+        low=Math.min(low,rate);high=Math.max(high,rate);
+      }
+    }
+    return low===Infinity?0:low>0?low:high<0?high:0;
+  });
+  function segment(i,j,k){
+    const dx=(xx[j]-xx[i])/3,a=run[i][k],b=run[j][k];
+    return ' C'+point(xx[i]+dx,a+dx*slope[i])+' '+point(xx[j]-dx,b-dx*slope[j])+' '+point(xx[j],b);
+  }
+  const lines=[],bands=[];
+  const first=run[0],end=run.length-1;
+  if(first[2]!=null&&first[3]!=null){
+    let area='M'+point(xx[0],first[3]);
+    for(let i=1;i<=end;i++)area+=segment(i-1,i,3);
+    area+=' L'+point(xx[end],run[end][2]);
+    for(let i=end;i>0;i--)area+=segment(i,i-1,2);
+    bands.push(svg('path',{class:'plot-band',d:area+' Z'}));
+  }
+  if(first[1]!=null){
+    let path='M'+point(xx[0],first[1]);
+    for(let i=1;i<=end;i++)path+=segment(i-1,i,1);
+    lines.push(svg('path',{class:'plot-estimate',d:path}));
+  }
+  return {lines,bands};
+}
+
 // Bucket totals sit at their interval centers. End caps cover the partial
 // first and last buckets without extending any series across a missing bucket.
 const center=p=>p[5]+(p[0]-p[5])/2;
@@ -235,7 +209,8 @@ function chart(kind) {
       title.textContent=p?clock(p[0],model.zone,true):interval;
       amount.textContent=p?.[1]!=null?number.format(p[1])+' ft³ estimated':p?'':'No meter reading in this hour.';
       bounds.textContent=p?.[2]!=null&&p[3]!=null?'Bounds '+number.format(p[2])+'–'+number.format(p[3])+' ft³':'';
-      note.textContent=[p&&interval,interval&&used,p?.[5]].filter(Boolean).join(' · ');
+      const gaps=(stop.gaps||[]).map(([from,to])=>clock(from,model.zone,true)+' – '+clock(to,model.zone,true));
+      note.textContent=[p&&interval,interval&&used,gaps.length?'Estimate history breaks: '+gaps.join(', '):'',p?.[5]].filter(Boolean).join(' · ');
     }else{
       title.textContent=clockSpan(p[5],p[0],model.zone);
       amount.textContent=p[1]!=null?number.format(p[1])+' ft³ nominal':p[2]>0?'At least '+number.format(p[2])+' ft³ · partial coverage':'Range unavailable';
@@ -278,23 +253,25 @@ function chart(kind) {
       const v=i*step, pos=y(v);
       nodes.push(svg('line',{x1:left,x2:right,y1:pos,y2:pos,class:'plot-grid'}),svg('text',{x:left-8,y:pos+4,'text-anchor':'end'},Number(v.toPrecision(6)).toLocaleString()));
     }
-    const coords=(p,k)=>x(p[0]).toFixed(2)+' '+y(p[k]).toFixed(2);
-    const line=(g,k)=>'M'+g.map(p=>coords(p,k)).join(' L');
-    const strokes=isDay?groups:groups.map(bucketStroke);
-    const ribbons=isDay?dailyRibbons(groups):strokes;
-    for(const g of ribbons){
-      const back=[...g].reverse();
-      const d=isDay?bandPath(g,3,x,y,'M')+' '+bandPath(back,2,x,y,'L'):line(g,3)+' L'+back.map(p=>coords(p,2)).join(' L');
-      nodes.push(svg('path',{d:d+' Z',class:'plot-band'}));
-    }
-    for(const g of strokes){
-      if(g[0][1]==null)continue;
-      nodes.push(svg('path',{d:line(isDay?dailyStroke(g,y):g,1),class:'plot-estimate'}));
-      if(isDay && (g.length===1||g.at(-1)===points.at(-1))){
-        const p=g.at(-1);
-        nodes.push(svg('circle',{cx:x(p[0]),cy:y(p[1]),r:1.9,class:'plot-estimate-dot'}));
+    const runs=isDay?hourlyRuns(groups,model.stops):groups.map(bucketStroke);
+    const lines=[];
+    for(const run of runs){
+      const trend=trendPaths(run,x,y);
+      nodes.push(...trend.bands);lines.push(...trend.lines);
+      if(isDay){
+        for(const p of run)if(p[1]!=null)lines.push(svg('circle',{
+          cx:x(p[0]),cy:y(p[1]),r:p===points.at(-1)?2.7:1.8,class:'plot-estimate-dot','data-event':p[4]
+        }));
       }
     }
+    if(isDay){
+      $('day-gap-key').hidden=!model.gaps.length;
+      for(const [from,to] of model.gaps){
+        nodes.push(svg('line',{class:'plot-history-gap',x1:x(from),x2:x(to),y1:bottom+2,y2:bottom+2,
+          stroke:'var(--series)','stroke-width':3,'stroke-linecap':'round','data-from':from,'data-to':to}));
+      }
+    }
+    nodes.push(...lines);
     for(const tick of axisTicks(start,end,right-left,zone)){
       const px=x(tick.time);
       const halfLabel=tick.label.length*3.4;
@@ -331,12 +308,12 @@ function chart(kind) {
     if(next!==undefined){e.preventDefault();pick(next);}
   });
   new ResizeObserver(()=>{if(host.clientWidth!==drawnWidth)draw();}).observe(host);
-  return function update(groups, start, zone, key, empty, midnight, recent, clockBins) {
+  return function update(groups, start, zone, key, empty, midnight, recent, clockBins, gaps=[]) {
     if(!groups?.length&&!clockBins?.length){
       model=null; chosen=null; graphic.replaceChildren(); host.hidden=true;
       hide();active=-1;cursor=null;dot=null;drawnWidth=0;
       host.setAttribute('aria-valuetext','');
-      if(isDay)$('day-history-status').textContent=empty||'';
+      if(isDay){$('day-history-status').textContent=empty||'';$('day-gap-key').hidden=true;}
       return;
     }
     if(model?.key===key)return;
@@ -344,7 +321,10 @@ function chart(kind) {
     if(!previous || chosen===(previous.from??previous.to))chosen=null;
     const points=clockBins||groups.flat();
     const stops=isDay?dayHours(points,midnight,recent):points.map(p=>({to:p[0],point:p}));
-    model={groups,points,stops,start,zone,key,clockBins};
+    if(isDay&&gaps.length){
+      for(const s of stops)s.gaps=gaps.filter(([from,to])=>from<s.to&&to>s.from);
+    }
+    model={groups,points,stops,start,zone,key,clockBins,gaps};
     host.hidden=false; host.tabIndex=0;
     host.setAttribute('role','slider');
     host.setAttribute('aria-label',isDay?'Inspect gas use by hour':'Inspect gas use by interval');
@@ -380,12 +360,15 @@ function showDay(){
   const groups=history?.groups || [], last=groups.at(-1)?.at(-1);
   const recorded=last && method==='range_midpoint_v1' && history.last_digest===source.source_sha256 && history.last_captured_at===source.captured_at &&
     last.every((v,i)=>v===point[i]);
-  // Only recorder segments establish continuity. A newer published total supplies a point, never a connecting interval.
-  const visible=recorded ? [...groups.slice(0,-1),[...groups.at(-1).slice(0,-1),point]] :
-    [...groups.map(g=>g.filter(p=>p[0]<stamp&&p[4]<event)).filter(g=>g.length),[point]];
+  const recordedGroups=recorded?groups:groups.map(g=>g.filter(p=>p[0]<stamp&&p[4]<event)).filter(g=>g.length);
+  // A newer headline can extend the hourly preview without creating a fictitious recorder break.
+  // Conflicting or out-of-order publications remain isolated until the recorder confirms them.
+  if(!recorded&&last&&(last[0]>=stamp||last[4]>=event||stamp-last[0]>=660000))point[6]=false;
+  const visible=recorded ? [...groups.slice(0,-1),[...groups.at(-1).slice(0,-1),point]] : [...recordedGroups,[point]];
+  const gaps=recordedGroups.slice(1).map((group,i)=>[recordedGroups[i].at(-1)[0],group[0][0]]);
   host.dataset.endEvent=String(event);host.dataset.endTime=source.captured_at;
   $('day-history-status').textContent=saved?.status==='unavailable'?'History refresh delayed':'';
-  drawDay(visible,history?.midnight??stamp,zone,JSON.stringify([identity,history?.revision,latest,recentWindow]),null,history?.midnight,recentWindow);
+  drawDay(visible,history?.midnight??stamp,zone,JSON.stringify([identity,history?.revision,latest,recentWindow]),null,history?.midnight,recentWindow,null,gaps);
 }
 async function day(daily,headline,recent){
   const key=headline?.source&&daily?.before&&daily.after&&daily.through&&daily.day===headline.day&&daily.timezone===headline.zone ? JSON.stringify([daily.day,daily.timezone,daily.through.camera,daily.through.format_id,
