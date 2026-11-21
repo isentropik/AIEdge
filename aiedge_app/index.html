@@ -7,6 +7,11 @@
     <p id="usage-estimate" class="usage-number">Waiting for a reading</p>
     <p id="usage-assumption" class="usage-context"></p>
     <p id="usage-bounds" class="usage-bounds"></p>
+    <div id="daily-plot" class="daily-plot" aria-hidden="true" hidden>
+      <div class="daily-caption"><b>Unresolved bounds</b><span><i></i> Estimate</span></div>
+      <div class="daily-scale"><span id="daily-marker"></span></div>
+      <div class="daily-limits"><span>Lower bound <b id="daily-low"></b></span><span>Upper bound <b id="daily-high"></b></span></div>
+    </div>
     <p id="usage-time" class="usage-time"></p>
     <details id="daily-details" hidden><summary>Estimate details</summary>
       <p id="daily-event" class="source-data"></p><p id="daily-method" class="usage-context"></p>
@@ -22,12 +27,24 @@
     </details>
   </section>
   <section class="panel usage-card usage-recent" aria-labelledby="recent-title">
+    <div class="hour-summary">
     <h2 id="recent-title">Last hour</h2>
     <p id="usage-hour" class="usage-number">Waiting for a reading</p>
     <p id="hour-time" class="usage-time"></p>
+    </div>
     <details id="recent-details" open hidden><summary>15-minute breakdown</summary>
-      <ol id="usage-quarters" aria-label="15-minute gas usage"></ol>
-      <details class="interval-sources"><summary>Measurement times</summary><ol id="quarter-sources"></ol></details>
+      <figure id="quarter-plot" class="quarter-plot" hidden>
+        <figcaption><span>Gas use (ft³)</span><span class="plot-key"><i class="solid-key"></i>Minimum<i class="hatched-key"></i>Possible extra</span></figcaption>
+        <div class="quarter-graph">
+          <div class="quarter-axis" aria-hidden="true"><span id="quarter-top"></span><span id="quarter-mid"></span><span>0</span></div>
+          <div id="quarter-columns" class="quarter-columns" aria-hidden="true"></div>
+          <div id="quarter-labels" class="quarter-labels" role="list" aria-label="15-minute usage ranges in cubic feet, by start time"></div>
+        </div>
+      </figure>
+      <details class="interval-sources"><summary>Amounts and measurement times</summary>
+        <ol id="usage-quarters" aria-label="15-minute gas usage"></ol>
+        <ol id="quarter-sources" aria-label="Source meter events"></ol>
+      </details>
     </details>
   </section>
   <details class="panel usage-card usage-history">
