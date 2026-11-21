@@ -28,6 +28,23 @@ test('opening setup reads app metadata but never automatically requests a photo'
  assert.equal(app.get('step-count').textContent,'Step 3 of 8');
 });
 
+test('a busy read-only refresh leaves the saved reference usable',async()=>{
+ let invalidates;
+ const app=fixture({hash:'#setup/image',configured:true,cameraState:{state:'error',action:'image-load',error:'camera_busy'},
+  imageControls:{markReload:value=>{invalidates=value;}}});
+ await tick();assert.equal(invalidates,false);assert.deepEqual(app.posts,[]);
+ await app.get('setup-next').onclick();assert.equal(app.location.hash,'setup/alignment');assert.deepEqual(app.posts,[]);
+});
+
+test('busy setup hydrates both saved panels by GET without submitting a camera action',async()=>{
+ const seen=[];
+ const saved={settings:{revision:'light'},image_settings:{revision:'sensor'}};
+ const app=fixture({hash:'#setup',configured:true,cameraState:{state:'working',action:'check',saved_controls:saved},
+  lightingControls:{receive:r=>seen.push(r.settings.revision)},imageControls:{receive:r=>seen.push(r.image_settings.revision)}});
+ await tick();assert.deepEqual(seen,['light','sensor']);assert.deepEqual(app.posts,[]);
+ await app.get('setup-next').onclick();assert.equal(app.location.hash,'setup/lighting');assert.deepEqual(app.posts,[]);
+});
+
 test('the setup entry starts with meter choices and Next saves before lighting',async()=>{
  const app=fixture({hash:'#setup'});await tick();
  assert.equal(app.get('setup-heading').textContent,'Meter and units');assert.equal(app.get('step-count').textContent,'Step 1 of 8');

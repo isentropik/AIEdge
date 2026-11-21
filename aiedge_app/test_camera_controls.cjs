@@ -49,6 +49,28 @@ test('an applied brightness change stays stale when a later draft is reverted',(
  assert.equal(f.lighting.status().dirty,false);assert.equal(f.lighting.requiresPicture(),true);
  f.lighting.pictureTaken();assert.equal(f.lighting.requiresPicture(),false);
 });
+test('repainting saved panels preserves unsaved edits and never writes unchanged values',async()=>{
+ const f=fixture();
+ await f.lighting.apply();await f.image.apply();assert.deepEqual(f.calls,[]);
+ f.get('lighting-intensity').value='50';f.get('lighting-intensity').oninput();
+ f.get('image-exposure').value='720';f.get('image-exposure').oninput();
+ f.lighting.receive({cached:true,settings:{...f.ls,revision:'c'.repeat(64)}});
+ f.image.receive({cached:true,image_settings:{...f.is,revision:'c'.repeat(64)}});
+ assert.equal(f.get('lighting-intensity').value,50);assert.equal(f.get('image-exposure').value,'720');
+ assert.equal(f.lighting.status().revision,f.ls.revision);assert.equal(f.image.status().revision,f.is.revision);
+ f.lighting.configure(true,'http://new.test');f.image.configure(true,'http://new.test');
+ assert.equal(f.lighting.status().loaded,false);assert.equal(f.image.status().loaded,false);
+});
+test('a historical backup fills both panels without asserting camera capabilities',async()=>{
+ const f=fixture(),backup_date='2026-09-25';
+ f.lighting.configure(true,'http://old.test');f.image.configure(true,'http://old.test');
+ f.lighting.receive({cached:true,settings:{lighting:light,revision:f.ls.revision,backup_date}});
+ f.image.receive({cached:true,image_settings:{controls:sensor,revision:f.is.revision,backup_date}});
+ assert.equal(f.get('lighting-count').value,19);assert.equal(f.get('image-exposure').value,'600');
+ assert.match(f.get('image-controls-note').textContent,/2026-09-25/);
+ assert.throws(()=>f.image.autoDetails());await f.lighting.apply();await f.image.apply();assert.deepEqual(f.calls,[]);
+ f.image.receive({cached:true,image_settings:f.is});assert.equal(f.get('image-controls-note').hidden,true);
+});
 test('busy lighting fields cannot mutate their draft',()=>{
  const f=fixture();f.lighting.setBusy(true);f.get('lighting-intensity').value='90';f.get('lighting-intensity').oninput();
  assert.equal(f.lighting.status().dirty,false);assert.equal(f.lighting.requiresPicture(),false);

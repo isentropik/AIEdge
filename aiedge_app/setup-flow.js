@@ -131,17 +131,22 @@ async function go(target){
  }catch(error){note(error.message,true);}
  finally{busy=false;navigating=false;controls();}
 }
-function paintCamera(value){
+function paintCamera(value,completedHere=false){
  camera=value;
- window.AIEdgeCameraControls?.configure(value.configured);
- window.AIEdgeImageControls?.configure(value.configured);
+ window.AIEdgeCameraControls?.configure(value.configured,value.camera_url);
+ window.AIEdgeImageControls?.configure(value.configured,value.camera_url);
  window.AIEdgeImageControls?.receiveAuto?.(value.auto_settings);
+ const saved=value.saved_controls;
+ if(saved?.settings&&!(completedHere&&value.settings))window.AIEdgeCameraControls?.receive({cached:true,settings:saved.settings});
+ if(saved?.image_settings&&!(completedHere&&value.image_settings))window.AIEdgeImageControls?.receive({cached:true,image_settings:{...saved.image_settings,requires_reference:!!value.image_requires_reference}});
+ if((completedHere||!saved)&&value.state==='ready'&&(value.action?.startsWith('lighting-')||value.action==='auto-picture'||value.action==='auto-recover'))window.AIEdgeCameraControls?.receive(value);
+ if((completedHere||!saved)&&value.state==='ready'&&(value.action?.startsWith('image-')||value.action==='auto-picture'||value.action==='auto-recover'))window.AIEdgeImageControls?.receive(value);
+ if('image_requires_reference' in value)window.AIEdgeImageControls?.setReferenceRequired?.(value.image_requires_reference);
  window.AIEdgeImageControls?.markAttention(!!value.image_needs_attention);
- if(value.lighting_needs_attention)window.AIEdgeCameraControls?.markAttention();
- if(value.state==='ready'&&(value.action?.startsWith('lighting-')||value.action==='auto-picture'||value.action==='auto-recover'))window.AIEdgeCameraControls?.receive(value);
- if(value.state==='ready'&&(value.action?.startsWith('image-')||value.action==='auto-picture'||value.action==='auto-recover'))window.AIEdgeImageControls?.receive(value);
+ if(value.lighting_needs_attention||saved)window.AIEdgeCameraControls?.markAttention?.(!!value.lighting_needs_attention);
+ if(value.controls_save_failed)note('These controls are available for this session. AIEdge could not save them to storage.',true);
  if(value.state==='error'&&value.error==='camera_image_unsupported')window.AIEdgeImageControls?.unavailable();
- if(value.state==='error'&&(value.action?.startsWith('auto-')||value.action?.startsWith('image-')))window.AIEdgeImageControls?.markReload?.();
+ if(value.state==='error'&&(value.action?.startsWith('auto-')||value.action?.startsWith('image-')))window.AIEdgeImageControls?.markReload?.(value.action!=='image-load'&&value.error!=='camera_busy'&&value.error!=='camera_setup_busy');
  const imageState=window.AIEdgeImageControls?.status?.()||{};
  $('settings-device-note').textContent=!value.configured?'Configure a camera or choose a saved image in Setup.':value.error==='camera_image_unsupported'?'This firmware requires the camera website for exposure and gain settings.':imageState.auto_attention||imageState.needs_activation?'Restore saved camera settings in Setup → Image before taking pictures.':imageState.loaded?'Exposure and gain controls are available in Setup → Image.':'Load camera controls in Setup to check available settings.';
  $('settings-camera-address').textContent=value.camera_url||'Not configured';
@@ -190,7 +195,7 @@ async function cameraAction(action,details={}){
     $('reference-working-text').textContent=progress.stage==='saving'?'Saving selected settings…':progress.stage==='reference'?'Taking reference picture…':`Adjusting light and exposure · ${progress.shots} picture${progress.shots===1?'':'s'}`;
    }
   }
-  paintCamera(result);
+  paintCamera(result,true);
   if(result.state==='error')throw Error(messages[result.error]||'The camera request failed. Your current reference has been kept.');
   if(takingPicture){await window.AIEdgeCalibration.useReference(result.reference_sha256);window.AIEdgeCameraControls?.pictureTaken();window.AIEdgeImageControls?.pictureTaken(result.image_orientation);}
   else if(action==='lighting-apply')note(result.settings?.active_verified?'Lighting applied.': 'Lighting settings are unchanged.',false,target);
@@ -262,12 +267,13 @@ function route(hash){
  if(active&&hash===lastRoute&&hash.startsWith('#setup'))return true;
  // A new visit opens the saved wizard, even if the last visit left an unsubmitted draft.
  if(hash==='#setup'&&visitedSetup&&lastRoute!==hash){location.reload();return true;}
+ const enteringSetup=!active;
  lastRoute=hash;
  if(hash==='#calibration'||hash==='#setup'||hash.startsWith('#setup/'))visitedSetup=true;
  routeGeneration++;viewGeneration++;
  if(redoing&&!hash.startsWith('#setup/')&&hash!=='#calibration'){location.reload();return true;}
  if(hash==='#settings'){active=false;moveFormat(false);window.showAppPage('settings');loadCamera();return true;}
- if(hash==='#calibration'||hash==='#setup'||hash.startsWith('#setup/')){show(hash==='#calibration'?'image':hash==='#setup'?'meter':hash.split('/')[1]||'meter');return true;}
+ if(hash==='#calibration'||hash==='#setup'||hash.startsWith('#setup/')){if(enteringSetup)loadCamera();show(hash==='#calibration'?'image':hash==='#setup'?'meter':hash.split('/')[1]||'meter');return true;}
  if(active){active=false;moveFormat(false);}
  return false;
 }
@@ -287,5 +293,5 @@ window.addEventListener('aiedge-calibration-saved',()=>{if(active)controls();});
 window.addEventListener('resize',()=>{if(active)controls();});
 window.AIEdgeCameraControls?.connect(cameraAction);
 window.AIEdgeImageControls?.connect(cameraAction);
-route(location.hash);loadCamera();
+route(location.hash);
 })();

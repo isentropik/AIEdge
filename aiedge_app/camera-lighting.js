@@ -15,15 +15,20 @@ const api={mode,chooseMode,equal};
 if(typeof module!=='undefined'){module.exports=api;return;}
 const $=id=>document.getElementById(id);
 let saved=null,draft=null,revision=null,capabilities=null,needsActivation=false,stale=false,working=false,runner=null,configured=false,selectedMode='rgb',automatic=false,lastJob=null;
+let backupDate=null,origin;
 function update(){
  const strip=draft?.source==='strip',white=draft?.type==='SK6812_RGBW',selected=selectedMode;
  $('lighting-fields').hidden=!draft;$('lighting-strip-fields').hidden=!strip;
  $('lighting-mode-label').hidden=!strip||!white;$('lighting-color-label').hidden=!strip||selected!=='rgb';
  $('lighting-custom').hidden=!strip||selected!=='custom';$('lighting-white-channel').hidden=!white;
  $('image-brightness').hidden=!draft||automatic;
- for(const input of document.querySelectorAll('#lighting-fields input, #lighting-fields select, #image-brightness input'))input.disabled=working;
- $('load-lighting').disabled=working||!configured;$('apply-saved-lighting').hidden=!draft||!needsActivation;$('apply-saved-lighting').disabled=working;
- $('lighting-connection-note').hidden=!!draft;
+ for(const input of document.querySelectorAll('#lighting-fields input, #lighting-fields select, #image-brightness input'))input.disabled=working||!!backupDate;
+ $('load-lighting').disabled=working||!configured;$('apply-saved-lighting').hidden=!draft||!needsActivation;
+ const note=$('lighting-connection-note');
+ note.hidden=!!draft&&!backupDate;
+ note.textContent=backupDate?'Saved backup · '+backupDate+' · Read only':'No saved lighting settings yet.';
+ $('load-lighting').textContent=draft?'Refresh from camera':'Load camera settings';
+ $('apply-saved-lighting').disabled=working||!!backupDate;
  if(draft){
   $('lighting-source').value=draft.source;$('lighting-type').value=draft.type;$('lighting-count').value=draft.count;
   $('lighting-mode').value=selected;
@@ -34,7 +39,7 @@ function update(){
  window.updateSetupFlow?.();
 }
 function change(){
- if(!draft||working)return;
+ if(!draft||working||backupDate)return;
  const light=clone(draft);light.source=$('lighting-source').value;light.type=$('lighting-type').value;
  light.pin=light.source==='builtin'?capabilities.builtin_pin:Number($('lighting-pin').value);
  light.count=Number($('lighting-count').value);light.intensity=Number($('lighting-intensity').value);
@@ -43,31 +48,33 @@ function change(){
  draft=light;update();
 }
 function receive(result){
- const settings=result.settings;if(!settings?.lighting||!settings.capabilities)return;
+ const settings=result.settings;if(!settings?.lighting||(!settings.capabilities&&!settings.backup_date))return;
+ if(result.cached&&draft&&((revision===settings.revision&&backupDate===(settings.backup_date||null))||!equal(saved,draft)))return;
+ backupDate=settings.backup_date||null;
  if(result.job&&result.job===lastJob)return;
  if(result.job)lastJob=result.job;
  const before=revision;
  saved=clone(settings.lighting);draft=clone(saved);selectedMode=mode(draft);revision=settings.revision;capabilities=settings.capabilities;needsActivation=!!settings.needs_activation;
  if(result.action==='lighting-apply'&&settings.active_verified===true&&!needsActivation)root.AIEdgeImageControls?.rebaseRevision(before,revision);
  const select=$('lighting-pin');select.replaceChildren();
- for(const pin of capabilities.pins){const option=document.createElement('option');option.value=String(pin.pin);option.textContent='GPIO '+pin.pin+(pin.available?'':' · unavailable');option.disabled=!pin.available;select.append(option);}
+ for(const pin of capabilities?.pins||[{pin:draft.pin,available:true}]){const option=document.createElement('option');option.value=String(pin.pin);option.textContent='GPIO '+pin.pin+(pin.available?'':' · unavailable');option.disabled=!pin.available;select.append(option);}
  select.value=String(draft.pin);
  if(settings.sensor)$('image-sensor').textContent=settings.sensor;
  if(result.action==='lighting-apply'&&settings.changed)stale=true;
  update();
 }
 async function apply(){
- if(!draft||(!needsActivation&&equal(saved,draft)))return true;
+ if(!draft||backupDate||(!needsActivation&&equal(saved,draft)))return true;
  if(![draft.count,draft.pin,draft.intensity,...draft.channels].every(Number.isInteger)||draft.count<1||draft.count>100000||draft.intensity<0||draft.intensity>100||draft.channels.some(v=>v<0||v>255))throw Error('Check the LED count, brightness and channel values.');
  return runner('lighting-apply',{revision,lighting:clone(draft)});
 }
 for(const id of ['lighting-source','lighting-type','lighting-pin','lighting-count','lighting-intensity'])$(id).oninput=change;
-$('lighting-mode').onchange=()=>{if(!draft||working)return;selectedMode=$('lighting-mode').value;draft=chooseMode(draft,selectedMode);update();};
-$('lighting-color').oninput=()=>{if(!draft||working)return;const color=$('lighting-color').value;if(!/^#[0-9a-f]{6}$/i.test(color))return;selectedMode='rgb';draft.channels=[1,3,5].map(at=>parseInt(color.slice(at,at+2),16)).concat(0);update();};
-for(let index=0;index<4;index++)$('lighting-channel-'+index).oninput=()=>{if(!draft||working)return;draft.channels[index]=Number($('lighting-channel-'+index).value);update();};
+$('lighting-mode').onchange=()=>{if(!draft||working||backupDate)return;selectedMode=$('lighting-mode').value;draft=chooseMode(draft,selectedMode);update();};
+$('lighting-color').oninput=()=>{if(!draft||working||backupDate)return;const color=$('lighting-color').value;if(!/^#[0-9a-f]{6}$/i.test(color))return;selectedMode='rgb';draft.channels=[1,3,5].map(at=>parseInt(color.slice(at,at+2),16)).concat(0);update();};
+for(let index=0;index<4;index++)$('lighting-channel-'+index).oninput=()=>{if(!draft||working||backupDate)return;draft.channels[index]=Number($('lighting-channel-'+index).value);update();};
 $('load-lighting').onclick=()=>runner?.('lighting-load');
 $('apply-saved-lighting').onclick=()=>apply();
-root.AIEdgeCameraControls={receive,apply,connect(fn){runner=fn;},setBusy(value){working=value;update();},configure(value){configured=!!value;update();},markAttention(){needsActivation=true;update();},
+root.AIEdgeCameraControls={receive,apply,connect(fn){runner=fn;},setBusy(value){working=value;update();},configure(value,address){if(origin!==address){saved=draft=capabilities=revision=lastJob=backupDate=null;needsActivation=stale=false;origin=address;}configured=!!value;update();},markAttention(value=true){needsActivation=!!value;update();},
  setAutomatic(value){if(automatic===!!value)return;automatic=!!value;update();},
  // A peer can advance the revision only from this exact verified baseline;
  // a stale or independently changed configuration still fails server checks.

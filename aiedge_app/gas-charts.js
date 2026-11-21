@@ -71,6 +71,24 @@ function axisTicks(start,end,width,zone) {
   }
   return ticks;
 }
+// Rolling labels name real interval closes, including a partial final interval.
+function intervalTicks(stops,start,end,width,zone){
+  const format=timeFormat(zone,'minute');
+  const ticks=stops.map(({to})=>({time:to,label:format.format(to)}));
+  const labels=new Map();
+  for(const t of ticks)labels.set(t.label,(labels.get(t.label)||0)+1);
+  const selected=[];
+  let right=-Infinity;
+  for(const t of ticks){
+    if(labels.get(t.label)>1)t.label+=' '+zonePart(timeFormat(zone,'range'),t.time);
+    const x=width*(t.time-start)/Math.max(1,end-start);
+    const half=t.label.length*3.6;
+    if(x-half<right+10)continue;
+    selected.push(t);
+    right=x+half;
+  }
+  return selected;
+}
 // Bound consumption at a clock boundary from the saved daily totals on either side.
 // Each completed hour selects its last actual measurement; the final hour uses the headline.
 function dayHours(points, midnight, recent) {
@@ -207,7 +225,7 @@ function chart(){
     host.setAttribute('aria-valuenow',i);
     host.setAttribute('aria-valuetext',[title,amount,bounds,note].map(el=>el.textContent).filter(Boolean).join(' · '));
     tip.hidden=!show;
-    const px=atX(p?.[0]??stop.to),level=p?.[1]??p?.[2];
+    const px=atX(stop.to),level=p?.[1]??p?.[2];
     const py=level==null?plotBottom/2:atY(level);
     if(show){
       const position=px<drawnWidth/2?(px+9)+'px':'calc('+(px-9)+'px - var(--tip-width))';
@@ -219,6 +237,8 @@ function chart(){
     cursor.setAttribute('visibility',show?'visible':'hidden');
     cursor.setAttribute('transform','translate('+px+' 0)');
     dot.setAttribute('visibility',show&&p?.[1]!=null?'visible':'hidden');
+    // A daily sample can precede its hour close. Keep that reading at its measured time.
+    dot.setAttribute('cx',p?atX(p[0])-px:0);
     dot.setAttribute('cy',py);
   }
   function draw() {
@@ -261,11 +281,12 @@ function chart(){
     nodes.push(...lines);
     for(const stop of model.stops){
       if(!stop.range||stop.from==null)continue;
-      const [lo,hi]=stop.range,px=x(stop.from+(stop.to-stop.from)/2),cap=Math.min(4,Math.max(1,(x(stop.to)-x(stop.from))/4));
+      const [lo,hi]=stop.range,px=x(stop.to),cap=Math.min(4,Math.max(1,(x(stop.to)-x(stop.from))/4));
       nodes.push(svg('path',{class:'plot-whisker',d:'M'+(px-cap)+' '+y(hi)+'h'+(cap*2)+' M'+px+' '+y(hi)+'V'+y(lo)+' M'+(px-cap)+' '+y(lo)+'h'+(cap*2)}),
         svg('circle',{class:'plot-usage-dot',cx:px,cy:y((lo+hi)/2),r:3.1}));
     }
-    for(const tick of axisTicks(start,end,right-left,zone)){
+    const ticks=model.rolling?intervalTicks(model.stops,start,end,right-left,zone):axisTicks(start,end,right-left,zone);
+    for(const tick of ticks){
       const px=x(tick.time);
       const halfLabel=tick.label.length*3.4;
       const anchor=px<halfLabel?'start':px>w-halfLabel?'end':'middle';
@@ -283,8 +304,9 @@ function chart(){
   function locate(e) {
     if(!model || !atX)return;
     const px=e.clientX-host.getBoundingClientRect().left;
-    const i=model.stops.findIndex(s=>px<atX(s.to));
-    pick(i<0?model.stops.length-1:i);
+    const stops=model.stops;
+    const i=stops.findIndex((s,j)=>j===stops.length-1||px<=(atX(s.to)+atX(stops[j+1].to))/2);
+    pick(i);
   }
   host.addEventListener('pointerdown',locate);
   host.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||e.buttons)locate(e);});
