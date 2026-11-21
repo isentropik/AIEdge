@@ -47,7 +47,7 @@ def publication_state(store,recognition,reading_format,consumption):
             '_daily_publication_pending':daily_pending,'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
             '_publication_segment_id':accounted.get('segment_id') if accounted else None}
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None,gas_trend=None):
     from review_store import ReviewConflict
     from archive import ArchiveConflict
     token=secrets.token_urlsafe(32)
@@ -206,6 +206,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     self.reply({'error':'trial_request_id_invalid'},400);return
                 result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
                 self.reply(result);return
+            if route=='/api/gas-trend':
+                daily=mqtt_output.status().get('usage',{}).get('daily') if mqtt_output and gas_trend else None
+                self.reply(gas_trend.snapshot(daily) if daily else {'status':'no_source'})
+                return
             if route=='/api/overview':
                 # The gas cards use broker-acknowledged values already in memory.
                 # Keep ledger scans, recognition and recovery checks off this path.
@@ -257,7 +261,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/event-selection-ui.js','/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js','/integration.js'):
+            elif route in ('/gas-charts.js','/event-selection-ui.js','/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js','/integration.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'
@@ -423,7 +427,9 @@ def run_service(stop_signals):
     stop_signals.checkpoint()
     from image_retention import ImageRetention
     retention = ImageRetention(store,archive,consumption) if store and archive and reviews else None
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention))
+    from gas_trend import GasTrend
+    trend=GasTrend(options['daily_history_entity']) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend))
     from lifecycle import ServiceRuntime
     if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention if enabled and collector else None),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')

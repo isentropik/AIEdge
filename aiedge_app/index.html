@@ -3,28 +3,19 @@
 <main><header class="toolbar"><h1 id="title">Overview</h1><div class="actions"><button id="refresh" class="icon-button" aria-label="Refresh" title="Refresh"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 8a8 8 0 1 0 0 8M20 3v5h-5"/></svg></button><label for="theme">Theme</label><select id="theme" aria-label="Theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></div></header><div class="content"><div id="error" class="notice" role="status" hidden></div>
 <div id="page-overview"><p id="usage-connection" class="note" role="status" hidden></p><div id="gas-overview" class="usage-overview">
   <section class="panel usage-card usage-today" aria-labelledby="usage-title">
-    <h2 id="usage-title">Gas used today</h2>
+    <div class="day-summary"><h2 id="usage-title">Gas used today</h2>
     <p id="usage-estimate" class="usage-number">Waiting for a reading</p>
     <p id="usage-assumption" class="usage-context"></p>
     <p id="usage-bounds" class="usage-bounds"></p>
-    <div id="daily-plot" class="daily-plot" aria-hidden="true" hidden>
-      <div class="daily-caption"><b>Unresolved bounds</b><span><i></i> Estimate</span></div>
-      <div class="daily-scale"><span id="daily-marker"></span></div>
-      <div class="daily-limits"><span>Lower bound <b id="daily-low"></b></span><span>Upper bound <b id="daily-high"></b></span></div>
-    </div>
     <p id="usage-time" class="usage-time"></p>
     <details id="daily-details" hidden><summary>Estimate details</summary>
       <p id="daily-event" class="source-data"></p><p id="daily-method" class="usage-context"></p>
     </details>
-  </section>
-  <section class="panel usage-card usage-register" aria-labelledby="absolute-title">
-    <h2 id="absolute-title">Gas meter reading</h2>
-    <p id="absolute-value" class="usage-number">Awaiting a meter reading</p>
-    <p id="absolute-status" class="usage-context"></p>
-    <p id="absolute-time" class="usage-time"></p>
-    <details id="absolute-details" hidden><summary>Reading details and possible ranges</summary>
-      <p id="absolute-raw" class="source-data"></p><p id="absolute-event" class="source-data"></p><p id="absolute-method"></p><ul id="absolute-bands"></ul>
-    </details>
+    </div>
+    <figure class="trend-figure" aria-label="Cumulative gas use today">
+      <figcaption><h3>Cumulative use</h3><span class="trend-legend"><i class="line-key"></i>Estimate <i class="shade-key"></i>Bounds</span></figcaption>
+      <div id="day-curve" class="trend-chart"></div><p id="day-readout" class="trend-readout">Waiting for saved readings</p><span id="day-history-status" role="status"></span>
+    </figure>
   </section>
   <section class="panel usage-card usage-recent" aria-labelledby="recent-title">
     <div class="hour-summary">
@@ -32,19 +23,22 @@
     <p id="usage-hour" class="usage-number">Waiting for a reading</p>
     <p id="hour-time" class="usage-time"></p>
     </div>
-    <details id="recent-details" open hidden><summary>15-minute breakdown</summary>
-      <figure id="quarter-plot" class="quarter-plot" hidden>
-        <figcaption><span>Gas use (ft³)</span><span class="plot-key"><i class="solid-key"></i>Minimum<i class="hatched-key"></i>Possible extra</span></figcaption>
-        <div class="quarter-graph">
-          <div class="quarter-axis" aria-hidden="true"><span id="quarter-top"></span><span id="quarter-mid"></span><span>0</span></div>
-          <div id="quarter-columns" class="quarter-columns" aria-hidden="true"></div>
-          <div id="quarter-labels" class="quarter-labels" role="list" aria-label="15-minute usage ranges in cubic feet, by start time"></div>
-        </div>
-      </figure>
-      <details class="interval-sources"><summary>Amounts and measurement times</summary>
-        <ol id="usage-quarters" aria-label="15-minute gas usage"></ol>
-        <ol id="quarter-sources" aria-label="Source meter events"></ol>
-      </details>
+    <figure class="trend-figure" id="quarter-plot" hidden>
+      <figcaption><h3>15-minute totals</h3><span class="trend-legend"><i class="line-key"></i>Lower <i class="upper-key"></i>Upper</span></figcaption>
+      <div id="hour-curve" class="trend-chart"></div><p id="hour-readout" class="trend-readout"></p>
+    </figure>
+    <details id="recent-details" hidden><summary>Amounts and measurement times</summary>
+      <ol id="usage-quarters" aria-label="15-minute gas usage"></ol>
+      <ol id="quarter-sources" aria-label="Source meter events"></ol>
+    </details>
+  </section>
+  <section class="panel usage-card usage-register" aria-labelledby="absolute-title">
+    <h2 id="absolute-title">Gas meter reading</h2>
+    <p id="absolute-value" class="usage-number">Awaiting a meter reading</p>
+    <p id="absolute-status" class="usage-context"></p>
+    <p id="absolute-time" class="usage-time"></p>
+    <details id="absolute-details" hidden><summary>Reading details</summary>
+      <p id="absolute-raw" class="source-data"></p><p id="absolute-event" class="source-data"></p><p id="absolute-method"></p><ul id="absolute-bands"></ul>
     </details>
   </section>
   <details class="panel usage-card usage-history">
@@ -219,5 +213,5 @@
  <div class="actions"><button id="trial-start" class="primary" type="button" disabled>Start trial</button><button id="trial-stop" type="button" hidden>Stop</button><button id="trial-check" type="button" hidden>Check status</button></div></div>
  <p id="trial-notice" class="setup-status" role="status" aria-live="polite" hidden></p>
 </section><div class="setup-bar"><p id="history-summary" role="status">Latest captures</p><div class="actions"><button id="history-newer" disabled>Newer</button><button id="history-older" disabled>Older</button></div></div><div id="history-error" class="notice" role="status" hidden></div><div id="gallery" class="gallery"></div><div id="empty-gallery" class="empty-library">No stored captures yet.</div></div><section id="capture-detail" hidden><div class="review-header"><button id="review-back" class="icon-button" aria-label="Back to captures"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button><p id="review-meta"></p></div><div class="review-layout"><form id="review-form" class="panel review-controls"><p>Enter the positions you can read, from 0 up to 10. Leave unreadable dials blank.</p><div id="review-dials"></div><button id="review-save" class="primary" type="submit" disabled>Save review</button><div id="review-status" class="setup-status" role="status" aria-live="polite"></div><button id="review-reload" type="button" hidden>Reload review</button><a id="review-reference-link" target="_blank" rel="noopener" hidden>View calibration reference</a></form><section class="panel review-photo"><div class="image-stage"><img id="review-image" alt="Original meter capture for manual review" hidden><canvas id="review-map" width="640" height="480" aria-label="Numbered dial locations on the calibration reference" hidden></canvas><div id="review-empty" class="empty">Loading image…</div></div><div class="caption"><div class="review-views"><button id="review-capture-view" type="button" aria-pressed="true">Capture</button><button id="review-map-view" type="button" aria-pressed="false" hidden>Dial map</button></div><a id="review-original" target="_blank" rel="noopener" hidden>Open full image</a></div></section></div><p id="review-caption" class="review-protection">Original capture</p><p id="review-repeat" class="review-repeat" hidden></p><p class="review-protection">Reviews do not change readings or train the model. Training and held-out checks are separate.</p></section></div></div></main></div>
-<script src="notices.js"></script><script src="capture-review.js"></script><script src="capture-trial.js"></script><script src="event-selection-ui.js"></script><script src="integration.js"></script><script src="dashboard.js"></script><script src="editor-geometry.js"></script><script src="reference-image.js"></script><script src="image-editor.js"></script><script src="setup.js"></script><script src="reading-format.js"></script><script src="camera-lighting.js"></script><script src="camera-image.js"></script><script src="archive.js"></script><script src="meter-profile.js"></script><script src="setup-flow.js"></script></html>
+<script src="notices.js"></script><script src="capture-review.js"></script><script src="capture-trial.js"></script><script src="event-selection-ui.js"></script><script src="gas-charts.js"></script><script src="integration.js"></script><script src="dashboard.js"></script><script src="editor-geometry.js"></script><script src="reference-image.js"></script><script src="image-editor.js"></script><script src="setup.js"></script><script src="reading-format.js"></script><script src="camera-lighting.js"></script><script src="camera-image.js"></script><script src="archive.js"></script><script src="meter-profile.js"></script><script src="setup-flow.js"></script></html>
 
