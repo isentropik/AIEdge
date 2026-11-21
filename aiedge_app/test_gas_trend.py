@@ -18,6 +18,15 @@ def row(a):
     return dict(entity_id=ENTITY,state='bounded',attributes=a)
 
 class TrendTests(unittest.TestCase):
+    def test_tail_keeps_the_full_source_timestamp_and_digest(self):
+        a=daily(5,5)
+        a['through']['captured_at']='2026-11-01T07:05:00.123987+00:00'
+        result=series([[row(a)]],ENTITY,a)
+        self.assertEqual(result['last_captured_at'],a['through']['captured_at'])
+        self.assertEqual(result['last_digest'],a['through']['source_sha256'])
+        self.assertEqual(result['groups'][-1][-1][0]%1000,123)
+        self.assertIsNone(series([[]],ENTITY,a)['last_captured_at'])
+
     def test_recorder_reads_only_named_entity(self):
         now=datetime.now(timezone.utc)
         with patch('gas_trend.http.client.HTTPConnection') as connect, patch.dict('os.environ',{'SUPERVISOR_TOKEN':'test'}):
@@ -101,6 +110,12 @@ class TrendTests(unittest.TestCase):
             self.assertGreater(fetch.call_args.args[1].timestamp()*1000,cache['midnight'])
             fetch.reset_mock()
             fetch.side_effect=[[[row(c),row(d)]],full]
+            self.assertEqual(load_day(fetch,ENTITY,d,cache),series(full,ENTITY,d))
+            self.assertEqual(fetch.call_count,2)
+            shifted=deepcopy(b)
+            shifted['through']['captured_at']=shifted['through']['captured_at'].replace('+00:00','.000001+00:00')
+            fetch.reset_mock()
+            fetch.side_effect=[[[row(shifted),row(d)]],full]
             self.assertEqual(load_day(fetch,ENTITY,d,cache),series(full,ENTITY,d))
             self.assertEqual(fetch.call_count,2)
 

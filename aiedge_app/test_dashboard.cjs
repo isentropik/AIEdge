@@ -309,17 +309,74 @@ test('other meters use full status and a switch back to gas re-enables overview 
  assert.deepEqual(calls,['api/overview']);
 });
 
-function gasOverview() {
+function gasOverview(trend, date=Date) {
  const elements = new Map();
  const get = id => {
    if (!elements.has(id)) elements.set(id, new Element());
    return elements.get(id);
  };
- const document = {getElementById:get, createElement:()=>new Element()};
+ const document = {getElementById:get, createElement:()=>new Element(),createElementNS:()=>new Element()};
  const window = {addEventListener(){}};
- vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'), {document,window,location:{hash:''},Intl,Date});
+ const context={document,window,location:{hash:''},Intl,Date:date};
+ if(trend){
+  for(const id of ['day-curve','hour-curve'])get(id).clientWidth=500;
+  Object.assign(context,{ResizeObserver:class {observe(){}},fetch:trend,AbortSignal});
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'gas-charts.js'),'utf8'),context);
+ }
+ vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'),context);
  return {get,render:usage=>window.AIEdgeIntegration.render({mqtt:{usage}})};
 }
+
+test('the daily chart follows the displayed publication through delayed history, gaps and stale readings',async()=>{
+ const day='2025-01-05',timezone='UTC';
+ const start=Date.parse(day+'T00:00:00Z');
+ let now=start+3600000,reads=0;
+ class Clock extends Date {constructor(...args){super(...(args.length?args:[now]));}static now(){return now;}}
+ const source=id=>({camera:'meter',format_id:'profile',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),
+  captured_at:new Date(start+1000*id).toISOString()});
+ const range=id=>({day,timezone,before:source(1),after:source(2),through:source(id),lower:'2.00',upper:'6.00',
+  label:'2.00–6.00 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:'4.00'}});
+ const nominal=(id,v)=>({day,timezone,event_id:id,source_sha256:source(id).source_sha256,measured_at:source(id).captured_at,
+  method:'range_midpoint_v1',status:'daily_range',value_ft3:v,lower_ft3:2,upper_ft3:6});
+ const point=id=>[start+id*1000,4,2,6,id];
+ const history=end=>({day,zone:timezone,status:'ready',midnight:start,groups:[[point(3)],[point(6),point(end)]],
+  identity:[day,timezone,'meter','profile',source(1).source_sha256,source(2).source_sha256,1,source(1).captured_at,2,source(2).captured_at],
+  last_digest:source(end).source_sha256,last_captured_at:source(end).captured_at});
+ let data=history(7),answer;
+ const ui=gasOverview(()=>{reads++;return new Promise(resolve=>{answer=()=>resolve(response(data));});},Clock);
+ const chart=ui.get('day-curve');
+ const paths=cls=>chart.children[0].children.filter(n=>n.attributes.class===cls);
+ const lengths=()=>paths('plot-estimate').map(p=>p.attributes.d.split(' L').length);
+ const assertEnd=id=>{
+  assert.equal(chart.dataset.endEvent,String(id));assert.equal(chart.dataset.endTime,source(id).captured_at);
+  assert.equal(ui.get('daily-event').textContent,'Meter event '+id);
+ };
+ ui.render({daily:range(8),daily_nominal:nominal(7,4)});assertEnd(8);assert.deepEqual(lengths(),[1]);
+ answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2,1]);
+ ui.render({daily:range(8),daily_nominal:nominal(9,5)});assertEnd(9);
+ assert.match(ui.get('day-readout').textContent,/5.00 ft³ estimated/);assert.equal(reads,1);
+ const partial={...nominal(10,7),method:'observed_increments',status:'partial_coverage',lower_ft3:null,upper_ft3:null};
+ ui.render({daily:range(8),daily_nominal:partial});assertEnd(10);assert.deepEqual(lengths(),[1,2,1]);
+ assert.match(ui.get('day-readout').textContent,/7.00 ft³ estimated · Partial coverage$/);
+ assert.equal(paths('plot-band').length,2);
+ data=history(8);now+=125000;
+ ui.render({daily:{...range(8),status:'stale',checked_through:source(15)},daily_nominal:nominal(6,4)});
+ answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2]);
+ assert.match(ui.get('day-readout').textContent,/Stale$/);
+ // Same millisecond and event number are insufficient to join a different source.
+ data={...data,last_captured_at:data.last_captured_at.replace('.000Z','.000001Z')};now+=125000;
+ ui.render({daily:range(8)});answer();await tick();assert.deepEqual(lengths(),[1,1,1]);
+ data={...history(8),last_digest:source(4).source_sha256};now+=125000;
+ ui.render({daily:range(8)});answer();await tick();assert.deepEqual(lengths(),[1,1,1]);
+ data=history(12);now+=125000;
+ ui.render({daily:range(8)});answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,1,1]);
+ ui.render({daily_nominal:{...partial,value_ft3:0}});assertEnd(10);assert.deepEqual(lengths(),[1]);
+ assert.match(ui.get('day-readout').textContent,/0.00 ft³ estimated · Partial coverage/);
+ ui.render({daily_nominal:{day,timezone,status:'opening_balance',value_ft3:'0.00'}});
+ assert.equal(chart.dataset.endEvent,undefined);assert.equal(chart.hidden,true);
+ assert.match(ui.get('usage-time').textContent,/Awaiting the first measurement/);
+ ui.render({});assert.equal(chart.dataset.endTime,undefined);
+});
 
 test('absolute presentation rounds decimal text and preserves the source and outward bounds',()=>{
  const ui = gasOverview();
