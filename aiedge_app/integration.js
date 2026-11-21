@@ -211,7 +211,7 @@ function calendarDay(date, zone) {
  return new Intl.DateTimeFormat('sv-SE', {timeZone:zone, year:'numeric', month:'2-digit', day:'2-digit'}).format(date);
 }
 
-function renderOverviewDaily(nominal, daily) {
+function renderOverviewDaily(nominal, daily, meterBased=false) {
  const measured = sourceOf(nominal);
  const end = sourceOf(daily?.through);
  const day = nominal?.day;
@@ -221,7 +221,8 @@ function renderOverviewDaily(nominal, daily) {
  const ranged = end && daily.day === calendarDay(new Date(), daily.timezone) &&
    daily.day === calendarDay(new Date(end.captured_at), daily.timezone) && boundPair(daily.lower, daily.upper);
  const midpoint = ranged && daily.nominal_estimate?.method === 'range_midpoint_v1';
- if (midpoint && (!supported || day !== daily.day || end.event_id > measured.event_id ||
+ const movement = nominal?.method === 'nominal_meter_movement_v1';
+ if (!meterBased && midpoint && !(supported && day===daily.day && (movement || nominal.method==='observed_increments')) && (!supported || day !== daily.day || end.event_id > measured.event_id ||
      (sameEvent(end, measured) && (daily.status === 'stale' || nominal.method !== 'range_midpoint_v1')))) {
    return renderDaily(daily);
  }
@@ -231,13 +232,16 @@ function renderOverviewDaily(nominal, daily) {
      $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
      setOptional('usage-assumption', 'Opening balance · Partial coverage');
      setOptional('usage-time', 'Awaiting the first measurement for ' + day + '.');
-   } else {
+   } else if (!meterBased) {
      return renderDaily(ranged ? daily : null);
+   } else {
+     renderDaily(null);
    }
+   if (meterBased && ranged) setOptional('usage-bounds', 'Range '+daily.label+' · '+sourceLine(end,daily.timezone));
    return;
  }
  const previous = day !== calendarDay(new Date(), zone);
- const partial = nominal.status === 'partial_coverage' || nominal.method === 'observed_increments';
+ const partial = nominal.partial_coverage === true || nominal.status === 'partial_coverage' || nominal.method === 'observed_increments';
  const stale = nominal.status === 'stale';
  const held = nominal.status === 'held_at_last_reading';
  $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
@@ -245,16 +249,20 @@ function renderOverviewDaily(nominal, daily) {
    partial ? 'Partial coverage' : '', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
  setOptional('usage-time', measuredLine(measured, zone));
  const native = boundPair(nominal.lower_ft3, nominal.upper_ft3);
- let bounds = native ? 'Range ' + Number(nominal.lower_ft3).toFixed(2) + '–' + Number(nominal.upper_ft3).toFixed(2) + ' ft³' : '';
- if (ranged && daily.day === day && (sameEvent(end, measured) || (!native && end.event_id !== measured.event_id))) {
+ const nativeSource = nominal.bounds_event_id ? sourceOf({event_id:nominal.bounds_event_id,
+   measured_at:nominal.bounds_measured_at, source_sha256:nominal.bounds_source_sha256}) : measured;
+ const nativeMatches = native && sameEvent(nativeSource, measured);
+ let bounds = native ? 'Range ' + Number(nominal.lower_ft3).toFixed(2) + '–' + Number(nominal.upper_ft3).toFixed(2) + ' ft³' + (nativeSource && !nativeMatches ? ' · ' + sourceLine(nativeSource, zone) : '') : '';
+ if (ranged && daily.day === day && daily.timezone === zone && (!native ||
+     (movement ? end.event_id > (nativeSource?.event_id ?? 0) || sameEvent(end,nativeSource) : sameEvent(end,measured)))) {
    bounds = 'Range ' + daily.label + (sameEvent(end, measured) ? '' : ' · ' + sourceLine(end, zone));
  }
  setOptional('usage-bounds', bounds || (partial ? 'Partial coverage' : ''));
  // Only bounds measured at the selected meter event belong to this plotted point.
  const matching = ranged && daily.day === day && daily.timezone === zone && sameEvent(end,measured);
  return {source:measured, day, zone, value:nominal.value_ft3,
-   lower:matching ? daily.lower : native ? nominal.lower_ft3 : null,
-   upper:matching ? daily.upper : native ? nominal.upper_ft3 : null,
+   lower:matching ? daily.lower : nativeMatches ? nominal.lower_ft3 : null,
+   upper:matching ? daily.upper : nativeMatches ? nominal.upper_ft3 : null,
    status:nominal.status, method:nominal.method};
 }
 
@@ -316,9 +324,10 @@ function render(state) {
  if (other && !$('capture-operations').dataset.initialized) $('capture-operations').open = true;
  if (mqtt?.overview_meter || mqtt?.state === 'disabled') $('capture-operations').dataset.initialized = 'true';
  const zone = usage.daily_nominal?.timezone || usage.daily?.timezone || usage.resumed?.timezone || usage.recent?.timezone || mqtt?.overview_timezone;
- const headline = renderOverviewDaily(usage.daily_nominal, usage.daily);
+ const headline = renderOverviewDaily(usage.daily_nominal, usage.daily, mqtt?.overview_daily_method==='nominal_meter_movement_v1');
  bindReading('usage-estimate', headline?.source, headline?.value);
- $('usage-estimate').title=headline?.method==='range_midpoint_v1'?'Estimate at the midpoint of the daily range':'';
+ if (headline?.method==='nominal_meter_movement_v1') headline.movement=usage.movement_history;
+ $('usage-estimate').title=headline?.method==='range_midpoint_v1'?'Estimate at the midpoint of the daily range':headline?.method==='nominal_meter_movement_v1'?'Starting estimate plus meter movement':'';
  if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily,other ? null : headline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {

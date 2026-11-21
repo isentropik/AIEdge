@@ -2,8 +2,8 @@
 import json
 import sqlite3
 from contextlib import closing
-from datetime import datetime
-from decimal import Decimal, ROUND_FLOOR
+from datetime import datetime, time
+from decimal import Decimal, InvalidOperation, ROUND_FLOOR, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
 
@@ -14,7 +14,7 @@ def opening(day, zone):
                 lower_ft3=None, upper_ft3=None, low_use_estimate_ft3=None)
 
 
-def advance(previous, obs, full, today, zone):
+def _segment_estimate(previous, obs, full, today, zone):
     day = today.isoformat()
     if previous and previous['state']['timezone'] == zone and previous['state']['day'] > day:
         return previous  # A backward wall-clock correction cannot start an older day.
@@ -98,6 +98,145 @@ def advance(previous, obs, full, today, zone):
     return dict(state=new, anchor=anchor)
 
 
+MOVEMENT = 'nominal_meter_movement_v1'
+
+
+def _bound_to(reading, obs):
+    return (reading and obs and reading.get('method') == 'minimum_supported_forward_movement'
+            and reading.get('status') in ('nominal', 'partial_coverage')
+            and (reading.get('event_id'), reading.get('measured_at'), reading.get('source_sha256')) ==
+                (obs['event_id'], obs['captured_at'], obs['source_sha256']))
+
+
+def _range_at(full, obs, day, zone):
+    if not full or not obs or (full.get('day'), full.get('timezone')) != (day, zone):
+        return False
+    through = full.get('through') or {}
+    return (full.get('status') != 'stale' and full.get('segment_id') == obs['segment_id']
+            and all(through.get(k) == obs[k] for k in ('event_id', 'source_sha256', 'captured_at', 'format_id')))
+
+
+def _with_bounds(record, full):
+    """Attach the last independently published range with its own source."""
+    state = record['state']
+    through = (full or {}).get('through') or {}
+    if (not through or (full.get('day'), full.get('timezone')) != (state['day'], state['timezone'])
+            or through.get('format_id') != record['movement']['format']):
+        return record
+    bounds_id = state.get('bounds_event_id') or 0
+    if through['event_id'] < bounds_id:
+        return record
+    if through['event_id'] == bounds_id and (
+            through['source_sha256'], through['captured_at']) != (
+            state['bounds_source_sha256'], state['bounds_measured_at']):
+        return record
+    if through['event_id'] == state['event_id'] and (
+            through['source_sha256'], through['captured_at']) != (state['source_sha256'], state['measured_at']):
+        return record
+    return dict(record, state=dict(state, lower_ft3=float(full['lower']), upper_ft3=float(full['upper']),
+                low_use_estimate_ft3=float(full['low_use_estimate']['value_ft3']),
+                bounds_event_id=through['event_id'], bounds_measured_at=through['captured_at'],
+                bounds_source_sha256=through['source_sha256']))
+
+
+def advance(previous, obs, full, today, zone, meter=None):
+    day = today.isoformat()
+    state = (previous or {}).get('state') or {}
+    same_day = (state.get('day'), state.get('timezone')) == (day, zone)
+    if state.get('timezone') == zone and state.get('day', day) > day:
+        return previous
+    track = previous.get('movement') if same_day else None
+    same_source = _bound_to(meter, obs)
+    if same_source:
+        try:
+            stamp = datetime.fromisoformat(meter['measured_at'])
+            absolute = Decimal(str(meter['value_ft3']))
+            same_source = (stamp.tzinfo is not None and stamp.astimezone(ZoneInfo(zone)).date() == today
+                           and absolute.is_finite() and absolute >= 0)
+        except (KeyError, TypeError, ValueError, InvalidOperation):
+            same_source = False
+    if not track and not same_source:
+        # Until there is a usable absolute register, retain the segment-based fallback.
+        # A later range revision cannot rebase a previously published same-day estimate.
+        legacy_series = (previous or {}).get('stale_source')
+        different_meter = bool(obs and legacy_series and legacy_series[0] != obs['format_id'])
+        if same_day and state.get('event_id') and not different_meter:
+            if full and full.get('status') != 'stale':
+                full = None
+            if obs and legacy_series and legacy_series[1] != obs['segment_id']:
+                previous = dict(previous, state=dict(state, status='held_at_last_reading'))
+        result = _segment_estimate(previous, obs, full, today, zone)
+        if same_day and not different_meter and (
+                Decimal(result['state']['value_ft3']) < Decimal(state['value_ft3'])
+                or (state.get('event_id') or 0) > (result['state'].get('event_id') or 0)
+                or (state.get('event_id') and result['state']['method'] == 'range_midpoint_v1'
+                    and result['state']['value_ft3'] != state['value_ft3'])):
+            return previous
+        return result
+    if not same_source:
+        return _with_bounds(dict(previous, state=dict(state, status='held_at_last_reading')), full)
+    eid = meter['event_id']
+    old_event = state.get('event_id') if same_day else None
+    if old_event is not None:
+        if eid < old_event or (eid == old_event and (meter['measured_at'], meter['source_sha256'])
+                               != (state['measured_at'], state['source_sha256'])):
+            return previous
+        if eid > old_event and stamp <= datetime.fromisoformat(state['measured_at']):
+            return previous
+    if track:
+        last_meter = Decimal(track['last_meter'])
+        if (obs['format_id'] != track['format'] or absolute < last_meter
+                or (eid == old_event and absolute != last_meter)):
+            return dict(previous, state=dict(state, status='held_at_last_reading'))
+        amount = Decimal(track['base']) + (absolute - Decimal(track['first_meter']))
+        track = dict(track)
+    else:
+        legacy_identity = ((previous or {}).get('anchor') or {}).get('identity')
+        if old_event is not None and legacy_identity and legacy_identity[0] != obs['format_id']:
+            return previous
+        # Upgrade at the last displayed amount. On first setup use a synchronous
+        # full-day estimate once, or the covered segment if midnight is missing.
+        initial = state
+        if old_event is None:
+            source_range = full if _range_at(full, obs, day, zone) else None
+            initial = _segment_estimate(None, obs, source_range, today, zone)['state']
+        amount = Decimal(initial['value_ft3'])
+        partial = (initial.get('method') != 'range_midpoint_v1' or initial.get('status') == 'stale'
+                   or (old_event is not None and eid != old_event))
+        midnight = datetime.combine(today, time.min, ZoneInfo(zone))
+        track = dict(base=str(amount), first_meter=str(absolute), format=obs['format_id'],
+                     partial=partial, midnight=int(midnight.timestamp() * 1000), group=0, points=[])
+    if eid != old_event and (meter['status'] == 'partial_coverage'
+                             or (old_event is not None and eid != old_event + 1)):
+        track['partial'] = True
+        track['group'] += 1
+    track['last_meter'] = str(absolute)
+    value = str(amount.quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+    new = dict(state if same_day else opening(day, zone),
+               day=day, timezone=zone, event_id=eid, measured_at=meter['measured_at'],
+               source_sha256=meter['source_sha256'], value_ft3=value, method=MOVEMENT,
+               partial_coverage=track['partial'],
+               status='partial_coverage' if track['partial'] else 'meter_movement',
+               assumption='Starting estimate plus the change in the nominal meter reading. Unknown extra turns are excluded.')
+    new.pop('conflict_event_id', None)
+    if not new.get('bounds_event_id') and state.get('lower_ft3') is not None and old_event is not None:
+        new.update(bounds_event_id=old_event, bounds_measured_at=state['measured_at'],
+                   bounds_source_sha256=state['source_sha256'])
+    # Keep the first observation and the last actual observation per elapsed hour.
+    # Elapsed time distinguishes both occurrences of an hour on a fall-back day.
+    ms = int(stamp.replace(microsecond=0).timestamp()) * 1000 + stamp.microsecond // 1000
+    point = [ms, float(value), eid, track['group']]
+    points = list(track['points'])
+    if not points or points[-1][2] != eid:
+        hour = (ms - track['midnight']) // 3600000
+        if len(points) > 1 and (points[-1][0] - track['midnight']) // 3600000 == hour:
+            points[-1] = point
+        else:
+            points.append(point)
+    track['points'] = points
+    return _with_bounds(dict(state=new, anchor=None, movement=track), full)
+
+
 class NominalPublisher:
     def __init__(self, checkpoint):
         self.checkpoint = checkpoint
@@ -105,7 +244,7 @@ class NominalPublisher:
         self.record = None
         self.sent = None
 
-    def publish(self, output, obs, full, today, zone):
+    def publish(self, output, obs, full, today, zone, meter=None, prior_meter=None):
         key = output.config['unique_id']
         if self.key != key:
             with closing(sqlite3.connect(self.checkpoint)) as db, db:
@@ -114,7 +253,20 @@ class NominalPublisher:
             self.record = json.loads(row[0]) if row else None
             self.key = key
             self.sent = None
-        record = advance(self.record, obs, full, today, zone)
+        prior = self.record
+        # The range sensor and register can publish at different cadences. Only
+        # convert a legacy checkpoint at the same event, digest and source time.
+        identity = ((prior or {}).get('anchor') or {}).get('identity')
+        if (prior and 'movement' not in prior and obs and prior_meter and identity
+                and identity[0] == obs['format_id']
+                and (prior['state']['day'], prior['state']['timezone']) == (today.isoformat(), zone)):
+            old = prior['state']
+            if (old.get('event_id'),old.get('measured_at'),old.get('source_sha256')) == (
+                    prior_meter.get('event_id'),prior_meter.get('measured_at'),prior_meter.get('source_sha256')) and old.get('event_id'):
+                bound = dict(format_id=identity[0], segment_id=identity[1], segment_started_at=identity[2],
+                             event_id=old['event_id'], captured_at=old['measured_at'], source_sha256=old['source_sha256'])
+                prior = advance(prior,bound,None,today,zone,prior_meter)
+        record = advance(prior, obs, full, today, zone, meter)
         if record != self.record:
             with closing(sqlite3.connect(self.checkpoint)) as db, db:
                 db.execute('INSERT OR REPLACE INTO daily_nominal VALUES (?,?)', (key, json.dumps(record, allow_nan=False)))
