@@ -427,22 +427,19 @@ test('historical segment precision is a display choice with the original measure
  assert.ok(ui.get('segment-details').hidden);
 });
 
-test('15-minute chart shares a zero baseline, uses saved endpoints and distinguishes zero from missing data',()=>{
- const ui = gasOverview();
- const points = Array.from({length:5}, (_,i)=>({event_id:i+10,source_sha256:'c'.repeat(64),
-   captured_at:new Date(Date.UTC(2026,10,1,8,30+i*15)).toISOString()}));
- const quarters = [[0,0],[1,2],[2,2],[1,4]].map(([lower,upper],i)=>({lower,upper,start:points[i],through:points[i+1]}));
- const recent = {hour:{start:points[0]},through:points[4],timezone:'America/Los_Angeles',quarters};
- ui.render({recent});
+test('clock buckets display a real zero, preserve missing amounts and reject a mismatched endpoint',async()=>{
+ const points=Array.from({length:5},(_,i)=>({event_id:i+10,source_sha256:'c'.repeat(64),captured_at:new Date(Date.UTC(2026,10,1,8,i*15)).toISOString()}));
+ const recent={hour:{start:points[0],through:points[4]},through:points[4],timezone:'America/Los_Angeles',label:'1.00–2.00 ft³',
+  quarters:points.slice(1).map((p,i)=>({start:points[i],through:p,lower:'0.00',upper:'1.00'}))};
+ const bins=recent.quarters.map((q,i)=>({start:q.start.captured_at,end:q.through.captured_at,lower:i===2?null:'0.00',upper:i===2?null:'0.00'}));
+ let result={status:'ready',timezone:recent.timezone,through:recent.through,history_available:true,periods:{'1':{start:bins[0].start,end:bins[3].end,minutes:15,bins,lower:'1.00',upper:'2.00'}}};
+ const ui=gasOverview(async()=>response(result));ui.get('usage-period').value='1';
+ ui.render({recent});await tick();
  assert.equal(ui.get('quarter-plot').hidden,false);
- assert.equal(ui.get('usage-quarters').children[3].children[1].textContent,'1–4 ft³');
- ui.render({recent:{...recent,quarters:quarters.map(q=>({...q,lower:0,upper:0}))}});
- assert.equal(ui.get('quarter-plot').hidden,false);
- for (const changed of [quarters.slice(1),[...quarters.slice(0,3),{...quarters[3],upper:null}],
-   [quarters[0],{...quarters[1],start:{...points[1],source_sha256:'e'.repeat(64)}},...quarters.slice(2)]]) {
-   ui.render({recent:{...recent,quarters:changed}});
-   assert.equal(ui.get('quarter-plot').hidden,true);
- }
- ui.render({});
- assert.equal(ui.get('recent-details').hidden,true);
+ assert.equal(ui.get('usage-quarters').children[0].children[1].textContent,'0.00–0.00 ft³');
+ assert.equal(ui.get('usage-quarters').children[2].children[1].textContent,'Range unavailable');
+ assert.equal(ui.get('hour-curve').children[0].children.filter(n=>n.attributes.class==='plot-estimate').length,2);
+ ui.render({recent:{...recent,quarters:recent.quarters.slice(1)}});assert.equal(ui.get('quarter-plot').hidden,true);
+ result={...result,through:{...recent.through,source_sha256:'e'.repeat(64)}};
+ ui.render({recent});await tick();assert.equal(ui.get('quarter-plot').hidden,true);
 });

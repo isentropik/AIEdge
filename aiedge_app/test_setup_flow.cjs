@@ -14,7 +14,7 @@ function fixture({hash='#setup/image',hasImage=true,markers=true,save=true,confi
  const location={hash};
  const window={showAppPage(name){calls.push('page:'+name);},openCalibration,openReadingFormat:async()=>{},
   AIEdgeCalibration:{status:()=>editor,setMode(mode){calls.push(mode);},save:async()=>{calls.push('save');return saveCalibration?await saveCalibration():save;},useReference:async digest=>{calls.push('reference:'+digest);editor.has_image=true;},draw(){},setGrid(){}},
-  AIEdgeMeter:{load:async()=>{calls.push('meter-load');return true;},save:async()=>{calls.push('meter-save');return save;}},
+  AIEdgeMeter:{status:()=>({hasSaved:!!meterUnit||!!formatUnit}),load:async()=>{calls.push('meter-load');return true;},save:async()=>{calls.push('meter-save');return save;}},
   AIEdgeFormat:{save:async()=>{calls.push('format-save');return save;}},AIEdgeArchive:{load:async()=>true,save:async()=>{calls.push('archive-save');return save;}},addEventListener(){}};
  if(imageControls)window.AIEdgeImageControls={connect(){},configure(){},receive(){},markAttention(){},setStep(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...imageControls};
  if(lightingControls)window.AIEdgeCameraControls={connect(){},configure(){},receive(){},setBusy(){},requiresPicture:()=>false,apply:async()=>true,...lightingControls};
@@ -41,14 +41,13 @@ test('unsaved meter choices keep navigation on the first step',async()=>{
  assert.equal(app.location.hash,'#setup');assert.equal(app.get('step-count').textContent,'Step 1 of 8');
  assert.equal(app.calls.includes('meter-save'),true);assert.deepEqual(app.posts,[]);
 });
-test('returning to Setup shows the saved choices; restart only navigates to the first step',async()=>{
+test('configured Setup opens at the prefilled meter step and redo lives only at the beginning',async()=>{
  const app=fixture({hash:'#setup',meterUnit:'ft3',formatUnit:'ft3'});await tick();
- assert.equal(app.get('setup-heading').textContent,'Saved setup');
- assert.equal(app.get('setup-steps').hidden,true);assert.equal(app.get('setup-actions').hidden,true);
- const values=Object.fromEntries(app.get('setup-summary').children.map(row=>row.children.map(e=>e.textContent)));
- assert.equal(values.Meter,'Gas');assert.equal(values.Units,'ft³');
+ assert.equal(app.get('setup-heading').textContent,'Meter and units');
+ assert.equal(app.get('restart-setup').hidden,false);assert.deepEqual(app.posts,[]);
  let reloads=0;app.location.reload=()=>reloads++;app.get('restart-setup').onclick();
- assert.equal(reloads,1);assert.equal(app.location.hash,'setup/meter');assert.deepEqual(app.posts,[]);
+ assert.equal(reloads,1);assert.equal(app.location.hash,'setup/redo');assert.deepEqual(app.posts,[]);
+ assert.equal(fixture({hash:'#setup/finish',meterUnit:'ft3'}).get('restart-setup').hidden,true);
 });
 
 test('finish marks a pending unit change as needing review without changing capture',async()=>{

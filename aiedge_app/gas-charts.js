@@ -59,6 +59,27 @@ function dayHours(points, midnight, recent) {
   }
   return stops;
 }
+// Skip subpixel steps only when a straight stroke stays within one pixel and
+// within every intervening published bound. Each recorder segment is independent.
+function dailyStroke(group,y) {
+  if(group.length<3)return group;
+  const result=[group[0]];
+  let start=0, minSlope=-Infinity, maxSlope=Infinity;
+  for(let i=1;i<group.length;i++){
+    const p=group[i],origin=group[start],dt=p[0]-origin[0];
+    const base=y(origin[1]),level=y(p[1]),slope=(level-base)/dt;
+    if(i>start+1 && (dt<=0 || slope<minSlope || slope>maxSlope)){
+      result.push(group[i-1]);start=i-1;minSlope=-Infinity;maxSlope=Infinity;
+      i--;continue;
+    }
+    const top=p[3]==null?level-1:Math.max(level-1,y(p[3]));
+    const bottom=p[2]==null?level+1:Math.min(level+1,y(p[2]));
+    minSlope=Math.max(minSlope,(top-base)/dt);
+    maxSlope=Math.min(maxSlope,(bottom-base)/dt);
+  }
+  result.push(group.at(-1));
+  return result;
+}
 function chart(kind) {
   const host = $(kind+'-curve'), readout = $(kind+'-readout'), isDay = kind === 'day';
   const graphic = svg('svg',{'aria-hidden':'true'});
@@ -85,14 +106,14 @@ function chart(kind) {
       if(cursor)cursor.setAttribute('visibility','hidden');
       return;
     }
-    const amounts = p[2]==null ? '' : number.format(p[2])+'–'+number.format(p[3])+' ft³';
+    const amounts = p[3]==null ? (isDay?'':p[2]>0?'At least '+number.format(p[2])+' ft³ · partial coverage':'Range unavailable') : number.format(p[2])+'–'+number.format(p[3])+' ft³';
     const time = isDay ? clock(p[0],model.zone,true) : clock(p[5],model.zone)+' – '+clock(p[0],model.zone,true);
     const estimate = p[1]==null ? '' : number.format(p[1])+' ft³ estimated';
     const value = isDay ? [estimate,amounts,p[5]].filter(Boolean).join(' · ') : amounts;
     readout.textContent = (isDay?'Day total at ':'')+time+' · '+value;
     host.setAttribute('aria-valuetext',(isDay?$('day-hour-readout').textContent+' · ':'')+readout.textContent);
     if(cursor) {
-      cursor.setAttribute('visibility','visible');
+      cursor.setAttribute('visibility',!isDay&&p[3]==null?'hidden':'visible');
       cursor.setAttribute('transform','translate('+atX(p[0])+' 0)');
       cursor.querySelectorAll('circle').forEach((dot,j)=>dot.setAttribute('cy',atY(isDay ? p[1]??p[2] : p[j+2])));
     }
@@ -100,7 +121,7 @@ function chart(kind) {
   function draw() {
     if (!model?.points.length || !host.clientWidth) return;
     const {groups,points,start,zone} = model;
-    const w=host.clientWidth, h=isDay ? (w<440?175:205) : (w<440?144:156);
+    const w=host.clientWidth, h=isDay ? (w<440?226:320) : (w<440?204:256);
     const left=36,right=w-12,top=12,bottom=h-27;
     const peak=Math.max(0,...points.map(p=>p[3]??p[1]));
     const raw=(peak||1)/3, unit=10**Math.floor(Math.log10(raw));
@@ -122,15 +143,23 @@ function chart(kind) {
       if(g[0][2]!=null)nodes.push(svg('path',{d:line(g,3)+' L'+[...g].reverse().map(p=>coords(p,2)).join(' L')+' Z',class:'plot-band'}));
       for(const [k,cls] of isDay?[[1,'plot-estimate']]:[[2,'plot-estimate'],[3,'plot-upper']]){
         if(g[0][k]==null)continue;
-        nodes.push(svg('path',{d:line(g,k),class:cls}));
-        const dots=!isDay||g.length===1?g:[g.at(-1)];
-        for(const p of dots) nodes.push(svg('circle',{cx:x(p[0]),cy:y(p[k]),r:isDay?2.6:4,class:cls+'-dot'}));
+        nodes.push(svg('path',{d:line(isDay?dailyStroke(g,y):g,k),class:cls}));
+        const dots=!isDay||g.length===1?g:g.at(-1)===points.at(-1)?[g.at(-1)]:[];
+        for(const p of dots) nodes.push(svg('circle',{cx:x(p[0]),cy:y(p[k]),r:isDay?1.9:4,class:cls+'-dot'}));
       }
+    }
+    const clockTicks=[start];
+    if(model.clockBins){
+      const spacing=w<440?80:110;
+      for(const p of points.slice(0,-1)){
+        if(x(p[0])-x(clockTicks.at(-1))>=spacing && x(end)-x(p[0])>=spacing)clockTicks.push(p[0]);
+      }
+      clockTicks.push(end);
     }
     const tickTimes=isDay?[start,...[.333,.667].map(f=>{
       const hour=3600000;
       return start+Math.round(span*f/hour)*hour;
-    }).filter(t=>t>start+span*.12 && t<end-span*.12),end]:points.map(p=>p[0]);
+    }).filter(t=>t>start+span*.12 && t<end-span*.12),end]:model.clockBins?clockTicks:points.map(p=>p[0]);
     const ticks=[...new Set(tickTimes)];
     ticks.forEach((t,i)=>{
       let label=clock(t,zone);
@@ -150,7 +179,7 @@ function chart(kind) {
   function locate(e) {
     if(!model || !atX)return;
     const px=e.clientX-host.getBoundingClientRect().left;
-    if(isDay){
+    if(isDay||model.clockBins){
       const i=model.stops.findIndex(s=>px<atX(s.to));
       pick(i<0?model.stops.length-1:i);return;
     }
@@ -167,8 +196,8 @@ function chart(kind) {
     if(next!==undefined){e.preventDefault();pick(next);}
   });
   new ResizeObserver(draw).observe(host);
-  return function update(groups, start, zone, key, empty, midnight, recent) {
-    if(!groups?.length){
+  return function update(groups, start, zone, key, empty, midnight, recent, clockBins) {
+    if(!groups?.length&&!clockBins?.length){
       model=null; chosen=null; graphic.replaceChildren(); host.hidden=true;
       if(isDay)$('day-hour-readout').textContent='';
       readout.textContent=empty||''; return;
@@ -176,12 +205,12 @@ function chart(kind) {
     if(model?.key===key)return;
     const previous=model?.stops.at(-1);
     if(!previous || chosen===(previous.from??previous.to))chosen=null;
-    const points=groups.flat();
+    const points=clockBins||groups.flat();
     const stops=isDay?dayHours(points,midnight,recent):points.map(p=>({to:p[0],point:p}));
-    model={groups,points,stops,start,zone,key};
+    model={groups,points,stops,start,zone,key,clockBins};
     host.hidden=false; host.tabIndex=0;
     host.setAttribute('role','slider');
-    host.setAttribute('aria-label',isDay?'Inspect gas use by hour':'Inspect 15-minute usage by interval end');
+    host.setAttribute('aria-label',isDay?'Inspect gas use by hour':'Inspect gas use by interval');
     host.setAttribute('aria-valuemin','0');host.setAttribute('aria-valuemax',stops.length-1);
     draw();
   };
@@ -262,10 +291,18 @@ async function day(daily,headline,recent){
     if(current===generation){pending=false;showDay();}
   }
 }
-function hour(recent){
-  if(!recent){drawHour(null);return;}
-  const points=recent.quarters.map(q=>[Date.parse(q.through.captured_at),null,Number(q.lower),Number(q.upper),q.through.event_id,Date.parse(q.start.captured_at)]);
-  drawHour([points],points[0][0],recent.timezone,JSON.stringify([recent.timezone,points]));
+function hour(period,zone){
+  if(!period?.bins?.length){drawHour(null);return;}
+  const groups=[],points=[];
+  let group=null;
+  for(const bin of period.bins){
+    const point=[Date.parse(bin.end),null,bin.lower==null?null:Number(bin.lower),bin.upper==null?null:Number(bin.upper),null,Date.parse(bin.start)];
+    points.push(point);
+    if(point[3]==null){group=null;continue;}
+    if(!group){group=[];groups.push(group);}
+    group.push(point);
+  }
+  drawHour(groups,Date.parse(period.start),zone,JSON.stringify([zone,points]),null,null,null,points);
 }
 window.AIEdgeCharts={day,hour};
 })();

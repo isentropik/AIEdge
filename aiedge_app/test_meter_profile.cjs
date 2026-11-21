@@ -12,7 +12,7 @@ class Element {
  append(child){this.children.push(child);}replaceChildren(){this.children=[];}
  addEventListener(name,fn){this.listeners[name]=fn;}focus(){this.focused=true;}
 }
-function fixture({profile=null,unit='ft3',type=null,pipeline='current',loadFailure=false,saveFailure=false,unverified=false}={}){
+function fixture({profile=null,unit='ft3',type=null,pipeline='current',hash='#setup',loadFailure=false,saveFailure=false,unverified=false}={}){
  const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
  const posts=[],events=[];let failed=loadFailure;
  const fetch=async(url,options={})=>{
@@ -24,7 +24,7 @@ function fixture({profile=null,unit='ft3',type=null,pipeline='current',loadFailu
   return {ok:true,json:async()=>url==='api/setup'?{available:true,token:'fixture',configured_meter_type:type,meter:{profile,revision:profile?'original':null}}:{format:{unit,pipeline_id:pipeline},pipeline_id:'current'}};
  };
  const window={dispatchEvent:event=>events.push(event.type)};
- vm.runInContext(source,vm.createContext({document:{getElementById:get,createElement:()=>new Element()},window,fetch,AbortSignal,Event}));
+ vm.runInContext(source,vm.createContext({location:{hash},document:{getElementById:get,createElement:()=>new Element()},window,fetch,AbortSignal,Event}));
  return {get,window,posts,events,setLoadFailure:value=>failed=value};
 }
 function choose(app,type,unit){app.get('meter-type').value=type;app.get('meter-type').listeners.change();if(unit)app.get('profile-unit').value=unit;}
@@ -79,4 +79,11 @@ test('configured legacy gas and a matching saved format work without creating a 
  for(const opts of [{type:'gas',pipeline:'old'},{type:'gas',unit:'L'}]){
   const invalid=fixture(opts);await invalid.window.AIEdgeMeter.load();assert.equal(invalid.get('meter-type').value,'');
  }
+});
+test('redo starts with blank choices and keeps the saved revision for an explicit edit',async()=>{
+ const app=fixture({profile:{version:1,type:'gas',unit:'ft3'},hash:'#setup/redo'});
+ await app.window.AIEdgeMeter.load();assert.equal(app.get('meter-type').value,'');
+ assert.equal(app.get('profile-unit').value,'');assert.equal(await app.window.AIEdgeMeter.save(),false);
+ assert.deepEqual(app.posts,[]);choose(app,'gas','m3');await app.window.AIEdgeMeter.save();
+ assert.equal(app.posts[0].revision,'original');
 });

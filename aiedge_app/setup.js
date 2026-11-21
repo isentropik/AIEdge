@@ -1,6 +1,7 @@
 (() => {
 'use strict';
 const geometry=window.AIEdgeGeometry;
+const redoCalibration=location.hash==='#setup/redo';
 const $=id=>document.getElementById(id),canvas=$('calibration-canvas'),ctx=canvas.getContext('2d');
 let state={markers:[null,null,null],dials:[]},revision=null,reference=null,token=null,available=false,loaded=false,mode='markers',selected=0,picture=null,pendingReference=null,drag=null,busy=false,dirty=false,markerUndo=null,grid=false,editorState=null;
 const errorText={reference_image_not_found:'The reference image is missing. Choose the image again before saving.',reference_image_unreadable:'This image could not be opened. Choose a complete JPEG or PNG file.',reference_must_be_640x480:'Choose a 640 × 480 JPEG or PNG image.',invalid_landmark:'Keep each landmark inside the image.',invalid_dial_geometry:'Check the dial geometry.',setup_changed_reload_before_saving:'Calibration changed in another session. Reload before saving.',reference_recognition_rejected:'The reference did not pass alignment or needle visibility. Check the markers and dial landmarks.',three_markers_required:'Place all three markers.',invalid_dial_count:'Use between 1 and 16 dials.'};
@@ -38,15 +39,15 @@ function draw(){if(!picture)return;const bounds=canvas.getBoundingClientRect(),s
 }
 const corners=geometry.corners;
 function viewLocation(e){const r=canvas.getBoundingClientRect();const scale=Math.min(r.width/640,r.height/480),ox=(r.width-640*scale)/2,oy=(r.height-480*scale)/2;return [(e.clientX-r.left-ox)/scale,(e.clientY-r.top-oy)/scale,scale];}
-function location(e){const p=viewLocation(e),frame=window.AIEdgeImageEditor?.display();if(!frame)return p;return [...window.AIEdgeImageFraming.point(frame.inverse,p),p[2]*frame.scale];}
+function pointerLocation(e){const p=viewLocation(e),frame=window.AIEdgeImageEditor?.display();if(!frame)return p;return [...window.AIEdgeImageFraming.point(frame.inverse,p),p[2]*frame.scale];}
 function hit(p,b,pointerType){return geometry.nearestCorner(p,b,p[2],pointerType==='touch'?22:14);}
 function within(p,b){return b&&p[0]>=b[0]&&p[0]<=b[0]+b[2]&&p[1]>=b[1]&&p[1]<=b[1]+b[3];}
-canvas.onpointerdown=e=>{if(!picture||busy)return;if(mode==='image'){window.AIEdgeImageEditor?.pointerDown(e,viewLocation(e));return;}const p=location(e);if(p[0]<0||p[1]<0||p[0]>640||p[1]>480)return;
+canvas.onpointerdown=e=>{if(!picture||busy)return;if(mode==='image'){window.AIEdgeImageEditor?.pointerDown(e,viewLocation(e));return;}const p=pointerLocation(e);if(p[0]<0||p[1]<0||p[0]>640||p[1]>480)return;
  if(window.AIEdgeImageFraming&&!window.AIEdgeImageFraming.visible(window.AIEdgeImageEditor.display().edit,p))return;
  const d=state.dials[selected],tool=$('edit-tool').value;if(mode==='dials'&&!d)return;
  if(mode==='dials'&&tool!=='crop'){const point=p.slice(0,2).map(v=>Math.round(v*10)/10);if(tool==='pivot')d.needle_pivot=point;else d.rim_points[Number(tool)]=point;changed();return;}
  const b=currentBox(),corner=hit(p,b,e.pointerType);drag={start:p,box:b?.slice(),corner,move:corner<0&&within(p,b),ratio:$('lock-proportions').checked?(corner>=0?b[2]/b[3]:1):null};canvas.setPointerCapture(e.pointerId);e.preventDefault();};
-canvas.onpointermove=e=>{if(!picture)return;if(mode==='image'){if(!window.AIEdgeImageEditor?.pointerMove(e,viewLocation(e)))canvas.style.cursor='default';return;}const p=location(e),b=currentBox(),h=hit(p,b,e.pointerType),frame=window.AIEdgeImageEditor?.display();canvas.style.cursor=mode==='dials'&&$('edit-tool').value!=='crop'?'crosshair':h>=0?(frame?window.AIEdgeImageFraming.resizeCursor(frame.m,b,h):(h%2?'nesw-resize':'nwse-resize')):within(p,b)?'move':'crosshair';if(!drag)return;
+canvas.onpointermove=e=>{if(!picture)return;if(mode==='image'){if(!window.AIEdgeImageEditor?.pointerMove(e,viewLocation(e)))canvas.style.cursor='default';return;}const p=pointerLocation(e),b=currentBox(),h=hit(p,b,e.pointerType),frame=window.AIEdgeImageEditor?.display();canvas.style.cursor=mode==='dials'&&$('edit-tool').value!=='crop'?'crosshair':h>=0?(frame?window.AIEdgeImageFraming.resizeCursor(frame.m,b,h):(h%2?'nesw-resize':'nwse-resize')):within(p,b)?'move':'crosshair';if(!drag)return;
  const box=geometry.resizeBox(drag,p,mode==='markers'?128:148);
  if(box){setBox(box);controls();}};
 canvas.onpointerup=e=>{if(window.AIEdgeImageEditor?.pointerUp(e))return;if(drag){const modified=JSON.stringify(currentBox())!==JSON.stringify(drag.box||null);drag=null;if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId);if(modified)changed();}};canvas.onpointercancel=()=>{window.AIEdgeImageEditor?.cancel();if(drag){setBox(drag.box||null);drag=null;controls();}};
@@ -69,10 +70,10 @@ window.openCalibration=async()=>{
   const s=await r.json();let referenceError=null;token=s.token;available=s.available;revision=s.revision;editorState=s.image_editor;
   if(s.calibration){
    const c=s.calibration;
-   state={markers:c.markers.map(m=>m.box),dials:c.dials.map(d=>({name:d.name,model:d.model,direction:d.direction,crop:d.crop,rim_points:d.landmarks?.rim_points||[null,null,null,null],needle_pivot:d.landmarks?.needle_pivot||null}))};
+   state=redoCalibration?{markers:[null,null,null],dials:[]}:{markers:c.markers.map(m=>m.box),dials:c.dials.map(d=>({name:d.name,model:d.model,direction:d.direction,crop:d.crop,rim_points:d.landmarks?.rim_points||[null,null,null,null],needle_pivot:d.landmarks?.needle_pivot||null}))};
    pendingReference=c.reference_sha256;try{await showReference(pendingReference);}catch(e){referenceError=e.message;}
   }
-  loaded=true;dirty=!!s.recovery;
+  loaded=true;dirty=!!s.recovery||!!(redoCalibration&&s.calibration);
   status(s.recovery?(recoveryText[s.recovery.code]||'Saved calibration needs recovery.'):editorState?.recovery?'Saved image framing needs recovery. The original file has been kept.':referenceError||(available?'':'Calibration runtime is not configured.'),!!s.recovery||!!editorState?.recovery||!!referenceError||!available);
  }catch(e){status(window.AIEdgeNotices?.message(e)||e.message,true,window.AIEdgeNotices?.connection(e));}
  finally{busy=false;controls();}

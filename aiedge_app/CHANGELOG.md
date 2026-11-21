@@ -1,3 +1,9 @@
+## 0.2.0-dev87
+
+- Group the absolute meter reading above Gas used today in one card. Give the cumulative and recent charts more plotting space. Simplify the cumulative stroke within one screen pixel and saved bounds while retaining isolated readings and recorder gaps.
+- Inspect clock-aligned usage intervals for the last 1, 6, 12 or 24 hours from published meter ranges. Show partial coverage where there is no upper bound.
+- Open Setup directly at Meter and units with the saved choices. Redo setup is available only on step one and starts fresh meter and calibration choices using the saved reference.
+
 ## 0.2.0-dev86
 
 - Inspect the cumulative graph one hour at a time. Show a conservative usage range for each measured interval and keep its daily total and source time visible.

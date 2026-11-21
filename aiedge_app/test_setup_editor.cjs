@@ -7,14 +7,14 @@ class Element{
  getBoundingClientRect(){return {width:640,height:480};}
  getContext(){return new Proxy({}, {get:()=>()=>{},set:()=>true});}
 }
-async function fixture(){
+async function fixture(hash='#setup'){
  const elements=new Map(),get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
  const posts=[],digest='a'.repeat(64),dial={name:'Dial 1',model:'main',direction:'cw',crop:[20,20,100,100],landmarks:{rim_points:[[70,20],[120,70],[70,120],[20,70]],needle_pivot:[70,70]}};
  const saved={token:'fixture',available:true,revision:'old',calibration:{reference_sha256:digest,markers:[{box:[0,0,16,16]},{box:[150,0,16,16]},{box:[0,150,16,16]}],dials:[dial,{...dial,name:'Dial 2'}]}};
  let rejectImage=false;
  const window={AIEdgeGeometry:require('./editor-geometry.js'),AIEdgeReferenceImage:{load:async()=>{if(rejectImage)throw Error('Image missing');return {};}},addEventListener(){},dispatchEvent(){}};
  const fetch=async(url,options={})=>{if(options.method==='POST')posts.push({url,body:JSON.parse(options.body)});return {ok:true,json:async()=>options.method==='POST'?{revision:'new'}:saved};};
- vm.runInContext(source,vm.createContext({document:{getElementById:get,querySelectorAll:()=>[],createElement:()=>new Element()},window,fetch,AbortSignal,Event}));
+ vm.runInContext(source,vm.createContext({location:{hash},document:{getElementById:get,querySelectorAll:()=>[],createElement:()=>new Element()},window,fetch,AbortSignal,Event}));
  await window.openCalibration();return {get,window,posts,digest,rejectImage(){rejectImage=true;}};
 }
 test('selecting another dial survives duplicate route rendering',async()=>{
@@ -52,4 +52,9 @@ test('a different reference clears old geometry and cannot be saved without new 
 test('failed replacement image keeps the existing reference and geometry',async()=>{
  const app=await fixture();app.rejectImage();await assert.rejects(()=>app.window.AIEdgeCalibration.useReference('b'.repeat(64)),/Image missing/);
  const state=app.window.AIEdgeCalibration.status();assert.equal(state.reference,app.digest);assert.equal(state.dial_count,2);assert.equal(state.markers_complete,true);assert.equal(state.busy,false);
+});
+test('redo reuses the saved reference but starts marker and dial placement in a private draft',async()=>{
+ const app=await fixture('#setup/redo');const state=app.window.AIEdgeCalibration.status();
+ assert(state.has_image);assert.equal(state.dial_count,0);assert.equal(state.markers_complete,false);
+ assert.equal(await app.window.AIEdgeCalibration.save(),false);assert.deepEqual(app.posts,[]);
 });

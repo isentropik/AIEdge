@@ -146,32 +146,50 @@ function completeHour(recent) {
  }) && sameEvent(sourceOf(quarters[3].through), sourceOf(recent.through));
 }
 
-function renderRecent(recent) {
- const zone = recent?.timezone;
- $('usage-hour').textContent = recent?.label || 'Hourly usage unavailable';
- setOptional('hour-time', sourceOf(recent?.hour?.start) && sourceOf(recent?.through) ? compactInterval(recent.hour.start, recent.through, zone) : '');
- const list = $('usage-quarters');
- list.replaceChildren();
- const sources = $('quarter-sources');
- sources.replaceChildren();
- const quarters = Array.isArray(recent?.quarters) ? recent.quarters : [];
- const complete = completeHour(recent);
- $('quarter-plot').hidden = !complete;
- window.AIEdgeCharts?.hour(complete ? recent : null);
- for (const quarter of quarters) {
-   const row = document.createElement('li');
-   const times = document.createElement('span');
-   const timed = sourceOf(quarter?.start) && sourceOf(quarter?.through);
-   times.textContent = timed ? compactInterval(quarter.start, quarter.through, zone, recent.through?.captured_at) : 'Measurement time unavailable';
-   const source = document.createElement('li');
-   source.textContent = timed ? interval(quarter.start, quarter.through, zone) + ' · Meter events ' + quarter.start.event_id + '–' + quarter.through.event_id : 'Source unavailable';
-   sources.append(source);
-   const amount = document.createElement('strong');
-   amount.textContent = boundPair(quarter?.lower, quarter?.upper) ? quarter.lower + '–' + quarter.upper + ' ft³' : 'Range unavailable';
-   row.append(times, amount);
-   list.append(row);
+let periodSource=null, periodData=null, periodRequest=null, retryPeriods=0;
+function periodAmount(span) {
+ if(boundPair(span?.lower,span?.upper))return span.lower+'–'+span.upper+' ft³';
+ return Number(span?.lower)>0?'At least '+span.lower+' ft³ · partial coverage':'Range unavailable';
+}
+function paintPeriod() {
+ const hours=$('usage-period').value||'1', data=periodData?.periods?.[hours], zone=periodSource?.timezone;
+ const native=hours==='1'&&periodSource?.hour;
+ $('usage-hour').textContent=data?periodAmount(data):native?periodSource.label:periodSource?'Waiting for saved ranges':'Usage unavailable';
+ const span=data||native&&{start:native.start.captured_at,end:native.through.captured_at};
+ setOptional('hour-time',span?compactInterval({captured_at:span.start},{captured_at:span.end},zone):'');
+ const minutes=data?.minutes||(hours==='1'?15:hours==='6'?30:60);
+ $('period-bins').textContent=minutes===60?'Hourly totals':minutes+'-minute totals';
+ const list=$('usage-quarters'),sources=$('quarter-sources');
+ list.replaceChildren();sources.replaceChildren();
+ $('quarter-plot').hidden=!data?.bins.length;
+ window.AIEdgeCharts?.hour(data,zone);
+ for(const bin of data?.bins||[]){
+   const row=document.createElement('li'),times=document.createElement('span'),amount=document.createElement('strong');
+   times.textContent=compactInterval({captured_at:bin.start},{captured_at:bin.end},zone,data.end);
+   amount.textContent=periodAmount(bin);row.append(times,amount);list.append(row);
  }
- $('recent-details').hidden = !recent?.quarters?.length;
+ if(data){
+   const source=document.createElement('li');
+   source.textContent='Measured through '+sourceLine(periodSource.through,zone);sources.append(source);
+ }
+ $('recent-details').hidden=!data;
+}
+$('usage-period').addEventListener('change',paintPeriod);
+function renderRecent(recent) {
+ const next=completeHour(recent)?recent:null;
+ if(!sameEvent(sourceOf(next?.through),sourceOf(periodSource?.through))||next?.timezone!==periodSource?.timezone){
+   periodData=null;retryPeriods=0;
+ }
+ periodSource=next;
+ paintPeriod();
+ if(!next||!['','#overview'].includes(location.hash)||periodRequest||Date.now()<retryPeriods)return;
+ const source=sourceOf(next.through);
+ periodRequest=request('api/gas-periods').then(data=>{
+   if(!sameEvent(source,sourceOf(periodSource?.through))||next.timezone!==periodSource.timezone)return;
+   if(data.status==='ready'&&sameEvent(source,sourceOf(data.through))&&data.timezone===next.timezone){
+     periodData=data;retryPeriods=Date.now()+(data.history_available?300000:30000);paintPeriod();
+   }else retryPeriods=Date.now()+3000;
+ }).catch(()=>{retryPeriods=Date.now()+5000;}).finally(()=>{periodRequest=null;});
 }
 
 function boundPair(lo, hi) {
