@@ -1,3 +1,8 @@
+## 0.2.0-dev92
+
+- Open Lighting and Image with the last saved controls, including while capture is busy. Show a dated backup when available on upgrade.
+- Place interval usage and its whiskers at each interval close. Align hover, touch, and rolling-window time labels with those endpoints.
+
 ## 0.2.0-dev91
 
 - Recover the hour and all four quarters from baseline saved comparisons when optional slow-dial extrema conflict.

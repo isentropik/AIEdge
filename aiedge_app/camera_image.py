@@ -79,8 +79,8 @@ class Config:
                 if kind is bool:
                     if text not in ('true', 'false', '0', '1'): raise ValueError()
                     value = text in ('true', '1')
-                elif name == 'gain_limit' and text in GAIN_LABELS:
-                    value = GAIN_LABELS.index(text)
+                elif name == 'gain_limit' and text.upper() in GAIN_LABELS:
+                    value = GAIN_LABELS.index(text.upper())
                 else:
                     if not re.fullmatch('-?[0-9]{1,4}', text): raise ValueError()
                     value = int(text)

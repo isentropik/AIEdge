@@ -497,6 +497,12 @@ test('hourly curves use real readings, preserve plateaus and never overshoot the
  const paths=ui.get('day-curve').children[0].children;
  const dots=paths.filter(n=>n.attributes.class==='plot-estimate-dot');
  assert.deepEqual(dots.map(n=>n.attributes['data-event']),[2,4,6,8,10]);
+ const host=ui.get('day-curve'),cursor=paths.find(n=>n.attributes.class==='plot-cursor');
+ host.onkeydown({key:'Home',preventDefault(){}});
+ const green=paths.find(n=>n.attributes.class==='plot-usage-dot');
+ assert.equal(cursor.attributes.transform,'translate('+green.attributes.cx+' 0)');
+ // The selected daily sample is earlier than the clock boundary and keeps its own timestamp.
+ assert.equal(green.attributes.cx+cursor.children[1].attributes.cx,dots[1].attributes.cx);
  const [upper,lower]=ribbonSides(paths.find(n=>n.attributes.class==='plot-band').attributes.d);
  const traces=paths.filter(n=>n.attributes.class==='plot-estimate');
  assert.equal(traces.length,1);
@@ -560,7 +566,25 @@ test('one plot switches windows immediately, keeps real zero whiskers and reject
  filter.value='1';filter.onchange();assert.equal(reads,1);
  const marks=()=>chart.children[0].children.filter(n=>n.attributes.class==='plot-usage-dot');
  assert.equal(marks().length,4);  // Native quarters paint before the recorder returns.
- answer(response(result));await tick();assert.equal(marks().length,3);
+ const x=i=>36+(chart.clientWidth-48)*i/4;
+ const closeChecks=(indices)=>{
+   const nodes=chart.children[0].children,stems=nodes.filter(n=>n.attributes.class==='plot-whisker');
+   assert.deepEqual(marks().map(n=>n.attributes.cx),indices.map(x));
+   assert.deepEqual(stems.map(n=>Number(/ M([^ ]+) /.exec(n.attributes.d)[1])),indices.map(x));
+   const ticks=nodes.filter(n=>n.attributes.class==='time-tick');
+   assert(ticks.length>0&&ticks.every(n=>[1,2,3,4].map(x).includes(n.attributes.x)));
+ };
+ closeChecks([1,2,3,4]);
+ chart.getBoundingClientRect=()=>({left:23});
+ for(const index of [3,1,0,2]){
+   const pos=x(index+1);
+   chart.onpointerdown({clientX:pos+23});
+   assert.equal(chart.attributes['aria-valuenow'],index);
+   const cursor=chart.children[0].children.find(n=>n.attributes.class==='plot-cursor');
+   assert.equal(cursor.attributes.transform,'translate('+pos+' 0)');
+   assert.equal(cursor.children[1].attributes.cx,0);
+ }
+ answer(response(result));await tick();closeChecks([1,2,4]);
  chart.onkeydown({key:'Home',preventDefault(){}});
  assert.match(chart.attributes['aria-valuetext'],/Total 0.00 ft³.*0.00 ft³ used/);
  filter.value='6';filter.onchange();assert.equal(marks().length,3);

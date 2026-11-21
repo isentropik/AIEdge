@@ -4,6 +4,7 @@ import uuid
 from contextlib import nullcontext
 from capture import validate
 from capture_clock import parse as parse_clock
+from camera_control_snapshot import CameraControlSnapshot
 
 
 def image_orientation(headers):
@@ -22,6 +23,10 @@ class CameraSetup:
         self.lighting = lighting
         self.image_controls = image_controls
         self.auto_control = auto_control
+        directory = getattr(setup, "root", None)
+        if directory is None and getattr(lighting, "path", None) is not None:
+            directory = lighting.path.parent
+        self.controls = CameraControlSnapshot(directory, camera.origin) if directory is not None and camera else None
         self.stop = threading.Event()
         self.condition = threading.Condition()
         self.pending = None
@@ -32,7 +37,9 @@ class CameraSetup:
 
     def status(self):
         with self.condition:
-            return dict(self.snapshot,lighting_needs_attention=self.lighting.needs_attention() if self.lighting else False,
+            return dict(self.snapshot, saved_controls=self.controls.display() if self.controls else {},
+                        controls_save_failed=bool(self.controls and self.controls.save_failed),
+                        lighting_needs_attention=self.lighting.needs_attention() if self.lighting else False,
                         image_needs_attention=self.image_controls.needs_attention() if self.image_controls else False,
                         image_requires_reference=self.image_controls.requires_reference() if self.image_controls else False,
                         auto_settings=self.auto_control.status() if self.auto_control else None)
@@ -116,6 +123,8 @@ class CameraSetup:
                         result.update(reference_sha256=reference, captured_at=captured_at,
                                       image_sha256=digest, image_orientation=orientation)
             with self.condition:
+                if self.controls and ('settings' in result or 'image_settings' in result):
+                    self.controls.record(result, revision)
                 self.snapshot.update(state='ready', **result)
         except Exception as error:
             # Expose only bounded, known codes; never remote response bodies.
