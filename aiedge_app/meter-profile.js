@@ -3,6 +3,7 @@
 const $=id=>document.getElementById(id),form=$('meter-form');
 const units={ft3:'Cubic feet (ft³)',m3:'Cubic metres (m³)',L:'Litres (L)',gal_us:'US gallons',kWh:'Kilowatt-hours (kWh)'};
 const supported={gas:['ft3','m3'],water:['ft3','m3','L','gal_us'],electric:['kWh']};
+let freshChoices=location.hash==='#setup/redo',hasSaved=false;
 let loaded=false,busy=false,revision=null,token=null,profile=null,suggestedUnit='';
 const errors={meter_profile_invalid:'Choose a meter type and its units.',meter_profile_changed_reload:'Meter choices changed in another session. Reload them before continuing.',saved_meter_profile_invalid:'The saved meter choices could not be read. Select replacement choices; the original file will be kept.'};
 function note(message,error=false,connection=false){if(window.AIEdgeNotices){window.AIEdgeNotices.show('meter-status',message,error,connection);return;}$('meter-status').textContent=message;$('meter-status').hidden=!message;$('meter-status').dataset.error=String(error);}
@@ -38,8 +39,9 @@ async function load(force=false){
   const [setup,format]=await Promise.all([request('api/setup'),request('api/reading-format')]);
   if(!setup.available||!setup.token||!setup.meter)throw Error('Meter setup is unavailable. Check the app and retry.');
   token=setup.token;revision=setup.meter.revision;profile=selectedProfile(setup,format);
-  suggestedUnit=profile?.unit||format.format?.unit||'';
-  $('meter-type').value=profile?.type||'';$('profile-unit').value='';loaded=true;choices();
+  hasSaved=!!(setup.calibration||setup.meter.profile||format.format||setup.recovery||setup.meter.recovery||format.recovery);
+  suggestedUnit=freshChoices?'':profile?.unit||format.format?.unit||'';
+  $('meter-type').value=freshChoices?'':profile?.type||'';freshChoices=false;$('profile-unit').value='';loaded=true;choices();
   note(setup.meter.recovery?'The saved meter choices could not be read. Select replacements; the original file will be kept.':'',!!setup.meter.recovery);
   return true;
  }catch(error){loaded=false;note(window.AIEdgeNotices?.message(error)||error.message,true,window.AIEdgeNotices?.connection(error));return false;}
@@ -70,5 +72,5 @@ async function save(event){
 }
 $('meter-type').addEventListener('change',()=>{choices();note('');});$('profile-unit').addEventListener('change',()=>note(''));
 $('meter-retry').onclick=()=>load(true);form.onsubmit=save;
-window.AIEdgeMeter={load,save,selectedProfile,status:()=>({loaded,busy,profile})};controls();
+window.AIEdgeMeter={load,save,selectedProfile,status:()=>({loaded,busy,profile,hasSaved})};controls();
 })();

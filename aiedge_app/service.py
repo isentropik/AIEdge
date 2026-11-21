@@ -47,7 +47,7 @@ def publication_state(store,recognition,reading_format,consumption):
             '_daily_publication_pending':daily_pending,'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
             '_publication_segment_id':accounted.get('segment_id') if accounted else None}
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None,gas_trend=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None,gas_trend=None,gas_periods=None):
     from review_store import ReviewConflict
     from archive import ArchiveConflict
     token=secrets.token_urlsafe(32)
@@ -206,6 +206,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     self.reply({'error':'trial_request_id_invalid'},400);return
                 result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
                 self.reply(result);return
+            if route=='/api/gas-periods':
+                recent=mqtt_output.status().get('usage',{}).get('recent') if mqtt_output and gas_periods else None
+                self.reply(gas_periods.snapshot(recent) if recent else {'status':'no_source'})
+                return
             if route=='/api/gas-trend':
                 daily=mqtt_output.status().get('usage',{}).get('daily') if mqtt_output and gas_trend else None
                 self.reply(gas_trend.snapshot(daily) if daily else {'status':'no_source'})
@@ -430,8 +434,10 @@ def run_service(stop_signals):
     from image_retention import ImageRetention
     retention = ImageRetention(store,archive,consumption) if store and archive and reviews else None
     from gas_trend import GasTrend
+    from gas_periods import GasPeriods
     trend=GasTrend(options['daily_history_entity']) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend))
+    periods=GasPeriods(options['recent_history_entity']) if trend else None
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend,periods))
     from lifecycle import ServiceRuntime
     if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention if enabled and collector else None),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')

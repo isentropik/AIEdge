@@ -58,11 +58,12 @@ class TrendTests(unittest.TestCase):
         from urllib.request import urlopen
         from unittest.mock import Mock
         from service import handler
-        store, mqtt, trend = Mock(), Mock(), Mock()
+        store, mqtt, trend, periods = Mock(), Mock(), Mock(), Mock()
         current=daily(8,8)
-        mqtt.status.return_value={'usage':{'daily':current}}
+        mqtt.status.return_value={'usage':{'daily':current,'recent':{'through':{'event_id':8}}}}
+        periods.snapshot.return_value={'status':'loading'}
         trend.snapshot.return_value={'status':'ready','groups':[]}
-        with ThreadingHTTPServer(('127.0.0.1',0),handler(store,False,None,mqtt_output=mqtt,gas_trend=trend)) as server:
+        with ThreadingHTTPServer(('127.0.0.1',0),handler(store,False,None,mqtt_output=mqtt,gas_trend=trend,gas_periods=periods)) as server:
             thread=Thread(target=server.serve_forever,daemon=True)
             thread.start()
             try:
@@ -71,6 +72,10 @@ class TrendTests(unittest.TestCase):
                     self.assertEqual(json.load(response),trend.snapshot.return_value)
                     self.assertEqual(response.headers['Cache-Control'],'no-store')
                 trend.snapshot.assert_called_once_with(current)
+                with urlopen(base+'/api/gas-periods',timeout=3) as response:
+                    self.assertEqual(json.load(response),{'status':'loading'})
+                    self.assertEqual(response.headers['Cache-Control'],'no-store')
+                periods.snapshot.assert_called_once_with({'through':{'event_id':8}})
                 with urlopen(base+'/gas-charts.js',timeout=3) as response:
                     self.assertIn(b'window.AIEdgeCharts',response.read())
                 self.assertEqual(store.method_calls,[])

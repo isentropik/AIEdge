@@ -195,8 +195,8 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .usage-card summary:focus-visible,.trend-chart:focus-visible {outline:2px solid var(--accent); outline-offset:3px;}
 .usage-overview .usage-today {
   --series:var(--accent); --grid:var(--line); --band:var(--selected);
-  grid-column:1/-1; display:grid; grid-template-columns:minmax(220px,.82fr) minmax(0,1.7fr); align-items:center;
-  gap:clamp(24px,3.4vw,60px); padding:clamp(22px,3vw,45px);
+  grid-column:1/-1; display:grid; grid-template-columns:minmax(225px,.82fr) minmax(0,1.85fr); align-items:center;
+  gap:clamp(24px,2.8vw,44px); padding:clamp(22px,2.4vw,36px);
   background:linear-gradient(108deg,color-mix(in srgb,var(--selected) 50%,var(--panel)),var(--panel) 85%);
   border-inline-start:4px solid var(--accent);
 }
@@ -215,7 +215,7 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .trend-chart text {fill:var(--sub); font:11.5px system-ui,sans-serif; font-variant-numeric:tabular-nums;}
 .plot-grid {stroke:var(--grid); stroke-width:1; stroke-dasharray:2 5;}
 .plot-band {fill:var(--band);}
-.usage-today .plot-band {stroke:color-mix(in srgb,var(--accent) 55%,var(--panel)); stroke-width:.8;}
+.usage-today .plot-band {fill:color-mix(in srgb,var(--accent) 22%,var(--panel));}
 .plot-estimate {fill:none; stroke:var(--series); stroke-width:2.7;}
 .plot-upper {fill:none; stroke:var(--upper); stroke-width:2; stroke-dasharray:5 4;}
 .plot-estimate-dot {fill:var(--series);}
@@ -227,8 +227,18 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .usage-recent .hour-summary {display:grid; grid-template-columns:1fr auto; align-items:end; gap:.25rem 1rem; border-bottom:1px solid var(--edge); padding-bottom:1.25rem; margin-bottom:1.25rem;}
 .usage-recent .usage-number {grid-row:1/3; grid-column:2; font-size:clamp(1.8rem,2.55vw,3rem); margin:0; line-height:1.1;}
 .hour-summary .usage-time {margin:0;}
-.usage-register .usage-number {margin-block:1.4rem .6rem;}
-.usage-register > details {border-top:1px solid var(--edge); margin-top:1.2rem;}
+.usage-summary {min-width:0;}
+.usage-summary .day-summary {border-top:1px solid var(--edge); padding-top:1.1rem; margin-top:.7rem;}
+.usage-summary .usage-register .usage-number {font-size:clamp(2.15rem,2.9vw,3.15rem); line-height:1.06; margin:.35rem 0;}
+.usage-recent {grid-column:1/-1;}
+.period-choice {display:inline-flex; align-items:center; gap:.5rem; color:var(--sub);}
+.period-choice select {width:auto; min-height:40px; font:inherit;}
+#restart-setup {margin-top:1rem;}
+.usage-recent .hour-summary {grid-template-columns:1fr auto;}
+.usage-recent .period-choice {grid-column:1;}
+.usage-recent .usage-number {grid-row:1/3;}
+.usage-register .usage-time {margin:.35rem 0;}
+.usage-register > details {margin-top:.3rem;}
 .usage-overview .usage-history {grid-column:1/-1; padding-block:5px;}
 .usage-history > summary,#capture-operations > summary {min-height:44px; align-content:center;}
 .history-section {border-top:1px solid var(--edge); margin-top:12px; padding-block:14px;}
@@ -246,6 +256,7 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .usage-overview .usage-card {padding:18px; border-radius:16px;}
   .usage-overview .usage-history {padding-block:4px;}
   .usage-recent .hour-summary {display:block;}
+  .period-choice {margin-block:.35rem;}
   .usage-recent .usage-number {margin:.3rem 0;}
   .usage-card summary {min-height:44px; align-content:center;}
   .trend-chart text {font-size:10.5px;}
@@ -254,5 +265,5 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .plot-estimate,.plot-upper,.plot-upper-dot,.plot-cursor,.plot-grid {stroke:CanvasText;}
   .plot-estimate-dot,.trend-chart text {fill:CanvasText;}
   .plot-band {fill:transparent;}
-  .usage-today .plot-band {stroke:GrayText;}
+  .usage-today .plot-band {fill:transparent; stroke:GrayText;}
 }
