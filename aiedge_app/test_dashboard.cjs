@@ -315,11 +315,12 @@ function gasOverview(trend, date=Date) {
    if (!elements.has(id)) elements.set(id, new Element());
    return elements.get(id);
  };
+ get('usage-period').value='today';
  const document = {getElementById:get, createElement:()=>new Element(),createElementNS:()=>new Element()};
  const window = {addEventListener(){}};
  const context={document,window,location:{hash:''},Intl,Date:date};
  if(trend){
-  for(const id of ['day-curve','hour-curve']){
+  for(const id of ['day-curve','usage-period']){
    get(id).clientWidth=500;
    get(id).addEventListener=(name,fn)=>{get(id)['on'+name]=fn;};
   }
@@ -370,8 +371,8 @@ test('hour stops keep unknown hours empty, bound usage conservatively and distin
  ui.render({daily});await tick();
  const chart=ui.get('day-curve'),label=()=>chart.attributes['aria-valuetext'],key=k=>chart.onkeydown({key:k,preventDefault(){}});
  assert.equal(chart.attributes['aria-valuemax'],4);
- key('Home');assert.match(label(),/0?1\.00–3\.00 ft³ used/);
- key('ArrowRight');assert.match(label(),/1:00 AM PDT.*1:00 AM PST.*2\.00–7\.00 ft³ used/);
+ key('Home');assert.match(label(),/1\.00–3\.00/);
+ key('ArrowRight');assert.match(label(),/1:00 AM PDT.*1:00 AM PST.*2\.00–7\.00/);
  const paths=chart.children[0].children;
  const bands=paths.filter(n=>n.attributes.class==='plot-band');assert.equal(bands.length,2);
  const dots=paths.filter(n=>n.attributes.class==='plot-estimate-dot');
@@ -380,10 +381,10 @@ test('hour stops keep unknown hours empty, bound usage conservatively and distin
  const endX=Number(dots.at(-2).attributes.cx);
  assert(ribbonSides(bands[0].attributes.d)[0].every(e=>e.at(-1)[0]<=endX+.01));
  assert.deepEqual(ribbonSides(bands[1].attributes.d),[[],[]]);
- key('ArrowRight');key('ArrowRight');assert.match(label(),/Hourly range unavailable/);
- assert.match(chart.attributes['aria-valuetext'],/No meter reading/);
- key('End');assert.match(label(),/1\.00–10\.00 ft³ used/);assert.equal(chart.dataset.endEvent,'9');
- assert.match(chart.attributes['aria-valuetext'],/15\.50 ft³ estimated/);
+ key('ArrowRight');key('ArrowRight');assert.match(label(),/Interval unavailable/);
+ assert.match(chart.attributes['aria-valuetext'],/Total unavailable/);
+ key('End');assert.match(label(),/1\.00–10\.00/);assert.equal(chart.dataset.endEvent,'9');
+ assert.match(chart.attributes['aria-valuetext'],/Total 15\.50 ft³/);
 });
 
 test('the daily chart follows the displayed publication through delayed history, gaps and stale readings',async()=>{
@@ -415,12 +416,12 @@ test('the daily chart follows the displayed publication through delayed history,
  assert.deepEqual(paths('plot-history-gap').map(n=>[n.attributes['data-from'],n.attributes['data-to']]),[[point(3)[0],point(6)[0]]]);
  assert.equal(paths('plot-estimate').length,1);
  ui.render({daily:range(8),daily_nominal:nominal(9,5)});assertEnd(9);
- assert.match(chart.attributes['aria-valuetext'],/5.00 ft³ estimated/);assert.equal(reads,1);
+ assert.match(chart.attributes['aria-valuetext'],/Total 5.00 ft³/);assert.equal(reads,1);
  // The independent nominal is a separate point until its own daily range is linked.
  assert.equal(paths('plot-band').length,2);
  const partial={...nominal(10,7),method:'observed_increments',status:'partial_coverage',lower_ft3:null,upper_ft3:null};
  ui.render({daily:range(8),daily_nominal:partial});assertEnd(10);assert.deepEqual(knots(),[3,10]);assert(paths('plot-estimate').every(n=>!n.attributes.d.includes(' C')));
- assert.match(chart.attributes['aria-valuetext'],/7.00 ft³ estimated.*Partial coverage$/);
+ assert.match(chart.attributes['aria-valuetext'],/Total 7.00 ft³.*Partial coverage$/);
  assert.equal(paths('plot-band').length,1);
  // Earlier bounded readings share a ribbon; the isolated partial estimate remains outside it.
  const ribbonX=paths('plot-band')[0].attributes.d.match(/(?:M|L)([\d.]+)/g).map(v=>Number(v.slice(1)));
@@ -438,7 +439,7 @@ test('the daily chart follows the displayed publication through delayed history,
  data=history(12);now+=125000;
  ui.render({daily:range(8)});answer();await tick();assertEnd(8);assert.deepEqual(knots(),[3,8]);assert(paths('plot-estimate').every(n=>!n.attributes.d.includes(' C')));
  ui.render({daily_nominal:{...partial,value_ft3:0}});assertEnd(10);assert.deepEqual(knots(),[10]);
- assert.match(chart.attributes['aria-valuetext'],/0.00 ft³ estimated.*Partial coverage/);
+ assert.match(chart.attributes['aria-valuetext'],/Total 0.00 ft³.*Partial coverage/);
  ui.render({daily_nominal:{day,timezone,status:'opening_balance',value_ft3:'0.00'}});
  assert.equal(chart.dataset.endEvent,undefined);assert.equal(chart.hidden,true);
  assert.match(ui.get('usage-time').textContent,/Awaiting the first measurement/);
@@ -476,7 +477,7 @@ test('the daily clock axis aligns in a fractional-offset zone and inspection sta
  assert.deepEqual(host.children[0].children.filter(n=>n.attributes.class==='time-tick').map(n=>n.textContent),['12 AM','2 AM','4 AM','6 AM']);
  const tip=ui.get('day-tip');assert(tip.hidden);
  host.onfocus();assert.equal(tip.hidden,false);
- host.onkeydown({key:'End',preventDefault(){}});assert.match(host.attributes['aria-valuetext'],/5.00 ft³ estimated/);
+ host.onkeydown({key:'End',preventDefault(){}});assert.match(host.attributes['aria-valuetext'],/Total 5.00 ft³/);
  host.onpointerleave({pointerType:'mouse'});assert(tip.hidden);
  host.onfocus();host.onpointercancel();assert(tip.hidden);
 });
@@ -543,35 +544,30 @@ test('historical segment precision is a display choice with the original measure
  assert.equal(ui.get('segment-value').dataset.eventId,undefined);
 });
 
-test('clock buckets display a real zero, preserve missing amounts and reject a mismatched endpoint',async()=>{
- const points=Array.from({length:5},(_,i)=>({event_id:i+10,source_sha256:'c'.repeat(64),captured_at:new Date(Date.UTC(2026,10,1,8,i*15)).toISOString()}));
- const recent={hour:{start:points[0],through:points[4]},through:points[4],timezone:'America/Los_Angeles',label:'1.00–2.00 ft³',
-  quarters:points.slice(1).map((p,i)=>({start:points[i],through:p,lower:'0.00',upper:'1.00'}))};
- const bins=recent.quarters.map((q,i)=>({start:q.start.captured_at,end:q.through.captured_at,lower:i===2?null:'0.00',upper:i===2?null:'0.00'}));
- let result={status:'ready',timezone:recent.timezone,through:recent.through,history_available:true,periods:{'1':{start:bins[0].start,end:bins[3].end,minutes:15,bins,lower:'1.00',upper:'2.00'}}};
- const ui=gasOverview(async()=>response(result));ui.get('usage-period').value='1';
- ui.render({recent});await tick();
- assert.equal(ui.get('quarter-plot').hidden,false);
- assert.equal(ui.get('usage-hour').textContent,'1.50 ft³');
- assert.equal(ui.get('recent-bounds').textContent,'Bounds · 1.00–2.00 ft³');
- assert.equal(ui.get('recent-metric-label').textContent,'Nominal use');
- const chart=ui.get('hour-curve'),fig=chart.children[0].children;
- assert.equal(fig.filter(n=>n.attributes.class==='plot-estimate').length,2);
- assert.equal(fig.filter(n=>n.attributes.class==='plot-band').length,2);
- assert.equal(fig.filter(n=>n.attributes.class==='plot-upper').length,0);
- const key=k=>chart.onkeydown({key:k,preventDefault(){}});
- key('Home');assert.match(chart.attributes['aria-valuetext'],/0\.00 ft³ nominal · Bounds 0\.00–0\.00 ft³/);
- key('ArrowRight');key('ArrowRight');assert.match(chart.attributes['aria-valuetext'],/Range unavailable/);
- assert.equal(ui.get('hour-tip').hidden,false);
- key('Escape');assert.equal(ui.get('hour-tip').hidden,true);
- assert.equal(fig.filter(n=>n.attributes.class==='time-tick').length>1,true);
- result.periods['1'].lower='58.18';result.periods['1'].upper='66.31';
- ui.get('usage-period').value='1';ui.render({recent});
- assert.equal(ui.get('usage-hour').textContent,'62.25 ft³');
- result.periods['1'].upper=null;ui.render({recent});
- assert.equal(ui.get('usage-hour').textContent,'At least 58.18 ft³ · partial coverage');
- assert.equal(ui.get('recent-bounds').hidden,true);
- ui.render({recent:{...recent,quarters:recent.quarters.slice(1)}});assert.equal(ui.get('quarter-plot').hidden,true);
- result={...result,through:{...recent.through,source_sha256:'e'.repeat(64)}};
- ui.render({recent});await tick();assert.equal(ui.get('quarter-plot').hidden,true);
+test('one plot switches windows immediately, keeps real zero whiskers and rejects a conflicting source',async()=>{
+ const t=Date.UTC(2026,10,1,8);
+ const src=i=>({event_id:i+10,source_sha256:i.toString(16).padStart(64,'0'),camera:'meter',format_id:'fmt',clock_id:'clock',captured_at:new Date(t+i*900000).toISOString()});
+ const span=(a,b,lo,hi)=>({start:src(a),through:src(b),lower:lo,upper:hi});
+ const recent={hour:span(0,4,'1.00','2.00'),through:src(4),timezone:'America/Los_Angeles',label:'1.00–2.00 ft³',
+   quarters:[span(0,1,0,0),span(1,2,0,1),span(2,3,0,1),span(3,4,0,1)]};
+ const bin=(a,b,l,h,lo,hi)=>({start:src(a).captured_at,end:src(b).captured_at,lower:l,upper:h,total_lower:lo,total_upper:hi});
+ const data={start:src(0).captured_at,end:src(4).captured_at,minutes:15,bins:[bin(0,1,0,0,0,0),bin(1,2,0,1,0,1),bin(2,3,null,null,null,null),bin(3,4,0,1,1,2)]};
+ const result={...recent,status:'ready',history_available:true,periods:{'1':data,'6':{...data,minutes:30}}};
+ let answer,reads=0;
+ const ui=gasOverview(()=>{reads++;return new Promise(resolve=>{answer=resolve;});});
+ ui.render({recent});assert.equal(reads,0);
+ const filter=ui.get('usage-period'),chart=ui.get('day-curve');
+ filter.value='1';filter.onchange();assert.equal(reads,1);
+ const marks=()=>chart.children[0].children.filter(n=>n.attributes.class==='plot-usage-dot');
+ assert.equal(marks().length,4);  // Native quarters paint before the recorder returns.
+ answer(response(result));await tick();assert.equal(marks().length,3);
+ chart.onkeydown({key:'Home',preventDefault(){}});
+ assert.match(chart.attributes['aria-valuetext'],/Total 0.00 ft³.*0.00 ft³ used/);
+ filter.value='6';filter.onchange();assert.equal(marks().length,3);
+ const next={...recent,through:src(5),hour:span(1,5,2,3),quarters:[span(1,2,0,1),span(2,3,0,1),span(3,4,0,1),span(4,5,0,1)]};
+ ui.render({recent:next});assert.equal(marks().length,3);
+ assert.equal(chart.dataset.endTime,src(4).captured_at);assert.match(ui.get('day-history-status').textContent,/Last saved/);
+ answer(response({...result,through:{...src(5),source_sha256:'f'.repeat(64)}}));await tick();
+ assert.equal(chart.dataset.endTime,src(4).captured_at);
+ filter.value='today';filter.onchange();assert.equal(chart.hidden,true);
 });

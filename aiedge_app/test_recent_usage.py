@@ -38,6 +38,19 @@ class RecentRangeTests(unittest.TestCase):
             bands.append(dict(lower=str(Decimal(v['lower'])+5),upper=str(Decimal(v['upper'])+5)))
         self.rows=self.rows[:21]+self.rows[25:]
         r=self.solve();self.assertEqual(r['hour']['upper'],'11.02');self.assertTrue(all(x['delta'] is None for x in self.rows))
+    def test_contradictory_optional_pair_recomputes_all_five_on_same_endpoints(self):
+        self.document['dials'] = [dict(value_per_revolution=v) for v in (100000,10000,1000,100,1000,5)]
+        policy=dict(capacity_cfh=720,slow_allowance_ft3=6,elapsed_start_event=1,pipeline_id='p',format_id='f')
+        with patch('recent_usage.validate',return_value=policy), patch('recent_usage.evidence',return_value=[Decimal(0)]*61), patch('recent_usage.recent_comparisons',return_value=[(1,61,0,5)]):
+            r=recent_ranges(None,self.rows,self.document,self.contexts,self.zone,policy)
+            self.assertEqual(r['slow_comparison_scope'],'baseline_pairs')
+            self.assertEqual(r['through'],self.rows[-1]['event_observation'])
+            self.assertEqual((r['hour']['lower'],r['hour']['upper']),('5.98','6.02'))
+            self.assertEqual([(q['lower'],q['upper']) for q in r['quarters']],[('1.48','1.52')]*4)
+            self.assertTrue(r['unknown_gaps_preserved'])
+            with patch('recent_usage.comparisons',return_value=[(1,61,0,5)]), self.assertRaisesRegex(ValueError,'inconsistent'):
+                recent_ranges(None,self.rows,self.document,self.contexts,self.zone,policy)
+
     def test_missing_hour_boundary_withholds(self):
         self.rows=self.rows[1:]
         with self.assertRaisesRegex(ValueError,'boundary_missing'):self.solve()

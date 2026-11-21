@@ -5,7 +5,7 @@ from threading import Event
 from time import monotonic, sleep
 import unittest
 from zoneinfo import ZoneInfo
-from gas_periods import GasPeriods, limits, micros, window, HOUR
+from gas_periods import GasPeriods, bounds_at, limits, micros, window, HOUR
 
 
 class ClockPeriodTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class ClockPeriodTests(unittest.TestCase):
             self.assertEqual(left['end'],right['start'])
             self.assertEqual(local(left['end']).minute%15,0)
         self.assertEqual(data['lower'],'1.00')
-    def test_endpoint_change_during_read_does_not_show_the_previous_publication(self):
+    def test_advancing_endpoint_keeps_completed_work_at_its_own_timestamp(self):
         def report(last):
             def src(i):
                 return dict(camera='meter',format_id='f',clock_id='c',event_id=i,source_sha256=f'{i:064x}',
@@ -68,9 +68,26 @@ class ClockPeriodTests(unittest.TestCase):
         deadline=monotonic()+3
         while monotonic()<deadline:
             result=service.snapshot(second)
-            if result['status']=='ready':break
+            if result.get('through')==second['through']:break
+            if result['status']=='ready':self.assertEqual(result['through'],first['through'])
             sleep(.01)
         self.assertEqual(result['through'],second['through'])
         self.assertEqual(result['periods']['1']['lower'],'4.00')
         self.assertIsNone(result['periods']['24']['upper'])
         self.assertEqual(service.snapshot(None)['status'],'no_source')
+        cold=GasPeriods('sensor.recent',fetch)
+        daily={k:v for k,v in second.items() if k not in ('hour','quarters','label')}
+        cold.snapshot({},daily)
+        deadline=monotonic()+3
+        while monotonic()<deadline:
+            recovered=cold.snapshot({},daily)
+            if recovered.get('status')=='ready':break
+            sleep(.01)
+        self.assertEqual(recovered['through'],first['through'])
+        self.assertEqual(recovered['periods']['1']['upper'],'4.00')
+
+    def test_prefixes_equal_independent_queries_and_keep_open_upper(self):
+        rows=[(0,5,2,8),(2,6,0,4),(4,8,3,5),(1,8,2,12),(10,12,2,3)]
+        stops=[3,5,6,8,10,12]
+        self.assertEqual(bounds_at(rows,0,stops),[limits(rows,0,b) for b in stops])
+        self.assertEqual(bounds_at(rows,0,stops)[-1],(5,None))

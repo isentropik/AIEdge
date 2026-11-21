@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from daily_constraints import Budget, WorkLimit, _tighten, number, bands
+from daily_constraints import Budget, WorkLimit, InconsistentConstraints, _tighten, number, bands
 from daily_empirical import validate, evidence, comparisons
 from daily_records import daily_records
 from mqtt_consumption import fresh_range
@@ -135,12 +135,28 @@ def recent_ranges(db, rows, document, contexts, zone, policy=None):
             return dict(start=start, through=end, lower=result['lower'], upper=result['upper'],
                         duration_seconds=str(duration))
 
-        hour = interval(0, len(rows)-1)
-        quarters = [interval(a, b, hour) for a, b in zip(indices, indices[1:])]
+        def solve():
+            hour = interval(0, len(rows)-1)
+            return hour, [interval(a, b, hour) for a, b in zip(indices, indices[1:])]
+
+        scope = 'hour_extrema' if policy else 'none'
+        try:
+            hour, quarters = solve()
+        except InconsistentConstraints:
+            if not policy:
+                raise
+            # Reject the entire optional extrema pass when its measurements conflict.
+            # Recompute all five intervals together, against the same events and budget.
+            baseline_edges = comparisons(rows, values, number(policy['slow_allowance_ft3']), budget)
+            if edges == baseline_edges:
+                raise
+            edges = baseline_edges
+            scope = 'baseline_pairs'
+            hour, quarters = solve()
     return dict(hour=hour, quarters=quarters, through=identity, timezone=zone.key,
                 segment_id=rows[-1]['segment_id'],
                 accuracy_verified=False, unknown_gaps_preserved=True,
-                quarter_constraint_scope='full_hour_saved_readings',
+                quarter_constraint_scope='full_hour_saved_readings', slow_comparison_scope=scope,
                 window_basis='saved_endpoints_at_or_before_15_minute_boundaries',
                 boundary_slack_seconds=BOUNDARY_SLACK,
                 constraint_assumptions=policy, constraint_basis='empirical_dial_and_household_capacity' if policy else 'saved_readings',
