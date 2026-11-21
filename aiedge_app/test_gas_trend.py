@@ -75,7 +75,7 @@ class TrendTests(unittest.TestCase):
                 with urlopen(base+'/api/gas-periods',timeout=3) as response:
                     self.assertEqual(json.load(response),{'status':'loading'})
                     self.assertEqual(response.headers['Cache-Control'],'no-store')
-                periods.snapshot.assert_called_once_with({'through':{'event_id':8}})
+                periods.snapshot.assert_called_once_with({'through':{'event_id':8}},current)
                 with urlopen(base+'/gas-charts.js',timeout=3) as response:
                     self.assertIn(b'window.AIEdgeCharts',response.read())
                 self.assertEqual(store.method_calls,[])

@@ -207,8 +207,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
                 self.reply(result);return
             if route=='/api/gas-periods':
-                recent=mqtt_output.status().get('usage',{}).get('recent') if mqtt_output and gas_periods else None
-                self.reply(gas_periods.snapshot(recent) if recent else {'status':'no_source'})
+                usage=mqtt_output.status().get('usage',{}) if mqtt_output and gas_periods else {}
+                self.reply(gas_periods.snapshot(usage.get('recent'),usage.get('daily')) if usage else {'status':'no_source'})
                 return
             if route=='/api/gas-trend':
                 daily=mqtt_output.status().get('usage',{}).get('daily') if mqtt_output and gas_trend else None

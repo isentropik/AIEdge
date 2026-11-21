@@ -1,3 +1,8 @@
+## 0.2.0-dev91
+
+- Recover the hour and all four quarters from baseline saved comparisons when optional slow-dial extrema conflict.
+- Combine cumulative gas use and interval whiskers under one time filter. Keep compatible saved readings visible during history refreshes.
+
 ## 0.2.0-dev90
 
 - Draw daily usage and its bounds from actual hourly readings and the latest event. Mark breaks in published estimates at their actual times on the axis. Smooth the recent interval curves and show the measured values in tooltips.

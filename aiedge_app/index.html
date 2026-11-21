@@ -19,35 +19,25 @@
 
       </div>
     </div>
-    <figure class="trend-figure" aria-label="Cumulative gas use today">
-      <figcaption><h3>Cumulative use by hour</h3><span class="trend-legend"><i class="line-key"></i>Estimate <i class="shade-key"></i>Bounds</span></figcaption>
+    <figure class="trend-figure" aria-label="Gas usage">
+      <figcaption><h3>Gas usage <small>ft³</small></h3>
+        <label class="period-choice"><select id="usage-period" aria-label="Chart period">
+          <option value="today" selected>Today</option><option value="1">Last hour</option>
+          <option value="6">Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option>
+        </select></label>
+      </figcaption>
+      <div class="trend-legend" aria-label="Chart legend">
+        <span title="Cumulative estimate and range"><i class="total-key"></i>Total</span>
+        <span title="Dot at the midpoint, whiskers at the lower and upper limits"><i class="whisker-key"></i><span id="interval-key">Hourly use</span></span>
+        <span id="day-gap-key" hidden title="Break between published estimates"><i class="break-key"></i>History break</span>
+      </div>
       <div class="plot-frame"><div id="day-curve" class="trend-chart"></div>
         <div id="day-tip" class="plot-tip" aria-hidden="true" hidden>
           <strong id="day-tip-title"></strong><span id="day-tip-amount"></span><span id="day-tip-bounds"></span>
           <small id="day-tip-note"></small>
-        </div></div><small id="day-gap-key" class="usage-context" hidden>Marks on the time axis show breaks in published estimates.</small><span id="day-history-status" role="status"></span>
-    </figure>
-  </section>
-  <section class="panel usage-card usage-recent" aria-labelledby="recent-title">
-    <div class="hour-summary">
-    <h2 id="recent-title">Recent gas use</h2>
-    <label class="period-choice"><select id="usage-period" aria-label="Usage period"><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option></select></label>
-    <p id="hour-time" class="usage-time"></p>
-    <div class="recent-metric">
-      <p id="recent-metric-label">Gas use</p>
-      <p id="usage-hour" class="usage-number">Waiting for a reading</p>
-      <p id="recent-bounds" hidden></p>
-    </div>
-    </div>
-    <figure class="trend-figure" id="quarter-plot" hidden>
-      <figcaption><h3 id="period-bins">15-minute totals</h3><span class="trend-legend"><i class="line-key"></i>Nominal <i class="shade-key"></i>Bounds</span></figcaption>
-      <div class="plot-frame"><div id="hour-curve" class="trend-chart"></div>
-        <div id="hour-tip" class="plot-tip" aria-hidden="true" hidden>
-          <strong id="hour-tip-title"></strong><span id="hour-tip-amount"></span><span id="hour-tip-bounds"></span>
-          <small id="hour-tip-note"></small>
         </div></div>
+      <small id="day-history-status" role="status"></small>
     </figure>
-
   </section>
   <details class="panel usage-card usage-history">
     <summary>Earlier usage and recovery</summary>

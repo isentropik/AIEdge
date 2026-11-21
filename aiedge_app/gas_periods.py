@@ -61,39 +61,52 @@ def interval_rows(publication, reference):
     return rows
 
 
-def limits(rows, start, end):
-    # Disjoint contained intervals give a lower bound. A chain covering every
-    # instant gives an upper bound, even when portions of that chain overlap.
-    ends, lower, upper = [start], [0], [0]
-    for a,b,lo,hi in rows:  # sorted by end time
-        if b <= start or a >= end:
+def bounds_at(rows, start, stops):
+    """Bound every prefix at once. Rows arrive in ascending end-time order."""
+    ends, lower = [start], [0]
+    reach, cost = [start], [0]
+    first = inf
+    for a,b,lo,hi in rows:
+        if b <= start or a >= stops[-1]:
             continue
-        prev = bisect_right(ends, a) - 1
-        inside = lower[prev] + lo if prev >= 0 and b <= end else 0
-        left = bisect_left(ends, max(start, a))
-        covered = min(upper[left:], default=inf) + hi
-        stop = min(end, b)
-        if stop == ends[-1]:
-            lower[-1] = max(lower[-1], inside)
-            upper[-1] = min(upper[-1], covered)
+        first = min(first,a)
+        prev = bisect_right(ends,a)-1
+        packed = lower[prev]+lo if prev>=0 else 0
+        if b==ends[-1]:
+            lower[-1]=max(lower[-1],packed)
         else:
-            ends.append(stop)
-            lower.append(max(lower[-1], inside))
-            upper.append(covered)
-    if len(ends) == 1:
-        return None, None
-    hi = upper[-1] if ends[-1] == end and upper[-1] < inf else None
-    lo = lower[-1]
-    if hi is not None and lo > hi:
-        return None, None
-    return lo, hi
+            ends.append(b)
+            lower.append(max(lower[-1],packed))
+        # Covering more time at the same or lower cost dominates a shorter chain.
+        # Reach and cost both increase, so the cheapest cover needs one binary search.
+        j=bisect_left(reach,max(a,start))
+        if j<len(reach):
+            candidate=cost[j]+hi
+            if b==reach[-1] and cost[-1]<=candidate:
+                continue
+            while cost and cost[-1]>=candidate:
+                reach.pop()
+                cost.pop()
+            reach.append(b)
+            cost.append(candidate)
+    results=[]
+    for t in stops:
+        j=bisect_left(reach,t)
+        hi=cost[j] if j<len(reach) else None
+        lo=lower[bisect_right(ends,t)-1]
+        results.append((None,None) if t<=first or hi is not None and lo>hi else (lo,hi))
+    return results
+
+
+def limits(rows,start,end):
+    return bounds_at(rows,start,[end])[0]
 
 
 def window(rows, start, end, minutes, zone):
     def volume(c):
         return None if c is None else f'{c//100}.{c%100:02}'
-    def span(a,b):
-        lo,hi = limits(rows,a,b)
+    def span(a,b,amount):
+        lo,hi = amount
         return dict(start=(EPOCH+timedelta(microseconds=a)).isoformat(),
                     end=(EPOCH+timedelta(microseconds=b)).isoformat(), lower=volume(lo), upper=volume(hi))
     # Advance in UTC minutes and select local clock boundaries. This preserves
@@ -104,7 +117,11 @@ def window(rows, start, end, minutes, zone):
         if (EPOCH+timedelta(microseconds=t)).astimezone(zone).minute % minutes == 0:
             cuts.append(t)
     cuts.append(end)
-    return dict(**span(start,end),minutes=minutes,bins=[span(a,b) for a,b in zip(cuts,cuts[1:])])
+    prefixes=bounds_at(rows,start,cuts[1:])
+    bins=[]
+    for a,b,(lo,hi) in zip(cuts,cuts[1:],prefixes):
+        bins.append(dict(**span(a,b,limits(rows,a,b)),total_lower=volume(lo),total_upper=volume(hi)))
+    return dict(**span(start,end,prefixes[-1]),minutes=minutes,bins=bins)
 
 
 class GasPeriods:
@@ -115,65 +132,102 @@ class GasPeriods:
         self.source = self.key = self.result = self.history_end = None
         self.intervals = set()
         self.retry = 0
+        self.generation = 0
+        self.last_recent = self.requested = None
 
-    def snapshot(self, recent):
+    def snapshot(self, recent, daily=None):
+        # A daily endpoint can identify the meter when the live recent sensor is offline.
+        # Only an actual, compatible recent publication supplies interval values.
+        live = bool(recent)  # MQTT publishes an empty object to mark this sensor offline.
+        ref = recent if live else daily
         try:
-            if not recent or not interval_rows(recent,recent):
+            if not ref or ref.get('unknown_gaps_preserved') is not True:
                 return {'status':'no_source'}
-            key = (identity(recent['through']),recent['timezone'],repr(sorted((recent.get('constraint_assumptions') or {}).items())),recent.get('constraint_basis'))
-            src = recent['through']
+            if live and not interval_rows(ref,ref):
+                return {'status':'no_source'}
+            src = ref['through']
             token = (src['event_id'],src['captured_at'],src['source_sha256'])
+            key = (identity(src),ref['timezone'],tuple(sorted((ref.get('constraint_assumptions') or {}).items())),ref.get('constraint_basis'))
+            stamp = micros(token[1])
+            if type(token[0]) is not int or not re.fullmatch('[0-9a-f]{64}',token[2]):
+                return {'status':'no_source'}
         except (KeyError, IndexError, AttributeError, TypeError, ValueError, InvalidOperation, OverflowError):
             return {'status':'no_source'}
         with self.lock:
-            if key != self.key:
-                self.key, self.history_end, self.intervals = key, None, set()
-                self.source = None
-            if token != self.source:
-                self.source, self.result, self.retry = token, None, 0
-            if not self.busy and monotonic() >= self.retry:
-                self.busy = True
-                Thread(target=self._read,args=(key,token,recent,self.history_end,self.intervals),daemon=True).start()
-            return self.result or {'status':'loading'}
+            if self.key != key:
+                self.generation += 1
+                self.last_recent=self.requested=None
+                self.key, self.result, self.history_end, self.intervals, self.source, self.retry = key,None,None,set(),None,0
+            cached = self.result
+            old = self.requested
+            if old and (old['event_id']>token[0] or micros(old['captured_at'])>stamp
+                        or old['event_id']==token[0] and old!=src):
+                self.generation += 1
+                self.last_recent=None
+                self.result = cached = None
+                self.source,self.history_end,self.intervals,self.retry = None,None,set(),0
+            self.requested = src
+            target = (token,live)
+            now = monotonic()
+            if not self.busy and now>=self.retry and (target!=self.source or not cached or not cached.get('history_available')):
+                self.busy=True
+                Thread(target=self._read,args=(key,token,ref,self.history_end,self.intervals,live,self.last_recent,self.generation),daemon=True).start()
+            if cached:
+                return dict(cached,refreshing=self.busy)
+            return {'status':'loading' if self.busy else 'no_history'}
 
-    def _read(self,key,token,recent,previous,cached):
-        stamp = datetime.fromisoformat(token[1])
-        end = micros(token[1])
-        cutoff = end - 25*HOUR
-        rows = {v for v in cached if cutoff <= v[1] <= end}
-        ok = False
+    def _read(self,key,token,ref,previous,cached,live=True,last_recent=None,generation=None):
+        stamp=datetime.fromisoformat(token[1])
+        end=micros(token[1])
+        recent=ref if live else last_recent
+        cutoff=min(end,micros(recent["through"]["captured_at"]))-25*HOUR if recent else end-25*HOUR
+        rows={v for v in cached if cutoff<=v[1]<=end}
+        ok=False
+        current=None
         try:
-            start = stamp - timedelta(hours=25,minutes=5)
-            if previous is not None and previous <= stamp:
-                start = max(start,previous-timedelta(minutes=15))
-            history = self.fetch(self.entity,start,datetime.now(timezone.utc))
+            start=stamp-timedelta(hours=25,minutes=5)
+            if (live or recent is not None) and previous is not None and previous<=stamp:
+                start=max(start,previous-timedelta(minutes=15))
+            history=self.fetch(self.entity,start,datetime.now(timezone.utc))
             if not isinstance(history,list) or len(history)>1 or (history and not isinstance(history[0],list)):
                 raise ValueError('unexpected_history')
             for row in history[0] if history else ():
                 try:
-                    a = row['attributes']
-                    if row['entity_id']==self.entity and row['state']==a['label']:
-                        rows.update(interval_rows(a,recent))
+                    a=row['attributes']
+                    if row['entity_id']!=self.entity or row['state']!=a['label']:
+                        continue
+                    intervals=interval_rows(a,ref)
+                    if not intervals:
+                        continue
+                    rows.update(intervals)
+                    if not live and (recent is None or a['through']['event_id']>recent['through']['event_id']):
+                        recent=a
                 except (KeyError, IndexError, TypeError, ValueError, InvalidOperation, OverflowError):
                     continue
-            ok = True
+            ok=True
         except (OSError, ValueError, TypeError, KeyError, OverflowError, HTTPException):
             pass
+        try:
+            if recent:
+                rows.update(interval_rows(recent,ref))
+                zone=ZoneInfo(ref['timezone'])
+                end=micros(recent['through']['captured_at'])
+                ordered=sorted((r for r in rows if r[1]<=end),key=lambda v:(v[1],v[0]))
+                periods={str(h):window(ordered,micros(recent['hour']['start']['captured_at']) if h==1 else end-h*HOUR,
+                                       end,m,zone) for h,m in PERIODS}
+                current=dict(status='ready',history_available=ok,through=recent['through'],timezone=ref['timezone'],
+                             constraint_basis=ref.get('constraint_basis'),constraint_assumptions=ref.get('constraint_assumptions'),
+                             periods=periods)
+        except (KeyError, TypeError, ValueError, OverflowError, InvalidOperation):
+            pass
         finally:
-            try:
-                rows.update(interval_rows(recent,recent))
-                ordered = sorted(rows,key=lambda v:(v[1],v[0]))
-                zone = ZoneInfo(recent['timezone'])
-                periods = {str(hours):window(ordered, micros(recent['hour']['start']['captured_at']) if hours==1 else end-hours*HOUR,
-                                             end, minutes, zone) for hours,minutes in PERIODS}
-                current = dict(status='ready',history_available=ok,through=recent['through'],timezone=recent['timezone'],periods=periods)
-            except (KeyError, TypeError, ValueError, OverflowError, InvalidOperation):
-                current = {'status':'unavailable'}
             with self.lock:
-                if self.key==key:
+                if self.key==key and (generation is None or generation==self.generation):
                     if ok:
                         self.intervals,self.history_end=rows,stamp
-                    if self.source==token:
+                    if current and (ok or not self.result):
                         self.result=current
-                        self.retry=inf if ok else monotonic()+30
+                        self.last_recent=recent
+                    self.source=(token,live)
+                    self.retry=monotonic()+(0 if live and current and ok else 60 if ok else 15)
                 self.busy=False

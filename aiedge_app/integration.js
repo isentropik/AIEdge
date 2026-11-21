@@ -75,8 +75,8 @@ function renderDaily(daily) {
  if (nominal?.method === 'range_midpoint_v1') {
   const stale = daily.status === 'stale';
   $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
-  setOptional('usage-assumption', stale ? 'Stale · Last supported full-day estimate' : 'Midpoint of the unresolved daily bounds.');
-  setOptional('usage-bounds', 'Unresolved bounds · ' + daily.label);
+  setOptional('usage-assumption', stale ? 'Stale' : '');
+  setOptional('usage-bounds', 'Range ' + daily.label);
   setOptional('usage-time', measuredLine(daily.through, daily.timezone));
   return {source:sourceOf(daily.through), day:daily.day, zone:daily.timezone, value:nominal.value_ft3,
     lower:daily.lower, upper:daily.upper, status:daily.status, method:nominal.method};
@@ -85,7 +85,7 @@ function renderDaily(daily) {
  const hasEstimate = estimate?.method === 'lower_bound_assumption_v1';
  $('usage-estimate').textContent = hasEstimate ? estimate.label : daily?.label || 'Daily usage unavailable';
  setOptional('usage-assumption', hasEstimate ? 'Low-use estimate assuming no extra gas in the gaps.' : daily ? 'Unresolved bounds' : '');
- setOptional('usage-bounds', hasEstimate ? 'Unresolved bounds · ' + daily.label : '');
+ setOptional('usage-bounds', hasEstimate ? 'Range ' + daily.label : '');
  setOptional('usage-time', daily ? measuredLine(daily.through, daily.timezone) : '');
  return daily && {source:sourceOf(daily.through), day:daily.day, zone:daily.timezone,
    value:hasEstimate ? estimate.value_ft3 : null, lower:daily.lower, upper:daily.upper, status:daily.status, method:estimate?.method};
@@ -101,7 +101,7 @@ function renderResumed(resumed) {
  setOptional('photo-assumption', photo ? 'Photo-supported range. ' + photo.assumption.split(' Carried forward from reviewed event ')[0] :
              estimate ? 'Photo-supported estimate. ' + estimate.assumption : '');
  setOptional('photo-time', historical ? 'Photo result through ' + measurementTime(photo.through, zone) : '');
- $('usage-resumed').textContent = resumed ? 'Unresolved bounds · ' + resumed.label : 'Resumed usage unavailable';
+ $('usage-resumed').textContent = resumed ? 'Range ' + resumed.label : 'Resumed usage unavailable';
  setOptional('usage-resumed-time', resumed ? 'Measured ' + measurementTime(resumed.through, zone) : '');
 
 }
@@ -127,48 +127,65 @@ function completeHour(recent) {
  }) && sameEvent(sourceOf(quarters[3].through), sourceOf(recent.through));
 }
 
-let periodSource=null, periodData=null, periodRequest=null, retryPeriods=0;
-function periodAmount(span) {
- if(boundPair(span?.lower,span?.upper))return span.lower+'–'+span.upper+' ft³';
- return Number(span?.lower)>0?'At least '+span.lower+' ft³ · partial coverage':'Range unavailable';
+let periodSource=null, periodData=null, periodRequest=null, retryPeriods=0, family='', periodRevision=0, latestDaily=null;
+function periodFamily(ref){
+ const s=ref?.through;
+ if(!s||!ref.timezone)return '';
+ return JSON.stringify([s.camera,s.format_id,s.clock_id,ref.timezone,ref.constraint_basis,
+   Object.entries(ref.constraint_assumptions||{}).sort(([a],[b])=>a.localeCompare(b))]);
 }
-function periodMidpoint(span) {
- if(!boundPair(span?.lower,span?.upper))return null;
- // Keep half-hundredths of a cubic foot until the value is formatted for display.
- return (Math.round(Number(span.lower)*100)+Math.round(Number(span.upper)*100))/200;
+function compatible(data,ref){
+ if(!data||periodFamily(data)!==periodFamily(ref))return false;
+ const a=sourceOf(data.through),b=sourceOf(ref.through);
+ return !!(a&&b&&(sameEvent(a,b)||(a.event_id<b.event_id&&Date.parse(a.captured_at)<Date.parse(b.captured_at))));
 }
-function paintPeriod() {
- const hours=$('usage-period').value||'1', data=periodData?.periods?.[hours], zone=periodSource?.timezone;
- const native=hours==='1'&&periodSource?.hour;
- const published=data||native, nominal=periodMidpoint(published);
- $('recent-metric-label').textContent=nominal!=null?'Nominal use':'Gas use';
- $('usage-hour').textContent=nominal!=null?displayedVolume(nominal,2)+' ft³':
-   data?periodAmount(data):native?periodSource.label:periodSource?'Waiting for saved ranges':'Usage unavailable';
- setOptional('recent-bounds',nominal!=null?'Bounds · '+periodAmount(published):'');
- const span=data||native&&{start:native.start.captured_at,end:native.through.captured_at};
- setOptional('hour-time',span?compactInterval({captured_at:span.start},{captured_at:span.end},zone):'');
- const minutes=data?.minutes||(hours==='1'?15:hours==='6'?30:60);
- $('period-bins').textContent=minutes===60?'Hourly totals':minutes+'-minute totals';
- $('quarter-plot').hidden=!data?.bins.length;
- window.AIEdgeCharts?.hour(data,zone,periodMidpoint);
-}
-$('usage-period').addEventListener('change',paintPeriod);
-function renderRecent(recent) {
- const next=completeHour(recent)?recent:null;
- if(!sameEvent(sourceOf(next?.through),sourceOf(periodSource?.through))||next?.timezone!==periodSource?.timezone){
-   periodData=null;retryPeriods=0;
+function nativeWindow(recent){
+ const hour=recent.hour, bins=[];
+ if(!boundPair(hour.lower,hour.upper))return null;
+ let prefixLo=0,prefixHi=0;
+ const lo=recent.quarters.map(q=>Math.round(Number(q.lower)*100));
+ const hi=recent.quarters.map(q=>Math.round(Number(q.upper)*100));
+ let restLo=lo.reduce((a,b)=>a+b),restHi=hi.reduce((a,b)=>a+b);
+ const totalLo=Math.round(+hour.lower*100),totalHi=Math.round(+hour.upper*100);
+ for(const [i,q] of recent.quarters.entries()){
+   prefixLo+=lo[i];prefixHi+=hi[i];restLo-=lo[i];restHi-=hi[i];
+   const low=Math.max(prefixLo,totalLo-restHi),high=Math.min(prefixHi,totalHi-restLo);
+   if(low>high)return null;
+   bins.push({start:q.start.captured_at,end:q.through.captured_at,lower:q.lower,upper:q.upper,total_lower:low/100,total_upper:high/100});
  }
- periodSource=next;
- paintPeriod();
- if(!next||!['','#overview'].includes(location.hash)||periodRequest||Date.now()<retryPeriods)return;
- const source=sourceOf(next.through);
- periodRequest=request('api/gas-periods').then(data=>{
-   if(!sameEvent(source,sourceOf(periodSource?.through))||next.timezone!==periodSource.timezone)return;
-   if(data.status==='ready'&&sameEvent(source,sourceOf(data.through))&&data.timezone===next.timezone){
-     periodData=data;retryPeriods=Date.now()+(data.history_available?300000:30000);paintPeriod();
-   }else retryPeriods=Date.now()+3000;
- }).catch(()=>{retryPeriods=Date.now()+5000;}).finally(()=>{periodRequest=null;});
+ return {start:hour.start.captured_at,end:hour.through.captured_at,minutes:15,bins};
 }
+function paintPeriod(){
+ const selected=$('usage-period').value,ref=periodSource||latestDaily;
+ let data=null;
+ if(compatible(periodData,ref)){
+   const last=!(periodSource&&sameEvent(sourceOf(periodData.through),sourceOf(periodSource.through)));
+   data={periods:periodData.periods,through:periodData.through,zone:periodData.timezone,key:'saved'+periodRevision,
+    compatibleWithDay:compatible(periodData,latestDaily),notice:last?'Last saved':!periodData.history_available?'Partial history':''};
+ }
+ if(selected==='1'&&periodSource&&(!data||!sameEvent(sourceOf(data.through),sourceOf(periodSource.through)))){
+   const one=nativeWindow(periodSource);
+   if(one)data={periods:{'1':one},through:periodSource.through,zone:periodSource.timezone,key:'native'+periodSource.through.source_sha256+periodSource.through.event_id,notice:''};
+ }
+ window.AIEdgeCharts?.period(selected,data);
+}
+function renderRecent(recent,daily){
+ const next=completeHour(recent)?recent:null,ref=next||daily;
+ const key=periodFamily(ref);
+ if(key!==family){family=key;periodData=null;retryPeriods=0;}
+ if(next&&!sameEvent(sourceOf(next.through),sourceOf(periodSource?.through)))retryPeriods=0;
+ periodSource=next;latestDaily=daily;
+ paintPeriod();
+ if(!key||!['1','6','12','24'].includes($('usage-period').value)||!['','#overview'].includes(location.hash)||periodRequest||Date.now()<retryPeriods)return;
+ periodRequest=request('api/gas-periods').then(data=>{
+   if(key!==family)return;
+   if(data.status==='ready'&&compatible(data,periodSource||latestDaily)){
+     periodData=data;periodRevision++;paintPeriod();
+     retryPeriods=Date.now()+(data.refreshing?3000:periodSource&&sameEvent(sourceOf(data.through),sourceOf(periodSource.through))&&data.history_available?120000:15000);
+   }else retryPeriods=Date.now()+(data.status==='loading'?3000:15000);
+ }).catch(()=>{if(key===family)retryPeriods=Date.now()+5000;}).finally(()=>{periodRequest=null;});
+}
+$('usage-period').addEventListener('change',()=>renderRecent(periodSource,latestDaily));
 
 function boundPair(lo, hi) {
  return [lo, hi].every(n => (typeof n === 'string' && n.trim() || typeof n === 'number') && Number.isFinite(Number(n))) &&
@@ -223,15 +240,15 @@ function renderOverviewDaily(nominal, daily) {
  const stale = nominal.status === 'stale';
  const held = nominal.status === 'held_at_last_reading';
  $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
- setOptional('usage-assumption', [previous ? 'Previous day’s estimate' : '', stale ? 'Stale · Last supported full-day estimate' :
-   partial ? 'Partial coverage · Observed usage only' : 'Estimated from the daily range', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
+ setOptional('usage-assumption', [previous ? 'Previous day’s estimate' : '', stale ? 'Stale' :
+   partial ? 'Partial coverage' : '', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
  setOptional('usage-time', measuredLine(measured, zone));
  const native = boundPair(nominal.lower_ft3, nominal.upper_ft3);
- let bounds = native ? 'Unresolved bounds · ' + Number(nominal.lower_ft3).toFixed(2) + '–' + Number(nominal.upper_ft3).toFixed(2) + ' ft³' : '';
+ let bounds = native ? 'Range ' + Number(nominal.lower_ft3).toFixed(2) + '–' + Number(nominal.upper_ft3).toFixed(2) + ' ft³' : '';
  if (ranged && daily.day === day && (sameEvent(end, measured) || (!native && end.event_id !== measured.event_id))) {
-   bounds = 'Unresolved bounds · ' + daily.label + (sameEvent(end, measured) ? '' : ' · ' + sourceLine(end, zone));
+   bounds = 'Range ' + daily.label + (sameEvent(end, measured) ? '' : ' · ' + sourceLine(end, zone));
  }
- setOptional('usage-bounds', bounds || (partial ? 'Full-day bounds pending' : ''));
+ setOptional('usage-bounds', bounds || (partial ? 'Partial coverage' : ''));
  // Only bounds measured at the selected meter event belong to this plotted point.
  const matching = ranged && daily.day === day && daily.timezone === zone && sameEvent(end,measured);
  return {source:measured, day, zone, value:nominal.value_ft3,
@@ -247,7 +264,7 @@ function displayedVolume(value,places) {
 }
 
 function measuredLine(endpoint, zone) {
- return 'Measured ' + measurementTime(endpoint, zone);
+ return measurementTime(endpoint, zone);
 }
 
 function bindReading(id, source, value) {
@@ -266,7 +283,7 @@ function renderAbsolute(absolute, zone) {
  const match = /^(\d+)(\.\d+)?$/.exec(String(absolute?.value_ft3));
  const valid = end && match;
  $('absolute-value').textContent = valid ? displayedVolume(absolute.value_ft3, 1) + ' ft³' : 'Awaiting a meter reading';
- setOptional('absolute-status', valid ? {partial_coverage:'Partial coverage',held_at_last_reading:'Held at last measurement'}[absolute.status] || 'Nominal reading' : '');
+ setOptional('absolute-status', valid ? {partial_coverage:'Partial coverage',held_at_last_reading:'Held at last measurement'}[absolute.status] || '' : '');
  setOptional('absolute-time', valid ? measuredLine(end, zone) : '');
  bindReading('absolute-value', valid && end, absolute?.value_ft3);
 }
@@ -300,15 +317,16 @@ function render(state) {
  const zone = usage.daily_nominal?.timezone || usage.daily?.timezone || usage.resumed?.timezone || usage.recent?.timezone || mqtt?.overview_timezone;
  const headline = renderOverviewDaily(usage.daily_nominal, usage.daily);
  bindReading('usage-estimate', headline?.source, headline?.value);
+ $('usage-estimate').title=headline?.method==='range_midpoint_v1'?'Estimate at the midpoint of the daily range':'';
  if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily,other ? null : headline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
-   if (sourceOf(usage.daily_nominal)) $('usage-assumption').append(' · Last published measurement');
+   if (sourceOf(usage.daily_nominal)) setOptional('usage-assumption',[$('usage-assumption').textContent,'Last published'].filter(Boolean).join(' · '));
  }
  if (mqtt?.overview_connected === false || mqtt?.range_error) {
-   if (sourceOf(usage.absolute_nominal)) $('absolute-status').append(' · Last published measurement');
+   if (sourceOf(usage.absolute_nominal)) setOptional('absolute-status',[$('absolute-status').textContent,'Last published'].filter(Boolean).join(' · '));
  }
- renderRecent(usage.recent);
+ renderRecent(other?null:usage.recent,other?null:usage.daily);
  renderResumed(usage.resumed);
  renderHistory(usage.historical, usage.daily, zone, mqtt?.overview_policy);
 }
