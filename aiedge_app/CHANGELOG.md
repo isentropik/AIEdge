@@ -1,3 +1,7 @@
+## 0.2.0-dev90
+
+- Draw daily usage and its bounds from actual hourly readings and the latest event. Mark breaks in published estimates at their actual times on the axis. Smooth the recent interval curves and show the measured values in tooltips.
+
 ## 0.2.0-dev89
 
 - Simplify the gas overview on phones with clock-aligned time axes, on-chart inspection and lighter cumulative uncertainty shading.

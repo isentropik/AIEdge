@@ -330,6 +330,33 @@ function gasOverview(trend, date=Date) {
  return {get,render:usage=>window.AIEdgeIntegration.render({mqtt:{usage}})};
 }
 
+function ribbonSides(d){
+ const sides=[[],[]];let side=0,last;
+ for(const m of d.matchAll(/([MLQC])([^MLQCZ]+)/g)){
+   const v=m[2].trim().split(/\s+/).map(Number),coords=[];
+   for(let i=0;i<v.length;i+=2)coords.push([v[i],v[i+1]]);
+   if(m[1]==='L')side=1;
+   if(m[1]==='Q'||m[1]==='C')sides[side].push([last,...coords]);
+   last=coords.at(-1);
+ }
+ return sides;
+}
+function onCurve(edge,x){
+ const [a,b]=[edge[0],edge.at(-1)];
+ let lo=0,hi=1;
+ const at=(t,k)=>{
+   const s=1-t,p=edge.map(v=>v[k]);
+   return p.length===3?s*s*p[0]+2*s*t*p[1]+t*t*p[2]:
+     s**3*p[0]+3*s*s*t*p[1]+3*s*t*t*p[2]+t**3*p[3];
+ };
+ for(let i=0;i<27;i++){const t=(lo+hi)/2;if((at(t,0)<x)===(b[0]>a[0]))lo=t;else hi=t;}
+ return at((lo+hi)/2,1);
+}
+function ribbonAt(side,x){
+ const seg=side.find(e=>x>=Math.min(e[0][0],e.at(-1)[0])-.000001&&x<=Math.max(e[0][0],e.at(-1)[0])+.000001);
+ assert(seg,'Source time is outside the ribbon');return onCurve(seg,x);
+}
+
 test('hour stops keep unknown hours empty, bound usage conservatively and distinguish both 1 AM hours',async()=>{
  const day='2026-11-01',timezone='America/Los_Angeles',midnight=Date.parse(day+'T00:00:00-07:00'),hour=3600000;
  const src=(id,t)=>({event_id:id,source_sha256:id.toString(16).padStart(64,'0'),camera:'meter',format_id:'format',captured_at:new Date(t).toISOString()});
@@ -346,15 +373,13 @@ test('hour stops keep unknown hours empty, bound usage conservatively and distin
  key('Home');assert.match(label(),/0?1\.00–3\.00 ft³ used/);
  key('ArrowRight');assert.match(label(),/1:00 AM PDT.*1:00 AM PST.*2\.00–7\.00 ft³ used/);
  const paths=chart.children[0].children;
- const ribbon=paths.filter(n=>n.attributes.class==='plot-band');assert.equal(ribbon.length,1);
- assert.equal(paths.filter(n=>n.attributes.class==='plot-estimate').length,3);
- // From 2.01 to 4.1 h the possible total spans the earlier 6 and later 14.
- // Both ends of that unmeasured interval must include its entire envelope.
- const verts=[...ribbon[0].attributes.d.matchAll(/[ML]([\d.]+) ([\d.]+)/g)].map(m=>m.slice(1).map(Number));
- const y=v=>293-281*v/20,x=h=>36+(500-48)*h/4.5;
- for(const t of [2.01,4.1])for(const v of [6,14]){
-   assert(verts.some(([px,py])=>Math.abs(px-x(t))<.02&&Math.abs(py-y(v))<.02));
- }
+ const bands=paths.filter(n=>n.attributes.class==='plot-band');assert.equal(bands.length,2);
+ const dots=paths.filter(n=>n.attributes.class==='plot-estimate-dot');
+ assert.deepEqual(dots.map(n=>n.attributes['data-event']),[2,3,5,6,9]);
+ // No reading in the fourth hour. Its whole interval remains blank.
+ const endX=Number(dots.at(-2).attributes.cx);
+ assert(ribbonSides(bands[0].attributes.d)[0].every(e=>e.at(-1)[0]<=endX+.01));
+ assert.deepEqual(ribbonSides(bands[1].attributes.d),[[],[]]);
  key('ArrowRight');key('ArrowRight');assert.match(label(),/Hourly range unavailable/);
  assert.match(chart.attributes['aria-valuetext'],/No meter reading/);
  key('End');assert.match(label(),/1\.00–10\.00 ft³ used/);assert.equal(chart.dataset.endEvent,'9');
@@ -380,19 +405,21 @@ test('the daily chart follows the displayed publication through delayed history,
  const ui=gasOverview(()=>{reads++;return new Promise(resolve=>{answer=()=>resolve(response(data));});},Clock);
  const chart=ui.get('day-curve');
  const paths=cls=>chart.children[0].children.filter(n=>n.attributes.class===cls);
- const lengths=()=>paths('plot-estimate').map(p=>p.attributes.d.split(' L').length);
+ const knots=()=>paths('plot-estimate-dot').map(n=>n.attributes['data-event']);
  const assertEnd=id=>{
   assert.equal(chart.dataset.endEvent,String(id));assert.equal(chart.dataset.endTime,source(id).captured_at);
   assert.equal(ui.get('usage-estimate').dataset.eventId,String(id));
  };
- ui.render({daily:range(8),daily_nominal:nominal(7,4)});assertEnd(8);assert.deepEqual(lengths(),[1]);
- answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2,1]);
+ ui.render({daily:range(8),daily_nominal:nominal(7,4)});assertEnd(8);assert.deepEqual(knots(),[8]);
+ answer();await tick();assertEnd(8);assert.deepEqual(knots(),[3,8]);
+ assert.deepEqual(paths('plot-history-gap').map(n=>[n.attributes['data-from'],n.attributes['data-to']]),[[point(3)[0],point(6)[0]]]);
+ assert.equal(paths('plot-estimate').length,1);
  ui.render({daily:range(8),daily_nominal:nominal(9,5)});assertEnd(9);
  assert.match(chart.attributes['aria-valuetext'],/5.00 ft³ estimated/);assert.equal(reads,1);
  // The independent nominal is a separate point until its own daily range is linked.
  assert.equal(paths('plot-band').length,2);
  const partial={...nominal(10,7),method:'observed_increments',status:'partial_coverage',lower_ft3:null,upper_ft3:null};
- ui.render({daily:range(8),daily_nominal:partial});assertEnd(10);assert.deepEqual(lengths(),[1,2,1]);
+ ui.render({daily:range(8),daily_nominal:partial});assertEnd(10);assert.deepEqual(knots(),[3,10]);assert(paths('plot-estimate').every(n=>!n.attributes.d.includes(' C')));
  assert.match(chart.attributes['aria-valuetext'],/7.00 ft³ estimated.*Partial coverage$/);
  assert.equal(paths('plot-band').length,1);
  // Earlier bounded readings share a ribbon; the isolated partial estimate remains outside it.
@@ -401,16 +428,16 @@ test('the daily chart follows the displayed publication through delayed history,
  assert(Math.max(...ribbonX)<partialX);
  data=history(8);now+=125000;
  ui.render({daily:{...range(8),status:'stale',checked_through:source(15)},daily_nominal:nominal(6,4)});
- answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2]);
+ answer();await tick();assertEnd(8);assert.deepEqual(knots(),[3,8]);
  assert.match(chart.attributes['aria-valuetext'],/Stale$/);
  // Same millisecond and event number are insufficient to join a different source.
  data={...data,last_captured_at:data.last_captured_at.replace('.000Z','.000001Z')};now+=125000;
- ui.render({daily:range(8)});answer();await tick();assert.deepEqual(lengths(),[1,1,1]);
+ ui.render({daily:range(8)});answer();await tick();assert.deepEqual(knots(),[3,8]);assert(paths('plot-estimate').every(n=>!n.attributes.d.includes(' C')));
  data={...history(8),last_digest:source(4).source_sha256};now+=125000;
- ui.render({daily:range(8)});answer();await tick();assert.deepEqual(lengths(),[1,1,1]);
+ ui.render({daily:range(8)});answer();await tick();assert.deepEqual(knots(),[3,8]);assert(paths('plot-estimate').every(n=>!n.attributes.d.includes(' C')));
  data=history(12);now+=125000;
- ui.render({daily:range(8)});answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,1,1]);
- ui.render({daily_nominal:{...partial,value_ft3:0}});assertEnd(10);assert.deepEqual(lengths(),[1]);
+ ui.render({daily:range(8)});answer();await tick();assertEnd(8);assert.deepEqual(knots(),[3,8]);assert(paths('plot-estimate').every(n=>!n.attributes.d.includes(' C')));
+ ui.render({daily_nominal:{...partial,value_ft3:0}});assertEnd(10);assert.deepEqual(knots(),[10]);
  assert.match(chart.attributes['aria-valuetext'],/0.00 ft³ estimated.*Partial coverage/);
  ui.render({daily_nominal:{day,timezone,status:'opening_balance',value_ft3:'0.00'}});
  assert.equal(chart.dataset.endEvent,undefined);assert.equal(chart.hidden,true);
@@ -452,6 +479,43 @@ test('the daily clock axis aligns in a fractional-offset zone and inspection sta
  host.onkeydown({key:'End',preventDefault(){}});assert.match(host.attributes['aria-valuetext'],/5.00 ft³ estimated/);
  host.onpointerleave({pointerType:'mouse'});assert(tip.hidden);
  host.onfocus();host.onpointercancel();assert(tip.hidden);
+});
+
+test('hourly curves use real readings, preserve plateaus and never overshoot their sampled bounds',async()=>{
+ const day='2026-11-21',zone='UTC',midnight=Date.parse(day+'T00:00:00Z'),hour=3600000;
+ const source=(id,t)=>({camera:'meter',format_id:'fmt',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),captured_at:new Date(midnight+t*hour).toISOString()});
+ const before=source(1,-.01),after=source(2,0),through=source(10,3.5);
+ class Clock extends Date{constructor(...args){super(...(args.length?args:[through.captured_at]));}}
+ const rows=[[0,0,0],[.4,1,5],[.9,2,6],[1.1,2,7],[1.9,2,6],[2.4,3,8],[2.95,5,14],[3.2,8,16],[3.5,9,19]];
+ const group=rows.map(([t,l,h],i)=>[midnight+t*hour,(l+h)/2,l,h,i+2]);
+ const daily={day,timezone:zone,before,after,through,lower:9,upper:19,label:'9–19 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:14}};
+ const nominal={...through,day,timezone:zone,measured_at:through.captured_at,method:'range_midpoint_v1',status:'daily_range',value_ft3:14,lower_ft3:9,upper_ft3:19};
+ const identity=[day,zone,'meter','fmt',before.source_sha256,after.source_sha256,1,before.captured_at,2,after.captured_at];
+ const ui=gasOverview(async()=>response({day,zone,midnight,identity,status:'ready',groups:[group.slice(0,6),group.slice(6)],last_digest:through.source_sha256,last_captured_at:through.captured_at}),Clock);
+ ui.render({daily,daily_nominal:nominal});await tick();
+ const paths=ui.get('day-curve').children[0].children;
+ const dots=paths.filter(n=>n.attributes.class==='plot-estimate-dot');
+ assert.deepEqual(dots.map(n=>n.attributes['data-event']),[2,4,6,8,10]);
+ const [upper,lower]=ribbonSides(paths.find(n=>n.attributes.class==='plot-band').attributes.d);
+ const traces=paths.filter(n=>n.attributes.class==='plot-estimate');
+ assert.equal(traces.length,1);
+ const marks=paths.filter(n=>n.attributes.class==='plot-history-gap');
+ assert.deepEqual(marks.map(n=>[n.attributes['data-from'],n.attributes['data-to']]),[[group[5][0],group[6][0]]]);
+ assert(!ui.get('day-gap-key').hidden);
+ const line=traces.flatMap(p=>ribbonSides(p.attributes.d)[0]);
+ assert.equal(line.length,dots.length-1);
+ const y=v=>293-281*v/20;
+ for(const [i,e] of line.entries()){
+   const a=dots[i],b=dots[i+1],ra=group[a.attributes['data-event']-2],rb=group[b.attributes['data-event']-2];
+   for(const f of [0,.1,.5,.9,1]){
+     const x=e[0][0]+f*(e.at(-1)[0]-e[0][0]),v=onCurve(e,x);
+     assert(v>=Math.min(y(ra[1]),y(rb[1]))-.02&&v<=Math.max(y(ra[1]),y(rb[1]))+.02);
+     assert(v>=ribbonAt(upper,x)-.02&&v<=ribbonAt(lower,x)+.02);
+   }
+   assert(Math.abs(e.at(-1)[1]-y(rb[1]))<.02);
+   assert(Math.abs(ribbonAt(upper,e.at(-1)[0])-y(rb[3]))<.02);
+   assert(Math.abs(ribbonAt(lower,e.at(-1)[0])-y(rb[2]))<.02);
+ }
 });
 
 test('absolute presentation rounds decimal text and preserves the exact source',()=>{
