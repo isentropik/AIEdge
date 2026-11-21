@@ -319,13 +319,37 @@ function gasOverview(trend, date=Date) {
  const window = {addEventListener(){}};
  const context={document,window,location:{hash:''},Intl,Date:date};
  if(trend){
-  for(const id of ['day-curve','hour-curve'])get(id).clientWidth=500;
+  for(const id of ['day-curve','hour-curve']){
+   get(id).clientWidth=500;
+   get(id).addEventListener=(name,fn)=>{get(id)['on'+name]=fn;};
+  }
   Object.assign(context,{ResizeObserver:class {observe(){}},fetch:trend,AbortSignal});
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'gas-charts.js'),'utf8'),context);
  }
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'),context);
  return {get,render:usage=>window.AIEdgeIntegration.render({mqtt:{usage}})};
 }
+
+test('hour stops keep unknown hours empty, bound usage conservatively and distinguish both 1 AM hours',async()=>{
+ const day='2026-11-01',timezone='America/Los_Angeles',midnight=Date.parse(day+'T00:00:00-07:00'),hour=3600000;
+ const src=(id,t)=>({event_id:id,source_sha256:id.toString(16).padStart(64,'0'),camera:'meter',format_id:'format',captured_at:new Date(t).toISOString()});
+ const before=src(1,midnight-1000),after=src(2,midnight+1000),through=src(9,midnight+4.5*hour);
+ const daily={day,timezone,before,after,through,lower:15,upper:16,label:'15–16 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:15.5}};
+ class Clock extends Date{constructor(...args){super(...(args.length?args:[Date.parse(through.captured_at)]));}static now(){return Date.parse(through.captured_at);}}
+ const point=(i,h,lo,hi)=>[midnight+hour*h,(lo+hi)/2,lo,hi,i];
+ const groups=[[point(2,.01,0,1),point(3,.99,1,2),point(4,1.01,2,3),point(5,1.95,5,6),point(6,2.01,6,8)],[point(7,4.1,12,14)]];
+ const data={day,zone:timezone,midnight,groups,status:'ready',identity:[day,timezone,'meter','format',before.source_sha256,after.source_sha256,1,before.captured_at,2,after.captured_at]};
+ const ui=gasOverview(async()=>response(data),Clock);
+ ui.render({daily});await tick();
+ const chart=ui.get('day-curve'),label=()=>ui.get('day-hour-readout').textContent,key=k=>chart.onkeydown({key:k,preventDefault(){}});
+ assert.equal(chart.attributes['aria-valuemax'],4);
+ key('Home');assert.match(label(),/0?1\.00–3\.00 ft³ used/);
+ key('ArrowRight');assert.match(label(),/1:00 AM PDT.*1:00 AM PST.*2\.00–7\.00 ft³ used/);
+ key('ArrowRight');key('ArrowRight');assert.match(label(),/Hourly range unavailable/);
+ assert.match(chart.attributes['aria-valuetext'],/No meter reading/);
+ key('End');assert.match(label(),/1\.00–10\.00 ft³ used/);assert.equal(chart.dataset.endEvent,'9');
+ assert.match(ui.get('day-readout').textContent,/15\.50 ft³ estimated/);
+});
 
 test('the daily chart follows the displayed publication through delayed history, gaps and stale readings',async()=>{
  const day='2025-01-05',timezone='UTC';

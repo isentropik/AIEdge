@@ -256,6 +256,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=json.dumps(state).encode();kind='application/json'
             elif route=='/api/setup':
                 state=setup.status() if setup else {'revision':None,'calibration':None}
+                if getattr(mqtt_output,'output_mode',None)=='gas_consumption':
+                    state['configured_meter_type']='gas'
                 state.update(available=setup is not None,token=token);body=json.dumps(state).encode();kind='application/json'
             elif route in ('/app.css','/parity.css'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'

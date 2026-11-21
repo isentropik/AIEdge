@@ -1,3 +1,8 @@
+## 0.2.0-dev86
+
+- Inspect the cumulative graph one hour at a time. Show a conservative usage range for each measured interval and keep its daily total and source time visible.
+- Open Setup to review saved settings or restart the wizard with the current choices selected. Existing gas installations can use the configured gas output and saved number format.
+
 ## 0.2.0-dev85
 
 - End the cumulative gas graph at the headline's measured event. Show a separate point until recorder history supports a connecting line.

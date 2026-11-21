@@ -91,10 +91,10 @@ $('suggest-markers').onclick=async()=>{
 async function saveCalibration(){
  if(busy)return false;
  if(!reference||!picture){status('Choose a reference image before continuing.',true);return false;}
+ if(!dirty&&revision)return window.AIEdgeImageEditor?await window.AIEdgeImageEditor.save():true;
  if(state.markers.some(x=>!x)){status('Place all three markers.',true);return false;}
  if(!state.dials.length||state.dials.some(d=>d.rim_points.some(p=>!p)||!d.needle_pivot)){status('Place four rim points and the needle pivot for every dial.',true);return false;}
  if(window.AIEdgeImageEditor&&!await window.AIEdgeImageEditor.save())return false;
- if(!dirty&&revision)return true;
  busy=true;controls();status('Validating calibration…');
  try{const s=await request('api/setup/save',{reference_sha256:reference,design:state,revision});revision=s.revision;dirty=false;markerUndo=null;status('');window.dispatchEvent(new Event('aiedge-calibration-saved'));return true;}
  catch(e){status(window.AIEdgeNotices?.message(e)||e.message,true,window.AIEdgeNotices?.connection(e));return false;}
