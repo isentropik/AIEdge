@@ -1,3 +1,8 @@
+## 0.2.0-dev88
+
+- Show the recent period’s nominal use above its bounds. Plot the midpoint for each interval with a shaded bounds ribbon.
+- Keep cumulative bounds visible across compatible readings, including the uncertainty between meter events spanning a gap. The estimate line still breaks at those gaps.
+
 ## 0.2.0-dev87
 
 - Group the absolute meter reading above Gas used today in one card. Give the cumulative and recent charts more plotting space. Simplify the cumulative stroke within one screen pixel and saved bounds while retaining isolated readings and recorder gaps.

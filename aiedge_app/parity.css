@@ -194,7 +194,7 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .usage-card details > summary {color:var(--accent);}
 .usage-card summary:focus-visible,.trend-chart:focus-visible {outline:2px solid var(--accent); outline-offset:3px;}
 .usage-overview .usage-today {
-  --series:var(--accent); --grid:var(--line); --band:var(--selected);
+  --series:var(--accent); --grid:var(--line); --band:color-mix(in srgb,var(--series) 31%,transparent);
   grid-column:1/-1; display:grid; grid-template-columns:minmax(225px,.82fr) minmax(0,1.85fr); align-items:center;
   gap:clamp(24px,2.8vw,44px); padding:clamp(22px,2.4vw,36px);
   background:linear-gradient(108deg,color-mix(in srgb,var(--selected) 50%,var(--panel)),var(--panel) 85%);
@@ -209,23 +209,23 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .trend-legend {display:inline-flex; align-items:center; gap:6px; font-size:.91rem; color:var(--sub);}
 .trend-legend i {display:inline-block; width:18px; height:0; border-top:3px solid var(--series);}
 .trend-legend .shade-key {height:10px; border:1px solid var(--series); border-radius:2px; background:var(--band); margin-left:8px;}
-.trend-legend .upper-key {border-top:2px dashed var(--upper); margin-left:8px;}
+
 .trend-chart {cursor:crosshair; touch-action:pan-y; min-width:0; border-radius:5px;}
 .trend-chart svg {display:block; width:100%; height:175px; overflow:visible; stroke:none; fill:none; stroke-width:1; stroke-linecap:round; stroke-linejoin:round;}
 .trend-chart text {fill:var(--sub); font:11.5px system-ui,sans-serif; font-variant-numeric:tabular-nums;}
 .plot-grid {stroke:var(--grid); stroke-width:1; stroke-dasharray:2 5;}
-.plot-band {fill:var(--band);}
-.usage-today .plot-band {fill:color-mix(in srgb,var(--accent) 22%,var(--panel));}
+.plot-band {fill:var(--band); stroke:color-mix(in srgb,var(--series) 48%,transparent); stroke-width:.8;}
 .plot-estimate {fill:none; stroke:var(--series); stroke-width:2.7;}
-.plot-upper {fill:none; stroke:var(--upper); stroke-width:2; stroke-dasharray:5 4;}
 .plot-estimate-dot {fill:var(--series);}
-.plot-upper-dot {fill:var(--paper); stroke:var(--upper); stroke-width:2;}
 .plot-cursor {stroke:var(--series); stroke-opacity:.5; stroke-dasharray:2 3;}
 .usage-card .trend-readout {color:var(--sub); font-size:.96rem; margin-top:.8rem; font-variant-numeric:tabular-nums; min-height:1.5em;}
 #day-history-status {font-size:.9rem; color:var(--sub);}
-.usage-recent {--series:light-dark(#16746e,#70cdb9); --upper:var(--series); --band:light-dark(#d9efe9,#233c38); --grid:var(--edge);}
+.usage-recent {--series:light-dark(#16746e,#70cdb9); --band:color-mix(in srgb,var(--series) 26%,transparent); --grid:var(--edge);}
 .usage-recent .hour-summary {display:grid; grid-template-columns:1fr auto; align-items:end; gap:.25rem 1rem; border-bottom:1px solid var(--edge); padding-bottom:1.25rem; margin-bottom:1.25rem;}
-.usage-recent .usage-number {grid-row:1/3; grid-column:2; font-size:clamp(1.8rem,2.55vw,3rem); margin:0; line-height:1.1;}
+.recent-metric {grid-column:2; grid-row:1/4; align-self:center; text-align:end; min-width:0;}
+.recent-metric > p {margin:0;}
+#recent-metric-label,#recent-bounds {font-size:.94rem; color:var(--sub);}
+.usage-recent .usage-number {font-size:clamp(2rem,3vw,3.5rem); margin:.25rem 0; line-height:1.1;}
 .hour-summary .usage-time {margin:0;}
 .usage-summary {min-width:0;}
 .usage-summary .day-summary {border-top:1px solid var(--edge); padding-top:1.1rem; margin-top:.7rem;}
@@ -234,9 +234,7 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .period-choice {display:inline-flex; align-items:center; gap:.5rem; color:var(--sub);}
 .period-choice select {width:auto; min-height:40px; font:inherit;}
 #restart-setup {margin-top:1rem;}
-.usage-recent .hour-summary {grid-template-columns:1fr auto;}
-.usage-recent .period-choice {grid-column:1;}
-.usage-recent .usage-number {grid-row:1/3;}
+.usage-recent .period-choice,.hour-summary .usage-time {grid-column:1;}
 .usage-register .usage-time {margin:.35rem 0;}
 .usage-register > details {margin-top:.3rem;}
 .usage-overview .usage-history {grid-column:1/-1; padding-block:5px;}
@@ -257,13 +255,12 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
   .usage-overview .usage-history {padding-block:4px;}
   .usage-recent .hour-summary {display:block;}
   .period-choice {margin-block:.35rem;}
-  .usage-recent .usage-number {margin:.3rem 0;}
+  .recent-metric {margin-top:.85rem; text-align:start;}
   .usage-card summary {min-height:44px; align-content:center;}
   .trend-chart text {font-size:10.5px;}
 }
 @media(forced-colors:active){
-  .plot-estimate,.plot-upper,.plot-upper-dot,.plot-cursor,.plot-grid {stroke:CanvasText;}
+  .plot-estimate,.plot-cursor,.plot-grid {stroke:CanvasText;}
   .plot-estimate-dot,.trend-chart text {fill:CanvasText;}
-  .plot-band {fill:transparent;}
-  .usage-today .plot-band {fill:transparent; stroke:GrayText;}
+  .plot-band {fill:transparent; stroke:GrayText;}
 }

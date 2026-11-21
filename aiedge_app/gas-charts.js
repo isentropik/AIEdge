@@ -80,6 +80,34 @@ function dailyStroke(group,y) {
   result.push(group.at(-1));
   return result;
 }
+// Recorder breaks interrupt the estimate. A nondecreasing daily total can still
+// be bounded throughout a gap by its earlier lower and later upper limit.
+function dailyRibbons(groups) {
+  const ribbons=[];
+  let ribbon=null;
+  for(const group of groups){
+    for(let i=0;i<group.length;i++){
+      const p=group[i];
+      if(p[2]==null||p[3]==null){ribbon=null;continue;}
+      if(i===0 && ribbon){
+        const prev=ribbon.at(-1);
+        // Recorder points share the day's anchor. A separately published headline must qualify too.
+        if(p[6]===false || prev[0]>=p[0] || prev[2]>p[3])ribbon=null;
+        else ribbon.push([prev[0],null,prev[2],p[3]],[p[0],null,prev[2],p[3]]);
+      }
+      if(!ribbon){ribbon=[];ribbons.push(ribbon);}
+      ribbon.push(p);
+    }
+  }
+  return ribbons;
+}
+// Bucket totals sit at their interval centers. End caps cover the partial
+// first and last buckets without extending any series across a missing bucket.
+const center=p=>p[5]+(p[0]-p[5])/2;
+function bucketStroke(group) {
+  const first=group[0],last=group.at(-1);
+  return [[first[5],...first.slice(1)],...group.map(p=>[center(p),...p.slice(1)]),last];
+}
 function chart(kind) {
   const host = $(kind+'-curve'), readout = $(kind+'-readout'), isDay = kind === 'day';
   const graphic = svg('svg',{'aria-hidden':'true'});
@@ -109,13 +137,14 @@ function chart(kind) {
     const amounts = p[3]==null ? (isDay?'':p[2]>0?'At least '+number.format(p[2])+' ft³ · partial coverage':'Range unavailable') : number.format(p[2])+'–'+number.format(p[3])+' ft³';
     const time = isDay ? clock(p[0],model.zone,true) : clock(p[5],model.zone)+' – '+clock(p[0],model.zone,true);
     const estimate = p[1]==null ? '' : number.format(p[1])+' ft³ estimated';
-    const value = isDay ? [estimate,amounts,p[5]].filter(Boolean).join(' · ') : amounts;
+    const value = isDay ? [estimate,amounts,p[5]].filter(Boolean).join(' · ') :
+      p[1]==null?amounts:number.format(p[1])+' ft³ nominal · Bounds '+amounts;
     readout.textContent = (isDay?'Day total at ':'')+time+' · '+value;
     host.setAttribute('aria-valuetext',(isDay?$('day-hour-readout').textContent+' · ':'')+readout.textContent);
     if(cursor) {
-      cursor.setAttribute('visibility',!isDay&&p[3]==null?'hidden':'visible');
-      cursor.setAttribute('transform','translate('+atX(p[0])+' 0)');
-      cursor.querySelectorAll('circle').forEach((dot,j)=>dot.setAttribute('cy',atY(isDay ? p[1]??p[2] : p[j+2])));
+      cursor.setAttribute('visibility',!isDay&&p[1]==null?'hidden':'visible');
+      cursor.setAttribute('transform','translate('+atX(isDay?p[0]:center(p))+' 0)');
+      cursor.querySelectorAll('circle').forEach(dot=>dot.setAttribute('cy',atY(p[1]??p[2])));
     }
   }
   function draw() {
@@ -139,13 +168,17 @@ function chart(kind) {
     }
     const coords=(p,k)=>x(p[0]).toFixed(2)+' '+y(p[k]).toFixed(2);
     const line=(g,k)=>'M'+g.map(p=>coords(p,k)).join(' L');
-    for(const g of groups){
-      if(g[0][2]!=null)nodes.push(svg('path',{d:line(g,3)+' L'+[...g].reverse().map(p=>coords(p,2)).join(' L')+' Z',class:'plot-band'}));
-      for(const [k,cls] of isDay?[[1,'plot-estimate']]:[[2,'plot-estimate'],[3,'plot-upper']]){
-        if(g[0][k]==null)continue;
-        nodes.push(svg('path',{d:line(isDay?dailyStroke(g,y):g,k),class:cls}));
-        const dots=!isDay||g.length===1?g:g.at(-1)===points.at(-1)?[g.at(-1)]:[];
-        for(const p of dots) nodes.push(svg('circle',{cx:x(p[0]),cy:y(p[k]),r:isDay?1.9:4,class:cls+'-dot'}));
+    const strokes=isDay?groups:groups.map(bucketStroke);
+    const ribbons=isDay?dailyRibbons(groups):strokes;
+    for(const g of ribbons){
+      nodes.push(svg('path',{d:line(g,3)+' L'+[...g].reverse().map(p=>coords(p,2)).join(' L')+' Z',class:'plot-band'}));
+    }
+    for(const g of strokes){
+      if(g[0][1]==null)continue;
+      nodes.push(svg('path',{d:line(isDay?dailyStroke(g,y):g,1),class:'plot-estimate'}));
+      if(isDay && (g.length===1||g.at(-1)===points.at(-1))){
+        const p=g.at(-1);
+        nodes.push(svg('circle',{cx:x(p[0]),cy:y(p[1]),r:1.9,class:'plot-estimate-dot'}));
       }
     }
     const clockTicks=[start];
@@ -170,7 +203,7 @@ function chart(kind) {
     });
     const cursor=svg('g',{class:'plot-cursor'});
     cursor.append(svg('line',{x1:0,x2:0,y1:top,y2:bottom}));
-    for(const cls of isDay?['plot-estimate-dot']:['plot-estimate-dot','plot-upper-dot'])cursor.append(svg('circle',{cx:0,r:4.3,class:cls}));
+    cursor.append(svg('circle',{cx:0,r:4.3,class:'plot-estimate-dot'}));
     nodes.push(cursor);
     graphic.replaceChildren(...nodes);
     const i=model.stops.findIndex(s=>(s.from??s.to)===chosen);
@@ -238,7 +271,7 @@ function showDay(){
   }
   const label=status==='stale'?'Stale':method==='observed_increments'||status==='partial_coverage'?'Partial coverage':
     method==='lower_bound_assumption_v1'?'Lower-bound assumption':'';
-  const point=[stamp,estimate,bounds?Number(lower):null,bounds?Number(upper):null,event,label];
+  const point=[stamp,estimate,bounds?Number(lower):null,bounds?Number(upper):null,event,label,latest.sameDailyBounds];
   const history=saved?.day===day&&saved.zone===zone?saved:null;
   const groups=history?.groups || [], last=groups.at(-1)?.at(-1);
   const recorded=last && method==='range_midpoint_v1' && history.last_digest===source.source_sha256 && history.last_captured_at===source.captured_at &&
@@ -255,7 +288,9 @@ async function day(daily,headline,recent){
   const key=headline?.source&&daily?.before&&daily.after&&daily.through&&daily.day===headline.day&&daily.timezone===headline.zone ? JSON.stringify([daily.day,daily.timezone,daily.through.camera,daily.through.format_id,
     daily.before.source_sha256,daily.after.source_sha256,daily.before.event_id,daily.before.captured_at,daily.after.event_id,daily.after.captured_at]) : '';
   if(key!==identity){identity=key;generation++;saved=null;pending=false;due=0;$('day-history-status').textContent='';}
-  latest=headline;
+  latest=headline && {...headline,sameDailyBounds:Boolean(key) && headline.method==='range_midpoint_v1' && !['stale','partial_coverage'].includes(headline.status) &&
+    daily?.status!=='stale' && daily.through.event_id===headline.source.event_id && daily.through.source_sha256===headline.source.source_sha256 &&
+    daily.through.captured_at===headline.source.captured_at};
   recentWindow=null;
   // Accept the other published range only when its final source is also the
   // headline's exact event. Preserve microsecond ordering at slot boundaries.
@@ -291,15 +326,15 @@ async function day(daily,headline,recent){
     if(current===generation){pending=false;showDay();}
   }
 }
-function hour(period,zone){
+function hour(period,zone,midpoint){
   if(!period?.bins?.length){drawHour(null);return;}
   const groups=[],points=[];
   let group=null;
   for(const bin of period.bins){
-    const point=[Date.parse(bin.end),null,bin.lower==null?null:Number(bin.lower),bin.upper==null?null:Number(bin.upper),null,Date.parse(bin.start)];
+    const point=[Date.parse(bin.end),midpoint(bin),bin.lower==null?null:Number(bin.lower),bin.upper==null?null:Number(bin.upper),null,Date.parse(bin.start)];
     points.push(point);
-    if(point[3]==null){group=null;continue;}
-    if(!group){group=[];groups.push(group);}
+    if(point[1]==null){group=null;continue;}
+    if(!group || group.at(-1)[0]!==point[5]){group=[];groups.push(group);}
     group.push(point);
   }
   drawHour(groups,Date.parse(period.start),zone,JSON.stringify([zone,points]),null,null,null,points);

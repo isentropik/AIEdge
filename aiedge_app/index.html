@@ -20,6 +20,7 @@
         <p id="usage-time" class="usage-time"></p>
         <details id="daily-details" hidden><summary>Estimate details</summary>
           <p id="daily-event" class="source-data"></p><p id="daily-method" class="usage-context"></p>
+          <p>Across a gap, shading shows the possible cumulative use between the earlier lower bound and the later upper bound. The estimate line resumes at the next reading.</p>
         </details>
       </div>
     </div>
@@ -32,14 +33,19 @@
     <div class="hour-summary">
     <h2 id="recent-title">Recent gas use</h2>
     <label class="period-choice">Period <select id="usage-period"><option value="1">Last hour</option><option value="6">Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option></select></label>
-    <p id="usage-hour" class="usage-number">Waiting for a reading</p>
     <p id="hour-time" class="usage-time"></p>
+    <div class="recent-metric">
+      <p id="recent-metric-label">Gas use</p>
+      <p id="usage-hour" class="usage-number">Waiting for a reading</p>
+      <p id="recent-bounds" hidden></p>
+    </div>
     </div>
     <figure class="trend-figure" id="quarter-plot" hidden>
-      <figcaption><h3 id="period-bins">15-minute totals</h3><span class="trend-legend"><i class="line-key"></i>Lower <i class="upper-key"></i>Upper</span></figcaption>
+      <figcaption><h3 id="period-bins">15-minute totals</h3><span class="trend-legend"><i class="line-key"></i>Nominal <i class="shade-key"></i>Bounds</span></figcaption>
       <div id="hour-curve" class="trend-chart"></div><p id="hour-readout" class="trend-readout"></p>
     </figure>
     <details id="recent-details" hidden><summary>Amounts and measurement times</summary>
+      <p>Nominal use is the midpoint of the bounds for the selected period. Each chart point uses its own interval’s bounds.</p>
       <ol id="usage-quarters" aria-label="Gas usage by interval"></ol>
       <ol id="quarter-sources" aria-label="Source meter events"></ol>
     </details>

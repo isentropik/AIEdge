@@ -345,6 +345,16 @@ test('hour stops keep unknown hours empty, bound usage conservatively and distin
  assert.equal(chart.attributes['aria-valuemax'],4);
  key('Home');assert.match(label(),/0?1\.00–3\.00 ft³ used/);
  key('ArrowRight');assert.match(label(),/1:00 AM PDT.*1:00 AM PST.*2\.00–7\.00 ft³ used/);
+ const paths=chart.children[0].children;
+ const ribbon=paths.filter(n=>n.attributes.class==='plot-band');assert.equal(ribbon.length,1);
+ assert.equal(paths.filter(n=>n.attributes.class==='plot-estimate').length,3);
+ // From 2.01 to 4.1 h the possible total spans the earlier 6 and later 14.
+ // Both ends of that unmeasured interval must include its entire envelope.
+ const verts=[...ribbon[0].attributes.d.matchAll(/[ML]([\d.]+) ([\d.]+)/g)].map(m=>m.slice(1).map(Number));
+ const y=v=>293-281*v/20,x=h=>36+(500-48)*h/4.5;
+ for(const t of [2.01,4.1])for(const v of [6,14]){
+   assert(verts.some(([px,py])=>Math.abs(px-x(t))<.02&&Math.abs(py-y(v))<.02));
+ }
  key('ArrowRight');key('ArrowRight');assert.match(label(),/Hourly range unavailable/);
  assert.match(chart.attributes['aria-valuetext'],/No meter reading/);
  key('End');assert.match(label(),/1\.00–10\.00 ft³ used/);assert.equal(chart.dataset.endEvent,'9');
@@ -379,10 +389,16 @@ test('the daily chart follows the displayed publication through delayed history,
  answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2,1]);
  ui.render({daily:range(8),daily_nominal:nominal(9,5)});assertEnd(9);
  assert.match(ui.get('day-readout').textContent,/5.00 ft³ estimated/);assert.equal(reads,1);
+ // The independent nominal is a separate point until its own daily range is linked.
+ assert.equal(paths('plot-band').length,2);
  const partial={...nominal(10,7),method:'observed_increments',status:'partial_coverage',lower_ft3:null,upper_ft3:null};
  ui.render({daily:range(8),daily_nominal:partial});assertEnd(10);assert.deepEqual(lengths(),[1,2,1]);
  assert.match(ui.get('day-readout').textContent,/7.00 ft³ estimated · Partial coverage$/);
- assert.equal(paths('plot-band').length,2);
+ assert.equal(paths('plot-band').length,1);
+ // Earlier bounded readings share a ribbon; the isolated partial estimate remains outside it.
+ const ribbonX=paths('plot-band')[0].attributes.d.match(/(?:M|L)([\d.]+)/g).map(v=>Number(v.slice(1)));
+ const partialX=Number(paths('plot-estimate').at(-1).attributes.d.slice(1).split(' ')[0]);
+ assert(Math.max(...ribbonX)<partialX);
  data=history(8);now+=125000;
  ui.render({daily:{...range(8),status:'stale',checked_through:source(15)},daily_nominal:nominal(6,4)});
  answer();await tick();assertEnd(8);assert.deepEqual(lengths(),[1,2]);
@@ -402,6 +418,24 @@ test('the daily chart follows the displayed publication through delayed history,
  ui.render({});assert.equal(chart.dataset.endTime,undefined);
 });
 
+test('contradictory daily bounds leave a break in both the line and its ribbon',async()=>{
+ const day='2026-11-20',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
+ const source=id=>({camera:'meter',format_id:'dial',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),captured_at:new Date(midnight+id*60000).toISOString()});
+ const before=source(1),after=source(2),through=source(9);
+ const daily={day,timezone,before,after,through,lower:5,upper:7,label:'5–7 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:6}};
+ const groups=[[[midnight+180000,12,10,14,3]],[[Date.parse(through.captured_at),6,5,7,9]]];
+ const ui=gasOverview(async()=>response({day,zone:timezone,midnight,groups,status:'ready',last_digest:through.source_sha256,last_captured_at:through.captured_at,
+   identity:[day,timezone,'meter','dial',before.source_sha256,after.source_sha256,1,before.captured_at,2,after.captured_at]}));
+ ui.render({daily,daily_nominal:{...through,day,timezone,measured_at:through.captured_at,value_ft3:6,method:'range_midpoint_v1',lower_ft3:5,upper_ft3:7}});await tick();
+ const paths=ui.get('day-curve').children[0].children;
+ assert.equal(paths.filter(n=>n.attributes.class==='plot-estimate').length,2);
+ const ribbons=paths.filter(n=>n.attributes.class==='plot-band');assert.equal(ribbons.length,2);
+ for(const path of ribbons){
+   const xs=[...path.attributes.d.matchAll(/[ML]([\d.]+)/g)].map(m=>+m[1]);
+   assert.equal(new Set(xs).size,1);
+ }
+});
+
 test('absolute presentation rounds decimal text and preserves the source and outward bounds',()=>{
  const ui = gasOverview();
  const absolute_nominal = {event_id:31, measured_at:'2025-03-03T12:00:00Z',source_sha256:'1'.repeat(64),
@@ -413,7 +447,7 @@ test('absolute presentation rounds decimal text and preserves the source and out
  assert.equal(ui.get('absolute-bands').children[0].textContent,'1.00–1.01 ft³');
  assert.match(ui.get('absolute-status').textContent,/Partial/);
  ui.render({});
- assert.ok(ui.get('absolute-details').hidden);
+assert.ok(ui.get('absolute-details').hidden);
  assert.equal(ui.get('absolute-raw').textContent,'');
 });
 
@@ -436,9 +470,24 @@ test('clock buckets display a real zero, preserve missing amounts and reject a m
  const ui=gasOverview(async()=>response(result));ui.get('usage-period').value='1';
  ui.render({recent});await tick();
  assert.equal(ui.get('quarter-plot').hidden,false);
+ assert.equal(ui.get('usage-hour').textContent,'1.50 ft³');
+ assert.equal(ui.get('recent-bounds').textContent,'Bounds · 1.00–2.00 ft³');
+ assert.equal(ui.get('recent-metric-label').textContent,'Nominal use');
  assert.equal(ui.get('usage-quarters').children[0].children[1].textContent,'0.00–0.00 ft³');
  assert.equal(ui.get('usage-quarters').children[2].children[1].textContent,'Range unavailable');
- assert.equal(ui.get('hour-curve').children[0].children.filter(n=>n.attributes.class==='plot-estimate').length,2);
+ const chart=ui.get('hour-curve'),fig=chart.children[0].children;
+ assert.equal(fig.filter(n=>n.attributes.class==='plot-estimate').length,2);
+ assert.equal(fig.filter(n=>n.attributes.class==='plot-band').length,2);
+ assert.equal(fig.filter(n=>n.attributes.class==='plot-upper').length,0);
+ const key=k=>chart.onkeydown({key:k,preventDefault(){}});
+ key('Home');assert.match(ui.get('hour-readout').textContent,/0\.00 ft³ nominal · Bounds 0\.00–0\.00 ft³/);
+ key('ArrowRight');key('ArrowRight');assert.match(ui.get('hour-readout').textContent,/Range unavailable$/);
+ result.periods['1'].lower='58.18';result.periods['1'].upper='66.31';
+ ui.get('usage-period').value='1';ui.render({recent});
+ assert.equal(ui.get('usage-hour').textContent,'62.25 ft³');
+ result.periods['1'].upper=null;ui.render({recent});
+ assert.equal(ui.get('usage-hour').textContent,'At least 58.18 ft³ · partial coverage');
+ assert.equal(ui.get('recent-bounds').hidden,true);
  ui.render({recent:{...recent,quarters:recent.quarters.slice(1)}});assert.equal(ui.get('quarter-plot').hidden,true);
  result={...result,through:{...recent.through,source_sha256:'e'.repeat(64)}};
  ui.render({recent});await tick();assert.equal(ui.get('quarter-plot').hidden,true);
