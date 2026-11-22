@@ -1,3 +1,7 @@
+## 0.2.0-dev98
+
+Gas used today can recover earlier saved movement when the current accepted capture has no absolute meter bounds. Its measurement time stays with the last supported dial position.
+
 ## 0.2.0-dev97
 
 - Recover Gas used today from saved fine-dial movement when the nominal absolute register loses a candidate. Keep hourly measurement times, separate bounds and unknown capture gaps.
