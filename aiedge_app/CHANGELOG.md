@@ -1,3 +1,7 @@
+## 0.2.0-dev103
+
+- Plot saved fine-dial movement during partial coverage. Clip the trend at recorded gaps and show tracked movement for the selected window when bounded intervals predate recovery.
+
 ## 0.2.0-dev102
 
 - Estimate the absolute register from a verified photo and saved fine-dial movement. Show its bounds and measurement time separately. Preserve unknown usage across gaps.

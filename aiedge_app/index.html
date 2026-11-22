@@ -27,9 +27,9 @@
           <option value="6">Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option>
         </select></label>
       </figcaption>
-      <div class="trend-legend" aria-label="Chart legend">
+      <div id="chart-legend" class="trend-legend" aria-label="Chart legend">
         <span title="Cumulative estimate and range, left axis"><i class="total-key"></i><span id="total-key-label">Total · left</span></span>
-        <span title="Interval use and range, right axis"><i class="whisker-key"></i><span id="interval-key">Hourly use</span> · right</span>
+        <span id="use-series-key" title="Interval use and range, right axis"><i class="whisker-key"></i><span id="interval-key">Hourly use</span> · right</span>
         <span id="day-gap-key" hidden title="Break between published estimates"><i class="break-key"></i>History break</span>
       </div>
       <div class="plot-frame"><div id="day-curve" class="trend-chart"></div>
