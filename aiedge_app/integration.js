@@ -303,8 +303,9 @@ function renderAbsolute(absolute, zone) {
  const end = sourceOf(absolute);
  const match = /^(\d+)(\.\d+)?$/.exec(String(absolute?.value_ft3));
  const valid = end && match;
- $('absolute-value').textContent = valid ? displayedVolume(absolute.value_ft3, 1) + ' ft³' : 'Awaiting a meter reading';
- setOptional('absolute-status', valid ? {partial_coverage:'Partial coverage',held_at_last_reading:'Held at last measurement'}[absolute.status] || '' : '');
+ const coarse = valid && absolute.method === 'photo_register_hundreds' && absolute.resolution_ft3 === 100;
+ $('absolute-value').textContent = valid ? (coarse ? Number(absolute.value_ft3).toLocaleString() : displayedVolume(absolute.value_ft3, 1)) + ' ft³' : 'Awaiting a meter reading';
+ setOptional('absolute-status', coarse ? (absolute.status==='held_at_last_reading'?'Last photo reading · ':'')+'100 ft³ resolution' : valid ? {partial_coverage:'Partial coverage',held_at_last_reading:'Held at last measurement'}[absolute.status] || '' : '');
  setOptional('absolute-time', valid ? measuredLine(end, zone) : '');
  bindReading('absolute-value', valid && end, absolute?.value_ft3);
 }

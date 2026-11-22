@@ -3,7 +3,7 @@ import hashlib
 import json
 import sqlite3
 from contextlib import closing
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from daily_constraints import WorkLimit, bands, number
@@ -94,10 +94,60 @@ def transition(prior, obs, consumption, document):
                 clock_id=source['clock_id'], tick=source['monotonic_us']), None
 
 
+def photo_projection(prior, record, reason, snapshot, now, max_age):
+    """Keep the independent whole-hundreds observation out of movement accounting."""
+    old = (prior or {}).get('photo_register')
+    fine = record['state']
+    if old and (fine['event_id'] > old['event_id']
+                and datetime.fromisoformat(fine['measured_at']) > datetime.fromisoformat(old['measured_at'])
+                and (record['clock_id'] != old['clock_id'] or record['tick'] > old['monotonic_us'])
+                and number(fine['value_ft3']) >= number(old['value_ft3'])):
+        old = None
+    proof = snapshot.get('_photo_register')
+    if not proof or reason != 'no_qualified_reading':
+        return old, False
+    src = proof['source']
+    if (src != (snapshot.get('consumption') or {}).get('event_observation') or
+            src['format_id'] != record['format_id'] or
+            hashlib.sha256(src['camera'].encode()).hexdigest() != record['source_identity']):
+        return old, False
+    try:
+        stamp = datetime.fromisoformat(src['captured_at'])
+    except (TypeError, ValueError):
+        return old, False
+    if stamp.tzinfo is None or not 0 <= (now-stamp).total_seconds() <= max_age:
+        return old, False
+    value = proof['register_ft3']
+    if (type(value) is not int or value < 0 or value % 100 or proof['resolution_ft3'] != 100
+            or type(src.get('monotonic_us')) is not int or not src.get('clock_id')):
+        return old, False
+    if old and src['event_id'] == old['event_id']:
+        same = (src['source_sha256'], src['captured_at'], src['clock_id'], src['monotonic_us'], value)
+        expected = (old['source_sha256'], old['measured_at'], old['clock_id'], old['monotonic_us'], old['lower_ft3'])
+        return old, same == expected and old['event_id'] >= fine['event_id']
+    anchors = [(fine, record['clock_id'], record['tick'], max(number(b[1]) for b in fine['bands_ft3']))]
+    if old:
+        anchors.append((old, old['clock_id'], old['monotonic_us'], number(old['upper_exclusive_ft3'])))
+    rate = number(snapshot['format']['maximum_rate_per_second'])
+    for last, clock, tick, ceiling in anchors:
+        seconds = (stamp - datetime.fromisoformat(last['measured_at'])).total_seconds()
+        if clock == src['clock_id']:
+            seconds = min(seconds, (src['monotonic_us'] - tick) / 1_000_000)
+        if (src['event_id'] <= last['event_id'] or seconds <= 0 or value < number(last['value_ft3'])
+                or value > ceiling + rate * number(seconds)):
+            return old, False
+    return dict(value_ft3=str(value), lower_ft3=value, upper_exclusive_ft3=value+100, resolution_ft3=100,
+                event_id=src['event_id'], measured_at=src['captured_at'], source_sha256=src['source_sha256'],
+                method='photo_register_hundreds', status='photo_register', reference_sha256=proof['reference_sha256'],
+                clock_id=src['clock_id'], monotonic_us=src['monotonic_us'],
+                assumption='Register truncated to hundreds from this photo. Usage across gaps is unknown.'), True
+
+
 class AbsolutePublisher:
     def __init__(self, path):
         self.path = path
         self.sent = None
+        self.displayed = None
 
     def publish(self, output, obs, snapshot):
         key = output.config['unique_id']
@@ -109,11 +159,24 @@ class AbsolutePublisher:
             record, reason = transition(prior, obs, snapshot.get('consumption') or {}, snapshot['format'])
             if record is None:
                 return
+            coarse, fresh = photo_projection(prior, record, reason, snapshot, datetime.now(timezone.utc), max(90,getattr(output,'interval',0)*3))
+            record = dict(record)
+            if coarse:
+                record['photo_register'] = coarse
+            else:
+                record.pop('photo_register',None)
             if record != prior:
                 db.execute('INSERT OR REPLACE INTO nominal_register VALUES (?,?)', (key, json.dumps(record,allow_nan=False)))
         state = record['state']
         if reason:
             state = dict(state, status='held_at_last_reading', reason=reason)
-        if self.sent != (key, state):
-            output._publish(output.base+'/absolute_nominal', json.dumps(state,allow_nan=False), True)
-            self.sent = key, state
+        display = state
+        if coarse:
+            display = {k:v for k,v in coarse.items() if k not in ('clock_id','monotonic_us')}
+            if not fresh:
+                display['status'] = 'held_at_last_reading'
+        if self.displayed != (key, display):
+            output._publish(output.base+'/absolute_nominal', json.dumps(display,allow_nan=False), True)
+            self.displayed = key, display
+        # Daily movement uses only the original fine register and its own measurement time.
+        self.sent = key, state

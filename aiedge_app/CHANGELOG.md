@@ -1,3 +1,7 @@
+## 0.2.0-dev101
+
+- Recover the absolute gas register at 100 ft³ resolution when saved dial photographs independently resolve a coarse pointer across zero. Keep the measured time, last fine register and unknown consumption gaps separate.
+
 ## 0.2.0-dev100
 
 - Count partial daily usage from verified fine-dial movement when coarse register readings conflict. Preserve unobserved intervals and independent daily bounds.
