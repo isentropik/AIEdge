@@ -7,7 +7,7 @@ from event_observation_read import read_batch
 from observation_support import observed_rows
 
 
-def phases(db, start, end, document, source):
+def phases(db, start, end, document, source, *, same_clock=True):
     dial = min(document['dials'], key=lambda d: d['value_per_revolution'])
     turn = number(dial['value_per_revolution'])
     if 'position_error' not in dial or 'index' not in dial:
@@ -34,12 +34,15 @@ def phases(db, start, end, document, source):
                 if r.get('state') != 'estimated':
                     continue
                 obs = r['event_observation']
-                if any(obs.get(k) != source[k] for k in ('camera','format_id','clock_id')):
+                if any(obs.get(k) != source[k] for k in ('camera','format_id')) or (same_clock and obs.get('clock_id') != source['clock_id']):
                     continue
                 mask = observed_rows(r)
-                if len(mask) != len(document['dials']) or not mask[index]:
+                if len(mask) != len(document['dials']) or index >= len(mask) or not mask[index]:
                     continue
-                middle = number(r['dial_positions'][index]['position']) * turn / 10
+                row = r['dial_positions'][index]
+                if row.get('state') != 'estimated' or type(row.get('position')) not in (int, float) or not 0 <= row['position'] < 10:
+                    continue
+                middle = number(row['position']) * turn / 10
                 result[obs['event_id']] = (obs, (middle-error, middle+error))
         except (ValueError, ArithmeticError, KeyError, TypeError, IndexError):
             continue

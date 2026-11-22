@@ -440,6 +440,10 @@ test('the daily chart follows the displayed publication through delayed history,
  ui.render({daily:range(8)});answer();await tick();assertEnd(8);assert.deepEqual(knots(),[3,8]);assert(paths('plot-estimate').every(n=>!n.attributes.d.includes(' C')));
  ui.render({daily_nominal:{...partial,value_ft3:0}});assertEnd(10);assert.deepEqual(knots(),[10]);
  assert.match(chart.attributes['aria-valuetext'],/Total 0.00 ft³.*Partial coverage/);
+ ui.render({daily:range(8),daily_nominal:{...partial,method:'nominal_meter_movement_v1',coverage_started_at:source(3).captured_at}});
+ assert.match(ui.get('usage-assumption').textContent,/Partial coverage · Fine dial since/);
+ assert.match(ui.get('usage-bounds').textContent,/^Full-day range /);
+ assertEnd(10);
  ui.render({daily_nominal:{day,timezone,status:'opening_balance',value_ft3:'0.00'}});
  assert.equal(chart.dataset.endEvent,undefined);assert.equal(chart.hidden,true);
  assert.match(ui.get('usage-time').textContent,/Awaiting the first measurement/);

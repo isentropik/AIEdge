@@ -276,7 +276,17 @@ class NominalPublisher:
         lost_position = (meter or {}).get('reason') in (
             'no_continuous_candidate', 'whole_turn_unconfirmed', 'absolute_bounds_missing')
         record = None
-        if obs and store is not None and snapshot is not None and (recovering or lost_position):
+        optical = ('optical_cursor' in track and
+                   (prior['state']['day'], prior['state']['timezone']) == (today.isoformat(), zone))
+        if store is not None and snapshot is not None and (optical or obs is None):
+            from optical_daily import endpoint, replay
+            source = endpoint(snapshot, obs, optical, datetime.now(ZoneInfo(zone)), max(90, output.interval * 3))
+            if source:
+                record = replay(prior, full, today, zone, store, snapshot['format'], source)
+            if optical and record is None:
+                # The register cannot take over an independently anchored fine-dial series.
+                record = dict(prior, state=dict(prior['state'], status='held_at_last_reading')) if prior['state'].get('event_id') else prior
+        if record is None and obs and store is not None and snapshot is not None and (recovering or lost_position):
             from nominal_motion import recover
             record = recover(prior, obs, full, today, zone, store, snapshot)
         if record is None:
