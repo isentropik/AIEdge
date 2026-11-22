@@ -436,8 +436,10 @@ def run_service(stop_signals):
     from gas_trend import GasTrend
     from gas_periods import GasPeriods
     from meter_history import frame_ids
+    from chart_coverage import read_coverage
     trend=GasTrend(options['daily_history_entity'],meter_entity=options['meter_history_entity'],
-                   lookup=lambda camera,ids: frame_ids(store,camera,ids)) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
+                   lookup=lambda camera,ids: frame_ids(store,camera,ids),
+                   coverage=lambda daily,track,cache: read_coverage(store,daily,track,cache)) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
     periods=GasPeriods(options['recent_history_entity']) if trend else None
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend,periods))
     from lifecycle import ServiceRuntime
