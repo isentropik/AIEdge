@@ -150,7 +150,8 @@ def hundreds(profile, ref, img, doc, positions, indices):
     values = {int(edge // 100) * 100 for band in result["intervals"] for edge in band}
     if len(values) != 1:
         return None
-    return dict(register_ft3=values.pop(), resolution_ft3=100, fits=details)
+    return dict(register_ft3=values.pop(), resolution_ft3=100, fits=details,
+                bands_ft3=[[str(lo), str(hi)] for lo, hi in result["intervals"]])
 
 
 class PhotoRegister:

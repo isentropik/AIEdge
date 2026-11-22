@@ -1,3 +1,7 @@
+## 0.2.0-dev102
+
+- Estimate the absolute register from a verified photo and saved fine-dial movement. Show its bounds and measurement time separately. Preserve unknown usage across gaps.
+
 ## 0.2.0-dev101
 
 - Recover the absolute gas register at 100 ft³ resolution when saved dial photographs independently resolve a coarse pointer across zero. Keep the measured time, last fine register and unknown consumption gaps separate.
