@@ -1,10 +1,13 @@
 """Daily movement must survive coarse-register revisions without inventing a turn."""
 import json
 import sqlite3
+import tempfile
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace
 
 from nominal_motion import recover, step
 
@@ -76,6 +79,31 @@ class SavedMotionTests(unittest.TestCase):
         self.assertIsNone(self.replay(2))
         self.rows[3]['event_observation']['source_sha256']='f'*64
         self.assertIsNone(self.replay(3))
+
+    def test_publisher_recovers_history_when_current_absolute_bounds_are_missing(self):
+        from nominal_daily import NominalPublisher
+        self.anchor()
+        for key in ('dial_cursor', 'dial_motion', 'dial_from', 'dial_gaps'):
+            self.prior['movement'].pop(key, None)
+        self.add(2, [(100.4, 100.5)])
+        last = self.add(3, [])
+        obs = dict(last['event_observation'], segment_id=last['segment_id'])
+        output = SimpleNamespace(config={'unique_id': 'meter'}, base='test', _publish=lambda *args: None)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'checkpoint.sqlite'
+            with sqlite3.connect(path) as db:
+                db.execute('create table daily_nominal (identity text primary key, record text not null)')
+                db.execute('insert into daily_nominal values (?,?)', ('meter', json.dumps(self.prior)))
+            db.close()
+            for _ in range(2):
+                publisher = NominalPublisher(path)
+                publisher.publish(output, obs, None, self.midnight.date(), 'UTC',
+                                  {'reason': 'absolute_bounds_missing'}, store=self,
+                                  snapshot={'consumption': last, 'format': DOCUMENT})
+                result = publisher.record['state']
+                self.assertEqual((result['event_id'], result['value_ft3']), (2, '0.30'))
+                self.assertEqual(result['measured_at'], self.rows[2]['through_captured_at'])
+                self.assertEqual(result['status'], 'held_at_last_reading')
 
     def test_wrap_only_counts_supported_fraction(self):
         self.add(1,[(104.85,104.95)])

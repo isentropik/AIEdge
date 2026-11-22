@@ -273,7 +273,8 @@ class NominalPublisher:
                 prior = advance(prior,bound,None,today,zone,prior_meter)
         track = (prior or {}).get('movement') or {}
         recovering = ('dial_cursor' in track and (prior['state']['day'], prior['state']['timezone']) == (today.isoformat(), zone))
-        lost_position = (meter or {}).get('reason') in ('no_continuous_candidate', 'whole_turn_unconfirmed')
+        lost_position = (meter or {}).get('reason') in (
+            'no_continuous_candidate', 'whole_turn_unconfirmed', 'absolute_bounds_missing')
         record = None
         if obs and store is not None and snapshot is not None and (recovering or lost_position):
             from nominal_motion import recover
