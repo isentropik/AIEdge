@@ -246,9 +246,12 @@ function renderOverviewDaily(nominal, daily, meterBased=false) {
  const partial = nominal.partial_coverage === true || nominal.status === 'partial_coverage' || nominal.method === 'observed_increments';
  const stale = nominal.status === 'stale';
  const held = nominal.status === 'held_at_last_reading';
+ const since = Date.parse(nominal.coverage_started_at);
+ const fine = movement && partial && Number.isFinite(since) && since <= Date.parse(measured.captured_at);
  $('usage-estimate').textContent = displayedVolume(nominal.value_ft3, 2) + ' ft³';
  setOptional('usage-assumption', [previous ? 'Previous day’s estimate' : '', stale ? 'Stale' :
-   partial ? 'Partial coverage' : '', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
+   partial ? 'Partial coverage' : '', fine ? 'Fine dial since ' + new Date(since).toLocaleTimeString(undefined,
+     {timeZone:zone,hour:'numeric',minute:'2-digit'}) : '', held ? 'Last supported reading' : ''].filter(Boolean).join(' · '));
  setOptional('usage-time', measuredLine(measured, zone));
  const native = boundPair(nominal.lower_ft3, nominal.upper_ft3);
  const nativeSource = nominal.bounds_event_id ? sourceOf({event_id:nominal.bounds_event_id,
@@ -265,12 +268,13 @@ function renderOverviewDaily(nominal, daily, meterBased=false) {
     (+nominal.value_ft3<+boundsLow||+nominal.value_ft3>+boundsHigh)){
    bounds=bounds.replace(/^Range /,'Full-day range ');
  }
- setOptional('usage-bounds', bounds || (partial ? 'Partial coverage' : ''));
+ if (fine) bounds = bounds.replace(/^Range /, 'Full-day range ');
+ setOptional('usage-bounds', bounds || (partial && !fine ? 'Partial coverage' : ''));
  // Only bounds measured at the selected meter event belong to this plotted point.
  const matching = ranged && daily.day === day && daily.timezone === zone && sameEvent(end,measured);
  return {source:measured, day, zone, value:nominal.value_ft3,
-   lower:matching ? daily.lower : nativeMatches ? nominal.lower_ft3 : null,
-   upper:matching ? daily.upper : nativeMatches ? nominal.upper_ft3 : null,
+   lower:fine ? null : matching ? daily.lower : nativeMatches ? nominal.lower_ft3 : null,
+   upper:fine ? null : matching ? daily.upper : nativeMatches ? nominal.upper_ft3 : null,
    status:nominal.status, method:nominal.method};
 }
 

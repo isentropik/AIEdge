@@ -1,3 +1,7 @@
+## 0.2.0-dev100
+
+- Count partial daily usage from verified fine-dial movement when coarse register readings conflict. Preserve unobserved intervals and independent daily bounds.
+
 ## 0.2.0-dev99
 
 - Track observed fine-dial movement across zero and retain supported full-day limits when a later register turn conflicts. Unknown capture gaps stay recorded.
