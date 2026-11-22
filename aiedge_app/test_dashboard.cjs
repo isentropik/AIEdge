@@ -626,6 +626,29 @@ test('Today fills earlier hours only from an archive paired to the movement chec
  }
 });
 
+test('hourly meter curve uses real closes, clips ledger gaps and ignores missing MQTT publications',async()=>{
+ const day='2026-11-21',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z'),hour=3600000;
+ const src=(id,ms)=>({event_id:id,source_sha256:String(id).padStart(64,'0'),captured_at:new Date(midnight+ms).toISOString(),camera:'meter',format_id:'f'});
+ const before=src(1,-3000),after=src(2,1000),end=src(80,3*hour+2000);
+ const identity=[day,timezone,'meter','f',before.source_sha256,after.source_sha256,1,before.captured_at,2,after.captured_at];
+ const daily={day,timezone,before,after,through:end,lower:10,upper:18,label:'10–18 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:14}};
+ const points=[[midnight+1000,0,2,1],[midnight+4000,1,3,2],[midnight+hour-1000,2,20,3],
+   [midnight+2*hour-1000,7,43,11],[midnight+3*hour-1000,11,70,39],[midnight+3*hour+2000,13,80,40]];
+ const nominal={...end,measured_at:end.captured_at,day,timezone,value_ft3:'13',method:'nominal_meter_movement_v1',status:'partial_coverage'};
+ const gap=[midnight+hour+1000,midnight+hour+50000];
+ const capture_coverage={first:[2,midnight+1000],through:[80,midnight+3*hour+2000],gaps:[gap]};
+ const groups=[[[midnight+hour-1000,2,1,3,20]],[[midnight+3*hour-1000,11,9,13,70]]];
+ class Clock extends Date{constructor(...args){super(...(args.length?args:[midnight+3*hour+2000]));}static now(){return midnight+3*hour+2000;}}
+ const ui=gasOverview(async()=>response({status:'ready',identity,day,zone:timezone,midnight,groups,capture_coverage}),Clock);
+ ui.render({daily,daily_nominal:nominal,movement_history:{midnight,points}});await tick();
+ const host=ui.get('day-curve'),nodes=host.children[0].children;
+ const paths=nodes.filter(n=>n.attributes.class==='plot-estimate');
+ assert.equal(paths.length,1);assert.equal(paths[0].attributes.d.split(' C').length-1,4);
+ assert.equal(paths[0].attributes['clip-path'],'url(#meter-capture-coverage)');
+ assert.deepEqual(nodes.filter(n=>n.attributes.class==='plot-estimate-dot').map(n=>n.attributes['data-event']),[2,20,43,70,80]);
+ assert.deepEqual(nodes.filter(n=>n.attributes.class==='plot-history-gap').map(n=>[n.attributes['data-from'],n.attributes['data-to']]),[gap]);
+});
+
 test('movement headline and chart stay on their meter event when range-only publications change',async()=>{
  const day='2026-11-21',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
  const src=id=>({camera:'meter',format_id:'profile',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),

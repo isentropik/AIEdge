@@ -203,6 +203,31 @@ function trendPaths(run,x,y,band=true,line=true){
   return {lines,bands};
 }
 
+// A displayed knot is always an actual meter event. Keep the first and last
+// event of each basis and the final observation of each elapsed clock hour.
+function meterRuns(points,midnight,verified){
+  const runs=[];
+  let prev,run,bucket,firstInRun;
+  for(const p of points){
+    const hour=Math.floor((p[0]-midnight)/3600000);
+    const reset=!prev || typeof prev[3]!==typeof p[3] || hour>bucket+1 ||
+      p[0]<=prev[0] || p[2]<=prev[2] || p[1]<prev[1];
+    if(reset){run=[];runs.push(run);firstInRun=true;}
+    if(!reset && hour===bucket && !firstInRun)run.pop();
+    run.push([p[0],p[1],p[1],p[1],p[2],p[3]]);
+    firstInRun=reset;
+    prev=p;bucket=hour;
+  }
+  if(verified)return runs;
+  return runs.flatMap(run=>{
+    const out=[];
+    for(const p of run){
+      if(!out.length||out.at(-1).at(-1)[5]!==p[5])out.push([]);
+      out.at(-1).push(p);
+    }
+    return out;
+  });
+}
 function chart(){
   const host=$('day-curve'),tip=$('day-tip');
   const title=$('day-tip-title'),amount=$('day-tip-amount'),note=$('day-tip-note');
@@ -261,6 +286,8 @@ function chart(){
       const max=Math.max(step,Math.ceil(peak/step)*step);
       return {step,max,y:v=>bottom-(bottom-top)*v/max};
     }
+    const totalLabel=$('total-key-label');
+    if(totalLabel)totalLabel.textContent=model.movement?'Hourly total trend · left':'Total · left';
     const total=scale(Math.max(0,...points.map(p=>p[3]??p[1]??0),...(model.movement||[]).map(p=>p[1])));
     const intervals=model.stops.filter(s=>s.range);
     const usage=scale(Math.max(0,...intervals.map(s=>s.range[1])));
@@ -281,8 +308,26 @@ function chart(){
     }
     const runs=model.rolling?groups:hourlyRuns(groups,model.rangeStops);
     const lines=[];
+    let coverageClip=null;
+    if(model.coverage){
+      // Clip the hourly guide at the exact stored capture times. A gap does
+      // not change the shape on either side, or manufacture an extra knot.
+      coverageClip=svg('clipPath',{id:'meter-capture-coverage',clipPathUnits:'userSpaceOnUse'});
+      let from=Math.max(start,model.coverage.first[1]);
+      const until=Math.min(end,model.coverage.through[1]);
+      function span(to){
+        if(to>from)coverageClip.append(svg('rect',{x:x(from),y:0,width:x(to)-x(from),height:h}));
+      }
+      for(const [a,b] of model.coverage.gaps){
+        if(b<=from||a>=until)continue;
+        span(Math.min(a,until));from=Math.max(from,b);
+      }
+      span(until);
+      const defs=svg('defs');defs.append(coverageClip);nodes.push(defs);
+    }
     function drawRun(run,band,line){
       const trend=trendPaths(run,x,y,band,line);
+      if(coverageClip)for(const path of [...trend.lines,...trend.bands])path.setAttribute('clip-path','url(#meter-capture-coverage)');
       nodes.push(...trend.bands);lines.push(...trend.lines);
       if(line)for(const p of run)if(p[4]!=null&&p[1]!=null)lines.push(svg('circle',{
         cx:x(p[0]),cy:y(p[1]),r:p[0]===end?2.7:1.8,class:'plot-estimate-dot','data-event':p[4]
@@ -290,37 +335,16 @@ function chart(){
     }
     for(const run of runs)drawRun(run,true,!model.movement);
     if(model.movement){
-      // Many short, source-verified runs share one SVG path. Hourly labels still
-      // inspect the actual close; an M command leaves each missing span open.
-      const historic=[], closes=new Map();
-      let lastHistoric=null;
-      for(const p of model.movement){
-        if(typeof p[3]!=='string')continue;
-        const coords=x(p[0])+','+y(p[1]);
-        historic.push(lastHistoric?.[3]===p[3]?'L'+coords:'M'+coords+'h0');
-        closes.set(Math.floor((p[0]-start)/3600000),p);
-        lastHistoric=p;
-      }
-      if(historic.length){
-        lines.push(svg('path',{d:historic.join(' '),class:'plot-estimate plot-meter-history','stroke-linecap':'round'}));
-        for(const p of new Set([model.movement[0],...closes.values()]))lines.push(svg('circle',{
-          cx:x(p[0]),cy:y(p[1]),r:1.8,class:'plot-estimate-dot','data-event':p[2]}));
-      }
-      let run=[],prior;
-      for(const p of model.movement){
-        if(typeof p[3]==='string')continue;
-        if(prior&&(p[3]!==prior[3]||Math.floor((p[0]-start)/3600000)-Math.floor((prior[0]-start)/3600000)>1)){
-          drawRun(run,false,true);run=[];
-        }
-        run.push([p[0],p[1],p[1],p[1],p[2]]);prior=p;
-      }
-      if(run.length)drawRun(run,false,true);
+      for(const run of meterRuns(model.movement,start,!!model.coverage))drawRun(run,false,true);
     }
     {
-      $('day-gap-key').hidden=!model.gaps.length;
+      const gapKey=$('day-gap-key');
+      gapKey.hidden=!model.gaps.length;
+      gapKey.title=model.coverage?'Interruption in saved captures or meter tracking':'Break between published estimates';
+      if(gapKey.lastChild?.nodeType===3)gapKey.lastChild.textContent=model.coverage?'Reading gap':'History break';
       for(const [from,to] of model.gaps){
         nodes.push(svg('line',{class:'plot-history-gap',x1:x(from),x2:x(to),y1:bottom+2,y2:bottom+2,
-          stroke:'var(--series)','stroke-width':3,'stroke-linecap':'round','data-from':from,'data-to':to}));
+          stroke:'var(--series)','stroke-width':3,'stroke-linecap':model.coverage?'butt':'round','data-from':from,'data-to':to}));
       }
     }
     nodes.push(...lines);
@@ -368,7 +392,7 @@ function chart(){
     if(next!==undefined){e.preventDefault();pick(next);}
   });
   new ResizeObserver(()=>{if(host.clientWidth!==drawnWidth)draw();}).observe(host);
-  return function update(groups, start, zone, key, empty, midnight, recent, clockBins, gaps=[], hourly=null, movement=null) {
+  return function update(groups, start, zone, key, empty, midnight, recent, clockBins, gaps=[], hourly=null, movement=null, coverage=null) {
     if(!groups?.length&&!clockBins?.length){
       model=null; chosen=null; graphic.replaceChildren(); host.hidden=true;
       hide();active=-1;cursor=null;dot=null;drawnWidth=0;
@@ -387,7 +411,7 @@ function chart(){
       return {...stop,point:p?[p[0],p[1],same?stop.point[2]:null,same?stop.point[3]:null,p[2]]:null};
     }):rangeStops;
     const points=clockBins?stops.map(s=>s.point||[s.to,null,null,null]):groups.flat();
-    model={groups,points,stops,rangeStops,movement,start,zone,key,rolling:!!clockBins,gaps,loadingHistory:empty==='loading'};
+    model={groups,points,stops,rangeStops,movement,coverage,start,zone,key,rolling:!!clockBins,gaps,loadingHistory:empty==='loading'};
     host.hidden=false; host.tabIndex=0;
     host.setAttribute('role','slider');
     host.setAttribute('aria-label','Inspect gas use by interval');
@@ -398,7 +422,7 @@ function chart(){
 const drawDay=chart();
 let selection='today',rolling=null,activeSelection=null;
 let dayView=null;
-let identity='', saved=null, lastRangeSource=null, generation=0, due=0, pending=false, latest=null, recentWindow=null;
+let identity='', saved=null, lastRangeSource=null, generation=0, due=0, lastAttempt=0, pending=false, latest=null, recentWindow=null;
 function showDay(){
   const host=$('day-curve');
   const source=latest?.source;
@@ -443,7 +467,8 @@ function showDay(){
   // Conflicting or out-of-order publications remain isolated until the recorder confirms them.
   if(!recorded&&last&&(last[0]>=stamp||last[4]>=event||stamp-last[0]>=660000))point[6]=false;
   const visible=recorded ? [...groups.slice(0,-1),[...groups.at(-1).slice(0,-1),point]] : [...recordedGroups,[point]];
-  const gaps=recordedGroups.slice(1).map((group,i)=>[recordedGroups[i].at(-1)[0],group[0][0]]);
+  const coverage=tracksMeter?history?.capture_coverage:null;
+  const gaps=tracksMeter?(coverage?.gaps||[]).filter(([a,b])=>a<stamp&&b>a).map(([a,b])=>[a,Math.min(b,stamp)]):recordedGroups.slice(1).map((group,i)=>[recordedGroups[i].at(-1)[0],group[0][0]]);
   let movement=null, midnight=history?.midnight, handoff=null;
   if(tracksMeter){
     const archive=latest.movement, tail=archive?.points?.at(-1);
@@ -472,7 +497,7 @@ function showDay(){
       hourly.set(Date.parse(b.start),{end:Date.parse(b.end),range});
     }
   }
-  drawDay(visible,midnight??stamp,zone,key,!history||history.refreshing&&!history.meter_prefix?'loading':null,midnight,recentWindow,null,gaps,hourly,movement);
+  drawDay(visible,midnight??stamp,zone,key,!history||history.refreshing&&!history.meter_prefix?'loading':null,midnight,recentWindow,null,gaps,hourly,movement,coverage);
 
 }
 async function day(daily,headline,recent){
@@ -505,7 +530,10 @@ async function day(daily,headline,recent){
       recentWindow=fields;
     }
   }
-  if(!key||pending||Date.now()<due){showDay();return;}
+  const newerCoverage=selection==='today' && saved?.capture_coverage && saved.status==='ready' &&
+    headline?.movement?.points?.at(-1)?.[2]>saved.capture_coverage.through[0] && Date.now()-lastAttempt>=30000;
+  if(!key||pending||Date.now()<due&&!newerCoverage){showDay();return;}
+  lastAttempt=Date.now();
   const current=generation;pending=true; showDay();
   try{
     const res=await fetch('api/gas-trend',{cache:'no-store',signal:AbortSignal.timeout(6000)});

@@ -123,7 +123,11 @@ def load_day(fetch, entity, daily, cached):
 
 
 class GasTrend:
-    def __init__(self, entity=DEFAULT_ENTITY, fetch=recorder, *, meter_entity=None, lookup=None):
+    def __init__(self, entity=DEFAULT_ENTITY, fetch=recorder, *, meter_entity=None, lookup=None, coverage=None):
+        self.read_coverage = coverage
+        self.coverage = None
+        self.coverage_busy = False
+        self.coverage_retry = 0
         self.meter_entity, self.lookup = meter_entity, lookup
         self.prefix_key = self.prefix = None
         self.prefix_busy = False
@@ -144,6 +148,7 @@ class GasTrend:
         with self.lock:
             if self.key != key:
                 self.key, self.result, self.next_read = key, None, 0
+                self.coverage, self.coverage_retry = None, 0
             if not self.busy and monotonic() >= self.next_read:
                 self.busy = True
                 Thread(target=self._read, args=(key,daily,self.result), daemon=True).start()
@@ -163,12 +168,42 @@ class GasTrend:
                     result['refreshing'] = True
             else:
                 self.prefix_key = self.prefix = None
+            if self.read_coverage and track and track.get('points'):
+                target=max(daily['through']['event_id'],track['points'][-1][2])
+                if (not self.coverage_busy and monotonic()>=self.coverage_retry and
+                        (not self.coverage or self.coverage['through'][0]<target)):
+                    self.coverage_busy=True
+                    Thread(target=self._coverage,args=(key,daily,track,self.coverage),daemon=True).start()
+                if self.coverage:
+                    result['capture_coverage']=self.coverage
+                    if not result.get('identity'):
+                        result.update(day=key[0],zone=key[1],identity=list(key),midnight=track['midnight'],groups=[])
+                if self.coverage_busy:result['refreshing']=True
             return result
+
+    def _coverage(self,key,daily,track,cached):
+        found=None
+        try:
+            found=self.read_coverage(daily,track,cached)
+        except (ValueError,OverflowError,TypeError,KeyError,sqlite3.Error,OSError):
+            pass
+        finally:
+            with self.lock:
+                if self.key==key:
+                    if found:self.coverage=found
+                    self.coverage_retry=monotonic()+(0 if found else 30)
+                self.coverage_busy=False
 
     def _backfill(self,key,daily,track):
         prefix = None
         try:
             prefix = rebuild(self.fetch,self.lookup,self.meter_entity,daily,track)
+            if prefix and self.read_coverage and prefix['points']:
+                points=prefix['points']
+                closes={}
+                for p in points:
+                    closes[(p[0]-track['midnight'])//3600000]=p
+                prefix=dict(prefix,points=[points[0],*(p for p in closes.values() if p is not points[0])])
         except (OSError,http.client.HTTPException,ValueError,TypeError,KeyError,ArithmeticError,sqlite3.Error):
             pass
         finally:

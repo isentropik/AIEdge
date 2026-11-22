@@ -1,3 +1,7 @@
+## 0.2.0-dev96
+
+Render the daily meter trend through its hourly observations, with independent bounds and breaks verified against stored capture continuity.
+
 ## 0.2.0-dev95
 
 Show saved meter movement back to the midnight bracket on the Today chart. Keep historical bounds independent and mark any change of estimate basis.
