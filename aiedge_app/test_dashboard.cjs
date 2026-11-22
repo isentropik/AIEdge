@@ -544,6 +544,19 @@ test('absolute presentation rounds decimal text and preserves the exact source',
  assert.equal(ui.get('absolute-value').dataset.fullValue,undefined);
 });
 
+test('photo register shows its hundred resolution and original time after a hold',()=>{
+ const ui=gasOverview();
+ const absolute_nominal={event_id:48, measured_at:'2025-03-03T12:01:03Z', source_sha256:'b'.repeat(64),
+   value_ft3:'20400', resolution_ft3:100, method:'photo_register_hundreds', status:'photo_register'};
+ ui.render({absolute_nominal});
+ assert.equal(ui.get('absolute-value').textContent,'20,400 ft³');
+ assert.equal(ui.get('absolute-status').textContent,'100 ft³ resolution');
+ assert.equal(ui.get('absolute-value').dataset.eventId,'48');
+ ui.render({absolute_nominal:{...absolute_nominal,status:'held_at_last_reading'}});
+ assert.match(ui.get('absolute-status').textContent,/Last photo reading/);
+ assert.equal(ui.get('absolute-value').dataset.measuredAt,absolute_nominal.measured_at);
+});
+
 test('historical segment precision is a display choice with the original measurement available',()=>{
  const ui = gasOverview();
  const historical = {value:0.123456789,event_id:8,captured_at:'2025-03-03T12:00:00Z',source_sha256:'2'.repeat(64),segment_started_at:'2025-03-03T09:00:00Z'};

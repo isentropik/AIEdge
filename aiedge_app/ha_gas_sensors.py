@@ -64,7 +64,7 @@ class GasSensors:
         self.reset_connection()
 
     def reset_connection(self):
-        self.absolute.sent = None
+        self.absolute.sent = self.absolute.displayed = None
         self.configured = False
         self.last = None
         self.previous_point = None

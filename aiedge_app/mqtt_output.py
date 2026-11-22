@@ -264,7 +264,7 @@ class MqttOutput:
         obs=fresh_range(snapshot,max(90,self.interval*3))
         if (snapshot.get("format") or {}).get("unit") == "ft3":
             self.gas_sensors.publish(self,snapshot,obs)
-            delivered = self.gas_sensors.absolute.sent
+            delivered = self.gas_sensors.absolute.displayed
             if self.overview_format and delivered and delivered[0] == self.config['unique_id']:
                 self.overview_absolute = self.overview_format, delivered[1]
         prior=self.last_acknowledged_estimate

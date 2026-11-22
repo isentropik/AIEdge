@@ -18,7 +18,7 @@ def capture_trial_context(setup,recognition,reading_format):
         if getattr(recognition,'observation_context',None):context['observation_context']=recognition.observation_context
         return context
 
-def publication_state(store,recognition,reading_format,consumption):
+def publication_state(store,recognition,reading_format,consumption,photo_register=None):
     # Capture events can share a JPEG. Match the exact accounting event, then
     # recheck admission so an older decision cannot borrow a newer timestamp.
     event,latest=store.publication_frame()
@@ -43,9 +43,12 @@ def publication_state(store,recognition,reading_format,consumption):
                                                     'estimated', 'within_noise', 'bounded', 'ambiguous')
                          and (after != event or accounted.get('event_id') != event
                               or accounted.get('state') in ('pending', 'recovering')))
-    return {'_raw_meter_reading':raw_reading if not blocked and after==event else None,
+    snapshot = {'_raw_meter_reading':raw_reading if not blocked and after==event else None,
             '_daily_publication_pending':daily_pending,'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
             '_publication_segment_id':accounted.get('segment_id') if accounted else None}
+    if photo_register is not None and consumption_public is not None:
+        snapshot['_photo_register'] = photo_register.check(snapshot, inference)
+    return snapshot
 
 def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None,gas_trend=None,gas_periods=None):
     from review_store import ReviewConflict
@@ -369,7 +372,9 @@ def run_service(stop_signals):
     if mqtt_enabled:
         from daily_mqtt import DailyPublisher
         from mqtt_output import MqttOutput
-        def publication_snapshot():return publication_state(store,recognition,reading_format,consumption)
+        from photo_register import PhotoRegister
+        photo_register=PhotoRegister(store,setup) if setup and options.get('mqtt_output_mode')=='gas_consumption' else None
+        def publication_snapshot():return publication_state(store,recognition,reading_format,consumption,photo_register)
         try:
             daily = DailyPublisher(store, options.get('daily_evidence_policy'),
                                    checkpoint=Path(args.data) / 'daily-supported-source.json')
