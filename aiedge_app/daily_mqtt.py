@@ -105,6 +105,31 @@ class DailyPublisher:
         self.next_refresh = 0
         self.last_good = None
 
+    def chart_sources(self, format_id, zone_name):
+        """Use the acknowledged day's checkpoint to locate historical chart data."""
+        saved = self.supported_source
+        if not saved or not zone_name or not format_id:
+            return {}
+        zone = ZoneInfo(zone_name)
+        day = saved.get('day', '')
+        today = datetime.now(zone).date().isoformat()
+        if (not day or day > today or saved.get('timezone') != zone_name
+                or (saved.get('through') or {}).get('format_id') != format_id
+                or saved.get('policy_sha256') != _source_digest(self.evidence_policy)):
+            return {}
+        # These are historical query anchors. They never refresh a sensor or imply
+        # a new measurement. Recent and daily calculations have different bases.
+        daily = {k:v for k,v in saved.items() if k in CHECKPOINT_FIELDS}
+        daily.update(historical_only=True, unknown_gaps_preserved=True)
+        policy = self.recent.policy
+        recent = dict(through=daily['through'], timezone=zone_name, unknown_gaps_preserved=True,
+                      constraint_assumptions=policy,
+                      constraint_basis='empirical_dial_and_household_capacity' if policy else 'saved_readings')
+        historical = dict(chart_period_reference=recent)
+        if day == today:
+            historical['chart_daily'] = daily
+        return historical
+
     def _retain_pending(self, snapshot, today, zone, now):
         previous = self.last_good
         if not previous:
@@ -123,7 +148,9 @@ class DailyPublisher:
         policy = self.evidence_policy
         capacity = (policy.get('capacity_cfh') if policy.get('format_id') == revision
                     and policy.get('pipeline_id') == document.get('pipeline_id') else None)
-        result = daily_range(rows, today, zone, document, revision, contexts, recovery_capacity_cfh=capacity)
+        from dial_travel import phases
+        result = daily_range(rows, today, zone, document, revision, contexts, recovery_capacity_cfh=capacity,
+                             read_phases=lambda *args: phases(db, *args))
         if policy and result.get('constraint_basis') != COARSE_BASIS:
             from daily_empirical import refine
             result = refine(db, rows, today, zone, document, result, policy, include_elapsed=False)

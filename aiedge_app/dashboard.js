@@ -2,6 +2,8 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const captureErrors={
+ ConnectionResetError:'Capture connection reset. The attempt is recorded as unknown.',
+ camera_connection_reset:'Capture connection reset. The attempt is recorded as unknown.',
  duplicate_camera_header:'Camera returned repeated capture metadata. The image was rejected.',
  invalid_camera_header:'Camera returned invalid capture metadata. The image was rejected.',
  invalid_image_length:'Camera returned an invalid image length or transfer format. The image was rejected.',

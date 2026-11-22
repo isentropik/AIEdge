@@ -208,11 +208,11 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 self.reply(result);return
             if route=='/api/gas-periods':
                 usage=mqtt_output.status().get('usage',{}) if mqtt_output and gas_periods else {}
-                self.reply(gas_periods.snapshot(usage.get('recent'),usage.get('daily')) if usage else {'status':'no_source'})
+                self.reply(gas_periods.snapshot(usage.get('recent'),usage.get('chart_period_reference') or usage.get('daily')) if usage else {'status':'no_source'})
                 return
             if route=='/api/gas-trend':
                 usage=mqtt_output.status().get('usage',{}) if mqtt_output and gas_trend else {}
-                self.reply(gas_trend.snapshot(usage.get('daily'),usage.get('movement_history')) if usage else {'status':'no_source'})
+                self.reply(gas_trend.snapshot(usage.get('daily') or usage.get('chart_daily'),usage.get('movement_history')) if usage else {'status':'no_source'})
                 return
             if route=='/api/overview':
                 # The gas cards use broker-acknowledged values already in memory.

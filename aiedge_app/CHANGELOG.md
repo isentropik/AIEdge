@@ -1,3 +1,9 @@
+## 0.2.0-dev99
+
+- Track observed fine-dial movement across zero and retain supported full-day limits when a later register turn conflicts. Unknown capture gaps stay recorded.
+- Recover from a reset with verified transport evidence on a later capture slot. An older reset requires a reviewed continuation.
+- Show the last measured interval during capture holds with its date and time.
+
 ## 0.2.0-dev98
 
 Gas used today can recover earlier saved movement when the current accepted capture has no absolute meter bounds. Its measurement time stays with the last supported dial position.

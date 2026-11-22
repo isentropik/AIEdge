@@ -17,17 +17,23 @@ REQUEST_POLICY='dev50-request-timeout-gap-policy-v1'
 STORAGE_POLICY='dev56-storage-gap-policy-v1'
 INTERRUPTION_POLICY='dev68-interrupted-capture-gap-policy-v1'
 
+RESET_POLICY='dev99-connection-reset-gap-v1'
+
 class RequestTimeout(ValueError):
     """Transport timeout while awaiting the response; execution remains unknown."""
-    def __init__(self):
+    def __init__(self, *, reset=False):
         self.evidence={'stage':'awaiting_response'}
-        super().__init__('camera_timeout')
+        super().__init__('camera_connection_reset' if reset else 'camera_timeout')
 
 def request_record(db,ident):
     row=db.execute('SELECT binding_sha256,context_sha256 FROM capture_request_timeouts WHERE attempt_id=?',(ident,)).fetchone()
     if not row:raise ValueError('request_timeout_evidence_missing')
-    if row[0]!=digest(continuation_binding(db,ident)):raise ValueError('request_timeout_binding_changed')
-    return {'stage':'awaiting_response'},row[1]
+    binding=continuation_binding(db,ident)
+    if row[0]!=digest(binding):raise ValueError('request_timeout_binding_changed')
+    evidence={'stage':'awaiting_response'}
+    if binding['attempt'][6]=='camera_connection_reset':
+        evidence['transport_error']='connection_reset'
+    return evidence,row[1]
 
 def recoverable_timeout(db):
     # Only a newly typed, durably committed timeout may rearm after restart.
@@ -51,10 +57,10 @@ def recoverable_timeout(db):
 
 class BodyTimeout(ValueError):
     """Only a timed-out JPEG body with complete, validated response metadata."""
-    def __init__(self,evidence):
+    def __init__(self,evidence, *, reset=False):
         validate_transfer_evidence(evidence)
         self.evidence=dict(evidence)
-        super().__init__('camera_timeout')
+        super().__init__('camera_connection_reset' if reset else 'camera_timeout')
 
 def validate_transfer_evidence(value):
     fields={'stage','expected_bytes','received_bytes','frame_id','captured_at','expected_sha256','clock_id','monotonic_us'}
@@ -81,7 +87,10 @@ def transfer_record(db,ident):
         return request_record(db,ident)
     try:evidence=json.loads(row[0]);validate_transfer_evidence(evidence)
     except (TypeError,ValueError):raise ValueError('transfer_evidence_invalid') from None
-    if row[1]!=digest(continuation_binding(db,ident)):raise ValueError('transfer_binding_changed')
+    binding=continuation_binding(db,ident)
+    if row[1]!=digest(binding):raise ValueError('transfer_binding_changed')
+    if binding['attempt'][6]=='camera_connection_reset':
+        evidence['transport_error']='connection_reset'
     return evidence,row[2]
 
 def transfer_review(db,first,context,ident):
@@ -212,7 +221,7 @@ def digest(value):return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 def continuation_binding(db,ident):
     row=db.execute('SELECT a.attempt_id,a.first_event,a.after_event_id,a.started_at,o.outcome,o.event_id,o.error,o.finished_at FROM continuous_capture_attempts a JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.attempt_id=?',(ident,)).fetchone()
-    if not row or row[4:6]!=('unknown',None) or row[6] not in ('camera_timeout','storage_low_space','capture_interrupted'):
+    if not row or row[4:6]!=('unknown',None) or row[6] not in ('camera_timeout','storage_low_space','capture_interrupted','camera_connection_reset','ConnectionResetError'):
         raise ValueError('continuation_requires_terminal_timeout')
     try:
         start,end=(datetime.fromisoformat(row[i]) for i in (3,7))
@@ -238,7 +247,7 @@ def accepted_continuations(db):
             if (saved['attempt_id']!=ident or saved['binding_sha256']!=binding
                     or binding!=digest(continuation_binding(db,ident))
                     or not approval or datetime.fromisoformat(at).tzinfo is None):raise ValueError()
-            if approval in (TRANSFER_POLICY,REQUEST_POLICY,INTERRUPTION_POLICY):
+            if approval in (TRANSFER_POLICY,REQUEST_POLICY,INTERRUPTION_POLICY,RESET_POLICY):
                 evidence,context_hash=transfer_record(db,ident)
                 if approval!=transfer_policy_for(evidence):raise ValueError()
                 if saved['context_sha256']!=context_hash:raise ValueError()
@@ -295,6 +304,9 @@ def continuation_review(db,first,context):
         else:raise ValueError('capture_recovery_ledger_invalid')
     if len(unknown)!=1 or not rows or rows[-1][0]!=unknown[0]:raise ValueError('continuation_requires_one_latest_unknown')
     ident=unknown[0];binding=continuation_binding(db,ident)
+    if (binding['attempt'][6]=='ConnectionResetError' and
+            db.execute('SELECT MAX(rowid) FROM failures').fetchone()[0]!=binding['failure_boundary'][0]):
+        raise ValueError('continuation_later_failure')
     last=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
     if last!=binding['attempt'][2]:raise ValueError('continuation_saved_event_conflict')
     count,invalid=rejection_streak(db,first,accepted|{ident})
@@ -316,7 +328,7 @@ def accept_continuation(db,first,context,request,camera_status,*,transfer_policy
     if not isinstance(request,dict) or set(request)!={'action','attempt_id','review_sha256','approval_reference'} or request['action']!='accept-gap-and-continue':raise ValueError('continuation_request_invalid')
     if not isinstance(request['approval_reference'],str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{8,160}',request['approval_reference']):raise ValueError('continuation_approval_reference_required')
     review=None
-    if request['approval_reference'] in (TRANSFER_POLICY,REQUEST_POLICY,INTERRUPTION_POLICY):
+    if request['approval_reference'] in (TRANSFER_POLICY,REQUEST_POLICY,INTERRUPTION_POLICY,RESET_POLICY):
         if not transfer_policy:raise ValueError('continuation_reserved_policy')
         review=transfer_review(db,first,context,request['attempt_id'])
         evidence,_=transfer_record(db,request['attempt_id'])
@@ -358,6 +370,7 @@ def recoverable_storage(db):
 
 
 def transfer_policy_for(evidence):
+    if evidence.get('transport_error')=='connection_reset':return RESET_POLICY
     return {'awaiting_response':REQUEST_POLICY,'jpeg_body':TRANSFER_POLICY,
             'interrupted_capture':INTERRUPTION_POLICY}[evidence['stage']]
 
