@@ -1,3 +1,7 @@
+## 0.2.0-dev97
+
+- Recover Gas used today from saved fine-dial movement when the nominal absolute register loses a candidate. Keep hourly measurement times, separate bounds and unknown capture gaps.
+
 ## 0.2.0-dev96
 
 Render the daily meter trend through its hourly observations, with independent bounds and breaks verified against stored capture continuity.

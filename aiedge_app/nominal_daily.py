@@ -139,6 +139,18 @@ def _with_bounds(record, full):
                 bounds_source_sha256=through['source_sha256']))
 
 
+def append_point(track, point):
+    ms, _, eid, _ = point
+    points = list(track['points'])
+    if not points or points[-1][2] != eid:
+        hour = (ms - track['midnight']) // 3600000
+        if len(points) > 1 and (points[-1][0] - track['midnight']) // 3600000 == hour:
+            points[-1] = point
+        else:
+            points.append(point)
+    track['points'] = points
+
+
 def advance(previous, obs, full, today, zone, meter=None):
     day = today.isoformat()
     state = (previous or {}).get('state') or {}
@@ -226,14 +238,7 @@ def advance(previous, obs, full, today, zone, meter=None):
     # Elapsed time distinguishes both occurrences of an hour on a fall-back day.
     ms = int(stamp.replace(microsecond=0).timestamp()) * 1000 + stamp.microsecond // 1000
     point = [ms, float(value), eid, track['group']]
-    points = list(track['points'])
-    if not points or points[-1][2] != eid:
-        hour = (ms - track['midnight']) // 3600000
-        if len(points) > 1 and (points[-1][0] - track['midnight']) // 3600000 == hour:
-            points[-1] = point
-        else:
-            points.append(point)
-    track['points'] = points
+    append_point(track, point)
     return _with_bounds(dict(state=new, anchor=None, movement=track), full)
 
 
@@ -244,7 +249,7 @@ class NominalPublisher:
         self.record = None
         self.sent = None
 
-    def publish(self, output, obs, full, today, zone, meter=None, prior_meter=None):
+    def publish(self, output, obs, full, today, zone, meter=None, prior_meter=None, *, store=None, snapshot=None):
         key = output.config['unique_id']
         if self.key != key:
             with closing(sqlite3.connect(self.checkpoint)) as db, db:
@@ -266,7 +271,15 @@ class NominalPublisher:
                 bound = dict(format_id=identity[0], segment_id=identity[1], segment_started_at=identity[2],
                              event_id=old['event_id'], captured_at=old['measured_at'], source_sha256=old['source_sha256'])
                 prior = advance(prior,bound,None,today,zone,prior_meter)
-        record = advance(prior, obs, full, today, zone, meter)
+        track = (prior or {}).get('movement') or {}
+        recovering = ('dial_cursor' in track and (prior['state']['day'], prior['state']['timezone']) == (today.isoformat(), zone))
+        lost_position = (meter or {}).get('reason') in ('no_continuous_candidate', 'whole_turn_unconfirmed')
+        record = None
+        if obs and store is not None and snapshot is not None and (recovering or lost_position):
+            from nominal_motion import recover
+            record = recover(prior, obs, full, today, zone, store, snapshot)
+        if record is None:
+            record = advance(prior, obs, full, today, zone, None if recovering else meter)
         if record != self.record:
             with closing(sqlite3.connect(self.checkpoint)) as db, db:
                 db.execute('INSERT OR REPLACE INTO daily_nominal VALUES (?,?)', (key, json.dumps(record, allow_nan=False)))

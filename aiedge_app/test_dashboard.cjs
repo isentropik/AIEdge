@@ -647,6 +647,15 @@ test('hourly meter curve uses real closes, clips ledger gaps and ignores missing
  assert.equal(paths[0].attributes['clip-path'],'url(#meter-capture-coverage)');
  assert.deepEqual(nodes.filter(n=>n.attributes.class==='plot-estimate-dot').map(n=>n.attributes['data-event']),[2,20,43,70,80]);
  assert.deepEqual(nodes.filter(n=>n.attributes.class==='plot-history-gap').map(n=>[n.attributes['data-from'],n.attributes['data-to']]),[gap]);
+ const dialGap=[midnight+2*hour+1200,midnight+2*hour+4200];
+ const delayed={...capture_coverage,through:[43,points[3][0]]};
+ const resumed=gasOverview(async()=>response({status:'ready',identity,day,zone:timezone,midnight,groups,capture_coverage:delayed}),Clock);
+ resumed.render({daily,daily_nominal:nominal,movement_history:{midnight,points,dial_from:[20,points[2][0]],dial_gaps:[gap,dialGap]}});await tick();
+ const drawn=resumed.get('day-curve').children[0].children;
+ assert.deepEqual(drawn.filter(n=>n.attributes.class==='plot-history-gap').map(n=>[n.attributes['data-from'],n.attributes['data-to']]),[gap,dialGap]);
+ const clips=drawn.find(n=>n.tagName==='defs'||n.children?.[0]?.attributes?.id==='meter-capture-coverage').children[0].children;
+ const lastDot=drawn.filter(n=>n.attributes.class==='plot-estimate-dot').at(-1);
+ assert(Math.abs(Number(clips.at(-1).attributes.x)+Number(clips.at(-1).attributes.width)-Number(lastDot.attributes.cx))<0.0001);
 });
 
 test('movement headline and chart stay on their meter event when range-only publications change',async()=>{
