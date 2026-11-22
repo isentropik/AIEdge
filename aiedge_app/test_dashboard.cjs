@@ -689,6 +689,48 @@ test('hourly meter curve uses real closes, clips ledger gaps and ignores missing
  assert(Math.abs(Number(clips.at(-1).attributes.x)+Number(clips.at(-1).attributes.width)-Number(lastDot.attributes.cx))<0.0001);
 });
 
+test('partial day plots anchored meter readings, clips each gap, and rejects expired rolling ranges',async()=>{
+ const day='2026-02-03',midnight=Date.parse(day+'T00:00Z'),minute=60000;
+ const points=[[610,0,10,0],[659,2,22,0],[719,4.1,43,1],[748,5.4,65,1]]
+   .map(([m,...rest])=>[midnight+m*minute,...rest]);
+ const first=points[0],tail=points.at(-1),gap=[midnight+680*minute,midnight+681*minute];
+ const from=[first[2],first[0]],prior={event_id:3,captured_at:new Date(midnight-3600000).toISOString(),
+   source_sha256:'3'.repeat(64),camera:'meter',format_id:'fmt',clock_id:'clock'};
+ const end=prior.captured_at,start=new Date(Date.parse(end)-3600000).toISOString();
+ const expired={start,end,minutes:15,bins:[{start,end,lower:1,upper:3,total_lower:1,total_upper:3}]};
+ const ref={timezone:'UTC',through:prior};
+ const result={...ref,status:'ready',history_available:true,periods:{'1':expired,'24':expired}};
+ const nominal={day,timezone:'UTC',value_ft3:'5.40',event_id:65,source_sha256:'9'.repeat(64),
+   measured_at:new Date(tail[0]).toISOString(),method:'nominal_meter_movement_v1',status:'partial_coverage'};
+ class Clock extends Date{constructor(...args){super(...(args.length?args:[tail[0]]));}static now(){return tail[0];}}
+ const ui=gasOverview(async()=>response(result),Clock),host=ui.get('day-curve'),filter=ui.get('usage-period');
+ const render=gaps=>ui.render({daily_nominal:nominal,chart_period_reference:ref,
+   movement_history:{midnight,points,dial_from:from,dial_gaps:gaps}});
+ const nodes=cls=>host.children[0].children.filter(n=>n.attributes.class===cls);
+ const select=async value=>{filter.value=value;filter.onchange();await tick();};
+ render([[midnight,first[0]],gap]);
+ assert.equal(nodes('plot-estimate').filter(p=>p.attributes.d.includes(' C')).length,1);
+ assert.deepEqual(nodes('plot-history-gap').map(p=>[p.attributes['data-from'],p.attributes['data-to']]),[gap]);
+ assert.equal(nodes('plot-estimate-dot')[0].attributes.cx,36);
+ assert.deepEqual(nodes('plot-estimate-dot').map(p=>p.attributes['data-event']),[10,22,43,65]);
+ assert.equal(ui.get('interval-key').textContent,'Tracked use');
+ assert.deepEqual(nodes('plot-usage-dot').map(n=>n.attributes['data-through-event']),[22,43,65]);
+ assert.equal(nodes('plot-whisker').length,0);
+ for(const [window,delta] of [['1','1.30'],['24','5.40']]){
+   await select(window);
+   assert.equal(host.dataset.endEvent,'65');
+   assert.equal(host.dataset.endTime,nominal.measured_at);
+   assert(ui.get('day-history-status').textContent.includes(delta+' ft³ tracked'));
+   assert.equal(nodes('plot-usage-dot').length,window==='1'?1:3);
+   assert.equal(nodes('plot-whisker').length,0);
+   assert.equal(nodes('plot-band').length,0);
+ }
+ await select('today');
+ render([[midnight,first[0]]]); // A missing interruption cannot authorize a connecting curve.
+ assert(!nodes('plot-estimate').some(p=>p.attributes['clip-path']));
+ assert(nodes('plot-estimate').length>=2);
+});
+
 test('movement headline and chart stay on their meter event when range-only publications change',async()=>{
  const day='2026-11-21',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
  const src=id=>({camera:'meter',format_id:'profile',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),

@@ -284,6 +284,7 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .trend-legend .total-key {height:9px;background:var(--band);border:none;border-radius:2px;position:relative;}
 .total-key::after {content:"";position:absolute;inset:3px 0 auto;border-top:2px solid var(--series);}
 .trend-legend .whisker-key {width:9px;height:12px;border:solid var(--interval);border-width:1px 0;position:relative;background:linear-gradient(var(--interval),var(--interval)) center / 1px 100% no-repeat;}
+.trend-legend [data-tracked="true"] .whisker-key {border:0;background:none;}
 .whisker-key::after {content:"";position:absolute;top:3px;left:2px;width:5px;height:5px;background:var(--interval);border-radius:50%;}
 .trend-legend .break-key {width:9px;border-width:3px;border-radius:2px;}
 .plot-whisker {stroke:var(--interval);stroke-width:1.6;}
