@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev94
+version: 0.2.0-dev95
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -36,6 +36,7 @@ options:
   event_selection_policy: {}
   daily_evidence_policy: {}
 schema:
+  meter_history_entity: str?
   daily_history_entity: str?
   recent_history_entity: str?
   daily_evidence_policy:

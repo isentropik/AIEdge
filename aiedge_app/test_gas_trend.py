@@ -71,7 +71,7 @@ class TrendTests(unittest.TestCase):
                 with urlopen(base+'/api/gas-trend',timeout=3) as response:
                     self.assertEqual(json.load(response),trend.snapshot.return_value)
                     self.assertEqual(response.headers['Cache-Control'],'no-store')
-                trend.snapshot.assert_called_once_with(current)
+                trend.snapshot.assert_called_once_with(current,None)
                 with urlopen(base+'/api/gas-periods',timeout=3) as response:
                     self.assertEqual(json.load(response),{'status':'loading'})
                     self.assertEqual(response.headers['Cache-Control'],'no-store')
