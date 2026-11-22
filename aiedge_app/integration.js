@@ -305,7 +305,10 @@ function renderAbsolute(absolute, zone) {
  const valid = end && match;
  const coarse = valid && absolute.method === 'photo_register_hundreds' && absolute.resolution_ft3 === 100;
  $('absolute-value').textContent = valid ? (coarse ? Number(absolute.value_ft3).toLocaleString() : displayedVolume(absolute.value_ft3, 1)) + ' ft³' : 'Awaiting a meter reading';
- setOptional('absolute-status', coarse ? (absolute.status==='held_at_last_reading'?'Last photo reading · ':'')+'100 ft³ resolution' : valid ? {partial_coverage:'Partial coverage',held_at_last_reading:'Held at last measurement'}[absolute.status] || '' : '');
+ const estimated = valid && absolute.method === 'photo_anchored_fine_dial';
+ const bounds = estimated && absolute.lower_ft3 != null && absolute.upper_ft3 != null && Number.isFinite(Number(absolute.lower_ft3)) && Number.isFinite(Number(absolute.upper_ft3));
+ setOptional('absolute-bounds', bounds ? 'Absolute bounds · '+displayedVolume(absolute.lower_ft3, 1)+'–'+displayedVolume(absolute.upper_ft3, 1)+' ft³' : '');
+ setOptional('absolute-status', estimated ? (absolute.status==='held_at_last_reading'?'Last supported estimate':'Estimate')+' · Photo + fine dial' : coarse ? (absolute.status==='held_at_last_reading'?'Last photo reading · ':'')+'100 ft³ resolution' : valid ? {partial_coverage:'Partial coverage',held_at_last_reading:'Held at last measurement'}[absolute.status] || '' : '');
  setOptional('absolute-time', valid ? measuredLine(end, zone) : '');
  bindReading('absolute-value', valid && end, absolute?.value_ft3);
 }

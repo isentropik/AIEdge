@@ -544,6 +544,20 @@ test('absolute presentation rounds decimal text and preserves the exact source',
  assert.equal(ui.get('absolute-value').dataset.fullValue,undefined);
 });
 
+test('photo-anchored absolute estimate keeps its own bounds, event and held time',()=>{
+ const ui=gasOverview();
+ const absolute_nominal={event_id:48, measured_at:'2025-03-03T12:01:03Z', source_sha256:'b'.repeat(64),
+   value_ft3:'20139.723',lower_ft3:'20129.6',upper_ft3:'20154.8',method:'photo_anchored_fine_dial',status:'estimated'};
+ ui.render({absolute_nominal});
+ assert.equal(ui.get('absolute-value').textContent,'20,139.7 ft³');
+ assert.equal(ui.get('absolute-bounds').textContent,'Absolute bounds · 20,129.6–20,154.8 ft³');
+ ui.render({absolute_nominal:{...absolute_nominal,status:'held_at_last_reading'}});
+ assert.match(ui.get('absolute-status').textContent,/Last supported estimate/);
+ assert.equal(ui.get('absolute-value').dataset.measuredAt,absolute_nominal.measured_at);
+ ui.render({});
+ assert.equal(ui.get('absolute-bounds').hidden,true);
+});
+
 test('photo register shows its hundred resolution and original time after a hold',()=>{
  const ui=gasOverview();
  const absolute_nominal={event_id:48, measured_at:'2025-03-03T12:01:03Z', source_sha256:'b'.repeat(64),

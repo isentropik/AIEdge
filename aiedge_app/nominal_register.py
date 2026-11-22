@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from daily_constraints import WorkLimit, bands, number
+from absolute_motion import project
 
 
 def next_value(previous, current, limit):
@@ -44,6 +45,8 @@ def transition(prior, obs, consumption, document):
             or any(source.get(k) != obs[k] for k in ('event_id','captured_at','source_sha256','format_id'))):
         return prior, 'unbound_reading'
     identity = hashlib.sha256(source['camera'].encode()).hexdigest()
+    if prior and not previous and (prior['source_identity'] != identity or prior['format_id'] != obs['format_id']):
+        return prior, 'meter_source_changed'
     try:
         current = bands(consumption, number(document['dials'][0]['value_per_revolution']))
     except (WorkLimit, ArithmeticError, ValueError, KeyError, TypeError):
@@ -98,6 +101,8 @@ def photo_projection(prior, record, reason, snapshot, now, max_age):
     """Keep the independent whole-hundreds observation out of movement accounting."""
     old = (prior or {}).get('photo_register')
     fine = record['state']
+    if not fine:
+        return old, False
     if old and (fine['event_id'] > old['event_id']
                 and datetime.fromisoformat(fine['measured_at']) > datetime.fromisoformat(old['measured_at'])
                 and (record['clock_id'] != old['clock_id'] or record['tick'] > old['monotonic_us'])
@@ -158,25 +163,41 @@ class AbsolutePublisher:
             prior = json.loads(row[0]) if row else None
             record, reason = transition(prior, obs, snapshot.get('consumption') or {}, snapshot['format'])
             if record is None:
-                return
-            coarse, fresh = photo_projection(prior, record, reason, snapshot, datetime.now(timezone.utc), max(90,getattr(output,'interval',0)*3))
+                proof = snapshot.get('_photo_register') or {}
+                source = proof.get('source') or {}
+                if not proof.get('bands_ft3') or not source.get('camera'):
+                    return
+                record = dict(state=None, format_id=source['format_id'],
+                              source_identity=hashlib.sha256(source['camera'].encode()).hexdigest())
+            now = datetime.now(timezone.utc)
+            max_age = max(90, getattr(output, 'interval', 0) * 3)
+            coarse, fresh = photo_projection(prior, record, reason, snapshot, now, max_age)
+            motion, current = project(prior, record, reason, snapshot, obs, getattr(output, 'daily', None), now, max_age)
             record = dict(record)
             if coarse:
                 record['photo_register'] = coarse
             else:
                 record.pop('photo_register',None)
+            if motion:
+                record['absolute_motion'] = motion
+            if not motion and not record['state']:
+                return
             if record != prior:
                 db.execute('INSERT OR REPLACE INTO nominal_register VALUES (?,?)', (key, json.dumps(record,allow_nan=False)))
         state = record['state']
-        if reason:
+        if state and reason:
             state = dict(state, status='held_at_last_reading', reason=reason)
         display = state
         if coarse:
             display = {k:v for k,v in coarse.items() if k not in ('clock_id','monotonic_us')}
             if not fresh:
                 display['status'] = 'held_at_last_reading'
+        if motion:
+            display = dict(motion['display'])
+            if not current:
+                display['status'] = 'held_at_last_reading'
         if self.displayed != (key, display):
             output._publish(output.base+'/absolute_nominal', json.dumps(display,allow_nan=False), True)
             self.displayed = key, display
         # Daily movement uses only the original fine register and its own measurement time.
-        self.sent = key, state
+        self.sent = (key, state) if state else None
