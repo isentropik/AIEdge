@@ -1,3 +1,7 @@
+## 0.2.0-dev95
+
+Show saved meter movement back to the midnight bracket on the Today chart. Keep historical bounds independent and mark any change of estimate basis.
+
 ## 0.2.0-dev94
 
 - Gas used today follows the accepted meter reading from a saved daily starting value. Changes to the uncertainty bounds have their own measurement time.

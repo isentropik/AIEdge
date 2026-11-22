@@ -226,8 +226,9 @@ function chart(){
       used=lo===0&&hi>0?'Up to '+number.format(hi)+' ft³ used':number.format((lo+hi)/2)+' ft³ used';
     }
     title.textContent=interval||clock(stop.to,model.zone,true);
-    amount.textContent=p?.[1]!=null?'Total '+number.format(p[1])+' ft³':'Total unavailable';
-    note.textContent=used;
+    amount.textContent=p?.[1]!=null?'Total '+number.format(p[1])+' ft³':model.movement?
+      (model.loadingHistory?'Loading saved total':'No verified total this hour'):'Total unavailable';
+    note.textContent=model.movement && p ? used+' · '+clock(p[0],model.zone,true) : used;
     host.setAttribute('aria-valuenow',i);
     const rangeText=(lo,hi)=>lo!=null&&hi!=null?number.format(lo)+'–'+number.format(hi)+' ft³':'';
     host.setAttribute('aria-valuetext',[title.textContent,amount.textContent,rangeText(p?.[2],p?.[3]),used,
@@ -289,8 +290,25 @@ function chart(){
     }
     for(const run of runs)drawRun(run,true,!model.movement);
     if(model.movement){
+      // Many short, source-verified runs share one SVG path. Hourly labels still
+      // inspect the actual close; an M command leaves each missing span open.
+      const historic=[], closes=new Map();
+      let lastHistoric=null;
+      for(const p of model.movement){
+        if(typeof p[3]!=='string')continue;
+        const coords=x(p[0])+','+y(p[1]);
+        historic.push(lastHistoric?.[3]===p[3]?'L'+coords:'M'+coords+'h0');
+        closes.set(Math.floor((p[0]-start)/3600000),p);
+        lastHistoric=p;
+      }
+      if(historic.length){
+        lines.push(svg('path',{d:historic.join(' '),class:'plot-estimate plot-meter-history','stroke-linecap':'round'}));
+        for(const p of new Set([model.movement[0],...closes.values()]))lines.push(svg('circle',{
+          cx:x(p[0]),cy:y(p[1]),r:1.8,class:'plot-estimate-dot','data-event':p[2]}));
+      }
       let run=[],prior;
       for(const p of model.movement){
+        if(typeof p[3]==='string')continue;
         if(prior&&(p[3]!==prior[3]||Math.floor((p[0]-start)/3600000)-Math.floor((prior[0]-start)/3600000)>1)){
           drawRun(run,false,true);run=[];
         }
@@ -369,7 +387,7 @@ function chart(){
       return {...stop,point:p?[p[0],p[1],same?stop.point[2]:null,same?stop.point[3]:null,p[2]]:null};
     }):rangeStops;
     const points=clockBins?stops.map(s=>s.point||[s.to,null,null,null]):groups.flat();
-    model={groups,points,stops,rangeStops,movement,start,zone,key,rolling:!!clockBins,gaps};
+    model={groups,points,stops,rangeStops,movement,start,zone,key,rolling:!!clockBins,gaps,loadingHistory:empty==='loading'};
     host.hidden=false; host.tabIndex=0;
     host.setAttribute('role','slider');
     host.setAttribute('aria-label','Inspect gas use by interval');
@@ -426,11 +444,16 @@ function showDay(){
   if(!recorded&&last&&(last[0]>=stamp||last[4]>=event||stamp-last[0]>=660000))point[6]=false;
   const visible=recorded ? [...groups.slice(0,-1),[...groups.at(-1).slice(0,-1),point]] : [...recordedGroups,[point]];
   const gaps=recordedGroups.slice(1).map((group,i)=>[recordedGroups[i].at(-1)[0],group[0][0]]);
-  let movement=null, midnight=history?.midnight;
+  let movement=null, midnight=history?.midnight, handoff=null;
   if(tracksMeter){
     const archive=latest.movement, tail=archive?.points?.at(-1);
     if(tail?.[2]===event&&tail[0]===stamp&&tail[1]===estimate){
-      movement=archive.points;
+      const prefix=history?.meter_prefix, first=archive.points[0];
+      if(prefix?.points?.length && prefix.anchor?.every((v,i)=>v===first[i]) && prefix.anchor.length===3 &&
+          prefix.points.at(-1)[0]<first[0] && prefix.points.at(-1)[2]<first[2]){
+        movement=prefix.points.concat(archive.points);
+        if(prefix.offset)handoff=first[0];
+      }else movement=archive.points;
       midnight=midnight??archive.midnight;
     }else movement=[[stamp,estimate,event,0]];
   }
@@ -438,7 +461,8 @@ function showDay(){
   if(selection!=='today'){showRolling();return;}
   activeSelection='today';host.dataset.endEvent=String(event);host.dataset.endTime=source.captured_at;
   $('interval-key').textContent='Hourly use';
-  $('day-history-status').textContent=saved?.status==='unavailable'?'Saved history · refresh delayed':'';
+  $('day-history-status').textContent=[handoff!=null?'Estimate basis changed at '+clock(handoff,zone):'',
+    saved?.status==='unavailable'?'Saved history · refresh delayed':''].filter(Boolean).join(' · ');
   const hourly=new Map();
   const exactMs=t=>!/[1-9]/.test((/\.(\d+)/.exec(t)?.[1]||'').slice(3));
   for(const b of periods?.periods?.['24']?.bins||[]){
@@ -448,7 +472,7 @@ function showDay(){
       hourly.set(Date.parse(b.start),{end:Date.parse(b.end),range});
     }
   }
-  drawDay(visible,midnight??stamp,zone,key,null,midnight,recentWindow,null,gaps,hourly,movement);
+  drawDay(visible,midnight??stamp,zone,key,!history||history.refreshing&&!history.meter_prefix?'loading':null,midnight,recentWindow,null,gaps,hourly,movement);
 
 }
 async function day(daily,headline,recent){

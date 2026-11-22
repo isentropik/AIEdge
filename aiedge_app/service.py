@@ -211,8 +211,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 self.reply(gas_periods.snapshot(usage.get('recent'),usage.get('daily')) if usage else {'status':'no_source'})
                 return
             if route=='/api/gas-trend':
-                daily=mqtt_output.status().get('usage',{}).get('daily') if mqtt_output and gas_trend else None
-                self.reply(gas_trend.snapshot(daily) if daily else {'status':'no_source'})
+                usage=mqtt_output.status().get('usage',{}) if mqtt_output and gas_trend else {}
+                self.reply(gas_trend.snapshot(usage.get('daily'),usage.get('movement_history')) if usage else {'status':'no_source'})
                 return
             if route=='/api/overview':
                 # The gas cards use broker-acknowledged values already in memory.
@@ -435,7 +435,9 @@ def run_service(stop_signals):
     retention = ImageRetention(store,archive,consumption) if store and archive and reviews else None
     from gas_trend import GasTrend
     from gas_periods import GasPeriods
-    trend=GasTrend(options['daily_history_entity']) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
+    from meter_history import frame_ids
+    trend=GasTrend(options['daily_history_entity'],meter_entity=options['meter_history_entity'],
+                   lookup=lambda camera,ids: frame_ids(store,camera,ids)) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
     periods=GasPeriods(options['recent_history_entity']) if trend else None
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend,periods))
     from lifecycle import ServiceRuntime

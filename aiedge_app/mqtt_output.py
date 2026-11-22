@@ -137,7 +137,7 @@ class MqttOutput:
             record = self.nominal.record or {}
             if record.get('movement') and result['usage'].get('daily_nominal') == record['state']:
                 movement = record['movement']
-                result['usage']['movement_history'] = dict(midnight=movement['midnight'], points=movement['points'])
+                result['usage']['movement_history'] = {k:movement[k] for k in ('midnight','points','format','first_meter')}
             policy = getattr(self.daily, 'evidence_policy', {}) or {}
             result['overview_policy'] = {k: policy[k] for k in ('capacity_cfh', 'slow_allowance_ft3') if k in policy}
             point = self.overview_history.latest(self.history_topic, self.overview_format)

@@ -5,6 +5,8 @@ import json
 import math
 import os
 import re
+import sqlite3
+from meter_history import rebuild
 from threading import Lock, Thread
 from time import monotonic
 from urllib.parse import quote, urlencode
@@ -121,14 +123,18 @@ def load_day(fetch, entity, daily, cached):
 
 
 class GasTrend:
-    def __init__(self, entity=DEFAULT_ENTITY, fetch=recorder):
+    def __init__(self, entity=DEFAULT_ENTITY, fetch=recorder, *, meter_entity=None, lookup=None):
+        self.meter_entity, self.lookup = meter_entity, lookup
+        self.prefix_key = self.prefix = None
+        self.prefix_busy = False
+        self.prefix_retry = 0
         self.entity, self.fetch = entity, fetch
         self.lock = Lock()
         self.key = self.result = None
         self.busy = False
         self.next_read = 0
 
-    def snapshot(self, daily):
+    def snapshot(self, daily, track=None):
         if not daily:
             return {'status':'no_source'}
         try:
@@ -141,7 +147,36 @@ class GasTrend:
             if not self.busy and monotonic() >= self.next_read:
                 self.busy = True
                 Thread(target=self._read, args=(key,daily,self.result), daemon=True).start()
-            return dict(self.result, refreshing=self.busy) if self.result else {'status':'loading'}
+            result = dict(self.result, refreshing=self.busy) if self.result else {'status':'loading'}
+            if self.lookup and track and track.get('points') and track.get('first_meter') and track.get('format'):
+                prefix_key = (key, track['midnight'], tuple(track['points'][0]), track['first_meter'], track['format'])
+                if self.prefix_key != prefix_key:
+                    self.prefix_key, self.prefix, self.prefix_retry = prefix_key, None, 0
+                if self.prefix is None and not self.prefix_busy and monotonic() >= self.prefix_retry:
+                    self.prefix_busy = True
+                    Thread(target=self._backfill,args=(prefix_key,daily,track),daemon=True).start()
+                if self.prefix is not None:
+                    if not result.get('identity'):
+                        result.update(day=key[0],zone=key[1],identity=list(key),midnight=track['midnight'],groups=[])
+                    result['meter_prefix'] = self.prefix
+                if self.prefix_busy:
+                    result['refreshing'] = True
+            else:
+                self.prefix_key = self.prefix = None
+            return result
+
+    def _backfill(self,key,daily,track):
+        prefix = None
+        try:
+            prefix = rebuild(self.fetch,self.lookup,self.meter_entity,daily,track)
+        except (OSError,http.client.HTTPException,ValueError,TypeError,KeyError,ArithmeticError,sqlite3.Error):
+            pass
+        finally:
+            with self.lock:
+                if key == self.prefix_key:
+                    self.prefix = prefix
+                    self.prefix_retry = monotonic()+900
+                self.prefix_busy = False
 
     def _read(self,key,daily,cached):
         result = None

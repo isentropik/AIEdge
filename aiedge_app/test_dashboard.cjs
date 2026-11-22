@@ -602,6 +602,30 @@ test('one plot switches windows immediately, keeps real zero whiskers and reject
  filter.value='today';filter.onchange();assert.equal(chart.hidden,true);
 });
 
+test('Today fills earlier hours only from an archive paired to the movement checkpoint',async()=>{
+ const day='2026-11-21',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z'),hour=3600000;
+ const src=(id,ms)=>({event_id:id,source_sha256:String(id).padStart(64,'0'),captured_at:new Date(midnight+ms).toISOString(),camera:'meter',format_id:'f'});
+ const before=src(1,-3000),after=src(2,1000),end=src(9,3*hour);
+ const daily={day,timezone,before,after,through:end,lower:10,upper:18,label:'10–18 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:14}};
+ const identity=[day,timezone,'meter','f',before.source_sha256,after.source_sha256,1,before.captured_at,2,after.captured_at];
+ const start=[midnight+2*hour,12,7,1],points=[start,[midnight+3*hour,13,9,2]];
+ const meter_prefix={points:[[midnight+1000,0,2,'h1'],[midnight+hour-1000,2,3,'h1']],anchor:start.slice(0,3),offset:4};
+ const nominal={...end,measured_at:end.captured_at,day,timezone,value_ft3:'13',method:'nominal_meter_movement_v1',status:'partial_coverage'};
+ class Clock extends Date{constructor(...args){super(...(args.length?args:[midnight+3*hour]));}static now(){return midnight+3*hour;}}
+ for(const match of [true,false]){
+  const ui=gasOverview(async()=>response({status:'ready',identity,day,zone:timezone,midnight,
+   groups:[[[midnight+hour-1000,7,5,9,3]]],meter_prefix:{...meter_prefix,anchor:match?meter_prefix.anchor:[start[0],11,7]}}),Clock);
+  ui.render({daily,daily_nominal:nominal,movement_history:{midnight,points}});await tick();
+  const host=ui.get('day-curve');host.onkeydown({key:'Home',preventDefault(){}});
+  assert.equal(ui.get('day-tip-amount').textContent,match?'Total 2.00 ft³':'No verified total this hour');
+  if(match){
+   assert(host.attributes['aria-valuetext'].includes('5.00–9.00'));
+   host.onkeydown({key:'ArrowRight',preventDefault(){}});
+   assert.equal(ui.get('day-tip-amount').textContent,'No verified total this hour');
+  }
+ }
+});
+
 test('movement headline and chart stay on their meter event when range-only publications change',async()=>{
  const day='2026-11-21',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
  const src=id=>({camera:'meter',format_id:'profile',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),
