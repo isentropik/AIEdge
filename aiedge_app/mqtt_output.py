@@ -131,6 +131,8 @@ class MqttOutput:
             result['overview_daily_method'] = 'nominal_meter_movement_v1'
             result['overview_connected'] = self.connected.is_set() and self.state != 'error'
             result['overview_timezone'] = os.environ.get('TZ')
+            if self.daily and (not result['usage'].get('daily') or not result['usage'].get('recent')):
+                result['usage'].update(self.daily.chart_sources(self.overview_format, result['overview_timezone']))
             for name, saved in (('daily_nominal', self.overview_daily), ('absolute_nominal', self.overview_absolute)):
                 if saved and saved[0] == self.overview_format:
                     result['usage'][name] = dict(saved[1])

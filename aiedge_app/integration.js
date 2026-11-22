@@ -128,6 +128,7 @@ function completeHour(recent) {
 }
 
 let periodSource=null, periodData=null, periodRequest=null, retryPeriods=0, family='', periodRevision=0, latestDaily=null;
+let savedPeriodReference=null;
 function periodFamily(ref){
  const s=ref?.through;
  if(!s||!ref.timezone)return '';
@@ -156,7 +157,7 @@ function nativeWindow(recent){
  return {start:hour.start.captured_at,end:hour.through.captured_at,minutes:15,bins};
 }
 function paintPeriod(){
- const selected=$('usage-period').value,ref=periodSource||latestDaily;
+ const selected=$('usage-period').value,ref=periodSource||savedPeriodReference||latestDaily;
  let data=null;
  if(compatible(periodData,ref)){
    const last=!(periodSource&&sameEvent(sourceOf(periodData.through),sourceOf(periodSource.through)));
@@ -169,8 +170,9 @@ function paintPeriod(){
  }
  window.AIEdgeCharts?.period(selected,data);
 }
-function renderRecent(recent,daily){
- const next=completeHour(recent)?recent:null,ref=next||daily;
+function renderRecent(recent,daily,reference=savedPeriodReference){
+ savedPeriodReference=reference;
+ const next=completeHour(recent)?recent:null,ref=next||reference||daily;
  const key=periodFamily(ref);
  if(key!==family){family=key;periodData=null;retryPeriods=0;}
  const today=$('usage-period').value==='today';
@@ -180,7 +182,7 @@ function renderRecent(recent,daily){
  if(!key||!(today?daily?.through?.clock_id:['1','6','12','24'].includes($('usage-period').value))||!['','#overview'].includes(location.hash)||periodRequest||Date.now()<retryPeriods)return;
  periodRequest=request('api/gas-periods').then(data=>{
    if(key!==family)return;
-   if(data.status==='ready'&&compatible(data,periodSource||latestDaily)){
+   if(data.status==='ready'&&compatible(data,periodSource||savedPeriodReference||latestDaily)){
      periodData=data;periodRevision++;paintPeriod();
      retryPeriods=Date.now()+(data.refreshing?3000:periodSource&&sameEvent(sourceOf(data.through),sourceOf(periodSource.through))&&data.history_available?120000:15000);
    }else retryPeriods=Date.now()+(data.status==='loading'?3000:15000);
@@ -257,6 +259,12 @@ function renderOverviewDaily(nominal, daily, meterBased=false) {
      (movement ? end.event_id > (nativeSource?.event_id ?? 0) || sameEvent(end,nativeSource) : sameEvent(end,measured)))) {
    bounds = 'Range ' + daily.label + (sameEvent(end, measured) ? '' : ' · ' + sourceLine(end, zone));
  }
+ const boundsLow=ranged&&daily.day===day?daily.lower:nominal.lower_ft3;
+ const boundsHigh=ranged&&daily.day===day?daily.upper:nominal.upper_ft3;
+ if(partial&&movement&&bounds&&boundPair(boundsLow,boundsHigh)&&
+    (+nominal.value_ft3<+boundsLow||+nominal.value_ft3>+boundsHigh)){
+   bounds=bounds.replace(/^Range /,'Full-day range ');
+ }
  setOptional('usage-bounds', bounds || (partial ? 'Partial coverage' : ''));
  // Only bounds measured at the selected meter event belong to this plotted point.
  const matching = ranged && daily.day === day && daily.timezone === zone && sameEvent(end,measured);
@@ -328,7 +336,8 @@ function render(state) {
  bindReading('usage-estimate', headline?.source, headline?.value);
  if (headline?.method==='nominal_meter_movement_v1') headline.movement=usage.movement_history;
  $('usage-estimate').title=headline?.method==='range_midpoint_v1'?'Estimate at the midpoint of the daily range':headline?.method==='nominal_meter_movement_v1'?'Starting estimate plus meter movement':'';
- if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily,other ? null : headline,completeHour(usage.recent)?usage.recent:null);
+ const currentHeadline = headline?.zone && headline.day === calendarDay(new Date(),headline.zone) ? headline : null;
+ if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily||usage.chart_daily,other ? null : currentHeadline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
    if (sourceOf(usage.daily_nominal)) setOptional('usage-assumption',[$('usage-assumption').textContent,'Last published'].filter(Boolean).join(' · '));
@@ -336,7 +345,7 @@ function render(state) {
  if (mqtt?.overview_connected === false || mqtt?.range_error) {
    if (sourceOf(usage.absolute_nominal)) setOptional('absolute-status',[$('absolute-status').textContent,'Last published'].filter(Boolean).join(' · '));
  }
- renderRecent(other?null:usage.recent,other?null:usage.daily);
+ renderRecent(other?null:usage.recent,other?null:usage.daily||usage.chart_daily,other?null:usage.chart_period_reference||null);
  renderResumed(usage.resumed);
  renderHistory(usage.historical, usage.daily, zone, mqtt?.overview_policy);
 }

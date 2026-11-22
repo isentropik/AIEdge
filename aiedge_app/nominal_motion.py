@@ -52,6 +52,48 @@ def step(previous, interval, turn, limit):
 
 
 def recover(prior, obs, full, today, zone, store, snapshot):
+    """Backfill the uncredited flat tail of a dev98 checkpoint once, in pages."""
+    track = (prior or {}).get('movement') or {}
+    state = (prior or {}).get('state') or {}
+    scratch = (prior or {}).get('phase_replay')
+    if (state.get('day'), state.get('timezone')) != (today.isoformat(), zone):
+        scratch = None
+    elif (scratch is None and track.get('dial_from') and not track.get('phase_version')
+            and state.get('event_id') and obs['event_id'] >= state['event_id']):
+        points = track.get('points') or []
+        idx = len(points)-1
+        while idx > 0 and number(points[idx-1][1]) == number(state['value_ft3']):
+            idx -= 1
+        if (idx < len(points)-1 and points[-1][2] == state['event_id'] and
+                number(points[-1][1]) == number(state['value_ft3'])):
+            point = points[idx]
+            with store.connect() as db:
+                def at(eid):
+                    return next(daily_records(db,eid,obs['event_id'],obs['segment_id'],stop_after=eid),None)
+                anchor, last = at(point[2]), at(state['event_id'])
+            if (anchor and last and last['source_sha256'] == state['source_sha256']
+                    and last['through_captured_at'] == state['measured_at']
+                    and anchor['format_id'] == last['format_id'] == track['format']
+                    and millis(datetime.fromisoformat(anchor['through_captured_at'])) == point[0]):
+                history = dict(track, points=points[:idx+1], group=point[3], dial_cursor=point[2],
+                               dial_gaps=[g for g in track.get('dial_gaps',[]) if g[1]<=point[0]],
+                               phase_version=2)
+                history.pop('dial_motion',None)
+                scratch = dict(movement=history, anchor=None,
+                               state=dict(state, event_id=point[2], measured_at=anchor['through_captured_at'],
+                                          source_sha256=anchor['source_sha256']))
+    if scratch is None:
+        return _recover(prior, obs, full, today, zone, store, snapshot)
+    result = _recover(scratch, obs, full, today, zone, store, snapshot)
+    if result is None:
+        return prior
+    new = result['state']
+    if (new.get('event_id',0) < state['event_id'] or number(new['value_ft3']) < number(state['value_ft3'])):
+        return dict(prior, phase_replay=result)
+    return result
+
+
+def _recover(prior, obs, full, today, zone, store, snapshot):
     from nominal_daily import MOVEMENT, _with_bounds, append_point, opening
 
     src = (snapshot['consumption'].get('event_observation') or {})
@@ -119,8 +161,12 @@ def recover(prior, obs, full, today, zone, store, snapshot):
                 or (not last and not pending and has_opening and any(anchor['event_observation'].get(k) != bracket.get(k)
                     for k in ('event_id','captured_at','source_sha256')))):
             return None
+        from dial_travel import phases
+        last_phase = track.get('dial_motion') or {}
+        begin = max(cursor - PAGE, min(cursor, last_phase.get('event', cursor)))
+        raw = phases(db, begin, stop, document, src)
         failures = {a for a, in db.execute('SELECT DISTINCT after_event_id FROM capture_failure_boundaries '
-                                          'WHERE after_event_id>=? AND after_event_id<?', (cursor, stop))}
+                                          'WHERE after_event_id>=? AND after_event_id<?', (begin, stop))}
         rows = list(daily_records(db, cursor, end, obs['segment_id'], stop_after=stop))
     previous = track.get('dial_motion')
     gaps = list(track.get('dial_gaps', []))
@@ -133,16 +179,46 @@ def recover(prior, obs, full, today, zone, store, snapshot):
             return None
         if previous and eid <= previous['event']:
             continue
-        phase = phase_band(row, document, dial)
+        observed = raw.get(eid)
+        if observed and observed[0] != source:
+            return None
+        phase = observed[1] if observed else phase_band(row, document, dial)
         if phase is None:
             continue
         identity = [row['segment_id'], source['clock_id'], source['context_id']]
         lifted = None
+        center = None
         if previous:
             elapsed = number((stamp - datetime.fromisoformat(previous['stamp'])).total_seconds())
             if elapsed <= 0:
                 continue
-            if (identity == previous['identity'] and eid == previous['event'] + 1
+            if (observed and identity == previous['identity'] and previous['event'] in raw
+                    and eid - previous['event'] <= PAGE):
+                # Accounting may reject a whole-turn assignment while the reader
+                # still observed the fine pointer. Require every intervening frame.
+                lifted = tuple(map(number, previous['interval']))
+                center = number(previous.get('center', sum(lifted) / 2))
+                old_source = raw[previous['event']][0]
+                for link in range(previous['event'] + 1, eid + 1):
+                    sample = raw.get(link)
+                    if not sample or link-1 in failures:
+                        lifted = None
+                        break
+                    new_source, interval = sample
+                    seconds = number((datetime.fromisoformat(new_source['captured_at']) -
+                                      datetime.fromisoformat(old_source['captured_at'])).total_seconds())
+                    ticks = new_source['monotonic_us'] - old_source['monotonic_us']
+                    if (new_source['context_id'] != source['context_id'] or
+                            old_source['context_id'] != source['context_id'] or not 0 < seconds < 660 or ticks <= 0):
+                        lifted = None
+                        break
+                    lifted = step(lifted, interval, turn, min(seconds, Decimal(ticks)/1000000)*rate)
+                    if lifted is None:
+                        break
+                    if center < lifted[0]:
+                        center = sum(lifted) / 2
+                    old_source = new_source
+            elif (identity == previous['identity'] and eid == previous['event'] + 1
                     and eid - 1 not in failures and elapsed < 11 * 60):
                 ticks = source['monotonic_us'] - previous['tick']
                 if ticks <= 0:
@@ -160,23 +236,28 @@ def recover(prior, obs, full, today, zone, store, snapshot):
                     gaps.append([left, millis(stamp)])
             base = number(previous['amount'] if previous else state['value_ft3'])
             low, high = phase
-            origin = high
+            center = (low+high)/2 if observed else None
+            origin = center if observed else high
         else:
             low, high = lifted
             base, origin = number(previous['base']), number(previous['origin'])
-        amount = base + max(Decimal(0), low - origin)
+        phase_value = low if center is None else center
+        amount = max(number(previous['amount']) if previous else base,
+                     base + max(Decimal(0), phase_value - origin))
         if previous is None:
-            track['dial_from'] = [eid, millis(stamp)]
+            track.setdefault('dial_from', [eid, millis(stamp)])
         previous = dict(event=eid, stamp=source['captured_at'], tick=source['monotonic_us'],
                         identity=identity, interval=[str(low),str(high)], base=str(base),
                         origin=str(origin), amount=str(amount))
+        if center is not None:
+            previous['center'] = str(center)
         value = str(amount.quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
         state = dict(state, method=MOVEMENT, assumption='Starting estimate plus supported fine-dial movement. Unknown gaps and optional turns add no usage.',
                      value_ft3=value, event_id=eid, source_sha256=source['source_sha256'],
                      measured_at=source['captured_at'], partial_coverage=track['partial'],
                      status='partial_coverage' if track['partial'] else 'meter_movement')
         append_point(track, [millis(stamp), float(value), eid, track['group']])
-    track.update(dial_motion=previous, dial_cursor=stop, dial_gaps=gaps)
+    track.update(dial_motion=previous, dial_cursor=stop, dial_gaps=gaps, phase_version=2)
     if not previous and not last:
         track['dial_opening'] = [start, anchor['source_sha256'], anchor['through_captured_at']]
     else:

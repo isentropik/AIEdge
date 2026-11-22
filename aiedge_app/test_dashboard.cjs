@@ -447,7 +447,7 @@ test('the daily chart follows the displayed publication through delayed history,
 });
 
 test('contradictory daily bounds leave a break in both the line and its ribbon',async()=>{
- const day='2026-11-20',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
+ const day=new Date().toISOString().slice(0,10),timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
  const source=id=>({camera:'meter',format_id:'dial',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),captured_at:new Date(midnight+id*60000).toISOString()});
  const before=source(1),after=source(2),through=source(9);
  const daily={day,timezone,before,after,through,lower:5,upper:7,label:'5–7 ft³',nominal_estimate:{method:'range_midpoint_v1',value_ft3:6}};

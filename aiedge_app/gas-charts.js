@@ -454,7 +454,8 @@ function showDay(){
   const periods=rolling?.compatibleWithDay&&(latest.sameDailyBounds||tracksMeter&&history)&&rolling.zone===zone&&
     (rolling.through.event_id<event&&Date.parse(rolling.through.captured_at)<stamp||
      rolling.through.event_id===event&&rolling.through.captured_at===source.captured_at&&rolling.through.source_sha256===source.source_sha256)?rolling:null;
-  const key=JSON.stringify([identity,history?.revision,latest,recentWindow,periods?.key]);
+  const loading=!history?.groups?.length && (pending || saved?.status==='loading');
+  const key=JSON.stringify([identity,history?.revision,latest,recentWindow,periods?.key,loading]);
   if(dayView?.key===key&&dayView.historyStatus===saved?.status){
     if(selection!=='today'){showRolling();return;}
     if(host.dataset.endEvent===String(event)&&activeSelection==='today')return;
@@ -505,7 +506,7 @@ function showDay(){
   activeSelection='today';host.dataset.endEvent=String(event);host.dataset.endTime=source.captured_at;
   $('interval-key').textContent='Hourly use';
   $('day-history-status').textContent=[handoff!=null?'Estimate basis changed at '+clock(handoff,zone):'',
-    saved?.status==='unavailable'?'Saved history · refresh delayed':''].filter(Boolean).join(' · ');
+    latest.savedOnly?'Last saved · '+clock(stamp,zone):saved?.status==='unavailable'?'Saved history · refresh delayed':''].filter(Boolean).join(' · ');
   const hourly=new Map();
   const exactMs=t=>!/[1-9]/.test((/\.(\d+)/.exec(t)?.[1]||'').slice(3));
   for(const b of periods?.periods?.['24']?.bins||[]){
@@ -515,7 +516,7 @@ function showDay(){
       hourly.set(Date.parse(b.start),{end:Date.parse(b.end),range});
     }
   }
-  drawDay(visible,midnight??stamp,zone,key,!history||history.refreshing&&!history.meter_prefix?'loading':null,midnight,recentWindow,null,gaps,hourly,movement,coverage);
+  drawDay(visible,midnight??stamp,zone,key,loading?'loading':null,midnight,recentWindow,null,gaps,hourly,movement,coverage);
 
 }
 async function day(daily,headline,recent){
@@ -528,7 +529,7 @@ async function day(daily,headline,recent){
     $('day-history-status').textContent='';
   }
   if(key)lastRangeSource={day:daily.day,zone:daily.timezone,event:daily.through.event_id,time:daily.through.captured_at,digest:daily.through.source_sha256};
-  latest=headline && {...headline,historyCompatible:Boolean(key)||sameSaved,sameDailyBounds:Boolean(key) && (headline.method==='nominal_meter_movement_v1' || headline.method==='range_midpoint_v1' && !['stale','partial_coverage'].includes(headline.status)) &&
+  latest=headline && {...headline,savedOnly:daily?.historical_only===true,historyCompatible:Boolean(key)||sameSaved,sameDailyBounds:Boolean(key) && (headline.method==='nominal_meter_movement_v1' || headline.method==='range_midpoint_v1' && !['stale','partial_coverage'].includes(headline.status)) &&
     daily?.status!=='stale' && daily.through.event_id===headline.source.event_id && daily.through.source_sha256===headline.source.source_sha256 &&
     daily.through.captured_at===headline.source.captured_at};
   recentWindow=null;
@@ -560,7 +561,7 @@ async function day(daily,headline,recent){
     if(current!==generation)return;
     if(JSON.stringify(data.identity)===key && Array.isArray(data.groups)&&(data.groups.length||!saved?.groups?.length)){
       saved={...data,revision:Date.now()};
-    }else if(data.status==='unavailable')saved={...saved,status:'unavailable'};
+    }else saved={...saved,status:data.status==='loading'?'loading':'unavailable'};
     due=Date.now()+(data.refreshing||data.status==='loading'?3000:data.status==='ready'?120000:30000);
   }catch{
     if(current!==generation)return;

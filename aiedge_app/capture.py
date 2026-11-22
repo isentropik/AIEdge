@@ -140,10 +140,10 @@ class Store:
                 import capture_recovery
                 capture_recovery.finish_transaction(db,attempt,outcome,error=error)
                 if request_timeout:
-                    if outcome!='unknown' or error!='camera_timeout' or context is None or transfer is not None:raise ValueError('request_timeout_invalid')
+                    if outcome!='unknown' or error not in ('camera_timeout','camera_connection_reset') or context is None or transfer is not None:raise ValueError('request_timeout_invalid')
                     db.execute('INSERT INTO capture_request_timeouts VALUES(?,?,?)',(attempt,capture_recovery.digest(capture_recovery.continuation_binding(db,attempt)),capture_recovery.digest(context)))
                 if transfer is not None:
-                    if outcome!='unknown' or error!='camera_timeout' or context is None:raise ValueError('transfer_failure_invalid')
+                    if outcome!='unknown' or error not in ('camera_timeout','camera_connection_reset') or context is None:raise ValueError('transfer_failure_invalid')
                     capture_recovery.validate_transfer_evidence(transfer)
                     db.execute('INSERT INTO capture_transfer_timeouts VALUES(?,?,?,?)',(attempt,
                         capture_recovery.canonical(transfer),capture_recovery.digest(capture_recovery.continuation_binding(db,attempt)),
@@ -289,7 +289,7 @@ class Camera:
                                 block=reads.read1(r,min(65536,remaining))
                                 if not block:raise ValueError('truncated_image')
                                 parts.append(block);remaining-=len(block)
-                    except (TimeoutError,socket.timeout):
+                    except (TimeoutError,ConnectionResetError) as exc:
                         # No image is admitted, and no POST is repeated. Only
                         # well-formed response provenance qualifies for the
                         # explicit body-timeout gap policy in the collector.
@@ -300,8 +300,8 @@ class Camera:
                             failure=BodyTimeout(dict(stage='jpeg_body',expected_bytes=length,received_bytes=length-remaining,
                                 frame_id=camera_header(r.headers,'X-AIEdge-Frame-Id'),
                                 captured_at=camera_header(r.headers,'X-AIEdge-Captured-At'),
-                                expected_sha256=camera_header(r.headers,'X-AIEdge-SHA256'),clock_id=clock[0],monotonic_us=clock[1]))
-                        except ValueError:raise ValueError('camera_timeout') from None
+                                expected_sha256=camera_header(r.headers,'X-AIEdge-SHA256'),clock_id=clock[0],monotonic_us=clock[1]),reset=isinstance(exc,ConnectionResetError))
+                        except ValueError:raise ValueError('camera_connection_reset' if isinstance(exc,ConnectionResetError) else 'camera_timeout') from None
                         raise failure from None
                     return b''.join(parts),r.headers
         except urllib.error.HTTPError as exc:
@@ -319,17 +319,17 @@ class Camera:
             raise ValueError(code) from None
         except urllib.error.URLError as exc:
             if isinstance(exc.reason,ssl.SSLCertVerificationError):code='camera_certificate_invalid'
-            elif isinstance(exc.reason,(TimeoutError,socket.timeout)):
-                if not awaiting_response:raise ValueError('camera_timeout') from None
+            elif isinstance(exc.reason,(TimeoutError,ConnectionResetError)):
+                if not awaiting_response:raise ValueError('camera_connection_reset' if isinstance(exc.reason,ConnectionResetError) else 'camera_timeout') from None
                 from capture_recovery import RequestTimeout
-                raise RequestTimeout() from None
+                raise RequestTimeout(reset=isinstance(exc.reason,ConnectionResetError)) from None
             elif isinstance(exc.reason,socket.gaierror):code='camera_name_unresolved'
             else:code='camera_connection_failed'
             raise ValueError(code) from None
-        except (TimeoutError,socket.timeout):
-            if not awaiting_response:raise ValueError('camera_timeout') from None
+        except (TimeoutError,ConnectionResetError) as exc:
+            if not awaiting_response:raise ValueError('camera_connection_reset' if isinstance(exc,ConnectionResetError) else 'camera_timeout') from None
             from capture_recovery import RequestTimeout
-            raise RequestTimeout() from None
+            raise RequestTimeout(reset=isinstance(exc,ConnectionResetError)) from None
 
 class StorageLowSpace(ValueError):
     def __init__(self):super().__init__('storage_low_space')

@@ -210,7 +210,7 @@ def _check_turn_continuity(records, first, modulus, turn, rate, budget):
         prior_tick = tick
 
 
-def daily_range(records, day, zone, document, revision, contexts=None, *, recovery_capacity_cfh=None):
+def daily_range(records, day, zone, document, revision, contexts=None, *, recovery_capacity_cfh=None, read_phases=None):
     from itertools import islice
     from daily_constraints import MAX_RECORDS, tighten
     rows = list(islice(records, MAX_RECORDS + 1))
@@ -238,6 +238,20 @@ def daily_range(records, day, zone, document, revision, contexts=None, *, recove
                                  rate_ceiling=rate, fine_endpoints=())
             _check_turn_continuity(rows, recovered["before"]["event_id"], periods[0],
                                    periods[-1], rate, budget)
+            if read_phases is not None:
+                from dial_travel import tail_edges
+                edges = tail_edges(rows, document, rate, read_phases)
+                if edges:
+                    anchor_event = edges[0][0]
+                    temporal = {r['event_id'] for r in rows if r['event_id'] <= anchor_event
+                                and (r.get('absolute') or {}).get('provenance') == 'temporal_consumption_bounds'}
+                    # An isolated single-image turn assignment can be ambiguous near zero.
+                    # Keep the temporal readings and all rate-admissible turns in the tail.
+                    try:
+                        recovered = _tighten(rows, day, zone, document, recovered, budget,
+                                             rate_ceiling=rate, fine_endpoints=temporal, extra_edges=edges)
+                    except (InconsistentConstraints, WorkLimit):
+                        pass
         except WorkLimit as exc:
             raise ValueError("daily register recovery work limit") from exc
     return dict(recovered, constraint_basis=COARSE_BASIS, unknown_gaps_preserved=True,
