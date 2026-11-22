@@ -3,7 +3,7 @@ import json
 from decimal import Decimal
 
 
-def daily_records(db, first_event, through_event, segment_id):
+def daily_records(db, first_event, through_event, segment_id, *, stop_after=None):
     """Stream accepted measurements over an inclusive event range, in capture order.
 
     Rejected observations remain in the ledger. No image payloads are required.
@@ -29,8 +29,9 @@ def daily_records(db, first_event, through_event, segment_id):
     """
     # Fetch short pages so JSON parsing and calendar arithmetic hold no read lock.
     # The immutable lineage starts at the specific publication segment on every page.
-    for start in range(first_event, through_event + 1, 64):
-        stop = min(start + 63, through_event)
+    last = through_event if stop_after is None else min(stop_after, through_event)
+    for start in range(first_event, last + 1, 64):
+        stop = min(start + 63, last)
         rows = db.execute(query, (segment_id, through_event, start, start, stop)).fetchall()
         yield from bound_rows(rows)
 

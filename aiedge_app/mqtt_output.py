@@ -138,6 +138,8 @@ class MqttOutput:
             if record.get('movement') and result['usage'].get('daily_nominal') == record['state']:
                 movement = record['movement']
                 result['usage']['movement_history'] = {k:movement[k] for k in ('midnight','points','format','first_meter')}
+                if movement.get('dial_from'):
+                    result['usage']['movement_history'].update(dial_from=movement['dial_from'], dial_gaps=movement['dial_gaps'])
             policy = getattr(self.daily, 'evidence_policy', {}) or {}
             result['overview_policy'] = {k: policy[k] for k in ('capacity_cfh', 'slow_allowance_ft3') if k in policy}
             point = self.overview_history.latest(self.history_topic, self.overview_format)
@@ -219,7 +221,8 @@ class MqttOutput:
                         register = self.gas_sensors.absolute.sent
                         self.nominal.publish(self, obs, good[0] if good else None, datetime.now(zone).date(), zone.key,
                                              register[1] if register and register[0] == key else None,
-                                             previous_register[1] if previous_register and previous_register[0] == key else None)
+                                             previous_register[1] if previous_register and previous_register[0] == key else None,
+                                             store=self.daily.store, snapshot=snapshot)
                         if self.nominal.sent and self.overview_format:
                             self.overview_daily = self.overview_format, self.nominal.sent
                         self.nominal_error = None

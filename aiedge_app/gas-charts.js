@@ -467,8 +467,26 @@ function showDay(){
   // Conflicting or out-of-order publications remain isolated until the recorder confirms them.
   if(!recorded&&last&&(last[0]>=stamp||last[4]>=event||stamp-last[0]>=660000))point[6]=false;
   const visible=recorded ? [...groups.slice(0,-1),[...groups.at(-1).slice(0,-1),point]] : [...recordedGroups,[point]];
-  const coverage=tracksMeter?history?.capture_coverage:null;
-  const gaps=tracksMeter?(coverage?.gaps||[]).filter(([a,b])=>a<stamp&&b>a).map(([a,b])=>[a,Math.min(b,stamp)]):recordedGroups.slice(1).map((group,i)=>[recordedGroups[i].at(-1)[0],group[0][0]]);
+  let coverage=tracksMeter?history?.capture_coverage:null;
+  const dialFrom=latest.movement?.dial_from, tail=latest.movement?.points?.at(-1);
+  if(coverage&&dialFrom&&tail?.[2]===event&&tail[0]===stamp&&tail[1]===estimate&&
+     dialFrom[0]<=coverage.through[0]&&dialFrom[1]<=coverage.through[1]&&
+     coverage.through[0]<event&&coverage.through[1]<stamp){
+    coverage={...coverage,through:[event,stamp]};
+  }
+  const dialGaps=tracksMeter?latest.movement?.dial_gaps:null;
+  let evidenceGaps=coverage?.gaps||[];
+  if(dialGaps?.length){
+    const combined=[];
+    for(const [start,end] of [...evidenceGaps,...dialGaps].sort((a,b)=>a[0]-b[0])){
+      const prior=combined.at(-1);
+      if(prior&&start<=prior[1])prior[1]=Math.max(prior[1],end);
+      else combined.push([start,end]);
+    }
+    evidenceGaps=combined;
+    if(coverage)coverage={...coverage,gaps:combined};
+  }
+  const gaps=tracksMeter?evidenceGaps.filter(([a,b])=>a<stamp&&b>a).map(([a,b])=>[a,Math.min(b,stamp)]):recordedGroups.slice(1).map((group,i)=>[recordedGroups[i].at(-1)[0],group[0][0]]);
   let movement=null, midnight=history?.midnight, handoff=null;
   if(tracksMeter){
     const archive=latest.movement, tail=archive?.points?.at(-1);
