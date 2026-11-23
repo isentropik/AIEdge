@@ -117,6 +117,8 @@ class ChartHours:
         cuts = sorted(self.breaks(start,fetch_end))
         times = [p[0] for p in registers]
         splits = [p[0] for p in registers if p[4]]
+        register_changes = [b[0] for a,b in zip(registers,registers[1:])
+                            if a[5][0]!=b[5][0] or a[5][2:]!=b[5][2:]]
         gaps = ((usage or {}).get('movement_history') or {}).get('dial_gaps',[])
 
         def boundary(t):
@@ -149,6 +151,12 @@ class ChartHours:
         for a,b in zip(ticks,ticks[1:]):
             left,right = published[a],published[b]
             measured = optical.get(b)
+            if measured and measured['basis']=='carried_register':
+                carry=measured['carry']
+                origin=carry.get('reference_time',carry['start'])
+                if not any(origin<t<=b for t in register_changes):
+                    hours.append(measured)
+                continue
             if measured and measured['basis']=='photo_replay':
                 hours.append(measured)
                 continue

@@ -159,25 +159,59 @@ class LedgerHours:
                             offsets.append(dict(time=tick,event=p[2],use=change['use'],bounds=change['bounds']))
             result = {}
             recovered = {}
-            def endpoint(index):
+            def endpoint(index, reference=None):
                 from hourly_photo import recover_boundary,recorded_endpoint
-                if index not in recovered:
+                key=(index,reference)
+                if key not in recovered:
                     recorded=published[ticks[index]]
                     if recorded:
-                        recovered[index]=recorded_endpoint(db,source,recorded)
+                        recovered[key]=recorded_endpoint(db,source,recorded)
                     else:
                         target=times[index]
                         j=bisect_left(stamps,target)
                         k=j if j<len(rows) and stamps[j]==target else j-1
-                        recovered[index]=None
+                        recovered[key]=None
                         if 0<=k<=j<len(rows) and not any(l<stamp_ms[j] and stamp_ms[k]<r or
                                                           l<ticks[index]<r for l,r in gaps):
                             begin=max((r for _,r in gaps if r<=stamp_ms[k]),default=stamp_ms[0])
                             stop=min((l for l,_ in gaps if l>=stamp_ms[j]),default=stamp_ms[-1])
-                            recovered[index]=recover_boundary(db,self.photos,document,source,rate,target,
+                            recovered[key]=recover_boundary(db,self.photos,document,source,rate,target,
                                 rows[k][1],rows[j][1],rows[bisect_left(stamp_ms,begin)][1],
-                                rows[bisect_right(stamp_ms,stop)-1][1],dial_hour,self.photo_cache)
-                return recovered[index]
+                                rows[bisect_right(stamp_ms,stop)-1][1],dial_hour,self.photo_cache,reference)
+                return recovered[key]
+
+            def measured_leg(index):
+                if index<=0:
+                    return None
+                start, end = ticks[index-1:index+1]
+                leg = result.get(end)
+                if (leg and leg['basis']=='fine_dial' and 'use' in leg and leg['start']==start
+                        and all((l,r) in leg['supported_spans'] for l,r in gaps if l<end and start<r)):
+                    return leg
+
+            def carry_anchor(index):
+                anchor = endpoint(index)
+                if anchor:
+                    return anchor
+                # Look back through consecutive measured changes for a separate
+                # absolute reference, stopping at the first unsupported interval.
+                change = Decimal(0)
+                for j in range(index,0,-1):
+                    leg = measured_leg(j)
+                    if leg is None:
+                        break
+                    change += number(leg['use'])
+                    prev = j-1
+                    if not (published[ticks[prev]] or result.get(ticks[prev],{}).get('basis')=='photo_replay'):
+                        continue
+                    base = endpoint(prev)
+                    if base:
+                        reference = base['value']+change
+                        anchor = endpoint(index,reference)
+                        if anchor:
+                            anchor = dict(anchor,reference_time=ticks[prev],reference_value=float(reference))
+                        return anchor
+                return None
             for i,(start,end) in enumerate(zip(times,times[1:])):
                 left,right = bisect_left(stamps,start),bisect_left(stamps,end)
                 if left==len(rows) or right==len(rows):
@@ -201,9 +235,20 @@ class LedgerHours:
                     result[ticks[i+1]]=dict(value,start=ticks[i],end=ticks[i+1])
                 if (self.photos and published is not None and 'use' not in (value or {})
                         and (published[ticks[i]] is None or published[ticks[i+1]] is None)):
-                    from hourly_photo import difference
+                    from hourly_photo import carried_difference, difference
                     try:
-                        pair=difference(endpoint(i),endpoint(i+1))
+                        opening, closing = endpoint(i), endpoint(i+1)
+                        pair = difference(opening, closing)
+                        previous = measured_leg(i)
+                        if opening is None and published[ticks[i]] is None and closing and previous:
+                            pair = carried_difference(carry_anchor(i-1), previous, closing)
+                            if pair and value and all((l,r) in value['supported_spans'] for l,r in gaps
+                                                      if l<ticks[i+1] and ticks[i]<r):
+                                low,high=value['bounds']
+                                if low<=pair['use']<=high:
+                                    pair['bounds']=[max(low,pair['bounds'][0]),min(high,pair['bounds'][1])]
+                                else:
+                                    pair=None
                     except (sqlite3.Error, KeyError, IndexError, TypeError, ValueError, ArithmeticError, OSError):
                         # Optional photo evidence may be absent from older archives.
                         pair=None

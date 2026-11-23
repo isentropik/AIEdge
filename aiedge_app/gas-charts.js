@@ -348,9 +348,10 @@ function chart(){
         const q=stop.hour;
         title.textContent=clockSpan(q.start,q.end,model.zone);
         amount.textContent=number.format(q.use)+' ft³ used';
-        if(q.basis==='register'||q.basis==='photo_replay'){
+        if(q.basis==='register'||q.basis==='photo_replay'||q.basis==='carried_register'){
           const register=new Intl.NumberFormat(undefined,{minimumFractionDigits:5,maximumFractionDigits:5});
           details.push(register.format(q.closing)+' − '+register.format(q.opening)+' ft³');
+          if(q.carry)details.push(clock(q.carry.start,model.zone)+' meter reading + '+number.format(q.carry.use)+' ft³');
         }
         if(q.bounds)details.push('Range '+q.bounds.map(v=>number.format(v)).join('–')+' ft³');
         if(q.basis==='photo_replay')details.push('Reconstructed from saved frames');
