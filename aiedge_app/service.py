@@ -53,6 +53,8 @@ def publication_state(store,recognition,reading_format,consumption,photo_registe
 def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None,gas_trend=None,gas_periods=None):
     from review_store import ReviewConflict
     from archive import ArchiveConflict
+    from tracked_bounds import TrackedBounds
+    tracked = TrackedBounds(store)
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -212,6 +214,15 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if route=='/api/gas-periods':
                 usage=mqtt_output.status().get('usage',{}) if mqtt_output and gas_periods else {}
                 self.reply(gas_periods.snapshot(usage.get('recent'),usage.get('chart_period_reference') or usage.get('daily')) if usage else {'status':'no_source'})
+                return
+            if route=='/api/tracked-bounds':
+                try:
+                    usage = mqtt_output.status().get('usage', {}) if mqtt_output and reading_format else {}
+                    policy = getattr(getattr(mqtt_output, 'daily', None), 'evidence_policy', {}) or {}
+                    data = tracked.snapshot(usage, reading_format.status()['format'], policy) if usage else {}
+                except (ValueError, KeyError, TypeError, ArithmeticError, sqlite3.Error):
+                    data = {}
+                self.reply(data)
                 return
             if route=='/api/gas-trend':
                 usage=mqtt_output.status().get('usage',{}) if mqtt_output and gas_trend else {}

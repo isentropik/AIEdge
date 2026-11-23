@@ -1,3 +1,7 @@
+## 0.2.0-dev104
+
+- Show uncertainty for tracked fine-dial movement and usage between saved readings. Reconnect clock-only chart breaks when independent capture records rule out a missed turn.
+
 ## 0.2.0-dev103
 
 - Plot saved fine-dial movement during partial coverage. Clip the trend at recorded gaps and show tracked movement for the selected window when bounded intervals predate recovery.
