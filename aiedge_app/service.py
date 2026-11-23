@@ -50,11 +50,29 @@ def publication_state(store,recognition,reading_format,consumption,photo_registe
         snapshot['_photo_register'] = photo_register.check(snapshot, inference)
     return snapshot
 
-def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None,gas_trend=None,gas_periods=None):
+def handler(store,ingress,collector,recognition=None,setup=None,reading_format=None,mqtt_output=None,configuration=None,consumption=None,consumption_error=None,reviews=None,camera_setup=None,archive=None,trial=None,retention=None,gas_trend=None,gas_periods=None,chart_hours=None):
     from review_store import ReviewConflict
     from archive import ArchiveConflict
     from tracked_bounds import TrackedBounds
     tracked = TrackedBounds(store)
+    from collections import deque
+    from meter_history import millis
+    from datetime import datetime as capture_time
+    chart_heads = deque(maxlen=16)
+    head_lock = threading.Lock()
+
+    def remember_chart(mqtt):
+        usage=mqtt.get('usage') or {}
+        daily=usage.get('daily_nominal') or {}
+        if daily.get('event_id') and daily.get('measured_at'):
+            key=millis(capture_time.fromisoformat(daily['measured_at']))
+            with head_lock:
+                if not chart_heads or chart_heads[-1][0]!=key:
+                    chart_heads.append((key,usage))
+
+    def chart_usage(end):
+        with head_lock:
+            return next((usage for key,usage in reversed(chart_heads) if key==end),None)
     token=secrets.token_urlsafe(32)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -211,6 +229,29 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     self.reply({'error':'trial_request_id_invalid'},400);return
                 result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
                 self.reply(result);return
+            if route=='/api/chart-hours':
+                from datetime import datetime, timezone
+                from http.client import HTTPException
+                from zoneinfo import ZoneInfoNotFoundError
+                try:
+                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,max_num_fields=1)
+                    if set(query)!={'end'} or len(query['end'])!=1:raise ValueError()
+                    end=int(query['end'][0])
+                    now=int(datetime.now(timezone.utc).timestamp()*1000)
+                    if not now-172800000<=end<=now+60000:raise ValueError()
+                except (KeyError,TypeError,ValueError):
+                    self.reply({'error':'invalid_chart_time'},400);return
+                try:
+                    mqtt=mqtt_output.status() if mqtt_output else {}
+                    usage=chart_usage(end) or mqtt.get('usage',{})
+                    state=usage.get('daily_nominal') or {}
+                    zone=state.get('timezone') or mqtt.get('overview_timezone')
+                    policy=getattr(getattr(mqtt_output,'daily',None),'evidence_policy',{}) or {}
+                    document=reading_format.status()['format'] if reading_format else None
+                    result=chart_hours.snapshot(end,zone,usage,document,policy) if zone and chart_hours else {}
+                except (ValueError,TypeError,KeyError,OSError,HTTPException,sqlite3.Error,ZoneInfoNotFoundError):
+                    self.reply({'error':'chart_history_unavailable'},503);return
+                self.reply(result);return
             if route=='/api/gas-periods':
                 usage=mqtt_output.status().get('usage',{}) if mqtt_output and gas_periods else {}
                 self.reply(gas_periods.snapshot(usage.get('recent'),usage.get('chart_period_reference') or usage.get('daily')) if usage else {'status':'no_source'})
@@ -218,6 +259,9 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if route=='/api/tracked-bounds':
                 try:
                     usage = mqtt_output.status().get('usage', {}) if mqtt_output and reading_format else {}
+                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,max_num_fields=1)
+                    if 'end' in query:
+                        usage=chart_usage(int(query['end'][0])) or usage
                     policy = getattr(getattr(mqtt_output, 'daily', None), 'evidence_policy', {}) or {}
                     data = tracked.snapshot(usage, reading_format.status()['format'], policy) if usage else {}
                 except (ValueError, KeyError, TypeError, ArithmeticError, sqlite3.Error):
@@ -231,7 +275,9 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
             if route=='/api/overview':
                 # The gas cards use broker-acknowledged values already in memory.
                 # Keep ledger scans, recognition and recovery checks off this path.
-                self.reply({'mqtt':mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}})
+                mqtt=mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}
+                remember_chart(mqtt)
+                self.reply({'mqtt':mqtt})
                 return
             if route=='/api/status':
                 state=store.status();state.update(capture_enabled=collector is not None,missed_slots=collector.missed_slots if collector else 0)
@@ -457,7 +503,11 @@ def run_service(stop_signals):
                    lookup=lambda camera,ids: frame_ids(store,camera,ids),
                    coverage=lambda daily,track,cache: read_coverage(store,daily,track,cache)) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
     periods=GasPeriods(options['recent_history_entity']) if trend else None
-    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend,periods))
+    from chart_hours import ChartHours, ledger_breaks
+    from hourly_dial import LedgerHours
+    hours=ChartHours(options['meter_history_entity'],options['nominal_history_entity'],
+                     breaks=lambda start,end:ledger_breaks(store,start,end),ledger=LedgerHours(store,photo_register)) if trend else None
+    server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend,periods,hours))
     from lifecycle import ServiceRuntime
     if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention if enabled and collector else None),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')

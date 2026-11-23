@@ -166,7 +166,7 @@ function hourlyRuns(groups,stops){
 // A shared, slope-limited tangent keeps the line and both edges smooth through
 // each actual point. Every cubic stays between its two endpoint values and the
 // nominal stays inside the ribbon, even where a bound levels off or changes sign.
-function trendPaths(run,x,y,band=true,line=true){
+function trendPaths(run,x,y,band=true,line=true,smooth=true){
   const point=(px,v)=>px.toFixed(2)+' '+y(v).toFixed(2);
   const xx=run.map(p=>x(p[0]));
   const slope=run.map((p,i)=>{
@@ -183,6 +183,7 @@ function trendPaths(run,x,y,band=true,line=true){
     return low===Infinity?0:low>0?low:high<0?high:0;
   });
   function segment(i,j,k){
+    if(!smooth)return ' L'+point(xx[j],run[j][k]);
     const dx=(xx[j]-xx[i])/3,a=run[i][k],b=run[j][k];
     return ' C'+point(xx[i]+dx,a+dx*slope[i])+' '+point(xx[j]-dx,b-dx*slope[j])+' '+point(xx[j],b);
   }
@@ -269,7 +270,7 @@ function requestTracked(headline){
   const key=JSON.stringify([archive.format,archive.midnight,archive.dial_from,source.event_id,source.captured_at,source.source_sha256]);
   if(trackedBusy||trackedRequest===key)return;
   trackedRequest=key;trackedBusy=true;
-  fetch('api/tracked-bounds',{cache:'no-store',signal:AbortSignal.timeout(30000)})
+  fetch('api/tracked-bounds'+(calendar?'?end='+calendar.end:''),{cache:'no-store',signal:AbortSignal.timeout(30000)})
     .then(r=>r.ok?r.json():null).then(data=>{
       if(trackedRequest!==key||data?.format!==archive.format||data.midnight!==archive.midnight||
          data.event!==source.event_id||data.measured_at!==source.captured_at||data.digest!==source.source_sha256||
@@ -303,7 +304,7 @@ function chart(){
   const title=$('day-tip-title'),amount=$('day-tip-amount'),note=$('day-tip-note');
   const graphic=svg('svg',{'aria-hidden':'true'});
   host.append(graphic);
-  let model,chosen,atX,atY,cursor,dot,active=-1,inspecting=false,drawnWidth=0,plotBottom=0;
+  let model,chosen,atX,atY,usageY,cursor,dot,active=-1,inspecting=false,drawnWidth=0,plotBottom=0;
   function hide(){
     inspecting=false;tip.hidden=true;
     if(cursor)cursor.setAttribute('visibility','hidden');
@@ -336,13 +337,44 @@ function chart(){
       amount.textContent=number.format(stop.tracked.amount)+' ft³ tracked';
       note.textContent='Range '+stop.tracked.range.map(v=>number.format(v)).join('–')+' ft³'+(stop.tracked.partial?' · partial coverage':'');
     }
+    if(model.summary){
+      title.textContent=new Intl.DateTimeFormat(undefined,{timeZone:model.zone,month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}).format(stop.to);
+      amount.textContent=stop.reset?'Daily total resets to 0 ft³':p?
+        'Cumulative estimate '+number.format(p[1])+' ft³':'Hourly meter use';
+      const details=[];
+      if(!stop.hour&&p?.[2]!=null&&p[3]!=null)details.push('Range '+number.format(p[2])+'–'+number.format(p[3])+' ft³');
+      if(stop.reset)details.push('Calendar opening balance');
+      if(stop.hour){
+        const q=stop.hour;
+        title.textContent=clockSpan(q.start,q.end,model.zone);
+        amount.textContent=number.format(q.use)+' ft³ used';
+        if(q.basis==='register'||q.basis==='photo_replay'){
+          const register=new Intl.NumberFormat(undefined,{minimumFractionDigits:5,maximumFractionDigits:5});
+          details.push(register.format(q.closing)+' − '+register.format(q.opening)+' ft³');
+        }
+        if(q.bounds)details.push('Range '+q.bounds.map(v=>number.format(v)).join('–')+' ft³');
+        if(q.basis==='photo_replay')details.push('Reconstructed from saved frames');
+        if(stop.cumulative){
+          const c=stop.cumulative;
+          details.push('Cumulative estimate '+number.format(c[1])+' ft³');
+        }
+      }
+      if(stop.unknownHour){
+        title.textContent=clockSpan(stop.unknownHour,stop.to,model.zone);
+        amount.textContent='Hourly use unknown';
+        details.length=0;
+        details.push('Meter readings do not establish the difference');
+      }
+      note.textContent=details.join(' · ');
+    }
     host.setAttribute('aria-valuenow',i);
     const rangeText=(lo,hi)=>lo!=null&&hi!=null?number.format(lo)+'–'+number.format(hi)+' ft³':'';
-    host.setAttribute('aria-valuetext',[title.textContent,amount.textContent,rangeText(p?.[2],p?.[3]),model.trackedWindow?note.textContent:used,
+    host.setAttribute('aria-valuetext',[title.textContent,amount.textContent,rangeText(p?.[2],p?.[3]),model.summary||model.trackedWindow?note.textContent:used,
       stop.range&&rangeText(...stop.range),p?.[5]].filter(Boolean).join(' · '));
     tip.hidden=!show;
     const px=atX(stop.tracked?p[0]:stop.to),level=p?.[1]??p?.[2];
-    const py=level==null?plotBottom/2:atY(level);
+    const py=stop.hour?usageY(stop.hour.use):level==null?plotBottom/2:atY(level);
+    tip.dataset.hour=String(!!stop.hour);
     if(show){
       const position=px<drawnWidth/2?(px+9)+'px':'calc('+(px-9)+'px - var(--tip-width))';
       tip.style.left='clamp(0px, '+position+', calc(100% - var(--tip-width)))';
@@ -352,7 +384,8 @@ function chart(){
     }
     cursor.setAttribute('visibility',show?'visible':'hidden');
     cursor.setAttribute('transform','translate('+px+' 0)');
-    dot.setAttribute('visibility',show&&p?.[1]!=null?'visible':'hidden');
+    dot.setAttribute('class',stop.hour?'plot-selected-use':'plot-estimate-dot');
+    dot.setAttribute('visibility',show&&(stop.hour||p?.[1]!=null)?'visible':'hidden');
     // A daily sample can precede its hour close. Keep that reading at its measured time.
     dot.setAttribute('cx',p?atX(p[0])-px:0);
     dot.setAttribute('cy',py);
@@ -370,19 +403,27 @@ function chart(){
     }
     const totalLabel=$('total-key-label');
     $('chart-legend').hidden=false;
-    const total=scale(Math.max(0,...points.map(p=>p[3]??p[1]??0),...(model.movement||[]).map(p=>p[1]),
+    const total=scale(Math.max(0,...points.map(p=>Math.max(p[3]??0,p[1]??0)),...(model.summary?.extent||[]),...(model.movement||[]).map(p=>p[1]),
       ...Array.from(model.bounds.totals.values(),r=>r[1])));
-    const intervals=model.stops.filter(s=>s.range||s.tracked);
+    const intervals=model.stops.filter(s=>s.range||s.tracked||s.hour);
     const useKey=$('use-series-key'),tracked=intervals.some(s=>s.tracked);
     useKey.dataset.tracked=String(tracked&&!intervals.some(s=>s.tracked?.range||s.range));
     useKey.title=tracked?'Movement between saved readings, right axis':'Interval use and range, right axis';
     if(tracked)$('interval-key').textContent='Tracked use';
     useKey.hidden=!intervals.length;
     if(totalLabel)totalLabel.textContent=(model.trackedWindow||model.coverage?.edges?'Tracked total':model.movement?'Hourly total trend':'Total')+(intervals.length?' · left':'');
-    const usage=scale(Math.max(0,...intervals.map(s=>Math.max(s.range?.[1]??0,s.tracked?.range?.[1]??0,s.tracked?.amount??0))));
+    if(model.summary){
+      if(totalLabel){
+        totalLabel.textContent='Cumulative'+(intervals.length?' · left':'');
+        totalLabel.parentElement.title='Hourly cumulative estimate. Shading shows its supported range. The dotted line marks the midpoint.';
+      }
+      $('interval-key').textContent='Hourly use';
+      useKey.title='Closing meter reading minus opening meter reading, right axis';
+    }
+    const usage=scale(Math.max(0,...intervals.map(s=>Math.max(s.range?.[1]??0,s.tracked?.range?.[1]??0,s.tracked?.amount??0,s.hour?.use??0))));
     const end=model.stops.at(-1).to, span=Math.max(1,end-start);
     const x=t=>end===start?(left+right)/2:left+(right-left)*(t-start)/span,y=total.y;
-    atX=x; atY=y; drawnWidth=w; plotBottom=bottom;
+    atX=x; atY=y; usageY=usage.y; drawnWidth=w; plotBottom=bottom;
     graphic.setAttribute('viewBox','0 0 '+w+' '+h);
     graphic.style.height=h+'px';
     const nodes=[];
@@ -397,6 +438,53 @@ function chart(){
     }
     const runs=model.rolling?groups:hourlyRuns(groups,model.rangeStops);
     const lines=[];
+    if(model.summary){
+      const defs=svg('defs');
+      for(const [i,series] of model.summary.series.entries()){
+        const clip=svg('clipPath',{id:'daily-span-'+i,clipPathUnits:'userSpaceOnUse'});
+        const from=Math.max(start,series.run[0][0]);
+        const until=Math.min(end,series.run.at(-1)[0]);
+        if(until>from)clip.append(svg('rect',{x:x(from),y:0,width:x(until)-x(from),height:h}));
+        defs.append(clip);
+        const clipped=svg('g',{'clip-path':'url(#daily-span-'+i+')','data-day-series':i});
+        const run=series.run;
+        clipped.append(...trendPaths(run,x,y,false,true,false).lines);
+        let band=[];
+        function shade(){
+          if(band.length>1){
+            const area=trendPaths(band,x,y,true,false,false).bands[0];
+            clipped.insertBefore(area,clipped.firstChild);
+            if(band.some(p=>Math.abs((p[2]+p[3])/2-p[1])>.005)){
+              const midpoint=trendPaths(band.map(p=>[p[0],(p[2]+p[3])/2]),x,y,false,true,false).lines[0];
+              midpoint.setAttribute('class','plot-range-midpoint');clipped.append(midpoint);
+            }
+            for(const k of [2,3]){
+              const side=trendPaths(band.map(p=>[p[0],p[k],p[k],p[k]]),x,y,false,true,false).lines[0];
+              side.setAttribute('class','plot-bound-edge');clipped.append(side);
+            }
+          }
+          band=[];
+        }
+        for(const p of run){
+          if(p[2]==null||p[3]==null)shade();
+          if(p[2]!=null&&p[3]!=null)band.push(p);
+        }
+        shade();nodes.push(clipped);
+        for(const p of run)if(start<=p[0]&&p[0]<=end){
+          if(p[2]!=null&&p[3]>p[2]&&run.length===1)nodes.push(svg('line',{class:'plot-bound-edge',x1:x(p[0]),x2:x(p[0]),y1:y(p[2]),y2:y(p[3])}));
+          lines.push(svg('circle',{cx:x(p[0]),cy:y(p[1]),r:2,class:'plot-estimate-dot','data-event':p[4],
+            'data-time':p[0],'data-total':p[1],...(p[2]==null||p[3]==null?{}:{'data-midpoint':(p[2]+p[3])/2,'data-low':p[2],'data-high':p[3]})}));
+        }
+      }
+      nodes.push(defs);
+      for(const t of model.summary.resets){
+        const px=x(t);
+        nodes.push(svg('line',{x1:px,x2:px,y1:top,y2:bottom,class:'plot-midnight'}));
+        const close=model.summary.closes.get(t);
+        if(close)lines.push(svg('line',{x1:px,x2:px,y1:y(close[1]),y2:y(0),class:'plot-estimate'}));
+        lines.push(svg('circle',{cx:px,cy:y(0),r:3.5,class:'plot-reset','data-midnight':t}));
+      }
+    }
     let coverageClip=null;
     if(model.coverage){
       // Clip the hourly guide at the exact stored capture times. A gap does
@@ -441,8 +529,8 @@ function chart(){
     {
       const gapKey=$('day-gap-key');
       gapKey.hidden=!model.gaps.length;
-      gapKey.title=model.coverage?'Interruption in saved captures or meter tracking':'Break between published estimates';
-      if(gapKey.lastChild?.nodeType===3)gapKey.lastChild.textContent=model.coverage?'Reading gap':'History break';
+      gapKey.title=model.summary||model.coverage?'Interruption in saved captures or meter tracking':'Break between published estimates';
+      if(gapKey.lastChild?.nodeType===3)gapKey.lastChild.textContent=model.summary||model.coverage?'Reading gap':'History break';
       for(const [from,to] of model.gaps){
         nodes.push(svg('line',{class:'plot-history-gap',x1:x(from),x2:x(to),y1:bottom+2,y2:bottom+2,
           stroke:'var(--series)','stroke-width':3,'stroke-linecap':model.coverage?'butt':'round','data-from':from,'data-to':to}));
@@ -451,15 +539,24 @@ function chart(){
     nodes.push(...lines);
     for(const stop of model.stops){
       const measured=stop.tracked,range=measured?measured.range:stop.range;
-      if(!measured&&(!range||stop.from==null))continue;
-      const px=x(measured?stop.point[0]:stop.to),attrs=measured?{'data-through-event':stop.point[4]}:{};
+      if(!stop.hour&&!measured&&(!range||stop.from==null))continue;
+      const px=x(measured?stop.point[0]:stop.to),attrs=measured?{'data-through-event':stop.point[4]}:stop.hour?{'data-hour-end':stop.to,'data-use':stop.hour.use}:{};
       if(range&&range[1]>range[0]){
-        const [lo,hi]=range,cap=Math.min(4,Math.max(1,(px-x(measured?.from??stop.from))/4));
+        const [lo,hi]=range,cap=Math.min(4,Math.max(1,(px-x(measured?.from??stop.hour?.start??stop.from))/4));
         nodes.push(svg('path',{class:'plot-whisker',...attrs,d:'M'+(px-cap)+' '+usage.y(hi)+'h'+(cap*2)+' M'+px+' '+usage.y(hi)+'V'+usage.y(lo)+' M'+(px-cap)+' '+usage.y(lo)+'h'+(cap*2)}));
       }
-      nodes.push(svg('circle',{class:'plot-usage-dot',...attrs,cx:px,cy:usage.y(measured?measured.amount:(range[0]+range[1])/2),r:3.1}));
+      const amount=stop.hour?.use??(measured?measured.amount:(range[0]+range[1])/2),py=usage.y(amount);
+      nodes.push(svg('circle',{class:'plot-usage-dot',...attrs,cx:px,cy:py,r:stop.hour?5:3.1}));
+      if(stop.hour&&(right-left)*3600000/span>=40){
+        const above=py-top>=16;
+        nodes.push(svg('text',{class:'plot-use-label',x:px,y:above?py-9:py+17,'text-anchor':'middle'},number.format(amount)));
+      }
     }
-    const ticks=model.rolling&&!model.trackedWindow?intervalTicks(model.stops,start,end,right-left,zone):axisTicks(start,end,right-left,zone);
+    let ticks=model.rolling&&!model.trackedWindow&&!model.summary?intervalTicks(model.stops,start,end,right-left,zone):axisTicks(start,end,right-left,zone);
+    if(model.summary?.resets.length){
+      ticks=ticks.filter(t=>model.summary.resets.every(r=>Math.abs(x(r)-x(t.time))>55));
+      ticks.push(...model.summary.resets.map(time=>({time,label:'Midnight'})));
+    }
     for(const tick of ticks){
       const px=x(tick.time);
       const halfLabel=tick.label.length*3.4;
@@ -497,7 +594,7 @@ function chart(){
     if(next!==undefined){e.preventDefault();pick(next);}
   });
   new ResizeObserver(()=>{if(host.clientWidth!==drawnWidth)draw();}).observe(host);
-  return function update(groups, start, zone, key, empty, midnight, recent, clockBins, gaps=[], hourly=null, movement=null, coverage=null) {
+  return function update(groups, start, zone, key, empty, midnight, recent, clockBins, gaps=[], hourly=null, movement=null, coverage=null,summary=null) {
     if(!groups?.length&&!clockBins?.length){
       $('chart-legend').hidden=true;
       model=null; chosen=null; graphic.replaceChildren(); host.hidden=true;
@@ -537,7 +634,7 @@ function chart(){
       for(const s of stops)if(!s.range||increments.get(s.point?.[4])?.range)s.tracked=increments.get(s.point?.[4]);
     }
     const points=clockBins?stops.map(s=>s.point||[s.to,null,null,null]):groups.flat();
-    model={groups,points,stops,rangeStops,movement,coverage,bounds,start,midnight,zone,key,rolling:!!clockBins,trackedWindow:!!movement&&!!clockBins,gaps,loadingHistory:empty==='loading'};
+    model={groups,points,stops,rangeStops,movement,coverage,bounds,start,midnight,zone,key,summary,rolling:!!clockBins,trackedWindow:!!movement&&!!clockBins,gaps,loadingHistory:empty==='loading'};
     host.hidden=false; host.tabIndex=0;
     host.setAttribute('role','slider');
     host.setAttribute('aria-label','Inspect gas use by interval');
@@ -548,12 +645,137 @@ function chart(){
 const drawDay=chart();
 let selection='today',rolling=null,activeSelection=null;
 let dayView=null;
+let calendar=null;
+function localOpening(end,zone){
+  const fmt=new Intl.DateTimeFormat('sv-SE',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'});
+  const day=fmt.format(end);
+  let lo=end-36*3600000,hi=end;
+  while(hi-lo>1){
+    const mid=lo+Math.floor((hi-lo)/2);
+    if(fmt.format(mid)===day)hi=mid;else lo=mid;
+  }
+  return hi;
+}
+let manualChartRefresh=false;
+window.addEventListener('aiedge-refresh-images',()=>{manualChartRefresh=true;});
+function setCalendar(zone,stamp){
+  if(!zone){calendar=null;return;}
+  const end=stamp?Date.parse(stamp):Date.now();
+  const bucket=t=>Math.floor((t+offsetAt(t,zone)%3600000)/3600000);
+  if(calendar?.zone===zone&&!manualChartRefresh&&bucket(end)===bucket(calendar.end)&&
+     (calendar.pinned||!stamp))return;
+  manualChartRefresh=false;
+  const current={end,zone,midnight:localOpening(end,zone),pinned:!!stamp,data:null,status:'loading'};
+  calendar=current;
+  fetch('api/chart-hours?end='+end,{cache:'no-store',signal:AbortSignal.timeout(45000)})
+    .then(async r=>{
+      if(!r.ok)throw Error();
+      const data=await r.json();
+      if(data.end!==end||data.zone!==zone||data.midnight!==current.midnight||!Array.isArray(data.hours)||!Array.isArray(data.groups))throw Error();
+      current.data=data;current.status='ready';
+    }).catch(()=>{current.status='unavailable';}).finally(()=>{if(calendar===current)showDay();});
+}
+function showSummary(view){
+  const {end:snapshot,zone,midnight,status,data}=calendar;
+  const end=snapshot-(snapshot+offsetAt(snapshot,zone))%3600000;
+  const start=selection==='today'?midnight:end-Number(selection)*3600000;
+  const key=JSON.stringify(['hourly',start,end,status,view?.key]);
+  const host=$('day-curve'),stops=new Map(),series=[],extent=[];
+  const stop=t=>{
+    if(!stops.has(t))stops.set(t,{from:null,to:t,point:null});
+    return stops.get(t);
+  };
+  const hours=data?.hours||[], byEnd=new Map(hours.map(q=>[q.end,q]));
+  const resets=(data?.resets||[midnight]).filter(t=>start<=t&&t<=end);
+  const hourMs=3600000;
+  const knots=new Map(),closes=new Map();
+  const dailyTimes=new Set((data?.dailyHours||[]).map(p=>p[0]));
+  const sample=(time,value,low,high,event=null)=>[time,value,low,high,event];
+  for(const row of data?.dailyHours||[])knots.set(row[0],sample(...row));
+  const midnightTicks=new Set(data?.resets||[midnight]);
+  for(const t of midnightTicks)knots.set(t,sample(t,0,0,0));
+  if(view?.movement){
+    const ranges=trackedRanges(view.movement,view.coverage).totals;
+    const dailyRanges=new Map(view.visible.flat().filter(p=>p[2]!=null&&p[3]!=null&&p[6]!==false)
+      .map(p=>[p[4],p.slice(2,4)]));
+    const readings=new Map(view.movement.map(p=>[p[2],p]));
+    for(const offset of data?.offsets||[]){
+      const source=readings.get(offset.event);
+      if(!source||offset.time<midnight||midnightTicks.has(offset.time))continue;
+      const range=ranges.get(offset.event)||dailyRanges.get(offset.event);
+      knots.set(offset.time,sample(offset.time,source[1]+offset.use,
+        range?range[0]+offset.bounds[0]:null,range?range[1]+offset.bounds[1]:null,offset.event));
+    }
+  }
+  // Each completed hour contributes its measured change to the daily estimate.
+  // Start with an independently established daily level after a missing hour.
+  for(const q of hours){
+    const before=knots.get(q.start);
+    if(!before)continue;
+    const direct=knots.get(q.end);
+    // Previous-day recorder totals represent the entire day and stand on their own.
+    if(q.end<midnight&&direct&&!midnightTicks.has(q.end))continue;
+    const destination=midnightTicks.has(q.end)?closes:knots;
+    destination.set(q.end,sample(q.end,before[1]+q.use,
+      before[2]!=null&&q.bounds?before[2]+q.bounds[0]:null,
+      before[3]!=null&&q.bounds?before[3]+q.bounds[1]:null,direct?.[4]));
+  }
+  function add(run){
+    if(!run.length||run.at(-1)[0]<start||run[0][0]>end)return;
+    const first=run.findIndex(p=>p[0]>=start);
+    const visible=run.slice(Math.max(0,first-1));
+    series.push({run:visible});
+    for(const p of visible){
+      extent.push(Math.max(p[1],p[3]??0));
+      if(start<=p[0]&&p[0]<=end)stop(p[0]).point=p;
+    }
+  }
+  let run=[];
+  for(const [t,p] of [...knots].sort((a,b)=>a[0]-b[0])){
+    const previous=run.at(-1);
+    if(previous&&(t-previous[0]!==hourMs||midnightTicks.has(t)||p[1]<previous[1]||
+       midnightTicks.has(previous[0])&&!byEnd.has(t)&&!dailyTimes.has(t))){
+      if(closes.has(t)&&previous[0]===t-hourMs)run.push(closes.get(t));
+      add(run);run=[];
+    }
+    run.push(p);
+  }
+  add(run);
+  // A prior day can end with a single saved observation before the next hour.
+  // Preserve it at its actual time when there is no clock reading in the window.
+  for(const group of data?.groups||[]){
+    const last=group.at(-1);
+    if(last&&last[0]>=start&&last[0]<midnight&&
+       ![...knots.keys()].some(t=>t>=Math.max(group[0][0],start)&&t<=last[0])){
+      add([last]);
+    }
+  }
+  for(const t of resets)stop(t).reset=true;
+  for(const hour of hours.filter(q=>q.end>start&&q.end<=end)){
+    const s=stop(hour.end);s.hour=hour;s.range=hour.bounds;s.cumulative=s.reset?null:s.point;
+  }
+  const unknown=(data?.unknownHours||[]).filter(([a,b])=>b>start&&b<=end);
+  for(const [a,b] of unknown)stop(b).unknownHour=a;
+  stop(end);
+  const ordered=[...stops.values()].sort((a,b)=>a.to-b.to);
+  if(view){
+    host.dataset.endEvent=String(view.event);host.dataset.endTime=latest.source.captured_at;
+  }else{delete host.dataset.endEvent;delete host.dataset.endTime;}
+  const message=status==='loading'?'Loading hourly meter readings…':status==='unavailable'?'Meter history unavailable':
+    data?.missing?.includes('daily')&&start<midnight?'Previous daily totals unavailable':
+    data?.missing?.includes('register')&&!hours.length?'Meter history unavailable':
+    !hours.length?'No completed hour with supported readings':'';
+  const missingHour=unknown.length===1?'Usage unknown '+clockSpan(...unknown[0],zone):'';
+  $('day-history-status').textContent=[view?.partialCoverage?'Partial daily total':'',missingHour,message||'Through '+clock(end,zone)].filter(Boolean).join(' · ');
+  drawDay([],start,zone,key,null,midnight,null,ordered,[],null,null,null,{series,extent,resets,closes});
+}
 let identity='', saved=null, lastRangeSource=null, generation=0, due=0, lastAttempt=0, pending=false, latest=null, recentWindow=null;
 function showDay(){
   const host=$('day-curve');
   const source=latest?.source;
   if(!source){
     dayView=null;
+    if(calendar){showSummary(null);return;}
     if(selection!=='today'){showRolling();return;}
     delete host.dataset.endEvent;delete host.dataset.endTime;
     $('day-history-status').textContent='';
@@ -662,6 +884,7 @@ function showDay(){
     }
   }
   dayView={visible,midnight,stamp,event,zone,day,key,gaps,movement,coverage,partialCoverage,historyStatus:saved?.status};
+  if(calendar){showSummary(dayView);return;}
   if(selection!=='today'){showRolling();return;}
   activeSelection='today';host.dataset.endEvent=String(event);host.dataset.endTime=source.captured_at;
   $('interval-key').textContent='Hourly use';
@@ -682,6 +905,7 @@ function showDay(){
 
 }
 async function day(daily,headline,recent){
+  if(calendar?.pinned&&headline?.source&&Date.parse(headline.source.captured_at)!==calendar.end)return;
   const key=headline?.source&&daily?.before&&daily.after&&daily.through&&daily.day===headline.day&&daily.timezone===headline.zone ? JSON.stringify([daily.day,daily.timezone,daily.through.camera,daily.through.format_id,
     daily.before.source_sha256,daily.after.source_sha256,daily.before.event_id,daily.before.captured_at,daily.after.event_id,daily.after.captured_at]) : '';
   const sameSaved=!!headline?.source&&lastRangeSource?.day===headline.day&&lastRangeSource.zone===headline.zone&&
@@ -796,6 +1020,7 @@ function showTrackedWindow(view,hours,key){
 }
 let rollingDrawKey='';
 function showRolling(){
+  if(calendar){showSummary(dayView);return;}
   const host=$('day-curve'),hours=Number(selection);
   const selected=rolling?.periods?.[selection];
   const newerDay=selected&&rolling.compatibleWithDay&&rolling.notice==='Last saved'&&dayView?.stamp>asTime(selected.end)&&
@@ -868,5 +1093,5 @@ function period(selectionValue,data){
     if(changed||previousKey!==data?.key||wasCompatible!==data?.compatibleWithDay){rollingDrawKey='';showDay();}
   }else showRolling();
 }
-window.AIEdgeCharts={day,period};
+window.AIEdgeCharts={day,period,setCalendar,get hourly(){return !!calendar;}};
 })();

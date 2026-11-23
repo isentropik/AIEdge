@@ -1,3 +1,8 @@
+## 0.2.0-dev106
+
+- Plot cumulative estimates at clock hours and connect consecutive supported readings with straight lines. Shade the supported cumulative range and mark its midpoint. Show each completed hour's meter difference as a green dot. Keep missing hourly points open and reset each calendar day at midnight.
+- Recover a missing hourly register estimate from nearby retained meter photos and the dial observations bracketing the hour. Show the subtraction and the supported usage range when inspecting the green dot.
+
 ## 0.2.0-dev105
 
 - Allow bounded extra time for progressing JPEG transfers and passive readiness checks. Recover a register reading from indexed dial photos after a gap while preserving unknown usage.

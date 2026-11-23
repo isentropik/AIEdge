@@ -179,6 +179,7 @@ function renderRecent(recent,daily,reference=savedPeriodReference){
  if(!today&&next&&!sameEvent(sourceOf(next.through),sourceOf(periodSource?.through)))retryPeriods=0;
  periodSource=next;latestDaily=daily;
  paintPeriod();
+ if(window.AIEdgeCharts?.hourly)return;
  if(!key||!(today?daily?.through?.clock_id:['1','6','12','24'].includes($('usage-period').value))||!['','#overview'].includes(location.hash)||periodRequest||Date.now()<retryPeriods)return;
  periodRequest=request('api/gas-periods').then(data=>{
    if(key!==family)return;
@@ -345,6 +346,8 @@ function render(state) {
  if (headline?.method==='nominal_meter_movement_v1') headline.movement=usage.movement_history;
  $('usage-estimate').title=headline?.method==='range_midpoint_v1'?'Estimate at the midpoint of the daily range':headline?.method==='nominal_meter_movement_v1'?'Starting estimate plus meter movement':'';
  const currentHeadline = headline?.zone && headline.day === calendarDay(new Date(),headline.zone) ? headline : null;
+ if(['','#overview'].includes(location.hash))window.AIEdgeCharts?.setCalendar?.(
+   mqtt?.overview_meter==='gas'?zone:null,currentHeadline?.source?.captured_at);
  if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily||usage.chart_daily,other ? null : currentHeadline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
