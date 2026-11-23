@@ -21,16 +21,46 @@
       </div>
     </div>
     <figure class="trend-figure" aria-label="Gas usage">
-      <figcaption><h3>Gas usage <small>ft³</small></h3>
-        <label class="period-choice"><select id="usage-period" aria-label="Chart period">
-          <option value="today" selected>Today</option><option value="1">Last hour</option>
-          <option value="6">Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option>
-        </select></label>
+      <figcaption class="gas-nav-title"><h3>Gas usage <small>ft³</small></h3>
+<select hidden id="usage-period" aria-label="Chart period">
+          <option value="today">Today</option><option value="1">Last hour</option>
+          <option value="6" selected>Last 6 hours</option><option value="12">Last 12 hours</option><option value="24">Last 24 hours</option>
+        </select>
+    <nav id="gas-scales" class="scales" aria-label="Time scale">
+      <button type="button" data-scale="1" aria-label="1 hour">1h</button>
+      <button type="button" data-scale="6" aria-label="6 hours" aria-pressed="true">6h</button>
+      <button type="button" data-scale="12" aria-label="12 hours">12h</button>
+      <button type="button" data-scale="24" aria-label="Rolling 24 hours">24h</button>
+      <button type="button" data-scale="today" aria-label="Calendar day">Day</button>
+    </nav>
       </figcaption>
+  <section id="gas-period-row" class="period-row" hidden aria-label="Browse periods">
+    <button type="button" class="step" id="gas-previous" aria-label="Previous period">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg>
+    </button>
+    <div class="jump">
+      <button type="button" id="gas-jump" aria-expanded="false" aria-controls="gas-period-picker" aria-haspopup="dialog">
+        <span class="date-line"><span id="gas-period-day"></span>
+          <svg aria-hidden="true" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></svg>
+        </span>
+        <span id="gas-period-time"></span>
+      </button>
+      <div id="gas-period-picker" role="dialog" aria-label="Choose a period" hidden>
+        <strong>Choose a period</strong>
+        <div id="gas-period-options"></div>
+      </div>
+    </div>
+    <button type="button" class="step" id="gas-next" aria-label="Next period">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></svg>
+    </button>
+  </section>
+      <div class="chart-tools">
       <div id="chart-legend" class="trend-legend" aria-label="Chart legend">
         <span title="Cumulative estimate and range, left axis"><i class="total-key"></i><span id="total-key-label">Total · left</span></span>
         <span id="use-series-key" title="Average gas rate and range, right axis"><i class="whisker-key"></i><span id="interval-key">Rate (ft³/h)</span> · right</span>
         <span id="day-gap-key" hidden title="Break between published estimates"><i class="break-key"></i>History break</span>
+      </div>
+      <button type="button" id="gas-latest" hidden>Latest <span aria-hidden="true">↗</span></button>
       </div>
       <div class="plot-frame"><div id="day-curve" class="trend-chart"></div>
         <div id="day-tip" class="plot-tip" aria-hidden="true" hidden>

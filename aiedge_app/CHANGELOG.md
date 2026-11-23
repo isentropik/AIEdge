@@ -1,3 +1,7 @@
+## 0.2.0-dev109
+
+- Browse gas history with one-tap time scales, a period picker, arrows, swipe and Latest. Align both gas chart axes to faint horizontal gridlines. Show point values on inspection and show the cumulative estimate with its supported range. Remove the extra midpoint guide.
+
 ## 0.2.0-dev108
 
 - Show average gas rate in ft³/h over intervals sized to the selected chart window. Use ten-minute meter differences for the last hour and keep unsupported intervals open.

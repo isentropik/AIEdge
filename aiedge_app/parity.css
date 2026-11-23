@@ -194,7 +194,7 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .usage-card details > summary {color:var(--accent);}
 .usage-card summary:focus-visible,.trend-chart:focus-visible {outline:2px solid var(--accent); outline-offset:3px;}
 .usage-overview .usage-today {
-  --series:var(--accent); --grid:var(--line); --band:color-mix(in srgb,var(--series) 31%,transparent);
+  --series:var(--accent); --grid:color-mix(in srgb,var(--sub) 23%,transparent); --band:color-mix(in srgb,var(--series) 31%,transparent);
   grid-column:1/-1; display:grid; grid-template-columns:minmax(225px,.82fr) minmax(0,1.85fr); align-items:center;
   gap:clamp(24px,2.8vw,44px); padding:clamp(22px,2.4vw,36px);
   background:linear-gradient(108deg,color-mix(in srgb,var(--selected) 50%,var(--panel)),var(--panel) 85%);
@@ -213,12 +213,11 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .trend-chart {cursor:crosshair; touch-action:pan-y; min-width:0; border-radius:5px;}
 .trend-chart svg {display:block; width:100%; height:175px; overflow:visible; stroke:none; fill:none; stroke-width:1; stroke-linecap:round; stroke-linejoin:round;}
 .trend-chart text {fill:var(--sub); font:11.5px system-ui,sans-serif; font-variant-numeric:tabular-nums;}
-.plot-grid {stroke:var(--grid); stroke-width:1; stroke-dasharray:2 5;}
+.plot-grid {stroke:var(--grid); stroke-width:1;}
 .plot-band {fill:var(--band); stroke:none;}
 .plot-estimate {fill:none; stroke:var(--series); stroke-width:2.7;}
 .plot-estimate-dot {fill:var(--series);}
 .plot-bound-edge {fill:none;stroke:var(--series);stroke-width:1;stroke-opacity:.75;}
-.plot-range-midpoint {fill:none;stroke:var(--series);stroke-width:1;stroke-opacity:.8;stroke-dasharray:2 4;}
 .plot-midnight {stroke:var(--sub);stroke-dasharray:3 5;stroke-opacity:.7;}
 .plot-reset {fill:var(--panel);stroke:var(--series);stroke-width:2;}
 .plot-frame {position:relative; --tip-width:min(15rem,100%);}
@@ -297,6 +296,50 @@ input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .plot-history-gap {stroke:var(--sub);stroke-width:2;stroke-dasharray:3 3;opacity:.75;}
 .plot-whisker {stroke:var(--interval);stroke-width:1.6;}
 .plot-usage-dot {fill:var(--interval);stroke:var(--panel);stroke-width:.8;}
-.trend-chart .plot-use-label {fill:var(--interval);font-size:11px;font-weight:650;stroke:var(--panel);stroke-width:3;paint-order:stroke;pointer-events:none;}
 #day-history-status {color:var(--sub);font-variant-numeric:tabular-nums;}
 @media(forced-colors:active){.plot-whisker {stroke:CanvasText;}.plot-usage-dot {fill:CanvasText;}}
+
+/* Time scale and period controls share the active app theme. */
+.trend-figure {
+  & .gas-nav-title {align-items:center;gap:10px 14px;}
+  & .gas-nav-title h3 {margin:0;}
+  & :is(.scales,.period-row,.chart-tools) button {color:inherit;background:transparent;box-shadow:none;border:0;margin:0;cursor:pointer;}
+  & :is(.scales,.period-row,.chart-tools) button:focus-visible {outline:2px solid var(--accent);outline-offset:2px;}
+  & [hidden] {display:none!important;}
+.scales {display:flex; padding:3px; gap:2px; border:1px solid var(--edge); background:var(--bg); border-radius:12px;}
+.scales button {border-radius:8px; min-width:51px; min-height:42px; padding:0 10px; color:var(--sub); font-size:14px; font-weight:560;}
+.scales button[aria-pressed=true] {background:var(--selected); color:var(--ink); box-shadow:0 1px 4px #0002; font-weight:680;}
+.period-row {border-block:1px solid var(--edge); margin:20px 0 10px; padding:8px 0;
+  display:grid; grid-template-columns:48px minmax(0,1fr) 48px; align-items:center; touch-action:pan-y;}
+button.step {display:grid; place-content:center; width:44px; height:44px; padding:0; border-radius:50%;}
+.step:last-child {justify-self:end;}
+.step:disabled {cursor:default;color:var(--sub); opacity:.35;}
+.step svg,.date-line svg {width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.jump {position:relative; text-align:center; min-width:0;}
+#gas-jump {max-width:100%; min-height:52px; display:inline-flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; padding:4px 8px; border-radius:8px;}
+.date-line {display:flex; align-items:center; gap:4px; font-weight:620; font-size:17px; letter-spacing:-.02em;}
+.date-line svg {width:14px;height:14px;color:var(--sub);}
+#gas-period-time {color:var(--sub); font-size:13px; font-variant-numeric:tabular-nums;}
+#gas-period-picker {position:absolute; z-index:5; top:calc(100% + 6px); left:50%; transform:translateX(-50%); width:min(310px,calc(100vw - 42px));
+  padding:12px; border-radius:13px; background:var(--paper); box-shadow:0 12px 32px #0004; border:1px solid var(--edge); text-align:left;}
+#gas-period-picker strong {display:block; font-size:15px; margin:2px 8px 8px;}
+#gas-period-options {display:grid; max-height:min(250px,42vh); overflow-y:auto;}
+#gas-period-options button {display:flex; justify-content:space-between; align-items:center; text-align:left; min-height:44px; font-size:14px; padding:7px 9px; border-radius:6px;}
+#gas-period-options button[aria-current=true] {color:var(--series); background:var(--bg); font-weight:650;}
+.trend-figure {margin:0;}
+.chart-tools {display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; min-height:44px; gap:2px 8px;}
+.chart-tools .trend-legend {font-size:13px; gap:12px;}
+#gas-latest {color:var(--series); border-radius:6px; min-height:44px; padding:0 4px; font-size:13px; font-weight:600;}
+@media (hover:hover) {
+  .step:enabled:hover,#gas-jump:hover,#gas-period-options button:hover,.scales button:not([aria-pressed=true]):hover {background:var(--bg);}
+  #gas-latest:hover {text-decoration:underline;}
+}
+
+  @media(max-width:620px){
+    & .gas-nav-title {display:block;}
+    & .scales {margin-top:10px;}
+    & .scales button {min-width:0;min-height:44px;flex:1;}
+    & .period-row {margin-top:12px;}
+    & .date-line {font-size:16px;}
+  }
+}

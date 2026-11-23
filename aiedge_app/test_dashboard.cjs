@@ -601,6 +601,12 @@ test('one plot switches windows immediately, keeps real zero whiskers and reject
  const closeChecks=(indices)=>{
    const nodes=chart.children[0].children,stems=nodes.filter(n=>n.attributes.class==='plot-whisker');
    const left=nodes.filter(n=>n.attributes.class==='total-tick'),right=nodes.filter(n=>n.attributes.class==='use-tick');
+   const grid=nodes.filter(n=>n.attributes.class==='plot-grid');
+   assert.equal(grid.length,5);
+   const positions=grid.map(n=>n.attributes.y1);
+   assert.deepEqual(left.map(n=>n.attributes.y-4),positions);
+   assert.deepEqual(right.map(n=>n.attributes.y-4),positions);
+   assert(positions.slice(1).every((v,i)=>v-positions[i]===positions[1]-positions[0]));
    assert.equal(+right.at(-1).textContent,4);assert(+left.at(-1).textContent<=2);
    assert.equal(+right[0].textContent,0);
    const y=v=>+right[0].attributes.y-4+(right.at(-1).attributes.y-right[0].attributes.y)*v/Number(right.at(-1).textContent);
