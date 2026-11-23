@@ -80,7 +80,7 @@ def project(db, document, source, rate, anchor, samples, travel):
     return result
 
 
-def recover_boundary(db, reader, document, source, rate, t, before, after, first, last, travel,cache):
+def recover_boundary(db, reader, document, source, rate, t, before, after, first, last, travel,cache, reference=None):
     """Require supported hour brackets. Use an independent photo from either side."""
     if before is None or after is None or after-before not in (0,1):
         return None
@@ -135,10 +135,15 @@ def recover_boundary(db, reader, document, source, rate, t, before, after, first
             break
     if not estimates:
         return None
-    level,_,_,_,pair=estimates[0]
     lo=max(row[1] for row in estimates)
     hi=min(row[2] for row in estimates)
-    # Conflicting absolute turn assignments cannot identify a nominal boundary.
+    # Keep every photo's outer bounds. A separate absolute reading propagated
+    # through measured hours can corroborate one of the proposed nominal turns.
+    if reference is not None:
+        estimates=[row for row in estimates if abs(row[0]-reference)<=Decimal('.01')]
+    if not estimates:
+        return None
+    level,_,_,_,pair=estimates[0]
     if not lo<=level<=hi or any(abs(other[0]-level)>Decimal('.01') for other in estimates):
         return None
     return dict(value=level,bounds=(lo,hi),anchors=list(dict.fromkeys(r[3] for r in estimates)),
@@ -172,3 +177,25 @@ def difference(left,right):
     return dict(use=float(delta),basis='photo_replay',opening=float(left['value']),closing=float(right['value']),
                 bounds=[float(lo.quantize(cent,rounding=ROUND_FLOOR)),float(hi.quantize(cent,rounding=ROUND_CEILING))],
                 photo_evidence=proof)
+
+
+def carried_difference(anchor, movement, closing):
+    """Position the opening register using one independently measured preceding hour."""
+    if not anchor or not closing or movement.get('basis')!='fine_dial' or 'use' not in movement:
+        return None
+    use = number(movement['use'])
+    low, high = map(number, movement['bounds'])
+    if not 0 <= low <= use <= high:
+        return None
+    opening = dict(value=anchor['value']+use,
+                   bounds=(anchor['bounds'][0]+low, anchor['bounds'][1]+high))
+    hour = difference(opening, closing)
+    if hour:
+        hour['basis'] = 'carried_register'
+        hour['carry'] = dict(start=movement['start'], end=movement['end'],
+                             reading=float(anchor['value']), use=float(use))
+        if 'frames' in anchor:
+            hour['photo_evidence']['anchor'] = {k:anchor[k] for k in ('frames','anchors')}
+        if 'reference_time' in anchor:
+            hour['carry'].update(reference_time=anchor['reference_time'],reference_value=anchor['reference_value'])
+    return hour

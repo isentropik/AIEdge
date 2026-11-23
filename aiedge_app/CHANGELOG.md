@@ -1,3 +1,7 @@
+## 0.2.0-dev107
+
+- Recover a missing hourly opening register from the preceding hour's absolute reading and measured use. Show the subtraction and how the opening reading was calculated when inspecting the green dot.
+
 ## 0.2.0-dev106
 
 - Plot cumulative estimates at clock hours and connect consecutive supported readings with straight lines. Shade the supported cumulative range and mark its midpoint. Show each completed hour's meter difference as a green dot. Keep missing hourly points open and reset each calendar day at midnight.

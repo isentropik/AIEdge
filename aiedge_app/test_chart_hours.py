@@ -4,7 +4,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from chart_hours import ChartHours
-from hourly_photo import difference, project
+from hourly_photo import carried_difference, difference, project
 from meter_history import millis
 
 
@@ -47,6 +47,18 @@ class ChartHoursTests(unittest.TestCase):
         rows=self.rows([(-3,100),(2,100),(3598,102),(3602,102)])
         cut=millis(self.hour+timedelta(seconds=1))
         self.assertEqual(self.run_chart(rows,[cut])['hours'],[])
+
+    def test_carried_register_cannot_cross_a_known_reset(self):
+        end=millis(self.hour)+3600000
+        class Ledger:
+            def snapshot(self,*args):
+                return {end:dict(basis='carried_register',start=end-3600000,end=end,use=2,
+                                 carry=dict(start=end-7200000))}
+        rows=self.rows([(-3600,100),(0,103),(1800,12),(3600,105)])
+        def fetch(entity,start,stop):
+            return [[row for t,row in rows if entity==self.meter and start<=t<stop]]
+        chart=ChartHours(self.meter,self.daily,fetch,ledger=Ledger())
+        self.assertIn([end-3600000,end],chart.snapshot(end,'UTC')['unknownHours'])
 
     def test_reset_or_missing_register_endpoint_withholds_dot(self):
         rows=self.rows([(0,100),(900,102),(1800,12),(3600,103)])
@@ -97,6 +109,21 @@ class ChartHoursTests(unittest.TestCase):
         self.assertEqual(h['hours'][0]['use'],0)
 
 class HourlyPhotoTests(unittest.TestCase):
+    def test_carry_uses_a_measured_hour_and_preserves_endpoint_bounds(self):
+        anchor=dict(value=Decimal('100'),bounds=(Decimal('99'),Decimal('101')))
+        close=dict(value=Decimal('105.56'),bounds=(Decimal('105'),Decimal('106')))
+        movement=dict(basis='fine_dial',start=0,end=3600000,use=3.17,bounds=[3.1,3.3])
+        hour=carried_difference(anchor,movement,close)
+        self.assertEqual((hour['opening'],hour['closing'],hour['use']),(103.17,105.56,2.39))
+        self.assertEqual(hour['bounds'],[0.70,3.90])
+        zero=dict(value=Decimal('103.17'),bounds=(Decimal('103.1'),Decimal('103.3')))
+        self.assertEqual(carried_difference(anchor,movement,zero)['use'],0)
+        for invalid in (dict(movement,basis='carried_register'),dict(movement,use=3.5),
+                        {k:v for k,v in movement.items() if k!='use'}):
+            self.assertIsNone(carried_difference(anchor,invalid,close))
+        self.assertIsNone(carried_difference(None,movement,close))
+        self.assertIsNone(carried_difference(anchor,movement,anchor))
+
     def test_turn_must_be_unique_and_continuous_from_photo(self):
         ref = dict(event_id=1, captured_at='2026-11-22T23:58:00+00:00')
         end = dict(event_id=2, captured_at='2026-11-22T23:59:00+00:00')
