@@ -380,7 +380,8 @@ function chart(){
         if(q.basis==='photo_replay')details.push('Reconstructed from saved frames');
         if(stop.cumulative){
           const c=stop.cumulative;
-          details.push('Cumulative estimate '+number.format(c[1])+' ft³');
+          const range=c[2]!=null&&c[3]!=null?' (range '+number.format(c[2])+'–'+number.format(c[3])+' ft³)':'';
+          details.push('Cumulative estimate '+number.format(c[1])+' ft³'+range);
         }
       }
       if(stop.unknownHour){
@@ -423,7 +424,7 @@ function chart(){
       const raw=(peak||1)/3,unit=10**Math.floor(Math.log10(raw));
       const step=([1,2,2.5,5,10].find(v=>v*unit>=raw)||10)*unit;
       const max=Math.max(step,Math.ceil(peak/step)*step);
-      return {step,max,y:v=>bottom-(bottom-top)*v/max};
+      return {max,y:v=>bottom-(bottom-top)*v/max};
     }
     const totalLabel=$('total-key-label');
     $('chart-legend').hidden=false;
@@ -439,7 +440,7 @@ function chart(){
     if(model.summary){
       if(totalLabel){
         totalLabel.textContent='Cumulative'+(intervals.length?' · left':'');
-        totalLabel.parentElement.title='Cumulative estimate in ft³. Shading shows its supported range. The dotted line marks the midpoint.';
+        totalLabel.parentElement.title='Cumulative gas use in ft³. The solid line shows the meter estimate. Shading spans its lower and upper bounds.';
       }
       useKey.title='Meter change divided by elapsed time, in cubic feet per hour';
     }
@@ -451,13 +452,12 @@ function chart(){
     graphic.style.height=h+'px';
     const nodes=[];
     const tickLabel=v=>Number(v.toPrecision(6)).toLocaleString(undefined,{maximumSignificantDigits:4,notation:v>=1000?'compact':'standard'});
-    for(let i=0;i<=Math.round(total.max/total.step);i++){
-      const v=i*total.step, pos=y(v);
-      nodes.push(svg('line',{x1:left,x2:right,y1:pos,y2:pos,class:'plot-grid'}),svg('text',{x:left-7,y:pos+4,'text-anchor':'end',class:'total-tick'},tickLabel(v)));
-    }
-    if(intervals.length)for(let i=0;i<=Math.round(usage.max/usage.step);i++){
-      const v=i*usage.step;
-      nodes.push(svg('text',{x:right+7,y:usage.y(v)+4,class:'use-tick'},tickLabel(v)));
+    const gridIntervals=4;
+    for(let i=0;i<=gridIntervals;i++){
+      const fraction=i/gridIntervals,pos=bottom-(bottom-top)*fraction;
+      nodes.push(svg('line',{x1:left,x2:right,y1:pos,y2:pos,class:'plot-grid'}),
+        svg('text',{x:left-7,y:pos+4,'text-anchor':'end',class:'total-tick'},tickLabel(total.max*fraction)));
+      if(intervals.length)nodes.push(svg('text',{x:right+7,y:pos+4,class:'use-tick'},tickLabel(usage.max*fraction)));
     }
     const runs=model.rolling?groups:hourlyRuns(groups,model.rangeStops);
     const lines=[];
@@ -477,10 +477,6 @@ function chart(){
           if(band.length>1){
             const area=trendPaths(band,x,y,true,false,false).bands[0];
             clipped.insertBefore(area,clipped.firstChild);
-            if(band.some(p=>Math.abs((p[2]+p[3])/2-p[1])>.005)){
-              const midpoint=trendPaths(band.map(p=>[p[0],(p[2]+p[3])/2]),x,y,false,true,false).lines[0];
-              midpoint.setAttribute('class','plot-range-midpoint');clipped.append(midpoint);
-            }
             for(const k of [2,3]){
               const side=trendPaths(band.map(p=>[p[0],p[k],p[k],p[k]]),x,y,false,true,false).lines[0];
               side.setAttribute('class','plot-bound-edge');clipped.append(side);
@@ -496,7 +492,7 @@ function chart(){
         for(const p of run)if(start<=p[0]&&p[0]<=end){
           if(p[2]!=null&&p[3]>p[2]&&run.length===1)nodes.push(svg('line',{class:'plot-bound-edge',x1:x(p[0]),x2:x(p[0]),y1:y(p[2]),y2:y(p[3])}));
           lines.push(svg('circle',{cx:x(p[0]),cy:y(p[1]),r:2,class:'plot-estimate-dot','data-event':p[4],
-            'data-time':p[0],'data-total':p[1],...(p[2]==null||p[3]==null?{}:{'data-midpoint':(p[2]+p[3])/2,'data-low':p[2],'data-high':p[3]})}));
+            'data-time':p[0],'data-total':p[1],...(p[2]==null||p[3]==null?{}:{'data-low':p[2],'data-high':p[3]})}));
         }
       }
       nodes.push(defs);
@@ -568,12 +564,8 @@ function chart(){
         const [lo,hi]=range,cap=Math.min(4,Math.max(1,(px-x(measured?.from??stop.hour?.start??stop.from))/4));
         nodes.push(svg('path',{class:'plot-whisker',...attrs,d:'M'+(px-cap)+' '+usage.y(hi)+'h'+(cap*2)+' M'+px+' '+usage.y(hi)+'V'+usage.y(lo)+' M'+(px-cap)+' '+usage.y(lo)+'h'+(cap*2)}));
       }
-      const amount=stop.rate.value,py=usage.y(amount);
+      const py=usage.y(stop.rate.value);
       nodes.push(svg('circle',{class:'plot-usage-dot',...attrs,cx:px,cy:py,r:stop.hour?5:3.1}));
-      if(stop.hour&&(right-left)*(stop.to-stop.hour.start)/span>=38){
-        const above=py-top>=16;
-        nodes.push(svg('text',{class:'plot-use-label',x:px,y:above?py-9:py+17,'text-anchor':'middle'},number.format(amount)));
-      }
     }
     let ticks=model.summary?rateTicks(model.summary.edges,start,end,right-left,zone):
       model.rolling&&!model.trackedWindow?intervalTicks(model.stops,start,end,right-left,zone):axisTicks(start,end,right-left,zone);
@@ -670,7 +662,7 @@ function chart(){
 const drawDay=chart();
 let selection='today',rolling=null,activeSelection=null;
 let dayView=null;
-let calendar=null;
+let calendar=null,browsing=null;
 function localOpening(end,zone){
   const fmt=new Intl.DateTimeFormat('sv-SE',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'});
   const day=fmt.format(end);
@@ -700,19 +692,23 @@ function loadCalendar(stamp,zone,minutes){
          (data.minutes??60)!==minutes||!Array.isArray(data.hours)||!Array.isArray(data.groups))throw Error();
       current.data=data;current.status='ready';
     }).catch(()=>{current.status='unavailable';}).finally(()=>{
-      if(current===calendar||current===detail)showSummary(dayView);
+      if(current===calendar||current===detail||current===browsing?.fine)showSummary(dayView);
     });
   return current;
 }
 let manualChartRefresh=false,detail=null,calendarStamp=0,visibleSummary=null;
 window.addEventListener('aiedge-refresh-images',()=>{manualChartRefresh=true;});
 function requestDetail(){
-  if(!calendar||rateMinutes(selection,calendarStamp-calendar.midnight)!==10)return;
+  if(browsing||!calendar||rateMinutes(selection,calendarStamp-calendar.midnight)!==10)return;
   if(detail?.zone===calendar.zone&&completedTick(detail.end,calendar.zone,10)===completedTick(calendarStamp,calendar.zone,10))return;
   detail=loadCalendar(calendarStamp,calendar.zone,10);
 }
 function setCalendar(zone,stamp){
-  if(!zone){calendar=null;detail=null;visibleSummary=null;return;}
+  if(!zone || (calendar && calendar.zone!==zone)){
+    browsing=null;calendar=null;detail=null;visibleSummary=null;
+    $('gas-period-row').hidden=true;$('gas-latest').hidden=true;
+    if(!zone)return;
+  }
   calendarStamp=stamp?Date.parse(stamp):Date.now();
   const fresh=manualChartRefresh;
   manualChartRefresh=false;
@@ -750,15 +746,21 @@ function rateBuckets(rows,start,end,minutes,zone){
   return groups;
 }
 function showSummary(view){
-  const {zone,midnight,data}=calendar;
-  const minutes=rateMinutes(selection,calendarStamp-midnight),fine=minutes===10;
-  const source=fine?detail:calendar;
-  const end=completedTick(source?.end??calendarStamp,zone,fine?10:60);
-  const status=calendar.status==='ready'?(source?.status??'loading'):calendar.status;
-  if(status==='loading'&&visibleSummary?.selection===selection&&visibleSummary.zone===zone&&visibleSummary.midnight===midnight)return;
+  const hourly=browsing?.hourly??calendar;
+  const {zone,midnight,data}=hourly;
+  const stamp=browsing?.end??calendarStamp;
+  const elapsed=browsing?browsing.end-browsing.start:stamp-midnight;
+  const minutes=rateMinutes(selection,elapsed),fine=minutes===10;
+  const short=browsing?browsing.fine:detail;
+  const source=fine?short:hourly;
+  const end=browsing?.end??completedTick(source?.end??stamp,zone,fine?10:60);
+  const start=browsing?.start??(selection==='today'?midnight:end-Number(selection)*hourMs);
+  if(browsing)view=browsing.view;
+  updateNavigation(hourly,start,end);
+  const status=hourly.status==='ready'?(source?.status??'loading'):hourly.status;
+  if(!browsing&&status==='loading'&&visibleSummary?.selection===selection&&visibleSummary.zone===zone&&visibleSummary.midnight===midnight)return;
   visibleSummary=status==='ready'?{selection,zone,midnight}:null;
-  const start=selection==='today'?midnight:end-Number(selection)*hourMs;
-  const key=JSON.stringify(['rate',selection,minutes,start,end,status,calendar.status,source?.status,view?.key]);
+  const key=JSON.stringify(['rate',selection,minutes,start,end,status,hourly.end,source?.end,view?.key]);
   const host=$('day-curve'),stops=new Map(),series=[],extent=[];
   const stop=t=>{
     if(!stops.has(t))stops.set(t,{from:null,to:t,point:null});
@@ -767,7 +769,7 @@ function showSummary(view){
   const hours=data?.hours||[], byEnd=new Map(hours.map(q=>[q.end,q]));
   const resets=(data?.resets||[midnight]).filter(t=>start<=t&&t<=end);
   const knots=new Map(),closes=new Map();
-  const dailySamples=[...(data?.dailyHours||[]),...(fine?detail?.data?.dailyHours||[]:[])];
+  const dailySamples=[...(data?.dailyHours||[]),...(fine?short?.data?.dailyHours||[]:[])];
   const dailyTimes=new Set(dailySamples.map(p=>p[0]));
   const sample=(time,value,low,high,event=null)=>[time,value,low,high,event];
   for(const row of dailySamples)knots.set(row[0],sample(...row));
@@ -778,7 +780,7 @@ function showSummary(view){
     const dailyRanges=new Map(view.visible.flat().filter(p=>p[2]!=null&&p[3]!=null&&p[6]!==false)
       .map(p=>[p[4],p.slice(2,4)]));
     const readings=new Map(view.movement.map(p=>[p[2],p]));
-    for(const offset of [...(data?.offsets||[]),...(fine?detail?.data?.offsets||[]:[])]){
+    for(const offset of [...(data?.offsets||[]),...(fine?short?.data?.offsets||[]:[])]){
       const source=readings.get(offset.event);
       if(!source||offset.time<midnight||midnightTicks.has(offset.time))continue;
       const range=ranges.get(offset.event)||dailyRanges.get(offset.event);
@@ -824,6 +826,7 @@ function showSummary(view){
   }
   let run=[];
   for(const [t,p] of [...knots].sort((a,b)=>a[0]-b[0])){
+    if(t>end)break;
     const previous=run.at(-1);
     if(previous&&(t-previous[0]!==spacing||fine&&byEnd.get(t)?.start!==previous[0]||midnightTicks.has(t)||p[1]<previous[1]||
        midnightTicks.has(previous[0])&&!byEnd.has(t)&&!dailyTimes.has(t))){
@@ -837,7 +840,7 @@ function showSummary(view){
   // Preserve it at its actual time when there is no clock reading in the window.
   for(const group of data?.groups||[]){
     const last=group.at(-1);
-    if(last&&last[0]>=start&&last[0]<midnight&&
+    if(last&&last[0]>=start&&last[0]<=end&&last[0]<midnight&&
        ![...knots.keys()].some(t=>t>=Math.max(group[0][0],start)&&t<=last[0])){
       add([last]);
     }
@@ -855,14 +858,15 @@ function showSummary(view){
   stop(end);
   const ordered=[...stops.values()].sort((a,b)=>a.to-b.to);
   if(view){
-    host.dataset.endEvent=String(view.event);host.dataset.endTime=latest.source.captured_at;
+    if(browsing){delete host.dataset.endEvent;host.dataset.endTime=new Date(end).toISOString();}
+    else{host.dataset.endEvent=String(view.event);host.dataset.endTime=latest.source.captured_at;}
   }else{delete host.dataset.endEvent;delete host.dataset.endTime;}
   const message=status==='loading'?'Loading meter readings…':status==='unavailable'?'Meter history unavailable':
     data?.missing?.includes('daily')&&start<midnight?'Previous daily totals unavailable':
     source?.data?.missing?.includes('register')&&!samples.length?'Meter history unavailable':
     !buckets.some(q=>q.use!=null)?'No supported rate in this window':'';
   const missingHour=status==='ready'&&unknown.length===1?'Rate unknown '+clockSpan(...unknown[0],zone):'';
-  $('day-history-status').textContent=[minutes<60?minutes+'-min averages':minutes/60+'-hour averages',view?.partialCoverage?'Partial daily total':'',missingHour,message||'Through '+clock(end,zone)].filter(Boolean).join(' · ');
+  $('day-history-status').textContent=[minutes<60?minutes+'-min averages':minutes/60+'-hour averages',view?.partialCoverage||browsing&&start<hourly.end-25*hourMs?'Partial daily total':'',missingHour,message||'Through '+clock(end,zone)].filter(Boolean).join(' · ');
   drawDay([],start,zone,key,null,midnight,null,ordered,[],null,null,null,
     {series,extent,resets,closes,edges:[start,...buckets.map(q=>q.end)]});
 }
@@ -1183,11 +1187,162 @@ function showRolling(){
 function period(selectionValue,data){
   const next=['1','6','12','24'].includes(selectionValue)?selectionValue:'today';
   const changed=selection!==next,previousKey=rolling?.key,wasCompatible=rolling?.compatibleWithDay;
+  if(changed && browsing){
+    const windows=periodWindows(browsing.hourly,browsing.anchor,next);
+    const window=windows.find(w=>w.start<browsing.end && browsing.end<=w.end) || windows.at(-1);
+    selectWindow(window,windows,browsing.hourly,browsing.anchor,next);
+  }
   selection=next;rolling=data;
+  for(const button of $('gas-scales').querySelectorAll('[data-scale]'))
+    button.setAttribute('aria-pressed',String(next===button.dataset.scale));
   if(changed)requestDetail();
   if(selection==='today'){
     if(changed||previousKey!==data?.key||wasCompatible!==data?.compatibleWithDay){rollingDrawKey='';showDay();}
   }else showRolling();
 }
+// The hourly snapshot contains up to 25 hours. Offer windows that actually
+// intersect saved history. Pin the same snapshot while the reader browses.
+function periodWindows(hourly,anchor,value){
+  const {zone,midnight,data}=hourly;
+  const minutes=rateMinutes(value,anchor-midnight);
+  const close=completedTick(anchor,zone,minutes===10?10:60);
+  const starts=[...(data?.hours||[]).map(q=>q.start),...(data?.dailyHours||[]).map(p=>p[0]),
+    ...(data?.offsets||[]).map(p=>p.time),...(data?.groups||[]).filter(g=>g.length).map(g=>g[0][0])];
+  const earliest=Math.min(close,...starts);
+  if(value==='today'){
+    const days=[{start:midnight,end:close}];
+    for(let end=midnight;end>earliest;){
+      const start=localOpening(end-1,zone);
+      days.push({start,end});
+      end=start;
+    }
+    return days;
+  }
+  const span=Number(value)*hourMs,windows=[];
+  for(let end=close;end>=earliest;end-=span)windows.push({start:end-span,end});
+  return windows;
+}
+function selectWindow(chosen,windows,hourly,anchor,value){
+  const old=browsing;
+  visibleSummary=null;
+  browsing=null;
+  if(!chosen || chosen.end===windows[0].end && chosen.start===windows[0].start)return;
+  let fine=old?.fine??detail;
+  if(rateMinutes(value,chosen.end-chosen.start)===10 &&
+     (!fine || fine.zone!==hourly.zone || chosen.end>fine.end || chosen.start<completedTick(fine.end,fine.zone,10)-2*hourMs)){
+    fine=loadCalendar(chosen.end,hourly.zone,10);
+  }
+  browsing={...chosen,hourly,anchor,fine,view:old?old.view:dayView};
+}
+let navWindows=[],navKey='',navZone='';
+function movePeriod(index,returnFocus=false){
+  const chosen=navWindows[index];
+  if(!chosen)return;
+  selectWindow(chosen,navWindows,browsing?.hourly??calendar,browsing?.anchor??calendarStamp,selection);
+  closePicker(returnFocus);
+  if(!browsing)requestDetail();
+  showSummary(dayView);
+}
+function windowLabel(w){
+  const fmt=new Intl.DateTimeFormat(undefined,{timeZone:navZone,month:'short',day:'numeric'});
+  if(fmt.format(w.start)!==fmt.format(w.end))
+    return fmt.format(w.start)+' '+clock(w.start,navZone)+' – '+fmt.format(w.end)+' '+clock(w.end,navZone);
+  return clockSpan(w.start,w.end,navZone);
+}
+function dateLabel(t){
+  return new Intl.DateTimeFormat(undefined,{timeZone:navZone,weekday:'long',month:'short',day:'numeric'}).format(t);
+}
+function updateNavigation(hourly,start,end){
+  const anchor=browsing?.anchor??calendarStamp;
+  const windows=periodWindows(hourly,anchor,selection);
+  const key=JSON.stringify([selection,start,end,hourly.zone,windows]);
+  if(key===navKey&&!$('gas-period-row').hidden)return;
+  navKey=key;navZone=hourly.zone;navWindows=windows;
+  $('gas-period-row').hidden=false;
+  const index=periodIndex();
+  $('gas-previous').disabled=index>=windows.length-1;
+  $('gas-next').disabled=!browsing;
+  $('gas-latest').hidden=!browsing;
+  $('gas-period-day').textContent=dateLabel(selection==='today'?start:end);
+  $('gas-period-time').textContent=windowLabel({start,end});
+  if(!$('gas-period-picker').hidden)closePicker(false);
+}
+function periodIndex(){
+  return browsing?navWindows.findIndex(w=>w.start===browsing.start&&w.end===browsing.end):0;
+}
+function closePicker(returnFocus) {
+  $('gas-period-picker').hidden = true;
+  $('gas-jump').setAttribute('aria-expanded','false');
+  if(returnFocus) $('gas-jump').focus();
+}
+function openPicker() {
+  const index=periodIndex();
+  const options = navWindows.map((w,i) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    const differentDates=dateLabel(navWindows[0].end)!==dateLabel(navWindows.at(-1).end);
+    const periodLabel=windowLabel(w);
+    button.textContent=selection==='today'?dateLabel(w.start):
+      differentDates&&dateLabel(w.start)===dateLabel(w.end)?dateLabel(w.end)+' · '+periodLabel:periodLabel;
+    if(index===i) {
+      button.setAttribute('aria-current','true');
+      const check = document.createElement('span');
+      check.setAttribute('aria-hidden','true');
+      check.textContent='✓';
+      button.append(check);
+    }
+    button.addEventListener('click',()=>movePeriod(i,true));
+    return button;
+  });
+  $('gas-period-options').replaceChildren(...options);
+  $('gas-period-picker').hidden = false;
+  $('gas-jump').setAttribute('aria-expanded','true');
+  options[index].focus();
+}
+$('gas-scales').querySelectorAll('[data-scale]').forEach(button=>button.addEventListener('click',()=>{
+  const select=$('usage-period');
+  select.value=button.dataset.scale;
+  select.dispatchEvent(new Event('change'));
+}));
+$('gas-previous').addEventListener('click',()=>movePeriod(periodIndex()+1));
+$('gas-next').addEventListener('click',()=>movePeriod(periodIndex()-1));
+$('gas-latest').addEventListener('click',()=>{movePeriod(0);$('gas-jump').focus();});
+$('gas-jump').addEventListener('click',()=>$('gas-period-picker').hidden ? openPicker() : closePicker(true));
+document.addEventListener?.('pointerdown',e=>{if(!e.target.closest('.jump')) closePicker(false);});
+document.addEventListener?.('focusin',e=>{if(!e.target.closest('.jump')) closePicker(false);});
+const row = $('gas-period-row');
+row.addEventListener('keydown',e=>{
+  if(e.key==='Escape' && !$('gas-period-picker').hidden) {e.preventDefault();closePicker(true);return;}
+  const n = e.target.closest('#gas-period-options button');
+  if(n && ['ArrowUp','ArrowDown'].includes(e.key)) {
+    e.preventDefault();
+    (e.key==='ArrowUp'?n.previousElementSibling:n.nextElementSibling)?.focus();
+  } else if(!n && ['ArrowLeft','ArrowRight'].includes(e.key)) {
+    e.preventDefault();
+    movePeriod(periodIndex()+(e.key==='ArrowLeft'?1:-1));
+    $('gas-jump').focus();
+  }
+});
+
+// Swipe on the date strip. Touching the plot still inspects readings.
+let gesture = null, suppressClick = false;
+row.addEventListener('pointerdown',e=>{
+  suppressClick = false;
+  if(e.isPrimary && e.pointerType==='touch' && !e.target.closest('#gas-period-picker'))
+    gesture={id:e.pointerId,x:e.clientX,y:e.clientY};
+});
+row.addEventListener('pointercancel',()=>{gesture=null;});
+row.addEventListener('pointerup',e=>{
+  if(!gesture || gesture.id!==e.pointerId) return;
+  const dx=e.clientX-gesture.x,dy=e.clientY-gesture.y;
+  gesture=null;
+  if(Math.abs(dx)<45 || Math.abs(dx)<Math.abs(dy)*1.5) return;
+  suppressClick=true;
+  movePeriod(periodIndex()+(dx>0?1:-1));
+});
+row.addEventListener('click',e=>{
+  if(suppressClick) {suppressClick=false;e.preventDefault();e.stopImmediatePropagation();}
+},true);
+
 window.AIEdgeCharts={day,period,setCalendar,get hourly(){return !!calendar;}};
 })();
