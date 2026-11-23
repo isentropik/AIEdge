@@ -12,7 +12,8 @@ from optical_daily import endpoint
 
 METHOD = "photo_anchored_fine_dial"
 ASSUMPTION = (
-    "Starts in the middle feasible photo band, lower on a tie. "
+    "Uses the feasible band nearest the measured photo center when available. "
+    "Otherwise starts in the middle feasible photo band, lower on a tie. "
     "Follows the smallest supported forward movement. Re-anchors after a break require "
     "an independent absolute reading. Consumption across gaps is unknown."
 )
@@ -36,15 +37,22 @@ def measurement(track, source):
     }
 
 
-def start(source, options, floor, *, previous=None, limit=None):
+def start(source, options, floor, *, previous=None, limit=None, photo_center=None):
     # Select an actual feasible band. The midpoint of the entire envelope can be between turns.
     if not options:
         return None
-    i = (len(options) - 1) // 2 if previous is None else 0
-    for lo, hi in options[i:]:
+    if photo_center is None:
+        i = (len(options) - 1) // 2 if previous is None else 0
+        candidates = options[i:]
+    else:
+        candidates = [(max(lo, floor), min(hi, previous+limit) if previous is not None else hi)
+                      for lo, hi in options]
+        candidates = [(lo, hi) for lo, hi in candidates if lo <= hi]
+        candidates.sort(key=lambda band: abs((band[0]+band[1])/2 - photo_center))
+    for lo, hi in candidates:
         if hi < floor:
             continue
-        level = max(floor, (lo + hi) / 2 if previous is None else lo)
+        level = max(floor, (lo + hi) / 2 if previous is None or photo_center is not None else lo)
         if previous is not None and level > previous + limit:
             return None
         track = {
@@ -103,10 +111,10 @@ def matches_measurement(state, source):
     )
 
 
-def update(track, store, snapshot, source, options, floor):
+def update(track, store, snapshot, source, options, floor, photo_center=None):
     """Use bounded indexed reads; a cursor or display date never substitutes for a meter event."""
     if not track:
-        return start(source, options, floor)
+        return start(source, options, floor, photo_center=photo_center)
     old = track["source"]
     if (
         any(old[k] != source[k] for k in ("camera", "format_id"))
@@ -195,6 +203,7 @@ def update(track, store, snapshot, source, options, floor):
                 max(floor, previous),
                 previous=previous,
                 limit=rate * number(elapsed),
+                photo_center=photo_center,
             )
             if anchor:
                 return anchor
@@ -223,8 +232,11 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age):
     legacy = (prior or {}).get("photo_register") or {}
     floor = number(legacy.get("value_ft3", 0))
     options = None
+    photo_center = None
     if proof and proof.get("source") == src and proof.get("bands_ft3"):
         options = [tuple(map(number, b)) for b in proof["bands_ft3"]]
+        if "photo_center_ft3" in proof:
+            photo_center = number(proof["photo_center_ft3"])
         if state:
             # An independent anchor must be reachable from the last accepted register reading.
             seconds = elapsed_seconds(
@@ -267,7 +279,7 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age):
         options = [tuple(map(number, b)) for b in state["bands_ft3"]]
     if not track and not options:
         return None, False
-    track = update(track, store, snapshot, src, options, floor)
+    track = update(track, store, snapshot, src, options, floor, photo_center)
     if not track:
         return None, False
     latest = track["display"]

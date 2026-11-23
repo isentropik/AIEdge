@@ -1,3 +1,7 @@
+## 0.2.0-dev105
+
+- Allow bounded extra time for progressing JPEG transfers and passive readiness checks. Recover a register reading from indexed dial photos after a gap while preserving unknown usage.
+
 ## 0.2.0-dev104
 
 - Show uncertainty for tracked fine-dial movement and usage between saved readings. Reconnect clock-only chart breaks when independent capture records rule out a missed turn.

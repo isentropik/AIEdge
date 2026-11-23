@@ -1,5 +1,5 @@
 """Passive readiness and scheduled admission using a real loopback HTTP server."""
-import contextlib,json,tempfile,threading,unittest
+import contextlib,json,tempfile,threading,time,unittest
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from unittest.mock import patch
 from capture import Camera,Collector,Store
@@ -15,10 +15,11 @@ READY={'protocol_version':1,'mode':'remote-camera','state':'ready',
 def fixture():
     class Handler(BaseHTTPRequestHandler):
         payload=READY.copy();body=None;status=200;extra=[];auth=None
-        gets=0;posts=0;frame=0
+        gets=0;posts=0;frame=0;header_delay=0
         def log_message(self,*args):pass
         def do_GET(self):
             type(self).gets+=1
+            if self.header_delay:time.sleep(self.header_delay)
             assert self.path=='/api/v1/camera'
             type(self).auth=self.headers.get('Authorization')
             blob=self.body if self.body is not None else json.dumps(self.payload).encode()
@@ -100,5 +101,11 @@ class CameraStatusTests(unittest.TestCase):
             self.assertEqual(collector.camera_state['state'],'unavailable')
             self.assertEqual(collector.last_error['error'],'camera_connection_failed')
             self.assertEqual((device.gets,device.posts),(0,0))
+
+    def test_slow_valid_readiness_response_uses_one_passive_get(self):
+        with fixture() as (camera,device):
+            device.header_delay=5.3
+            self.assertEqual(camera.readiness()['state'],'ready')
+            self.assertEqual((device.gets,device.posts),(1,0))
 
 if __name__=='__main__':unittest.main()

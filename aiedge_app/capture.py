@@ -9,6 +9,10 @@ from camera_transport import DeadlineHTTPHandler,DeadlineHTTPSHandler
 from durable_file import sync_directory
 MAX_IMAGE=4*1024*1024
 CAPTURE_IO_DEADLINE=20
+# A delayed JPEG may still be advancing when the header/request budget expires.
+# Count substantial byte progress and bound the entire operation, including headers.
+BODY_PROGRESS_BYTES=512
+BODY_PROGRESS_SECONDS=10
 MIN_FREE_BYTES=512*1024*1024
 
 def now():return datetime.now(timezone.utc).isoformat()
@@ -260,6 +264,9 @@ class Camera:
             return self._capture(reference=reference,deadline=deadline)
     def _capture(self,reference=False,*,deadline=None):
         absolute=io_deadline(CAPTURE_IO_DEADLINE,deadline)
+        body_cap=absolute if reference else absolute+BODY_PROGRESS_SECONDS
+        if deadline is not None:
+            body_cap=min(body_cap,deadline)
         self.require_capture(reference=reference)
         headers={'Content-Type':'application/json'}
         if self.token:headers['Authorization']='Bearer '+self.token
@@ -282,13 +289,22 @@ class Camera:
                 if not 4<=length<=MAX_IMAGE:raise ValueError('invalid_image_length')
                 with self.performance.measure('reference_download' if reference else 'camera_download'):
                     parts=[];remaining=length
+                    body_deadline=absolute
+                    progress_bytes=0
                     try:
                         with self.performance.transfer_reads(length,reference=reference) as reads:
                             while remaining:
-                                if time.monotonic()>=request.aiedge_deadline:raise TimeoutError('camera_io_deadline')
+                                if time.monotonic()>=body_deadline:raise TimeoutError('camera_io_deadline')
                                 block=reads.read1(r,min(65536,remaining))
                                 if not block:raise ValueError('truncated_image')
                                 parts.append(block);remaining-=len(block)
+                                progress_bytes+=len(block)
+                                if remaining and progress_bytes>=BODY_PROGRESS_BYTES:
+                                    progress_bytes=0
+                                    extended=min(body_cap,time.monotonic()+BODY_PROGRESS_SECONDS)
+                                    if extended>body_deadline:
+                                        body_deadline=extended
+                                        r.set_body_deadline(extended)
                     except (TimeoutError,ConnectionResetError) as exc:
                         # No image is admitted, and no POST is repeated. Only
                         # well-formed response provenance qualifies for the

@@ -3,7 +3,7 @@ import contextlib,errno,socket,ssl,threading,time,unittest,urllib.request
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from unittest.mock import patch
-from capture import Camera,NoRedirect
+from capture import Camera,NoRedirect,validate
 from camera_transport import DeadlineHTTPHandler,DeadlineHTTPSHandler
 import camera_transport
 from test_capture import JPEG,headers
@@ -19,7 +19,9 @@ def fixture(mode='ok',tls=False):
             self.rfile.read(int(self.headers['Content-Length']))
             status=503 if mode=='error_body' else 200
             blob=b'Unexpected private details'*5 if mode=='error_body' else JPEG
-            fields={'Content-Type':'text/plain' if status==503 else 'image/jpeg','Content-Length':str(len(blob)),**dict(headers().items())}
+            if mode in ('late_jpeg','drip_jpeg','stalled_jpeg'):
+                blob=b'\xff\xd8'+b'x'*4096+b'\xff\xd9'
+            fields={'Content-Type':'text/plain' if status==503 else 'image/jpeg','Content-Length':str(len(blob)),**dict(headers(blob=blob).items())}
             wire=(f'HTTP/1.0 {status} Result\r\n'+''.join(f'{name}: {value}\r\n' for name,value in fields.items())).encode()
             try:
                 if mode=='headers':
@@ -30,6 +32,19 @@ def fixture(mode='ok',tls=False):
                     self.connection.sendall(wire+b'\r\n')
                     time.sleep(5.2)
                     self.connection.sendall(blob)
+                elif mode in ('late_jpeg','drip_jpeg','stalled_jpeg'):
+                    self.connection.sendall(wire+b'\r\n')
+                    time.sleep(.23)
+                    self.connection.sendall(blob[:1024])
+                    if mode=='late_jpeg':
+                        time.sleep(.24)
+                        self.connection.sendall(blob[1024:])
+                    elif mode=='drip_jpeg':
+                        for offset in range(1024,len(blob),512):
+                            time.sleep(.13)
+                            self.connection.sendall(blob[offset:offset+512])
+                    else:
+                        time.sleep(.9)
                 elif mode in ('body','error_body'):
                     self.connection.sendall(wire+b'\r\n')
                     for byte in blob:self.connection.sendall(bytes([byte]));time.sleep(.06)
@@ -165,6 +180,19 @@ class TransportTests(unittest.TestCase):
         camera.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),DeadlineHTTPHandler(),DeadlineHTTPSHandler(context=context))
     def test_trickled_header_obeys_the_overall_io_deadline(self):self.slow_failure('headers')
     def test_trickled_body_obeys_the_same_deadline(self):self.slow_failure('body')
+    def test_progressing_jpeg_can_complete_beyond_header_deadline(self):
+        with patch('capture.CAPTURE_IO_DEADLINE',.38),patch('capture.BODY_PROGRESS_SECONDS',.38),fixture('late_jpeg') as url:
+            blob,metadata=Camera(url).capture()
+            self.assertEqual(len(blob),4100)
+            validate(blob,metadata)
+
+    def test_progress_never_overrides_caller_or_total_limit(self):
+        for mode,explicit,maximum in [('late_jpeg',True,.38),('drip_jpeg',False,.76),('stalled_jpeg',False,.61)]:
+            with self.subTest(mode=mode),fixture(mode) as url,patch('capture.CAPTURE_IO_DEADLINE',.38),patch('capture.BODY_PROGRESS_SECONDS',.38):
+                start=time.monotonic()
+                with self.assertRaisesRegex(ValueError,'camera_timeout'):
+                    Camera(url).capture(deadline=start+.38 if explicit else None)
+                self.assertAlmostEqual(time.monotonic()-start,maximum,delta=.13)
     def test_trickled_error_body_is_bounded_and_never_exposed(self):self.slow_failure('error_body',reason='camera_unavailable')
     def test_tls_headers_obey_the_same_deadline(self):self.slow_failure('headers',tls=True)
     def test_default_tls_rejects_the_disposable_untrusted_certificate(self):

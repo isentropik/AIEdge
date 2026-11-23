@@ -56,19 +56,9 @@ _ANGLES = np.deg2rad(np.arange(0, 360, 0.5))
 
 def shaft(diff, center, vertical, horizontal, radii):
     ray = vertical[:, None] * np.cos(_ANGLES) + horizontal[:, None] * np.sin(_ANGLES)
-    x, y = center[:, None, None] + np.linspace(*radii, 11)[None, :, None] * ray[:, None, :]
-    ix = x.astype(int)
-    iy = y.astype(int)
-    if ix.min() < 0 or iy.min() < 0 or ix.max() + 1 >= 640 or iy.max() + 1 >= 480:
+    samples = radial_samples(diff, center, ray, np.linspace(*radii, 11))
+    if samples is None:
         return None
-    dx = x - ix
-    dy = y - iy
-    samples = (
-        (1 - dx) * (1 - dy) * diff[iy, ix]
-        + dx * (1 - dy) * diff[iy, ix + 1]
-        + (1 - dx) * dy * diff[iy + 1, ix]
-        + dx * dy * diff[iy + 1, ix + 1]
-    )
     score = np.quantile(samples, 0.2, axis=0)
     score = np.maximum(0, score - np.quantile(score, 0.2))
     k = int(np.argmax(score))
@@ -82,6 +72,72 @@ def shaft(diff, center, vertical, horizontal, radii):
 
 def displacement(a, b):
     return (a - b + 5) % 10 - 5
+
+
+def radial_samples(image, center, rays, radii):
+    x, y = center[:, None, None] + np.asarray(radii)[None, :, None] * rays[:, None, :]
+    if x.min() < 0 or y.min() < 0 or x.max() >= image.shape[1]-1 or y.max() >= image.shape[0]-1:
+        return None
+    ix, iy = x.astype(int), y.astype(int)
+    dx, dy = x-ix, y-iy
+    return ((1-dx)*(1-dy)*image[iy, ix] + dx*(1-dy)*image[iy, ix+1]
+            + (1-dx)*dy*image[iy+1, ix] + dx*dy*image[iy+1, ix+1])
+
+
+def dark_stroke(angles, intensity, widths, change=None):
+    """Require one isolated ink stroke of the expected angular width."""
+    dark = np.flatnonzero(intensity < 75)
+    centers = []
+    for run in np.split(dark, np.flatnonzero(np.diff(dark) > 1) + 1):
+        if not len(run) or run[0] == 0 or run[-1] == len(angles)-1:
+            continue
+        width = angles[run[-1]] - angles[run[0]]
+        if widths[0] <= width <= widths[1] and (change is None or change[run].mean() >= 40):
+            centers.append(float(angles[run].mean()))
+    return centers[0] if len(centers) == 1 else None
+
+
+def indexed_tip(image, diff, item, error):
+    """Measure the tip relative to a printed division visible beyond the pointer."""
+    mark = item["landmarks"]
+    rim = np.asarray(mark["rim_points"], dtype=float)
+    if rim.shape != (4, 2) or not np.isfinite(rim).all():
+        return None
+    top, right, bottom, left = rim
+    vertical, horizontal = (top-bottom)/2, (right-left)/2
+    sign = 1 if item["direction"] == "cw" else -1
+
+    def rays(angles):
+        radians = angles * sign * np.pi / 5
+        return vertical[:, None]*np.cos(radians) + horizontal[:, None]*np.sin(radians)
+
+    results = []
+    for center in (rim.mean(axis=0), np.asarray(mark["needle_pivot"])):
+        seed = shaft(diff, center, vertical, horizontal, (.82, .94))
+        if seed is None:
+            return None
+        angles = sign*seed + np.arange(-.50, .501, .005)
+        radii = (.88, .90, .92, .94)
+        ink = radial_samples(image, center, rays(angles), radii)
+        change = radial_samples(diff, center, rays(angles), radii)
+        if ink is None or change is None:
+            return None
+        tips = [dark_stroke(angles, row, (.10, .36), changed) for row, changed in zip(ink, change)]
+        if None in tips or np.ptp(tips) > error:
+            return None
+        division = round(float(np.mean(tips)))
+        ticks = division + np.arange(-.23, .231, .005)
+        outer = radial_samples(image, center, rays(ticks), (1.06, 1.07, 1.08))
+        if outer is None:
+            return None
+        marks = [dark_stroke(ticks, row, (.02, .16)) for row in outer]
+        if None in marks or np.ptp(marks) > error:
+            return None
+        results.extend(division + tip - tick for tip in tips for tick in marks)
+    values = [results[0]+displacement(v, results[0]) for v in results]
+    if np.ptp(values) > error:
+        return None
+    return ((max(values)+min(values))/2) % 10, float(np.ptp(values))/2
 
 
 def read_face(diff, item, error):
@@ -118,11 +174,13 @@ def hundreds(profile, ref, img, doc, positions, indices):
     shift = translation(ref, img, profile["markers"])
     if shift is None:
         return None
-    diff = ref - np.roll(img, (-shift[1], -shift[0]), axis=(0, 1))
+    aligned = np.roll(img, (-shift[1], -shift[0]), axis=(0, 1))
+    diff = ref - aligned
     fitted = list(positions)
     errors = [float(d["position_error"]) for d in dials]
     confirmed = []
     details = []
+    indexed = False
     for j in (len(dials) - 3, len(dials) - 2):
         index = dials[j]["index"]
         item = profile["dials"][index]
@@ -133,6 +191,11 @@ def hundreds(profile, ref, img, doc, positions, indices):
         ):
             return None
         fit = read_face(diff, item, errors[j])
+        if j == len(dials)-2 and (fit is None or positions[-3]-fitted[-3] < 9):
+            indexed_fit = indexed_tip(aligned, diff, item, errors[j])
+            if indexed_fit is not None:
+                fit = indexed_fit
+                indexed = True
         if fit is None:
             return None
         angle, spread = fit
@@ -140,18 +203,29 @@ def hundreds(profile, ref, img, doc, positions, indices):
         fitted[j] = angle
         errors[j] += spread
         details.append(dict(index=index, model=positions[j], photo=angle, half_spread=spread))
-    # Require independent agreement on the neighboring lower dial. Limit this
-    # recovery to the demonstrated opposite-sides-of-zero error on its neighbor.
-    if confirmed != [False, True] or positions[-3] - fitted[-3] < 9:
+    # The lower dial must corroborate its model. A same-side upper-dial
+    # correction also requires an independently visible printed index.
+    wrapped = confirmed == [False, True] and positions[-3] - fitted[-3] >= 9
+    correction = abs(displacement(fitted[-3], positions[-3]))
+    if not wrapped and not (indexed and confirmed[-1] and dials[-3]["position_error"] <= correction <= 1):
         return None
     result = feasible_ranges(scales, fitted, errors)
     if result["state"] != "bounded" or result.get("wraps_register"):
         return None
     values = {int(edge // 100) * 100 for band in result["intervals"] for edge in band}
-    if len(values) != 1:
+    if len(values) != 1 and not indexed:
         return None
-    return dict(register_ft3=values.pop(), resolution_ft3=100, fits=details,
-                bands_ft3=[[str(lo), str(hi)] for lo, hi in result["intervals"]])
+    bands = result["intervals"]
+    proof = dict(fits=details, bands_ft3=[[str(lo), str(hi)] for lo, hi in bands])
+    if indexed:
+        if bands[-1][1] - bands[0][0] >= 100:
+            return None
+        middle = float((bands[0][0]+bands[-1][1])/2)
+        phase = fitted[-2]*scales[-2]/10
+        proof["photo_center_ft3"] = phase + round((middle-phase)/scales[-2])*scales[-2]
+    if len(values) == 1:
+        proof.update(register_ft3=values.pop(), resolution_ft3=100)
+    return proof
 
 
 class PhotoRegister:
