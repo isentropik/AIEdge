@@ -160,6 +160,53 @@ def read_face(diff, item, error):
     return ((lo + hi) / 2) % 10, (hi - lo) / 2
 
 
+def bracketed_tip(image, diff, item, guess, error):
+    """Read the moving tip against the two printed divisions on either side."""
+    mark = item["landmarks"]
+    rim = np.asarray(mark["rim_points"], dtype=float)
+    if rim.shape != (4, 2) or not np.isfinite(rim).all():
+        return None
+    top, right, bottom, left = rim
+    sign = 1 if item["direction"] == "cw" else -1
+
+    def rays(angles):
+        radians = angles * sign * np.pi / 5
+        return ((top-bottom)[:, None]*np.cos(radians) + (right-left)[:, None]*np.sin(radians))/2
+
+    def strokes(center, angles, radii, widths, moving):
+        ray = rays(angles)
+        ink = radial_samples(image, center, ray, radii)
+        change = radial_samples(diff, center, ray, radii) if moving else None
+        if ink is None or moving and change is None:
+            return []
+        readings = [dark_stroke(angles, row, widths, change[i] if moving else None)
+                    for i, row in enumerate(ink)]
+        return [v for v in readings if v is not None]
+
+    values = []
+    for center in (rim.mean(axis=0), np.asarray(mark["needle_pivot"], dtype=float)):
+        tips = strokes(center, guess+np.arange(-.50, .501, .005),
+                       (.84, .86, .88, .90, .92), (.10, .36), True)
+        if len(tips) < 3 or np.ptp(tips) > error:
+            return None
+        left_tick = int(np.floor(np.mean(tips)))
+        marks = []
+        for tick in (left_tick, left_tick+1):
+            observed = strokes(center, tick+np.arange(-.20, .201, .005),
+                               (1.02, 1.04, 1.06, 1.08), (.02, .16), False)
+            if len(observed) < 2 or np.ptp(observed) > error:
+                return None
+            marks.append((min(observed), max(observed)))
+        for lo in marks[0]:
+            for hi in marks[1]:
+                if not 1-error <= hi-lo <= 1+error or not lo <= min(tips) <= max(tips) <= hi:
+                    return None
+                values.extend(left_tick+(tip-lo)/(hi-lo) for tip in tips)
+    if np.ptp(values) > error:
+        return None
+    return ((min(values)+max(values))/2) % 10, float(np.ptp(values))/2
+
+
 def hundreds(profile, ref, img, doc, positions, indices):
     """Intersect the envelope of both photo fits with every unaffected dial."""
     dials = doc["dials"]
@@ -191,8 +238,10 @@ def hundreds(profile, ref, img, doc, positions, indices):
         ):
             return None
         fit = read_face(diff, item, errors[j])
-        if j == len(dials)-2 and (fit is None or positions[-3]-fitted[-3] < 9):
+        if j == len(dials)-2:
             indexed_fit = indexed_tip(aligned, diff, item, errors[j])
+            if indexed_fit is None:
+                indexed_fit = bracketed_tip(aligned, diff, item, positions[j], errors[j])
             if indexed_fit is not None:
                 fit = indexed_fit
                 indexed = True

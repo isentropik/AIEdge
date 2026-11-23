@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from chart_hours import ChartHours
+from chart_hours import ChartHours,tracked_hour
 from hourly_photo import carried_difference, difference, project
 from meter_history import millis
 
@@ -12,6 +12,23 @@ class ChartHoursTests(unittest.TestCase):
     meter = 'sensor.meter'
     daily = 'sensor.daily'
     hour = datetime(2026,11,22,18,tzinfo=timezone.utc)
+
+    def test_partial_level_uses_only_same_basis_tracked_change_across_missing_ticks(self):
+        step=600000
+        d=dict(hours=[dict(start=t*step,end=(t+1)*step,use=2) for t in (0,1,2,5)],
+               trackedLevels=[[3*step,25,'a'],[5*step,25.5,'a']])
+        self.assertEqual(tracked_hour(0,6*step,d),dict(start=0,end=6*step,use=8.5))
+        for leg in d['hours']:
+            leg['bounds']=[1,3]
+        d['evidenceSpans']=[dict(start=3*step,end=5*step,bounds=[1,5])]
+        self.assertEqual(tracked_hour(0,6*step,d),dict(start=0,end=6*step,use=9,bounds=[5,17]))
+        d['trackedLevels'][1][1]=32
+        self.assertIsNone(tracked_hour(0,6*step,d))
+        d['trackedLevels'][1][1]=25.5
+        d['trackedLevels'][1][2]='b'
+        self.assertIsNone(tracked_hour(0,6*step,d))
+        d['trackedLevels'][1]=[5*step,24,'a']
+        self.assertIsNone(tracked_hour(0,6*step,d))
 
     def run_chart(self, rows, cuts=(), zone='UTC', end=None, minutes=60):
         def fetch(entity,start,stop):
@@ -34,6 +51,31 @@ class ChartHoursTests(unittest.TestCase):
         h,=data['hours']
         self.assertEqual((h['opening'],h['closing'],h['use']),(102,110,8))
         self.assertEqual(h['end']-h['start'],3600000)
+
+    def test_partial_day_first_frame_sets_level_without_filling_the_overnight_hour(self):
+        first=self.hour+timedelta(seconds=25)
+        first_tick=millis(self.hour)+600000
+        rows=self.rows([(600,101),(1200,102),(1800,103),(2400,104),(3000,105),(3600,106)])
+        published=dict(entity_id=self.daily,state='4',attributes=dict(method='nominal_meter_movement_v1',
+            measured_at=(self.hour+timedelta(minutes=55)).isoformat(),day=self.hour.date().isoformat(),
+            timezone='UTC',event_id=99,source_sha256='a'*64,value_ft3='4',coverage_started_at=first.isoformat()))
+        def fetch(entity,start,stop):
+            if entity==self.daily:
+                return [[published] if start<=self.hour+timedelta(minutes=55)<stop else []]
+            return [[r for t,r in rows if start<=t<stop]]
+        class Ledger:
+            def snapshot(self,*args):return {}
+            def opening(self,stamp,end,*args):
+                if stamp==first.isoformat() and end==first_tick:
+                    return [end,.1,.05,.15]
+        chart=ChartHours(self.meter,self.daily,fetch,ledger=Ledger())
+        end=millis(self.hour)+3601000
+        fine=chart.snapshot(end,'UTC',minutes=10)
+        self.assertEqual(fine['openingLevels'],[[first_tick,.1,.05,.15]])
+        self.assertIn([first_tick-600000,first_tick],fine['unknownHours'])
+        whole=chart.snapshot(end,'UTC')
+        self.assertEqual(whole['openingLevels'],[[end-1000,5.1,None,None]])
+        self.assertIn([end-3601000,end-1000],whole['unknownHours'])
 
     def test_ten_minute_differences_use_bracketing_readings_and_preserve_unknowns(self):
         rows=self.rows([(0,100),(590,100),(610,102),(1200,102),(1800,102)])
@@ -58,6 +100,16 @@ class ChartHoursTests(unittest.TestCase):
         rows=self.rows([(-3,100),(2,100),(3598,102),(3602,102)])
         cut=millis(self.hour+timedelta(seconds=1))
         self.assertEqual(self.run_chart(rows,[cut])['hours'],[])
+
+    def test_republished_old_event_between_two_clock_brackets(self):
+        rows=self.rows([(-2,100),(2,102),(3600,111)])
+        previous=rows[0][1]
+        held=dict(previous,attributes=dict(previous['attributes'],status='held_at_last_reading'))
+        rows.insert(1,(self.hour,held))
+        self.assertEqual(self.run_chart(rows)['hours'][0]['use'],10)
+        self.assertFalse(self.run_chart(rows,[millis(self.hour)])['hours'])
+        held['attributes']['source_sha256']='f'*64
+        self.assertFalse(self.run_chart(rows)['hours'])
 
     def test_carried_register_cannot_cross_a_known_reset(self):
         end=millis(self.hour)+3600000
@@ -156,6 +208,19 @@ class HourlyPhotoTests(unittest.TestCase):
         self.assertIsNone(difference(early, None))
         self.assertIsNone(difference(late, early))
         self.assertEqual(difference(early, late)['bounds'], [0, 4])
+
+    def test_backward_pointer_jitter_requires_overlapping_observed_bands(self):
+        ref=dict(event_id=1,captured_at='2026-11-22T23:57:00Z')
+        a=dict(event_id=2,captured_at='2026-11-22T23:58:00Z')
+        b=dict(event_id=3,captured_at='2026-11-22T23:59:00Z')
+        anchor=ref,Decimal(100),(Decimal(95),Decimal(105))
+        travel=lambda *args:dict(use=1,bounds=[0,2],supported_spans=[])
+        def run(low,high):
+            points=[(a,(Decimal('.95'),Decimal('1.05'))),(b,(Decimal(low),Decimal(high)))]
+            return project(None,dict(dials=[dict(value_per_revolution=5)]),{},1,anchor,points,travel)
+        shared=run('.94','1.04')
+        self.assertEqual(shared[0][0],shared[1][0])
+        self.assertIsNone(run('.70','.80'))
 
 
 if __name__=='__main__':

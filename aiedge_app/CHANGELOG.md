@@ -1,3 +1,13 @@
+## 0.2.0-dev111
+
+- Position recovered cumulative runs on the same daily baseline. Use the measured dial travel between the outer readings to bound a restart when a clock reading is missing. Show the minimum supported movement on inspection when it exceeds the archived increase. Keep the missing rate intervals open.
+- When a day's first capture arrives late, start its partial cumulative total with measured dial travel from that exact exposure to the first ten-minute boundary.
+
+## 0.2.0-dev110
+
+- Recover meter position after a transfer gap using two visible scale marks in a saved photo. Retain the failed transfers in the capture history.
+- Recover supported chart intervals from their bounding readings and fine-dial travel. Carry cumulative totals and their bounds backward from a measured closing point. Keep separate totals on each side of midnight.
+
 ## 0.2.0-dev109
 
 - Browse gas history with one-tap time scales, a period picker, arrows, swipe and Latest. Align both gas chart axes to faint horizontal gridlines. Show point values on inspection and show the cumulative estimate with its supported range. Remove the extra midpoint guide.

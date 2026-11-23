@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from nominal_register import AbsolutePublisher, photo_projection
-from photo_register import dark_stroke, hundreds, PhotoRegister
+from photo_register import bracketed_tip, dark_stroke, hundreds, PhotoRegister
 from reading_format import validate
 from test_reading_format import document
 
@@ -54,6 +54,24 @@ def dial_faces(upper=0.43, lower=4.43):
 
 
 class FaceTests(unittest.TestCase):
+    def test_two_printed_divisions_bound_the_independent_moving_tip(self):
+        y,x=np.indices((480,640))
+        radius=np.hypot(x-320,y-240)/70
+        angle=(np.arctan2(x-320,240-y)*5/np.pi)%10
+        item=dict(direction='cw',landmarks=dict(needle_pivot=[320,240],
+                  rim_points=[[320,170],[390,240],[320,310],[250,240]]))
+        reference=np.full(radius.shape,180,dtype=np.float32)
+        outer=(radius>1.00)&(radius<1.11)
+        for tick in (5,6):
+            reference[outer&(abs(angle-tick)<.045)]=15
+        image=reference.copy()
+        image[(radius>.80)&(radius<.96)&(abs(angle-5.45)<.12)]=15
+        fit=bracketed_tip(image,reference-image,item,5.38,.1)
+        self.assertAlmostEqual(fit[0],5.45,delta=.025)
+        self.assertIsNone(bracketed_tip(image,np.zeros_like(image),item,5.38,.1))
+        image[outer&(abs(angle-6)<.10)]=180
+        self.assertIsNone(bracketed_tip(image,reference-image,item,5.38,.1))
+
     def test_print_only_ambiguous_or_clipped_strokes_are_not_pointers(self):
         angles = np.linspace(-.5, .5, 201)
         row = np.where(abs(angles) < .11, 30, 150)
