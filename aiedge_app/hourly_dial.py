@@ -233,7 +233,10 @@ class LedgerHours:
                     value=self.cache[key]
                 if value:
                     result[ticks[i+1]]=dict(value,start=ticks[i],end=ticks[i+1])
-                if (self.photos and published is not None and 'use' not in (value or {})
+                # A zoomed rate shares clock-hour endpoints with the wider chart.
+                # Prefer that independently recovered register if the dial permits it.
+                recover_register = 'use' not in (value or {}) or end-start<timedelta(hours=1)
+                if (self.photos and published is not None and recover_register
                         and (published[ticks[i]] is None or published[ticks[i+1]] is None)):
                     from hourly_photo import carried_difference, difference
                     try:
@@ -242,8 +245,9 @@ class LedgerHours:
                         previous = measured_leg(i)
                         if opening is None and published[ticks[i]] is None and closing and previous:
                             pair = carried_difference(carry_anchor(i-1), previous, closing)
-                            if pair and value and all((l,r) in value['supported_spans'] for l,r in gaps
-                                                      if l<ticks[i+1] and ticks[i]<r):
+                        if pair and value and (pair['basis']=='carried_register' or end-start<timedelta(hours=1)):
+                            spans=value['supported_spans']
+                            if all((l,r) in spans for l,r in gaps if l<ticks[i+1] and ticks[i]<r):
                                 low,high=value['bounds']
                                 if low<=pair['use']<=high:
                                     pair['bounds']=[max(low,pair['bounds'][0]),min(high,pair['bounds'][1])]

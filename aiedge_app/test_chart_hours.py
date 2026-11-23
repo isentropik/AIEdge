@@ -13,11 +13,11 @@ class ChartHoursTests(unittest.TestCase):
     daily = 'sensor.daily'
     hour = datetime(2026,11,22,18,tzinfo=timezone.utc)
 
-    def run_chart(self, rows, cuts=(), zone='UTC', end=None):
+    def run_chart(self, rows, cuts=(), zone='UTC', end=None, minutes=60):
         def fetch(entity,start,stop):
             return [[r for dt,r in rows if entity==self.meter and start<=dt<stop]]
         return ChartHours(self.meter,self.daily,fetch,lambda a,b:cuts).snapshot(
-            millis(end or self.hour+timedelta(minutes=61)),zone)
+            millis(end or self.hour+timedelta(minutes=61)),zone,minutes=minutes)
 
     def rows(self, observations):
         result=[]
@@ -34,6 +34,17 @@ class ChartHoursTests(unittest.TestCase):
         h,=data['hours']
         self.assertEqual((h['opening'],h['closing'],h['use']),(102,110,8))
         self.assertEqual(h['end']-h['start'],3600000)
+
+    def test_ten_minute_differences_use_bracketing_readings_and_preserve_unknowns(self):
+        rows=self.rows([(0,100),(590,100),(610,102),(1200,102),(1800,102)])
+        data=self.run_chart(rows, end=self.hour+timedelta(minutes=34),minutes=10)
+        self.assertEqual([q['use'] for q in data['hours']],[1,1,0])
+        self.assertTrue(all(q['end']-q['start']==600000 for q in data['hours']))
+        cut=millis(self.hour+timedelta(seconds=600))
+        broken=self.run_chart(rows,[cut],end=self.hour+timedelta(minutes=34),minutes=10)
+        self.assertEqual([q['use'] for q in broken['hours']],[0])
+        self.assertIn([cut-600000,cut],broken['unknownHours'])
+        self.assertIn([cut,cut+600000],broken['unknownHours'])
 
     def test_bracketed_absolute_endpoints_survive_an_interior_gap(self):
         rows=self.rows([(t,200+t/300) for t in range(0,3601,300)])

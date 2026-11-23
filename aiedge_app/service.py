@@ -234,8 +234,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from http.client import HTTPException
                 from zoneinfo import ZoneInfoNotFoundError
                 try:
-                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,max_num_fields=1)
-                    if set(query)!={'end'} or len(query['end'])!=1:raise ValueError()
+                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,max_num_fields=2,keep_blank_values=True)
+                    if set(query)-{'end','minutes'} or len(query.get('end',[]))!=1:raise ValueError()
+                    interval=query.get('minutes',['60'])
+                    if interval not in (['10'],['60']):raise ValueError()
                     end=int(query['end'][0])
                     now=int(datetime.now(timezone.utc).timestamp()*1000)
                     if not now-172800000<=end<=now+60000:raise ValueError()
@@ -248,7 +250,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     zone=state.get('timezone') or mqtt.get('overview_timezone')
                     policy=getattr(getattr(mqtt_output,'daily',None),'evidence_policy',{}) or {}
                     document=reading_format.status()['format'] if reading_format else None
-                    result=chart_hours.snapshot(end,zone,usage,document,policy) if zone and chart_hours else {}
+                    result=chart_hours.snapshot(end,zone,usage,document,policy,minutes=int(interval[0])) if zone and chart_hours else {}
                 except (ValueError,TypeError,KeyError,OSError,HTTPException,sqlite3.Error,ZoneInfoNotFoundError):
                     self.reply({'error':'chart_history_unavailable'},503);return
                 self.reply(result);return

@@ -328,7 +328,7 @@ function gasOverview(trend, date=Date) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'gas-charts.js'),'utf8'),context);
  }
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'),context);
- return {get,render:(usage,metadata={})=>window.AIEdgeIntegration.render({mqtt:{usage,...metadata}})};
+ return {get,charts:window.AIEdgeCharts,render:(usage,metadata={})=>window.AIEdgeIntegration.render({mqtt:{usage,...metadata}})};
 }
 
 function ribbonSides(d){
@@ -383,7 +383,7 @@ test('hour stops keep unknown hours empty, bound usage conservatively and distin
  assert.deepEqual(ribbonSides(bands[1].attributes.d),[[],[]]);
  key('ArrowRight');key('ArrowRight');assert.match(label(),/Interval unavailable/);
  assert.match(chart.attributes['aria-valuetext'],/Total unavailable/);
- key('End');assert.match(label(),/1\.00–10\.00/);assert.equal(chart.dataset.endEvent,'9');
+ key('End');assert.match(label(),/2\.00–20\.00 ft³\/h/);assert.equal(chart.dataset.endEvent,'9');
  assert.match(chart.attributes['aria-valuetext'],/Total 15\.50 ft³/);
 });
 
@@ -601,11 +601,11 @@ test('one plot switches windows immediately, keeps real zero whiskers and reject
  const closeChecks=(indices)=>{
    const nodes=chart.children[0].children,stems=nodes.filter(n=>n.attributes.class==='plot-whisker');
    const left=nodes.filter(n=>n.attributes.class==='total-tick'),right=nodes.filter(n=>n.attributes.class==='use-tick');
-   assert(+left.at(-1).textContent>+right.at(-1).textContent);
+   assert.equal(+right.at(-1).textContent,4);assert(+left.at(-1).textContent<=2);
    assert.equal(+right[0].textContent,0);
    const y=v=>+right[0].attributes.y-4+(right.at(-1).attributes.y-right[0].attributes.y)*v/Number(right.at(-1).textContent);
    assert.equal(marks()[0].attributes.cy,y(0));
-   assert(Math.abs(+marks()[1].attributes.cy-y(.5))<.01);
+   assert(Math.abs(+marks()[1].attributes.cy-y(2))<.01);
    assert.deepEqual(marks().map(n=>n.attributes.cx),indices.map(x));
    assert.deepEqual(stems.map(n=>Number(/ M([^ ]+) /.exec(n.attributes.d)[1])),indices.filter(i=>i!==1).map(x));
    const ticks=nodes.filter(n=>n.attributes.class==='time-tick');
@@ -713,7 +713,7 @@ test('partial day plots anchored meter readings, clips each gap, and rejects exp
  assert.deepEqual(nodes('plot-history-gap').map(p=>[p.attributes['data-from'],p.attributes['data-to']]),[gap]);
  assert.equal(nodes('plot-estimate-dot')[0].attributes.cx,36);
  assert.deepEqual(nodes('plot-estimate-dot').map(p=>p.attributes['data-event']),[10,22,43,65]);
- assert.equal(ui.get('interval-key').textContent,'Tracked use');
+ assert.equal(ui.get('interval-key').textContent,'Rate (ft³/h)');
  assert.deepEqual(nodes('plot-usage-dot').map(n=>n.attributes['data-through-event']),[22,43,65]);
  assert.equal(nodes('plot-whisker').length,0);
  for(const [window,delta] of [['1','1.30'],['24','5.40']]){
@@ -784,4 +784,24 @@ test('movement headline and chart stay on their meter event when range-only publ
  assert(!ui.get('usage-estimate').textContent.includes('10.00'));
  assert.match(ui.get('usage-bounds').textContent,/9–11.*Meter event 6/);
  assert.equal(host.dataset.endEvent,undefined);
+});
+
+test('wide rate buckets divide by actual DST and edge durations and suppress an incomplete group',async()=>{
+  const midnight=Date.parse('2026-11-01T00:00:00-07:00'),hour=3600000;
+  const zone='America/Los_Angeles',end=midnight+6*hour+15000;
+  const hours=Array.from({length:6},(_,i)=>({start:midnight+i*hour,end:midnight+(i+1)*hour,use:i+2}));
+  for(const missing of [false,true]){
+    const rows=missing?hours.filter((_,i)=>i!==2):hours;
+    const ui=gasOverview(async()=>response({zone,end,midnight,minutes:60,hours:rows,groups:[],resets:[midnight]}));
+    ui.get('total-key-label').parentElement={};
+    ui.charts.setCalendar(zone,new Date(end).toISOString());
+    ui.charts.period('24',null);
+    await tick();
+    const marks=ui.get('day-curve').children[0].children.filter(n=>n.attributes.class==='plot-usage-dot');
+    const rates=marks.map(n=>n.attributes['data-rate']);
+    assert.deepEqual(rates,missing?[7]:[4,7]);
+    const last=marks.at(-1).attributes;
+    assert.equal(last['data-hour-end']-last['data-start'],hour);
+    if(!missing)assert.equal(marks[0].attributes['data-hour-end']-marks[0].attributes['data-start'],5*hour);
+  }
 });
