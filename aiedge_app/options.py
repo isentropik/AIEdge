@@ -8,6 +8,7 @@ DEFAULTS = dict(camera_url='', camera_token='', camera_username='', camera_passw
                 capture_enabled=False, mqtt_enabled=False, mqtt_output_mode='reading', interval_seconds=30,
                 recognition_mode='FULL',event_selection_policy={},daily_evidence_policy={},
                 meter_history_entity='sensor.aiedge_gas_meter_reading',
+                nominal_history_entity='sensor.aiedge_gas_used_today_nominal_estimate',
                 daily_history_entity='sensor.aiedge_gas_used_today',recent_history_entity='sensor.aiedge_gas_used_last_hour')
 
 class InvalidOptions(ValueError):
