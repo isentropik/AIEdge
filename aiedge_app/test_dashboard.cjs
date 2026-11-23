@@ -731,6 +731,31 @@ test('partial day plots anchored meter readings, clips each gap, and rejects exp
  assert(nodes('plot-estimate').length>=2);
 });
 
+test('tracked bounds use their own event pair and never bridge an empty hour',async()=>{
+ const midnight=Date.parse('2026-02-03T00:00Z'),hour=3600000,source_sha256='c'.repeat(64);
+ const points=[[1,0,11,0],[1.5,1,20,0],[4,1,40,1],[4.5,2,50,1]].map(([h,...rest])=>[midnight+h*hour,...rest]);
+ const first=points[0],last=points.at(-1),gap=[points[1][0],points[2][0]];
+ const anchor=[11,first[0]],measured_at=new Date(last[0]).toISOString();
+ const movement_history={midnight,format:'fmt',points,dial_from:anchor,dial_gaps:[[midnight,first[0]],gap]};
+ const daily_nominal={day:'2026-02-03',timezone:'UTC',value_ft3:'2',event_id:50,source_sha256,measured_at,
+   method:'nominal_meter_movement_v1',status:'partial_coverage',coverage_started_at:new Date(first[0]).toISOString()};
+ const edge=(a,b,use,total)=>({start:[a[2],a[0]],end:[b[2],b[0]],use,total});
+ const data={format:'fmt',midnight,anchor,event:50,measured_at,digest:source_sha256,joins:[],edges:[
+   edge(first,points[1],[90,125],[90,125]),edge(points[1],points[2],[0,0],[90,125]),
+   edge(points[2],last,[85,130],[175,255])]};
+ class Clock extends Date{constructor(...args){super(...(args.length?args:[last[0]]));}static now(){return last[0];}}
+ for(const [digest,expected] of [[source_sha256,[20,50]],['d'.repeat(64),[]]]){
+   const ui=gasOverview(async()=>response({...data,digest}),Clock),host=ui.get('day-curve');
+   ui.render({daily_nominal,movement_history});await tick();
+   const nodes=cls=>host.children[0].children.filter(n=>n.attributes.class===cls);
+   assert.deepEqual(nodes('plot-whisker').map(n=>n.attributes['data-through-event']),expected);
+   assert.equal(nodes('plot-band').length,expected.length?2:0);
+   assert.equal(nodes('plot-history-gap').length,1);
+   assert(!nodes('plot-usage-dot').some(n=>n.attributes['data-through-event']===40));
+   assert.equal(host.dataset.endEvent,'50');
+ }
+});
+
 test('movement headline and chart stay on their meter event when range-only publications change',async()=>{
  const day='2026-11-21',timezone='UTC',midnight=Date.parse(day+'T00:00:00Z');
  const src=id=>({camera:'meter',format_id:'profile',event_id:id,source_sha256:id.toString(16).padStart(64,'0'),
