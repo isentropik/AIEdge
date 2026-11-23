@@ -841,9 +841,13 @@ function showSummary(view){
   // add motion the archive missed. Keep that correction when starting the next
   // run, using the change between two readings of the same daily accumulator.
   // This positions a partial total. Only an actual rate can connect the runs.
-  function reconcile(rows, levels, step, ceiling, spans=[]){
+  // A Recorder group number belongs to its query window. The persisted
+  // accumulator identity inside it can be compared between time scales.
+  const levelSource=id=>id==null?null:JSON.stringify(Array.isArray(id)&&Array.isArray(id[0])?id[0]:id);
+  function reconcile(rows, levels, step, ceiling, spans=[], hourLevels=null){
     if(!levels?.length)return;
-    const raw=new Map(levels.map(([time,value,identity])=>[time,{value,id:JSON.stringify(identity)}]));
+    const raw=new Map(levels.map(([time,value,identity])=>[time,{value,id:JSON.stringify(identity),
+      source:levelSource(identity)}]));
     const incoming=new Map(rows.map(q=>[q.end,q]));
     const byEnd=new Map(spans.map(q=>[q.end,q]));
     const ticks=new Set(rows.flatMap(q=>[q.start,q.end]));
@@ -853,6 +857,8 @@ function showSummary(view){
       const target=midnightTicks.has(t)?closes:knots;
       const reading=raw.get(t);
       let p=target.get(t);
+      const clock=hourLevels?.get(t);
+      const clockPoint=clock?.source && reading && clock.value===reading.value && clock.source===reading.source?p:null;
       if(before&&Number.isFinite(q.use)&&q.use>=0&&q.end-q.start===step){
         const value=before[1]+q.use;
         const bounded=q.bounds&&before[2]!=null&&before[3]!=null;
@@ -878,6 +884,9 @@ function showSummary(view){
       }else if(!p&&reading){
         p=sample(t,reading.value,null,null);
       }
+      // Zooming can place a clock-hour nominal using finer measured legs.
+      // Keep its independent daily bounds when the source identity agrees.
+      if(p && clockPoint?.[2]!=null && clockPoint[3]!=null)constrain(p,clockPoint[2],clockPoint[3]);
       if(p)target.set(t,p);
       if(midnightTicks.has(t))last=null;
       else if(p&&reading)last={time:t,id:reading.id,raw:reading.value,level:p[1],low:p[2],high:p[3]};
@@ -885,7 +894,11 @@ function showSummary(view){
     }
   }
   reconcile([...hours,...(data?.partialHours||[])],data?.trackedLevels,hourMs,data?.flowCeiling);
-  if(fine)reconcile(samples,short?.data?.trackedLevels,600000,short?.data?.flowCeiling,short?.data?.evidenceSpans);
+  if(fine){
+    const hourLevels=new Map((data?.trackedLevels||[]).map(([t,value,identity])=>
+      [t,{value,source:levelSource(identity)}]));
+    reconcile(samples,short?.data?.trackedLevels,600000,short?.data?.flowCeiling,short?.data?.evidenceSpans,hourLevels);
+  }
   // Clock-hour and ten-minute bounds can constrain each other at a shared
   // knot. Intersect only on the same measured change and same daily baseline.
   function constrain(point,low,high){

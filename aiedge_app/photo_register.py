@@ -160,7 +160,7 @@ def read_face(diff, item, error):
     return ((lo + hi) / 2) % 10, (hi - lo) / 2
 
 
-def bracketed_tip(image, diff, item, guess, error):
+def bracketed_tip(image, diff, item, guess, error, *, covered_division=False):
     """Read the moving tip against the two printed divisions on either side."""
     mark = item["landmarks"]
     rim = np.asarray(mark["rim_points"], dtype=float)
@@ -189,9 +189,13 @@ def bracketed_tip(image, diff, item, guess, error):
                        (.84, .86, .88, .90, .92), (.10, .36), True)
         if len(tips) < 3 or np.ptp(tips) > error:
             return None
-        left_tick = int(np.floor(np.mean(tips)))
+        middle = round(float(np.mean(tips)))
+        if covered_division and max(abs(tip-middle) for tip in tips) > .25:
+            return None
+        left_tick = middle-1 if covered_division else int(np.floor(np.mean(tips)))
+        span = 2 if covered_division else 1
         marks = []
-        for tick in (left_tick, left_tick+1):
+        for tick in (left_tick, left_tick+span):
             observed = strokes(center, tick+np.arange(-.20, .201, .005),
                                (1.02, 1.04, 1.06, 1.08), (.02, .16), False)
             if len(observed) < 2 or np.ptp(observed) > error:
@@ -199,9 +203,9 @@ def bracketed_tip(image, diff, item, guess, error):
             marks.append((min(observed), max(observed)))
         for lo in marks[0]:
             for hi in marks[1]:
-                if not 1-error <= hi-lo <= 1+error or not lo <= min(tips) <= max(tips) <= hi:
+                if abs((hi-lo)-span) > error or not lo <= min(tips) <= max(tips) <= hi:
                     return None
-                values.extend(left_tick+(tip-lo)/(hi-lo) for tip in tips)
+                values.extend(left_tick+span*(tip-lo)/(hi-lo) for tip in tips)
     if np.ptp(values) > error:
         return None
     return ((min(values)+max(values))/2) % 10, float(np.ptp(values))/2
@@ -228,6 +232,7 @@ def hundreds(profile, ref, img, doc, positions, indices):
     confirmed = []
     details = []
     indexed = False
+    covered = False
     for j in (len(dials) - 3, len(dials) - 2):
         index = dials[j]["index"]
         item = profile["dials"][index]
@@ -242,6 +247,10 @@ def hundreds(profile, ref, img, doc, positions, indices):
             indexed_fit = indexed_tip(aligned, diff, item, errors[j])
             if indexed_fit is None:
                 indexed_fit = bracketed_tip(aligned, diff, item, positions[j], errors[j])
+            if indexed_fit is None:
+                # A pointer covering a printed mark leaves its two neighbors visible.
+                indexed_fit = bracketed_tip(aligned, diff, item, positions[j], errors[j], covered_division=True)
+                covered = indexed_fit is not None
             if indexed_fit is not None:
                 fit = indexed_fit
                 indexed = True
@@ -256,7 +265,8 @@ def hundreds(profile, ref, img, doc, positions, indices):
     # correction also requires an independently visible printed index.
     wrapped = confirmed == [False, True] and positions[-3] - fitted[-3] >= 9
     correction = abs(displacement(fitted[-3], positions[-3]))
-    if not wrapped and not (indexed and confirmed[-1] and dials[-3]["position_error"] <= correction <= 1):
+    if not wrapped and not (indexed and confirmed[-1] and correction <= 1
+                            and (covered or correction >= dials[-3]["position_error"])):
         return None
     result = feasible_ranges(scales, fitted, errors)
     if result["state"] != "bounded" or result.get("wraps_register"):
@@ -283,7 +293,7 @@ class PhotoRegister:
         self.setup = setup
         self.reference = lru_cache(maxsize=1)(lambda digest: gray(setup.reference(digest)))
 
-    def check(self, snap, inf):
+    def check(self, snap, inf, *, image=None):
         raw = snap.get("_raw_meter_reading") or {}
         c = snap.get("consumption") or {}
         doc = snap.get("format") or {}
@@ -346,7 +356,7 @@ class PhotoRegister:
             positions = [inf["dial_positions"][d["index"]]["position"] for d in doc["dials"]]
             if not all(type(v) in (int, float) and isfinite(v) and 0 <= v < 10 for v in positions):
                 return None
-            blob = self.store.image(sha)
+            blob = self.store.image(sha) if image is None else image
             if hashlib.sha256(blob).hexdigest() != sha:
                 return None
             found = hundreds(

@@ -54,6 +54,23 @@ def dial_faces(upper=0.43, lower=4.43):
 
 
 class FaceTests(unittest.TestCase):
+    def test_pointer_over_a_division_requires_both_neighboring_marks(self):
+        y,x=np.indices((480,640))
+        radius=np.hypot(x-320,y-240)/70
+        angle=(np.arctan2(x-320,240-y)*5/np.pi)%10
+        item=dict(direction='cw',landmarks=dict(needle_pivot=[320,240],
+                  rim_points=[[320,170],[390,240],[320,310],[250,240]]))
+        reference=np.full(radius.shape,180,dtype=np.float32)
+        outer=(radius>1)&(radius<1.11)
+        for tick in (5,7):
+            reference[outer&(abs(angle-tick)<.045)]=15
+        image=reference.copy()
+        image[(radius>.80)&(radius<1.10)&(abs(angle-5.94)<.12)]=15
+        fit=bracketed_tip(image,reference-image,item,5.91,.1,covered_division=True)
+        self.assertAlmostEqual(fit[0],5.94,delta=.04)
+        image[outer&(abs(angle-7)<.15)]=180
+        self.assertIsNone(bracketed_tip(image,reference-image,item,5.91,.1,covered_division=True))
+
     def test_two_printed_divisions_bound_the_independent_moving_tip(self):
         y,x=np.indices((480,640))
         radius=np.hypot(x-320,y-240)/70
