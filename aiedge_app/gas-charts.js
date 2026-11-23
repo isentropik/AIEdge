@@ -389,7 +389,9 @@ function chart(){
         amount.textContent='Rate unknown';
         details.length=0;
         details.push('Meter readings do not establish the difference');
+        if(p)details.push('Cumulative estimate '+number.format(p[1])+' ft³');
       }
+      if(p?.minimumTravel)details.push('Uses the minimum measured movement across the gap');
       note.textContent=details.join(' · ');
     }
     host.setAttribute('aria-valuenow',i);
@@ -469,7 +471,8 @@ function chart(){
         const until=Math.min(end,series.run.at(-1)[0]);
         if(until>from)clip.append(svg('rect',{x:x(from),y:0,width:x(until)-x(from),height:h}));
         defs.append(clip);
-        const clipped=svg('g',{'clip-path':'url(#daily-span-'+i+')','data-day-series':i});
+        const clipped=svg('g',{'clip-path':'url(#daily-span-'+i+')','data-day-series':i,
+          'data-start':from,'data-end':until});
         const run=series.run;
         clipped.append(...trendPaths(run,x,y,false,true,false).lines);
         let band=[];
@@ -770,7 +773,6 @@ function showSummary(view){
   const resets=(data?.resets||[midnight]).filter(t=>start<=t&&t<=end);
   const knots=new Map(),closes=new Map();
   const dailySamples=[...(data?.dailyHours||[]),...(fine?short?.data?.dailyHours||[]:[])];
-  const dailyTimes=new Set(dailySamples.map(p=>p[0]));
   const sample=(time,value,low,high,event=null)=>[time,value,low,high,event];
   for(const row of dailySamples)knots.set(row[0],sample(...row));
   const midnightTicks=new Set(data?.resets||[midnight]);
@@ -788,6 +790,9 @@ function showSummary(view){
         range?range[0]+offset.bounds[0]:null,range?range[1]+offset.bounds[1]:null,offset.event));
     }
   }
+  for(const row of [...(data?.openingLevels||[]),...(fine?short?.data?.openingLevels||[]:[])]){
+    if(!midnightTicks.has(row[0]))knots.set(row[0],sample(...row));
+  }
   // Each completed hour contributes its measured change to the daily estimate.
   // Start with an independently established daily level after a missing hour.
   for(const q of hours){
@@ -801,6 +806,24 @@ function showSummary(view){
       before[2]!=null&&q.bounds?before[2]+q.bounds[0]:null,
       before[3]!=null&&q.bounds?before[3]+q.bounds[1]:null,direct?.[4]));
   }
+  // An independently measured closing total also positions preceding clock
+  // ticks. An absent interval ends this chain. Midnight has separate closing
+  // and opening totals, so the new day's zero cannot seed the previous day.
+  function recoverOpenings(intervals){
+    for(let i=intervals.length-1;i>=0;i--){
+      const q=intervals[i];
+      if(knots.has(q.start)||!Number.isFinite(q.use)||q.use<0)continue;
+      const closing=(midnightTicks.has(q.end)?closes:knots).get(q.end);
+      if(!closing||closing[1]<q.use)continue;
+      const value=closing[1]-q.use;
+      const bounded=closing[2]!=null&&closing[3]!=null&&q.bounds;
+      const low=bounded?Math.max(0,closing[2]-q.bounds[1]):null;
+      const high=bounded?closing[3]-q.bounds[0]:null;
+      const valid=bounded&&low<=value&&value<=high;
+      knots.set(q.start,sample(q.start,value,valid?low:null,valid?high:null));
+    }
+  }
+  recoverOpenings(hours);
   const samples=source?.data?.hours||[];
   if(fine){
     for(const q of samples){
@@ -812,6 +835,74 @@ function showSummary(view){
         before[2]!=null&&q.bounds?before[2]+q.bounds[0]:null,
         before[3]!=null&&q.bounds?before[3]+q.bounds[1]:null));
     }
+    recoverOpenings(samples);
+  }
+  // The archive totals only tracked motion. A recovered register interval can
+  // add motion the archive missed. Keep that correction when starting the next
+  // run, using the change between two readings of the same daily accumulator.
+  // This positions a partial total. Only an actual rate can connect the runs.
+  function reconcile(rows, levels, step, ceiling, spans=[]){
+    if(!levels?.length)return;
+    const raw=new Map(levels.map(([time,value,identity])=>[time,{value,id:JSON.stringify(identity)}]));
+    const incoming=new Map(rows.map(q=>[q.end,q]));
+    const byEnd=new Map(spans.map(q=>[q.end,q]));
+    const ticks=new Set(rows.flatMap(q=>[q.start,q.end]));
+    let last=null;
+    for(const t of [...ticks].sort((a,b)=>a-b)){
+      const q=incoming.get(t), before=q&&knots.get(q.start);
+      const target=midnightTicks.has(t)?closes:knots;
+      const reading=raw.get(t);
+      let p=target.get(t);
+      if(before&&Number.isFinite(q.use)&&q.use>=0&&q.end-q.start===step){
+        const value=before[1]+q.use;
+        const bounded=q.bounds&&before[2]!=null&&before[3]!=null;
+        if(!p||Math.abs(value-p[1])>.000001||p[2]==null&&bounded){
+          p=sample(t,value,bounded?before[2]+q.bounds[0]:null,bounded?before[3]+q.bounds[1]:null);
+        }
+      }else if(reading&&last?.id===reading.id&&reading.value>=last.raw){
+        const span=byEnd.get(t),observed=reading.value-last.raw;
+        const measured=span?.start===last.time?span:null;
+        if(measured&&measured.use==null&&observed>measured.bounds[1]){
+          target.delete(t);last=null;continue;
+        }
+        const change=measured?(measured.use??Math.max(measured.bounds[0],observed)):observed;
+        const value=last.level+change;
+        if(measured||!p||Math.abs(value-p[1])>.000001){
+          const low=last.low!=null?last.low+(measured?.bounds[0]??0):null;
+          const high=last.high!=null&&measured?last.high+measured.bounds[1]:last.high!=null&&Number.isFinite(ceiling)&&ceiling>0
+            ?last.high+ceiling*(t-last.time)/1000:null;
+          const bounded=low!=null&&high!=null&&low<=value&&value<=high;
+          p=sample(t,value,bounded?low:null,bounded?high:null);
+          if(measured&&measured.use==null&&measured.bounds[0]>observed)p.minimumTravel=true;
+        }
+      }else if(!p&&reading){
+        p=sample(t,reading.value,null,null);
+      }
+      if(p)target.set(t,p);
+      if(midnightTicks.has(t))last=null;
+      else if(p&&reading)last={time:t,id:reading.id,raw:reading.value,level:p[1],low:p[2],high:p[3]};
+      else if(p)last=null;
+    }
+  }
+  reconcile([...hours,...(data?.partialHours||[])],data?.trackedLevels,hourMs,data?.flowCeiling);
+  if(fine)reconcile(samples,short?.data?.trackedLevels,600000,short?.data?.flowCeiling,short?.data?.evidenceSpans);
+  // Clock-hour and ten-minute bounds can constrain each other at a shared
+  // knot. Intersect only on the same measured change and same daily baseline.
+  function constrain(point,low,high){
+    low=Math.max(0,low,point[2]??0);
+    high=Math.min(high,point[3]??Infinity);
+    if(low<=point[1]&&point[1]<=high){point[2]=low;point[3]=high;}
+  }
+  const links=[];
+  for(const q of (fine?samples:hours)){
+    const a=knots.get(q.start),b=(midnightTicks.has(q.end)?closes:knots).get(q.end);
+    if(!a||!b||!q.bounds||Math.abs(b[1]-a[1]-q.use)>.011)continue;
+    const [lo,hi]=q.bounds;
+    if(a[2]!=null&&a[3]!=null)constrain(b,a[2]+lo,a[3]+hi);
+    links.push([a,b,lo,hi]);
+  }
+  for(const [a,b,lo,hi] of links.reverse()){
+    if(b[2]!=null&&b[3]!=null)constrain(a,b[2]-hi,b[3]-lo);
   }
   const spacing=(fine?10:60)*60000;
   function add(run){
@@ -828,9 +919,8 @@ function showSummary(view){
   for(const [t,p] of [...knots].sort((a,b)=>a[0]-b[0])){
     if(t>end)break;
     const previous=run.at(-1);
-    if(previous&&(t-previous[0]!==spacing||fine&&byEnd.get(t)?.start!==previous[0]||midnightTicks.has(t)||p[1]<previous[1]||
-       midnightTicks.has(previous[0])&&!byEnd.has(t)&&!dailyTimes.has(t))){
-      if(closes.has(t)&&previous[0]===t-spacing&&(!fine||byEnd.get(t)?.start===previous[0]))run.push(closes.get(t));
+    if(previous&&(t-previous[0]!==spacing||byEnd.get(t)?.start!==previous[0]||midnightTicks.has(t)||p[1]<previous[1])){
+      if(closes.has(t)&&previous[0]===t-spacing&&byEnd.get(t)?.start===previous[0])run.push(closes.get(t));
       add(run);run=[];
     }
     run.push(p);

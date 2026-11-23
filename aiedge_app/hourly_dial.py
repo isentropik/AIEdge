@@ -106,6 +106,43 @@ class LedgerHours:
         self.photo_cache = {}
         self.lock = Lock()
 
+    def opening(self,stamp,end,day_start,state,document,policy):
+        """Measure from the exact first tracked exposure to the next ten-minute tick."""
+        if not state or not document or document.get('unit')!='ft3' or not document.get('maximum_rate_per_second'):
+            return None
+        start=datetime.fromisoformat(stamp)
+        close=datetime.fromtimestamp(end/1000,timezone.utc)
+        if start.utcoffset() is None or not timedelta(0)<=close-start<timedelta(minutes=10):
+            return None
+        revision=validate(document)[1]
+        rate=number(document['maximum_rate_per_second'])
+        if policy.get('format_id')==revision and policy.get('pipeline_id')==document['pipeline_id']:
+            rate=min(rate,number(policy['capacity_cfh'])/3600)
+        with self.store.connect() as db:
+            row=db.execute('SELECT e.camera FROM capture_events e JOIN frames f USING(camera,frame_id) '
+                           'WHERE e.event_id=? AND f.sha256=? AND f.captured_at=?',
+                           (state.get('event_id'),state.get('source_sha256'),state.get('measured_at'))).fetchone()
+            if not row:return None
+            camera=row[0]
+            first=db.execute('SELECT e.event_id FROM frames f JOIN capture_events e USING(camera,frame_id) '
+                             'WHERE f.camera=? AND f.captured_at=? AND e.event_id<=?',
+                             (camera,stamp,state['event_id'])).fetchall()
+            if len(first)!=1:return None
+            eid=first[0][0]
+            previous=db.execute('SELECT f.captured_at FROM capture_events e JOIN frames f USING(camera,frame_id) '
+                                'WHERE e.camera=? AND e.event_id<? ORDER BY e.event_id DESC LIMIT 1',
+                                (camera,eid)).fetchone()
+            if (not previous and eid!=1) or (previous and datetime.fromisoformat(previous[0])>=day_start):
+                return None
+            if close==start:return [end,0,0,0]
+            last=db.execute('SELECT e.event_id FROM capture_events e JOIN frames f USING(camera,frame_id) '
+                            'WHERE e.camera=? AND e.event_id BETWEEN ? AND ? AND f.captured_at>=? '
+                            'ORDER BY e.event_id LIMIT 1',(camera,eid,state['event_id'],close.isoformat())).fetchone()
+            if not last:return None
+            leg=dial_hour(db,dict(camera=camera,format_id=revision),document,rate,start,close,eid,last[0])
+            if leg and 'use' in leg and not leg['supported_spans']:
+                return [end,leg['use'],*leg['bounds']]
+
     def snapshot(self,ticks,state,document,policy,published=None,gaps=(),archive=None,offsets=None):
         if (len(ticks)<2 or not state or not document or document.get('unit')!='ft3'
                 or not document.get('maximum_rate_per_second') or not state.get('event_id')):
@@ -159,12 +196,12 @@ class LedgerHours:
                             offsets.append(dict(time=tick,event=p[2],use=change['use'],bounds=change['bounds']))
             result = {}
             recovered = {}
-            def endpoint(index, reference=None):
+            def endpoint(index, reference=None, *, photo_only=False):
                 from hourly_photo import recover_boundary,recorded_endpoint
-                key=(index,reference)
+                key=(index,reference,photo_only)
                 if key not in recovered:
                     recorded=published[ticks[index]]
-                    if recorded:
+                    if recorded and not photo_only:
                         recovered[key]=recorded_endpoint(db,source,recorded)
                     else:
                         target=times[index]
@@ -243,8 +280,26 @@ class LedgerHours:
                         opening, closing = endpoint(i), endpoint(i+1)
                         pair = difference(opening, closing)
                         previous = measured_leg(i)
-                        if opening is None and published[ticks[i]] is None and closing and previous:
-                            pair = carried_difference(carry_anchor(i-1), previous, closing)
+                        if closing and previous and published[ticks[i]] is None:
+                            carried = carried_difference(carry_anchor(i-1), previous, closing)
+                            if carried and (pair is None or abs(carried['opening']-pair['opening']) <= .01):
+                                pair = carried
+                        # A published nominal can sit on a different five-foot
+                        # turn from the preceding photo. Check an independent
+                        # photo at its boundary against the measured travel.
+                        if value and 'use' not in value and (pair is None or not
+                                value['bounds'][0] <= pair['use'] <= value['bounds'][1]):
+                            if opening and not published[ticks[i]] and published[ticks[i+1]]:
+                                other = difference(opening, endpoint(i+1, photo_only=True))
+                            elif closing and published[ticks[i]] and not published[ticks[i+1]]:
+                                other = difference(endpoint(i, photo_only=True), closing)
+                            else:
+                                other = None
+                            pair = None
+                            if other and value['bounds'][0] <= other['use'] <= value['bounds'][1]:
+                                pair=other
+                                pair['bounds']=[max(pair['bounds'][0],value['bounds'][0]),
+                                                min(pair['bounds'][1],value['bounds'][1])]
                         if pair and value and (pair['basis']=='carried_register' or end-start<timedelta(hours=1)):
                             spans=value['supported_spans']
                             if all((l,r) in spans for l,r in gaps if l<ticks[i+1] and ticks[i]<r):

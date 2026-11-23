@@ -10,6 +10,8 @@ class Element {
  removeAttribute(name){delete this.attributes[name];}
  querySelector(name){if(!this.queries.has(name))this.queries.set(name,new Element());return this.queries.get(name);}
  replaceChildren(...children){this.children=children;}
+ get firstChild(){return this.children[0]??null;}
+ insertBefore(child,reference){this.children.splice(reference===null?this.children.length:this.children.indexOf(reference),0,child);}
  append(...children){this.children.push(...children);}
  addEventListener(){}
  getContext(){return {};}
@@ -810,4 +812,44 @@ test('wide rate buckets divide by actual DST and edge durations and suppress an 
     assert.equal(last['data-hour-end']-last['data-start'],hour);
     if(!missing)assert.equal(marks[0].attributes['data-hour-end']-marks[0].attributes['data-start'],5*hour);
   }
+});
+
+test('a closing daily reading supports earlier totals only through measured hours',async()=>{
+  const midnight=Date.parse('2026-11-23T00:00Z'),hour=3600000,end=midnight+6*hour+1000;
+  const hours=[2,3,5].map(i=>({start:midnight+i*hour,end:midnight+(i+1)*hour,use:2,bounds:[1,3]}));
+  const dailyHours=[[midnight+4*hour,12,10,14],[midnight+6*hour,20,17,22]];
+  const ui=gasOverview(async()=>response({zone:'UTC',end,midnight,minutes:60,hours,dailyHours,groups:[],resets:[midnight]}));
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(end).toISOString());
+  ui.charts.period('6',null);
+  await tick();
+  const points=ui.get('day-curve').children[0].children.filter(n=>n.attributes.class==='plot-estimate-dot');
+  const at=i=>points.find(p=>+p.attributes['data-time']===midnight+i*hour)?.attributes;
+  assert.equal(at(2)['data-total'],8);
+  assert.equal(at(2)['data-low'],4);
+  assert.equal(at(2)['data-high'],12);
+  assert.equal(at(1),undefined);
+  assert.equal(at(5)['data-total'],18);
+});
+
+test('a recovered increase remains in later cumulative runs across an unsupported hour',async()=>{
+  const midnight=Date.parse('2026-11-23T00:00Z'),hour=3600000,end=midnight+6*hour+1000;
+  const at=i=>midnight+i*hour;
+  const hours=[{start:at(0),end:at(1),use:12,bounds:[11,13]},
+    {start:at(3),end:at(4),use:1,bounds:[0,2]}];
+  const trackedLevels=[[at(1),9,'same-day'],[at(3),10,'same-day'],[at(4),11,'same-day']];
+  const dailyHours=[[at(3),10,8,12],[at(4),11,9,13]];
+  const ui=gasOverview(async()=>response({zone:'UTC',end,midnight,minutes:60,hours,dailyHours,trackedLevels,
+    flowCeiling:.01,groups:[],resets:[midnight]}));
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(end).toISOString());
+  ui.charts.period('6',null);
+  await tick();
+  const nodes=ui.get('day-curve').children[0].children.map(n=>n.attributes);
+  const point=i=>nodes.find(n=>n.class==='plot-estimate-dot'&&n['data-time']===at(i));
+  assert.equal(point(3)['data-total'],13);
+  assert.equal(point(4)['data-total'],14);
+  assert.equal(point(3)['data-low'],11);
+  assert.equal(point(2),undefined);
+  assert(!nodes.some(n=>n.class==='plot-usage-dot'&&n['data-hour-end']===at(3)));
 });

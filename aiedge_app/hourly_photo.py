@@ -77,6 +77,21 @@ def project(db, document, source, rate, anchor, samples, travel):
         if low_turn!=high_turn:
             return None
         result.append((phase+low_turn*turn,base_lo+lo,base_hi+hi))
+    if len(result)==2 and result[1][0]<result[0][0]:
+        # Optical centers can jitter backward on a stationary pointer. A
+        # common level must fit both observed fine-dial bands on these turns.
+        bands=[]
+        for (value,_,_),(_,(lo,hi)) in zip(result,samples):
+            shift=((value-(lo+hi)/2)/turn).to_integral_value()*turn
+            bands.append((lo+shift,hi+shift))
+        low=max(lo for lo,_ in bands)
+        high=min(hi for _,hi in bands)
+        if high<low:
+            return None
+        level=(low+high)/2
+        if not all(lo<=level<=hi for _,lo,hi in result):
+            return None
+        return [(level,lo,hi) for _,lo,hi in result]
     return result
 
 
