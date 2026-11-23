@@ -1,6 +1,8 @@
 """Strict passive camera admission snapshot. Does not acquire a frame."""
 import errno,http.client,json,ssl,time,urllib.error,urllib.request
 
+READINESS_IO_SECONDS = 10
+
 class ReadinessTransportError(ValueError):
     """A failed passive GET; no capture request was admitted by this probe."""
     def __init__(self):super().__init__('camera_connection_failed')
@@ -45,14 +47,16 @@ def validate(payload):
 
 def probe(camera,*,deadline=None):
     from capture import camera_header,io_deadline
-    absolute=io_deadline(5,deadline)
+    absolute=io_deadline(READINESS_IO_SECONDS,deadline)
     headers={}
     if camera.token:headers['Authorization']='Bearer '+camera.token
     elif camera.basic:headers['Authorization']='Basic '+camera.basic
     request=urllib.request.Request(camera.origin+'/api/v1/camera',headers=headers,method='GET')
     request.aiedge_deadline=absolute
+    stage='connect_or_headers'
     try:
-        with camera.opener.open(request,timeout=5) as response:
+        with camera.opener.open(request,timeout=absolute-time.monotonic()) as response:
+            stage='status_body'
             camera_header(response.headers,'Content-Type')
             raw_length=camera_header(response.headers,'Content-Length')
             if response.status!=200 or response.headers.get_content_type()!='application/json':raise ValueError('camera_status_invalid')
@@ -66,6 +70,11 @@ def probe(camera,*,deadline=None):
               404:'camera_api_unavailable',405:'camera_api_unavailable'}.get(exc.code,'camera_http_error')
         exc.close();raise ValueError(code) from None
     except (urllib.error.URLError,OSError) as error:
-        if transient_transport(error):raise ReadinessTransportError() from None
+        if transient_transport(error):
+            from lifecycle import lifecycle_event
+            cause=error.reason if isinstance(error,urllib.error.URLError) else error
+            lifecycle_event('camera_readiness_transport',stage=stage,cause=type(cause).__name__,
+                            os_error=getattr(cause,'errno',None))
+            raise ReadinessTransportError() from None
         raise ValueError('camera_connection_failed') from None
     except (UnicodeError,json.JSONDecodeError,TypeError,RecursionError,http.client.HTTPException):raise ValueError('camera_status_invalid') from None

@@ -61,6 +61,17 @@ class Store:
 
 
 class AbsoluteMotionTests(unittest.TestCase):
+    def test_photo_center_selects_a_reachable_band_without_discarding_uncertainty(self):
+        opts = [(D(n),D(n)+D('.1')) for n in ('100','105','110','115')]
+        def select(center, floor, limit):
+            return motion.start(source(10), opts, D(floor), previous=D('101'),
+                                limit=D(limit), photo_center=D(center))
+        result=select('111','102','11')
+        self.assertEqual(result['level'],'110.05')
+        self.assertEqual(result['outer'],['100','115.1'])
+        self.assertEqual(select('115','102','8')['level'],'105.05')
+        self.assertIsNone(select('100','102','2'))
+
     def setUp(self):
         self.one = source(1)
         self.t = motion.start(self.one, options("429.64"), 0)

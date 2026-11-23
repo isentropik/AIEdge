@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from nominal_register import AbsolutePublisher, photo_projection
-from photo_register import hundreds, PhotoRegister
+from photo_register import dark_stroke, hundreds, PhotoRegister
 from reading_format import validate
 from test_reading_format import document
 
@@ -54,6 +54,30 @@ def dial_faces(upper=0.43, lower=4.43):
 
 
 class FaceTests(unittest.TestCase):
+    def test_print_only_ambiguous_or_clipped_strokes_are_not_pointers(self):
+        angles = np.linspace(-.5, .5, 201)
+        row = np.where(abs(angles) < .11, 30, 150)
+        self.assertIsNone(dark_stroke(angles, row, (.1, .36), np.zeros_like(row)))
+        self.assertAlmostEqual(dark_stroke(angles, row, (.1, .36), 150-row), 0, delta=.005)
+        extra = np.where(abs(angles-.33) < .065, 30, row)
+        self.assertIsNone(dark_stroke(angles, extra, (.1,.36), 150-extra))
+        clipped = np.where(angles < -.32, 30, 150)
+        self.assertIsNone(dark_stroke(angles, clipped, (.1,.36), 150-clipped))
+
+    def test_same_side_bias_requires_visible_index_and_preserves_hundreds_carry(self):
+        profile, ref, img, doc = dial_faces(.51, 5.01)
+        pos = [2.05, .13, 4.97, 1.8]
+        self.assertIsNone(hundreds(profile, ref, img, doc, pos, [1,2]))
+        for face in (ref,img):
+            face[212:219,399:402] = 12
+        found = hundreds(profile, ref, img, doc, pos, [1,2])
+        self.assertNotIn('register_ft3', found)
+        self.assertAlmostEqual(found['photo_center_ft3'],20501,delta=3)
+        self.assertLess(float(found['bands_ft3'][0][0]),20500)
+        self.assertGreater(float(found['bands_ft3'][-1][1]),20500)
+        for positions in ([2.05, .13, 7.3, 1.8], [2.05, 3.7, 4.97, 1.8]):
+            self.assertIsNone(hundreds(profile, ref, img, doc, positions,[1,2]))
+
     def test_opposite_dial_directions_and_translation(self):
         profile, ref, image, doc = dial_faces()
         image = np.roll(image, (3, -2), axis=(0, 1))

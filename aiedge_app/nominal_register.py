@@ -122,7 +122,7 @@ def photo_projection(prior, record, reason, snapshot, now, max_age):
         return old, False
     if stamp.tzinfo is None or not 0 <= (now-stamp).total_seconds() <= max_age:
         return old, False
-    value = proof['register_ft3']
+    value = proof.get('register_ft3')
     if (type(value) is not int or value < 0 or value % 100 or proof['resolution_ft3'] != 100
             or type(src.get('monotonic_us')) is not int or not src.get('clock_id')):
         return old, False

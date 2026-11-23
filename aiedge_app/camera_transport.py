@@ -1,4 +1,4 @@
-"""Bound HTTP headers and body reads by one monotonic I/O deadline.
+"""Apply monotonic I/O deadlines to headers and JPEG body reads.
 
 DNS and the initial connection still use the platform resolver/socket timeout;
 this does not promise to interrupt a blocked operating-system DNS resolver.
@@ -79,6 +79,9 @@ class DeadlineResponse(http.client.HTTPResponse):
     def __init__(self,sock,*args,deadline,**kwargs):
         super().__init__(sock,*args,**kwargs)
         self.fp=DeadlineStream(self.fp,sock,deadline)
+
+    def set_body_deadline(self, deadline):
+        self.fp.deadline=deadline
 
 class DeadlineConnection(http.client.HTTPConnection):
     def __init__(self,*args,deadline,**kwargs):
