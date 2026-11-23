@@ -1,3 +1,7 @@
+## 0.2.0-dev108
+
+- Show average gas rate in ft³/h over intervals sized to the selected chart window. Use ten-minute meter differences for the last hour and keep unsupported intervals open.
+
 ## 0.2.0-dev107
 
 - Recover a missing hourly opening register from the preceding hour's absolute reading and measured use. Show the subtraction and how the opening reading was calculated when inspecting the green dot.

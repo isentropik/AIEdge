@@ -98,10 +98,13 @@ class ChartHours:
             missing.append('daily' if daily else 'register')
             return []
 
-    def snapshot(self, stamp, zone_name, usage=None, document=None, policy=None):
+    def snapshot(self, stamp, zone_name, usage=None, document=None, policy=None, minutes=60):
         zone = ZoneInfo(zone_name)
         end = datetime.fromtimestamp(stamp/1000,timezone.utc)
-        start = end-timedelta(hours=25)
+        if minutes not in (10,60):
+            raise ValueError('unsupported_chart_interval')
+        # Two hours contain the full last-hour window plus its preceding clock-hour anchor.
+        start = end-timedelta(hours=2 if minutes==10 else 25)
         today = end.astimezone(zone).date()
         midnight = datetime.combine(today,time.min,zone)
         # Recorder indexing uses publication time. Use the capture timestamp for math and
@@ -140,7 +143,7 @@ class ChartHours:
         ticks = []
         cursor = start.replace(second=0,microsecond=0)
         while cursor <= end:
-            if cursor.astimezone(zone).minute == 0:
+            if cursor.astimezone(zone).minute % minutes == 0:
                 ticks.append(millis(cursor))
             cursor += timedelta(minutes=1)
         published={t:boundary(t) for t in ticks}
@@ -158,7 +161,8 @@ class ChartHours:
                     hours.append(measured)
                 continue
             if measured and measured['basis']=='photo_replay':
-                hours.append(measured)
+                if not any(a<t<=b for t in register_changes):
+                    hours.append(measured)
                 continue
             internal=[(l,r) for l,r in gaps if l<b and a<r]
             if measured and any(span not in measured.get('supported_spans',()) for span in internal):
@@ -233,7 +237,7 @@ class ChartHours:
         resets=[t for t in ticks if datetime.fromtimestamp(t/1000,zone).time()==time.min]
         supported={h['end'] for h in hours}
         unknown=[[a,b] for a,b in zip(ticks,ticks[1:]) if b not in supported]
-        return dict(zone=zone_name,end=stamp,midnight=millis(midnight),groups=groups,gaps=gaps,
+        return dict(minutes=minutes,zone=zone_name,end=stamp,midnight=millis(midnight),groups=groups,gaps=gaps,
                     resets=resets,hours=hours,unknownHours=unknown,missing=missing,
                     dailyHours=daily_hours,offsets=offsets)
 
