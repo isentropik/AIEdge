@@ -101,14 +101,18 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from event_mode import edit_allowed
                 try:edit_allowed(recognition)
                 except ValueError as exc:self.reply({'error':str(exc),'code':'event_selection_restart_required'},409);return
-            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/retention','/api/capture-trial','/api/capture-continuation'):self.send_error(404);return
+            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/retention','/api/chart-photo-recovery','/api/capture-trial','/api/capture-continuation'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
-                limit=4*1024*1024 if route.endswith('/reference') else 262144
+                limit=4*1024*1024 if route in ('/api/setup/reference','/api/chart-photo-recovery') else 262144
                 if not 0<length<=limit or self.headers.get('Transfer-Encoding'):raise ValueError('Invalid request size.')
                 body=self.rfile.read(length)
                 if len(body)!=length:raise ValueError('Incomplete request.')
+                if route=='/api/chart-photo-recovery':
+                    if retention is None:self.reply({'error':'retention_unavailable'},503);return
+                    if self.headers.get_content_type()!='image/jpeg':raise ValueError('JPEG required')
+                    self.reply(retention.recover_chart_photo(body));return
                 if route.endswith('/reference'):
                     digest=setup.add_reference(body);self.reply({'reference_sha256':digest});return
                 if self.headers.get_content_type()!='application/json':raise ValueError('JSON request required.')
@@ -428,6 +432,7 @@ def run_service(stop_signals):
     if mqtt_enabled and (recognition is None or reading_format is None):
         configuration={'state':'invalid','code':'options_mqtt_runtime_required'}
         mqtt_enabled=False;enabled=False
+    photo_register=None
     if mqtt_enabled:
         from daily_mqtt import DailyPublisher
         from mqtt_output import MqttOutput
@@ -496,7 +501,7 @@ def run_service(stop_signals):
         except (OSError,sqlite3.Error):pass
     stop_signals.checkpoint()
     from image_retention import ImageRetention
-    retention = ImageRetention(store,archive,consumption) if store and archive and reviews else None
+    retention = ImageRetention(store,archive,consumption,photo_register,reading_format) if store and archive and reviews else None
     from gas_trend import GasTrend
     from gas_periods import GasPeriods
     from meter_history import frame_ids

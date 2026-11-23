@@ -12,7 +12,7 @@ from observation_support import observed_rows
 from reading_bounds import diagnose_inconsistency
 
 
-def photo_anchor(db, reader, document, source, eid):
+def photo_anchor(db, reader, document, source, eid, *, image=None, saved=False):
     pipeline = document['pipeline_id']
     bindings = db.execute('SELECT context,source_sha FROM event_recognition_bindings '
                           'WHERE event_id=? AND pipeline=?',(eid,pipeline)).fetchall()
@@ -26,6 +26,15 @@ def photo_anchor(db, reader, document, source, eid):
             any(obs.get(k)!=source[k] for k in ('camera','format_id')) or
             observed_rows(inference)!=[True]*len(document['dials'])):
         return None
+    if saved:
+        row=db.execute('SELECT level,lower_ft3,upper_ft3 FROM register_photo_anchors WHERE event_id=? '
+                       'AND format_id=? AND calibration=? AND source_sha=? AND context=?',
+                       (eid,source['format_id'],reader.setup.status()['revision'],digest,context)).fetchone()
+        if row:
+            value,low,high=map(number,row)
+            if low<=value<=high:
+                return obs,value,(low,high)
+            raise ValueError('invalid_saved_photo_anchor')
     records = db.execute('SELECT result FROM consumption_records WHERE segment_id IN '
                          '(SELECT segment_id FROM consumption_segments WHERE format_id=? AND first_event<=?) '
                          'AND event_id=?',(source['format_id'],eid,eid)).fetchall()
@@ -40,15 +49,48 @@ def photo_anchor(db, reader, document, source, eid):
         return None
     raw=dict(state='inconsistent',reason='dial_bounds_disagree',consistency=consistency,
              format_id=source['format_id'],source_sha256=digest)
-    proof=reader.check(dict(format=document,consumption=record,_raw_meter_reading=raw,
+    snapshot=dict(format=document,consumption=record,_raw_meter_reading=raw,
                             _publication_segment_id=record['segment_id'],_timing_event_id=eid,
-                            latest=dict(captured_at=obs['captured_at'],sha256=digest)),inference)
+                  latest=dict(captured_at=obs['captured_at'],sha256=digest))
+    proof=reader.check(snapshot,inference) if image is None else reader.check(snapshot,inference,image=image)
     if not proof or 'photo_center_ft3' not in proof:
         return None
     bands=[tuple(map(number,pair)) for pair in proof['bands_ft3']]
     track=start_register(obs,bands,Decimal(0),photo_center=number(proof['photo_center_ft3']))
     if track:
         return obs,number(track['level']),tuple(map(number,track['outer']))
+
+
+def preserve_photo(store,reader,document,digest,image):
+    """Bind a derived reading to its original event before the image is removed."""
+    from reading_format import validate
+    revision=validate(document)[1]
+    calibration=reader.setup.status()['revision']
+    anchors=[]
+    with store.connect() as db:
+        # Full-frame-only and older databases may have no event-selection ledger.
+        tables=db.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN "
+                          "('event_recognition_bindings','consumption_records','consumption_segments')").fetchone()[0]
+        if tables!=3:
+            return 0
+        rows=db.execute('SELECT e.event_id,e.camera FROM frames f JOIN capture_events e USING(camera,frame_id) '
+                        'WHERE f.sha256=?',(digest,)).fetchall()
+        for eid,camera in rows:
+            anchor=photo_anchor(db,reader,document,dict(camera=camera,format_id=revision),eid,image=image)
+            if anchor:
+                obs,level,(low,high)=anchor
+                if obs['source_sha256']!=digest:
+                    raise ValueError('photo_anchor_identity_changed')
+                anchors.append((eid,revision,calibration,digest,obs['context_id'],str(level),str(low),str(high)))
+        if reader.setup.status()['revision']!=calibration:
+            raise ValueError('photo_anchor_calibration_changed')
+        for anchor in anchors:
+            db.execute('INSERT OR IGNORE INTO register_photo_anchors VALUES(?,?,?,?,?,?,?,?)',anchor)
+            row=db.execute('SELECT * FROM register_photo_anchors WHERE event_id=? AND format_id=? AND calibration=?',
+                           anchor[:3]).fetchone()
+            if tuple(row)!=anchor:
+                raise ValueError('stored_photo_anchor_conflict')
+    return len(anchors)
 
 
 def project(db, document, source, rate, anchor, samples, travel):
@@ -121,17 +163,23 @@ def recover_boundary(db, reader, document, source, rate, t, before, after, first
     last=min([last]+[cut-1 for cut in breaks if cut>after])
     estimates=[]
     calibration=reader.setup.status().get('revision')
+    saved=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='register_photo_anchors'").fetchone()
+    available='NOT EXISTS (SELECT 1 FROM retired_images r WHERE r.sha256=f.sha256)'
+    params=()
+    if saved:
+        available+=' OR EXISTS (SELECT 1 FROM register_photo_anchors p WHERE p.event_id=e.event_id '+\
+                   'AND p.format_id=? AND p.calibration=? AND p.source_sha=f.sha256)'
+        params=(source['format_id'],calibration)
     for lo,hi,order in ((first,before,'DESC'),(after,last,'ASC')):
         candidates=db.execute('SELECT e.event_id FROM capture_events e JOIN frames f USING(camera,frame_id) '
-            'WHERE e.camera=? AND e.event_id BETWEEN ? AND ? AND NOT EXISTS '
-            '(SELECT 1 FROM retired_images r WHERE r.sha256=f.sha256) ORDER BY e.event_id '+order+' LIMIT 4',
-            (source['camera'],lo,hi)).fetchall()
+            'WHERE e.camera=? AND e.event_id BETWEEN ? AND ? AND ('+available+') ORDER BY e.event_id '+order+' LIMIT 4',
+            (source['camera'],lo,hi,*params)).fetchall()
         for (eid,) in candidates:
             key=(source['camera'],source['format_id'],calibration,rate,eid,before,after)
             pair=cache.get(key)
             if pair is None:
                 try:
-                    anchor=photo_anchor(db,reader,document,source,eid)
+                    anchor=photo_anchor(db,reader,document,source,eid,saved=bool(saved))
                 except (KeyError,IndexError,TypeError,ValueError,OSError,ArithmeticError):
                     # A missing image or an older unbound recognition cannot anchor an hour.
                     continue

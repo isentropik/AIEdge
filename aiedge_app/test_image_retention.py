@@ -11,6 +11,20 @@ from test_capture import headers
 
 
 class ImageRetentionTests(unittest.TestCase):
+    @patch('hourly_photo.preserve_photo',side_effect=OSError('storage unavailable'))
+    def test_anchor_write_failure_keeps_photo_and_pending_intent(self,save):
+        from types import SimpleNamespace
+        cutoff,candidates=self.worker.candidates()
+        digest=candidates[0]
+        self.worker.retire([digest],cutoff)
+        self.worker.photo_register=object()
+        self.worker.reading_format=SimpleNamespace(status=lambda:{'format':{'unit':'ft3'}})
+        with self.assertRaises(OSError):
+            self.worker.finish_pending()
+        self.assertTrue((self.root/'images'/(digest+'.jpg')).is_file())
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT pending FROM retired_images WHERE sha256=?',(digest,)).fetchone(),(1,))
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

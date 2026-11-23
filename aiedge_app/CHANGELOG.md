@@ -1,3 +1,9 @@
+## 0.2.0-dev112
+
+- Keep a verified meter estimate and its bounds with the capture ledger when a full photo expires. Historical charts can use the saved estimate after a restart.
+- When a pointer covers a printed division, check its position against the visible divisions on either side.
+- Preserve the shared clock-hour bounds on the one-hour chart. Allow recovery from an original expired JPEG whose hash matches a saved capture.
+
 ## 0.2.0-dev111
 
 - Position recovered cumulative runs on the same daily baseline. Use the measured dial travel between the outer readings to bound a restart when a clock reading is missing. Show the minimum supported movement on inspection when it exceeds the archived increase. Keep the missing rate intervals open.

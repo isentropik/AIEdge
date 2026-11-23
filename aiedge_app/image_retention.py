@@ -1,5 +1,6 @@
 """Fixed local image retention. Measurement rows and their source digests are permanent."""
 import re
+import hashlib
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -19,10 +20,12 @@ USES = """SELECT e.event_id, EXISTS(SELECT 1 FROM continuous_capture_outcomes o
 
 
 class ImageRetention:
-    def __init__(self, store, archive, consumption=None):
+    def __init__(self, store, archive, consumption=None, photo_register=None, reading_format=None):
         self.store = store
         self.archive = archive
         self.consumption = consumption
+        self.photo_register = photo_register
+        self.reading_format = reading_format
         self.stop = threading.Event()
 
     def settings(self):
@@ -35,6 +38,23 @@ class ImageRetention:
     def save_settings(self, config, revision):
         with self.archive.lock, self.store.lock:
             return save_settings(self.store.root, config, revision)
+
+    def recover_chart_photo(self, image):
+        """Recompute a chart observation only for an original, already expired JPEG."""
+        from hourly_photo import preserve_photo
+        if self.photo_register is None or self.reading_format is None:
+            raise ValueError('photo_reader_unavailable')
+        digest=hashlib.sha256(image).hexdigest()
+        with self.store.connect() as db:
+            if not db.execute('SELECT 1 FROM retired_images WHERE sha256=? AND pending=0',(digest,)).fetchone():
+                raise ValueError('no_matching_expired_photo')
+        document=self.reading_format.status()['format']
+        if not document or document['unit']!='ft3':
+            raise ValueError('gas_reading_format_unavailable')
+        count=preserve_photo(self.store,self.photo_register,document,digest,image)
+        if not count:
+            raise ValueError('photo_has_no_supported_register')
+        return dict(source_sha256=digest,verified_anchors=count)
 
     def recent_events(self):
         saved = read_settings(self.store.root)
@@ -130,10 +150,27 @@ class ImageRetention:
 
     def finish_pending(self):
         consumed = (self.consumption.status().get("event_id") or 0) if self.consumption is not None else None
+        # Read and fit outside the capture and archive writer locks. Only delete
+        # intents examined in this batch, and recheck them under the writer lock.
+        with self.store.connect() as db:
+            pending = [r[0] for r in db.execute("SELECT sha256 FROM retired_images WHERE pending=1 LIMIT 16")]
+        if not pending:
+            return 0
+        if self.photo_register is not None:
+            from hourly_photo import preserve_photo
+            document=self.reading_format.status()['format']
+            if document and document['unit']=='ft3':
+                for digest in pending:
+                    if not DIGEST.fullmatch(digest):
+                        raise ValueError("retirement intent invalid")
+                    path=self.store.root/'images'/(digest+'.jpg')
+                    if path.is_file() and not path.is_symlink():
+                        preserve_photo(self.store,self.photo_register,document,digest,verified_image(path,digest))
         with self.archive.lock, self.store.lock, self.store.connect() as db:
             db.execute("ATTACH DATABASE ? AS ar",(str(self.archive.root/"archive.sqlite3"),))
             db.execute("BEGIN IMMEDIATE")
-            rows = db.execute("SELECT sha256 FROM retired_images WHERE pending=1 LIMIT 16").fetchall()
+            placeholders=','.join('?' for _ in pending)
+            rows = db.execute("SELECT sha256 FROM retired_images WHERE pending=1 AND sha256 IN ("+placeholders+")",pending).fetchall()
             if not rows:
                 return 0
             head = db.execute("SELECT COALESCE(MAX(event_id),0) FROM capture_events").fetchone()[0]
