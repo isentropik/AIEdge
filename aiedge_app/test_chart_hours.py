@@ -103,6 +103,9 @@ class ChartHoursTests(unittest.TestCase):
         request.read_request()
         charts.published_window.assert_called_once_with(stamp,'UTC','1',{},None,{})
         charts.snapshot.assert_not_called()
+        request.path=f'/api/chart-hours?end={stamp}&prepared=1'
+        request.read_request()
+        charts.prepared.assert_called_once_with(stamp,'UTC',{},None,{})
         for query in ('window=10','minutes=10','window=1&window=6'):
             request.path=f'/api/chart-window?end={stamp}&'+query
             request.read_request()
@@ -229,6 +232,87 @@ class ChartHoursTests(unittest.TestCase):
         h=ChartHours(self.meter,self.daily,unavailable,ledger=Ledger()).snapshot(millis(self.hour),'UTC')
         self.assertEqual(h['missing'],['register','daily'])
         self.assertEqual(h['hours'][0]['use'],0)
+
+    def test_multiple_clients_share_one_build_and_keep_the_original_timestamp(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from threading import Event
+        from unittest.mock import patch
+        end=millis(self.hour+timedelta(seconds=4))
+        usage={'movement_history':{'format':'a'}}
+        doc={'dials':[{'value_per_revolution':5,'position_error':.1}]}
+        rows=self.rows([(i*60,150+i) for i in range(-72,74)])
+        hours=ChartHours(self.meter,self.daily,
+                         lambda entity,a,b:[[r for t,r in rows if a<=t<b and entity==self.meter]])
+        compute=hours.snapshot
+        started,release=Event(),Event()
+        def build(*args,**kwargs):
+            started.set()
+            self.assertTrue(release.wait(2))
+            return compute(*args,**kwargs)
+        with patch.object(hours,'snapshot',side_effect=build) as expensive, ThreadPoolExecutor(3) as pool:
+            first=pool.submit(hours.prepared,end,'UTC',usage,doc,{})
+            self.assertTrue(started.wait(2))
+            visitors=[pool.submit(hours.prepared,end+n,'UTC',usage,doc,{}) for n in (1000,2000)]
+            release.set()
+            for result in [first,*visitors]:
+                self.assertEqual(result.result(timeout=5)['end'],end)
+            expensive.assert_called_once()
+
+    def test_publication_warms_all_windows_and_restores_without_reader_access(self):
+        from chart_hours import BackgroundCharts
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        from threading import Event, Thread
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+        end=self.hour+timedelta(seconds=5)
+        stamp=millis(end)
+        usage={'daily_nominal':{'timezone':'UTC','measured_at':end.isoformat()},
+               'movement_history':{'format':'f','dial_from':[1,2],'dial_gaps':[]}}
+        doc={'dials':[{'value_per_revolution':5,'position_error':.1}]}
+        mqtt=SimpleNamespace(status=lambda:{'usage':usage},daily=SimpleNamespace(evidence_policy={}))
+        fmt=SimpleNamespace(status=lambda:{'format':doc})
+        rows=self.rows([(i*300,1000+i) for i in range(-670,3)])
+        def fetch(entity,a,b):
+            return [[r for t,r in rows if entity==self.meter and a<=t<b]]
+        with TemporaryDirectory() as tmp:
+            path=Path(tmp)/'chart.json'
+            hours=ChartHours(self.meter,self.daily,fetch)
+            worker=BackgroundCharts(hours,mqtt,fmt,path)
+            ready=Event()
+            prepare=worker.prepare
+            def finished():
+                prepare()
+                ready.set()
+            with patch.object(worker,'prepare',side_effect=finished):
+                thread=Thread(target=worker.run)
+                thread.start()
+                try:
+                    self.assertFalse(path.exists())
+                    worker.published.set()
+                    self.assertTrue(ready.wait(10))
+                    self.assertIsNotNone(worker.completed)
+                finally:
+                    worker.request_stop()
+                    thread.join(2)
+                self.assertFalse(thread.is_alive())
+            offline=Mock(side_effect=AssertionError('history fetch on first open'))
+            hours=ChartHours(self.meter,self.daily,offline)
+            BackgroundCharts(hours,mqtt,fmt,path).load()
+            full=hours.prepared(stamp+5000,'UTC',usage,doc,{})
+            self.assertEqual(full['end'],stamp)
+            for scale in ('1','6','12','24','today'):
+                self.assertEqual(hours.published_window(stamp+5000,'UTC',scale,usage,doc,{})['asOf'],stamp)
+            offline.assert_not_called()
+            # A new gap or interval must never hit the old verified chart.
+            for t,u in ((stamp+600000,usage),(stamp,{**usage,'movement_history':{**usage['movement_history'],'dial_gaps':[[stamp-100,stamp]]}})):
+                with self.assertRaisesRegex(AssertionError,'history fetch'):
+                    hours.prepared(t,'UTC',u,doc,{})
+            path.write_bytes(path.read_bytes()[:-4])
+            clean=ChartHours(self.meter,self.daily,offline)
+            BackgroundCharts(clean,mqtt,fmt,path).load()
+            self.assertIsNone(clean.last_profile)
+
 
 class HourlyPhotoTests(unittest.TestCase):
     def test_carry_uses_a_measured_hour_and_preserves_endpoint_bounds(self):

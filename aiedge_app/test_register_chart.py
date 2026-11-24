@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from register_chart import register_profile
+from register_chart import measured_change_bounds, register_profile
 
 
 class RegisterChartTests(unittest.TestCase):
@@ -46,3 +46,28 @@ class RegisterChartTests(unittest.TestCase):
         out=register_profile(self.midnight,self.zone,[],[],[],[],[],{},None)
         self.assertEqual(out['points'],[])
         self.assertEqual(out['openings'],{})
+
+    def test_hour_and_daily_change_keep_a_shared_offset_and_the_tightest_interval_evidence(self):
+        start=self.midnight
+        points=[[start+i*self.tick,100+i,90+i,110+i,0] for i in range(7)]
+        legs=[[start,start+6*self.tick,0,25],
+              *[[a[0],b[0],.9,1.1] for a,b in zip(points,points[1:])]]
+        bounds={(a,b):(lo,hi) for a,b,lo,hi in measured_change_bounds(points,{start:[100,90,110,0,False]},legs)}
+        self.assertAlmostEqual(bounds[start,points[-1][0]][0],5.4,places=5)
+        self.assertAlmostEqual(bounds[start,points[-1][0]][1],6.6,places=5)
+        self.assertAlmostEqual(bounds[start,points[3][0]][1],3.3,places=5)
+
+    def test_one_missing_leg_preserves_unknown_usage_and_a_measured_partial_lower_bound(self):
+        points=[[self.midnight+i*self.tick,100+i,90+i,110+i,0] for i in range(7)]
+        a,b=points[0][0],points[-1][0]
+        first=[points[0][0],points[1][0],.75,1.25]
+        bounds={(x,y):(l,h) for x,y,l,h in measured_change_bounds(points,{},[first,[a,b,0,25]])}
+        self.assertEqual(bounds[a,b],(.75,25))
+        self.assertNotIn((points[3][0],points[4][0]),bounds)
+        # An unsupported center, an unknown absolute baseline or a rejected
+        # measurement cannot establish a relative error bar.
+        unknown=[[a,10,None,None,0],[a+self.tick,10,None,None,0]]
+        rejected=[[a,a+self.tick,0,1]]
+        self.assertEqual(measured_change_bounds(unknown,{},rejected,rejected),[])
+        unknown[1][4]=1
+        self.assertEqual(measured_change_bounds(unknown,{},rejected),[])

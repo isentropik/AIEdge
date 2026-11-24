@@ -366,7 +366,7 @@ function render(state) {
  if(['','#overview'].includes(location.hash))window.AIEdgeCharts?.setCalendar?.(
    mqtt?.overview_meter==='gas'?zone:null,currentHeadline?.source?.captured_at,
    usage.movement_history?.format?JSON.stringify([usage.movement_history.format,usage.movement_history.dial_from,
-     usage.absolute_nominal?.method,currentHeadline?.day]):null);
+     usage.absolute_nominal?.method,currentHeadline?.day,usage.movement_history.dial_gaps??[]]):null);
  if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily||usage.chart_daily,other ? null : currentHeadline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  renderChartHeadline();

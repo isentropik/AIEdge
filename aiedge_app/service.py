@@ -228,7 +228,9 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 try:
                     query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,max_num_fields=2,keep_blank_values=True)
                     staged=route=='/api/chart-window'
-                    if set(query)-{'end','window' if staged else 'minutes'} or len(query.get('end',[]))!=1:raise ValueError()
+                    permitted = {'end','window'} if staged else {'end','minutes','prepared'}
+                    if set(query)-permitted or len(query.get('end',[]))!=1:raise ValueError()
+                    if 'prepared' in query and query['prepared']!=['1']:raise ValueError()
                     if staged and query.get('window') not in (['1'],['6'],['12'],['24'],['today']):raise ValueError()
                     interval=query.get('minutes',['60'])
                     if interval not in (['10'],['60']):raise ValueError()
@@ -248,6 +250,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                         result={}
                     elif staged:
                         result=chart_hours.published_window(end,zone,query['window'][0],usage,document,policy)
+                    elif 'prepared' in query:
+                        result=chart_hours.prepared(end,zone,usage,document,policy)
                     else:
                         result=chart_hours.snapshot(end,zone,usage,document,policy,minutes=int(interval[0]),
                                                     profile=interval==['60'])
@@ -497,13 +501,16 @@ def run_service(stop_signals):
                    lookup=lambda camera,ids: frame_ids(store,camera,ids),
                    coverage=lambda daily,track,cache: read_coverage(store,daily,track,cache)) if mqtt_output and options['mqtt_output_mode']=='gas_consumption' else None
     periods=GasPeriods(options['recent_history_entity']) if trend else None
-    from chart_hours import ChartHours, ledger_breaks
+    from chart_hours import BackgroundCharts, ChartHours, ledger_breaks
     from hourly_dial import LedgerHours
     hours=ChartHours(options['meter_history_entity'],options['nominal_history_entity'],
                      breaks=lambda start,end:ledger_breaks(store,start,end),ledger=LedgerHours(store,photo_register)) if trend else None
+    prepared = BackgroundCharts(hours,mqtt_output,reading_format,Path(args.data)/'chart-history-v1.json') if hours else None
+    if prepared:
+        mqtt_output.chart_published = prepared.published
     server=AppHTTPServer((args.bind,args.port),handler(store,args.ingress,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,consumption_error,reviews,preview,archive,trial,retention,trend,periods,hours))
     from lifecycle import ServiceRuntime
-    if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention if enabled and collector else None),signals=stop_signals).run():
+    if not ServiceRuntime(server,(collector,recognition if not selection_error else None,mqtt_output,consumption,preview,archive if not selection_error else None,trial,retention if enabled and collector else None,prepared),signals=stop_signals).run():
         raise SystemExit('App request or worker shutdown timed out.')
 def main():
     from lifecycle import StartupSignals,StartupStopped,lifecycle_event

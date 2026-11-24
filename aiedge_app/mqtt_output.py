@@ -105,6 +105,7 @@ class MqttOutput:
         self.overview_format = None
         self.history_topic = None
         self.overview_daily = self.overview_absolute = None
+        self.chart_published = None
         self.provider=provider;self.client_factory=client_factory;self.stop=threading.Event()
         self.connected=threading.Event();self.rediscover=threading.Event();self.state='starting';self.error=None
         self.client=None;self.base=None;self.configuration=None;self.last_payload=None
@@ -339,7 +340,11 @@ class MqttOutput:
     def run(self):
         try:
             while not self.stop.is_set():
-                try:self.publish_snapshot(self.snapshot())
+                try:
+                    previous = self.overview_daily
+                    self.publish_snapshot(self.snapshot())
+                    if self.chart_published is not None and self.overview_daily != previous:
+                        self.chart_published.set()
                 except Exception as exc:
                     # Never expose broker responses, credentials or arbitrary exception strings.
                     self.error=str(exc) if isinstance(exc,ValueError) and re.fullmatch('[a-z_]+',str(exc)) else 'mqtt_connection_failed'

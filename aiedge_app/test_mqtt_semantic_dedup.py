@@ -10,6 +10,17 @@ class SemanticDedupTests(unittest.TestCase):
     setUp=fixtures.MqttTests.setUp
     tearDown=fixtures.MqttTests.tearDown
 
+    def test_background_chart_wakes_only_when_the_daily_publication_changes(self):
+        from unittest.mock import Mock
+        stop=Mock()
+        stop.is_set.side_effect=[False,False,False,True]
+        self.worker.stop=stop
+        self.worker.chart_published=Mock()
+        published=iter([('format',{'event_id':1}),('format',{'event_id':1}),('format',{'event_id':2})])
+        self.worker.publish_snapshot=lambda _: setattr(self.worker,'overview_daily',next(published))
+        self.worker.run()
+        self.assertEqual(self.worker.chart_published.set.call_count,2)
+
     def start(self):
         self.now=100.
         self.worker.clock=lambda:self.now
