@@ -178,10 +178,19 @@ class Store:
                 EXISTS(SELECT 1 FROM retired_images r WHERE r.sha256=f.sha256)
                 FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id
                 """+condition+" ORDER BY e.event_id DESC LIMIT ?",parameters).fetchall()
+            compact={}
+            if rows and db.execute("SELECT 1 FROM sqlite_master WHERE name='compact_exposures'").fetchone():
+                ids=[row[0] for row in rows[:limit]]
+                compact=dict(db.execute('SELECT event_id,anchor FROM compact_exposures WHERE event_id IN ('+
+                                        ','.join('?' for _ in ids)+')',ids))
         more=len(rows)>limit;rows=rows[:limit]
         names=('event_id','captured_at','received_at','sha256','bytes','frame_id','duplicate_image','image_expired')
         items=[dict(zip(names,row)) for row in rows]
-        for item in items:item['duplicate_image']=bool(item['duplicate_image']);item['training_allowed']=False
+        for item in items:
+            item['duplicate_image']=bool(item['duplicate_image']);item['training_allowed']=False
+            eid=item['event_id']
+            if eid in compact and not item['image_expired'] and not (self.root/'images'/(item['sha256']+'.jpg')).is_file():
+                item['compact_preview']='anchor_pending' if compact[eid] else 'fine_dial'
         return {'items':items,'next_before':rows[-1][0] if more else None}
 
     def publication_frame(self):
@@ -487,6 +496,9 @@ class Collector:
             elif result['hold_reason']:result['state']='held'
             else:result['state']=self.recovery_state
             result['storage_recovery_attempt']=self.storage_attempt
+            if getattr(self,'compact',None):
+                result['original_download_error']=self.compact.download_error
+                result['compact_timing']=self.compact.timing
             result['storage_recovery_policy']=capture_recovery.STORAGE_POLICY
             result['readiness_failures']=self.readiness_failures
             result['readiness_retry_delay_seconds']=self.readiness_retry_delay
@@ -540,8 +552,12 @@ class Collector:
             attempt,after=capture_recovery.begin(self.store,self.recovery_floor)
             self.last_cycle_attempt=attempt
             self.store.active_capture_attempt=attempt
-            blob,headers=self.camera.capture()
-            added=self.store.add(self.camera.origin,blob,headers,request_started=request_started)
+            compact=getattr(self,'compact',None)
+            if compact and compact.available(readiness):
+                added=compact.collect(request_started)
+            else:
+                blob,headers=self.camera.capture()
+                added=self.store.add(self.camera.origin,blob,headers,request_started=request_started)
             if not added:raise ValueError('capture_duplicate_response')
             event,_=self.store.publication_frame()
             if event!=after+1:raise ValueError('capture_event_ownership_conflict')
@@ -551,6 +567,7 @@ class Collector:
             self.readiness_failures=0;self.readiness_retry_delay=0
             self.transfer_failures=0
         except Exception as e:
+            if getattr(self,'compact',None):self.compact.force_anchor=True
             if isinstance(e,StorageLowSpace) and (self.storage_wait or self.transfer_attempt):
                 # An existing unresolved boundary already covers this wait.
                 # Do not append a later fault that invalidates its recovery.
@@ -678,6 +695,7 @@ class Collector:
         self.readiness_retry_delay=0
         self.transfer_not_before=time.monotonic()+self.interval
     def run(self):
+        planned_light_start=None
         while not self.shutdown.is_set():
             if self.stop.is_set():
                 if self.recovery_state!='held':break
@@ -686,7 +704,14 @@ class Collector:
                 self.shutdown.wait(.2);continue
             if self.transfer_attempt and self.transfer_not_before>time.monotonic():
                 if self.shutdown.wait(self.transfer_not_before-time.monotonic()):break
-            started=time.monotonic();self.once();current=time.monotonic()
+            started=time.monotonic()
+            compact=getattr(self,'compact',None)
+            if compact:
+                from compact_capture import LIGHT_SETTLE_SECONDS
+                # Start lighting before the desired exposure. Never change the time
+                # stored on a frame to match the planned slot.
+                compact.nominal_slot=(planned_light_start if planned_light_start is not None else started)+LIGHT_SETTLE_SECONDS
+            self.once();current=time.monotonic()
             if self.stop.is_set():continue
             due=started+self.interval
             if current>due:
@@ -701,4 +726,9 @@ class Collector:
                 due=current
             due=max(due,started+self.readiness_retry_delay,self.transfer_not_before)
             # Re-anchor on the actual start, so a late cycle cannot cause a burst.
+            planned_light_start=due
+            compact=getattr(self,'compact',None)
+            if compact and compact.available(self.camera_state) and not self.transfer_attempt:
+                next_exposure=planned_light_start+LIGHT_SETTLE_SECONDS
+                compact.idle(self.stop,min(due,next_exposure-LIGHT_SETTLE_SECONDS))
             self.stop.wait(max(0,due-time.monotonic()))

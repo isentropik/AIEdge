@@ -1,5 +1,5 @@
 """Strict passive camera admission snapshot. Does not acquire a frame."""
-import errno,http.client,json,ssl,time,urllib.error,urllib.request
+import errno,http.client,json,re,ssl,time,urllib.error,urllib.request
 
 READINESS_IO_SECONDS = 10
 
@@ -43,7 +43,11 @@ def validate(payload):
     if payload['state']=='ready' and not (available and payload['settings_ready'] and payload['clock_synchronized']):
         raise ValueError('camera_status_invalid')
     # Never echo unsolicited fields, device addresses or credential-like payloads.
-    return {k:payload[k] for k in FIELDS}
+    result={k:payload[k] for k in FIELDS}
+    profile = payload.get('q25_profile')
+    if payload.get('q25') is True and isinstance(profile,str) and re.fullmatch('[0-9a-f]{64}',profile):
+        result.update(q25=True,q25_profile=profile)
+    return result
 
 def probe(camera,*,deadline=None):
     from capture import camera_header,io_deadline

@@ -1,5 +1,6 @@
 """Explicit opt-in event recognition; default Recognition/service remain unchanged."""
 import json,sqlite3
+import compact_capture
 import capture_clock
 import capture_recovery
 import meter_identity
@@ -77,6 +78,8 @@ class EventRecognition(Recognition):
         if row is None:return None
         r=decode(row[0],MAX_REQUEST_BYTES);check(digest(r)==row[1],'event_request_tampered')
         required={'reader_observed','recommendation','timing','deadline_missed','flags','full_reason','schema_version','event','pipeline_id','context_id','format_id','configuration','capabilities','feedback','last_full_event','observation_eligibility'}
+        compact_sha=r.get('compact_packet_sha256')
+        if compact_sha is not None:required.add('compact_packet_sha256')
         check(isinstance(r,dict) and set(r)==required,'event_request_keys_invalid')
         actual_event=self._event(db,event)
         check(isinstance(r['event'],dict) and r['event']==actual_event and all(type(r['event'][k]) is type(v) for k,v in actual_event.items()) and r['pipeline_id']==self.reader.pipeline_id and r['context_id']==self.observation_context and r['format_id']==self.format_id,'event_request_binding_invalid')
@@ -89,6 +92,10 @@ class EventRecognition(Recognition):
         if r['recommendation']['requested_mode']=='LAST_TWO':
             desired=[False]*len(mask)
             for dial in self.document['dials'][-2:]:desired[dial['index']]=True
+        if compact_sha is not None:
+            rec=compact_capture.evidence(db,event)
+            check(rec is not None and rec[0]==compact_sha,'compact_observation_binding')
+            desired=compact_capture.fine_mask(rec,actual_event['source_sha256'],self.reader.pipeline_id,len(mask))
         check(mask==desired,'event_request_decision_mask_invalid')
         feedback=r.get('feedback')
         check(feedback is None or (isinstance(feedback,dict) and set(feedback)=={'segment_id','event_id','result_sha256','genuine_full_anchor','result'} and type(feedback['event_id']) is int and self.observation_first_event<=feedback['event_id']<event and type(feedback['genuine_full_anchor']) is bool),'event_request_feedback_invalid')
@@ -120,6 +127,7 @@ class EventRecognition(Recognition):
                         expected_feedback['result'] if prior else None,reference['event'] if reference else None,
                         r['flags']['restart'],self.document,self.configuration,self.capabilities,
                         observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate,capture_failed=capture_recovery.boundary(db,event))
+        if compact_sha is not None:expected['reader_observed']=desired
         check(all(encoded(r[k])==encoded(value) for k,value in expected.items()),'event_request_decision_rederived_invalid')
         return r
     def _saved_request(self,db,event):
@@ -215,6 +223,17 @@ class EventRecognition(Recognition):
                     last_full=reference['event'] if reference else None
                     decision=decide(current,previous,previous_request,feedback['result'] if feedback else None,last_full,self._restart_pending,self.document,self.configuration,self.capabilities,
                                     observed_phase_speed=self._speed(db,prior[0]) if prior else None,observation_eligibility=certificate,capture_failed=capture_recovery.boundary(db,event))
+                    compact=compact_capture.evidence(db,event)
+                    if compact:
+                        source=current['source_sha256']
+                        if compact[2] and not (self.store.root/'images'/(source+'.jpg')).is_file():
+                            from datetime import datetime,timezone
+                            received=db.execute('SELECT received_at FROM frames WHERE camera=? AND frame_id=?',(current['camera'],current['frame_id'])).fetchone()[0]
+                            if (datetime.now(timezone.utc)-datetime.fromisoformat(received)).total_seconds()<75:
+                                return False
+                        if not (compact[2] and (self.store.root/'images'/(source+'.jpg')).is_file()):
+                            decision['reader_observed']=compact_capture.fine_mask(compact,source,pipeline,len(self.reader.dials))
+                            decision['compact_packet_sha256']=compact[0]
                     request={**decision,'schema_version':2,'event':current,'pipeline_id':pipeline,'context_id':context,'format_id':self.format_id,'configuration':self.configuration,'capabilities':self.capabilities,'feedback':feedback,'last_full_event':last_full_id,
                              'observation_eligibility':{'certificate':certificate,'certificate_sha256':digest(certificate)}}
                     encoded_request=encoded(request);check(len(encoded_request.encode())<=MAX_REQUEST_BYTES,'event_request_too_large')
@@ -226,7 +245,12 @@ class EventRecognition(Recognition):
             if result is None:
                 try:
                     with self.store.performance.measure('read_and_infer'):
-                        result=self.reader.read_jpeg(self.store.image(source)) if all(mask) else self.reader.read_jpeg(self.store.image(source),observed=mask)
+                        if 'compact_packet_sha256' in request:
+                            with self.store.connect() as db:
+                                compact=compact_capture.evidence(db,event)
+                            result=compact_capture.saved_result(compact)
+                        else:
+                            result=self.reader.read_jpeg(self.store.image(source)) if all(mask) else self.reader.read_jpeg(self.store.image(source),observed=mask)
                 except Exception as exc:
                     result={'state':'rejected','error':str(exc) if isinstance(exc,ValueError) else type(exc).__name__,'dial_positions':[]}
                     if not all(mask):result['observation_attempt']={'schema_version':1,'source_sha256':source,'pipeline_id':pipeline,'requested_observed':mask}

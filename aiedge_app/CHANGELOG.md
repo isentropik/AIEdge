@@ -1,3 +1,10 @@
+## 0.2.0-dev120
+
+- The photo capture interval is adjustable from 10 to 3,600 seconds. Existing six-second capture schedules use ten seconds while retaining their recognition settings.
+- The paired camera can send the fine dial and three alignment regions at JPEG quality 25 on each capture. The app uses Home Assistant's saved meter calibration to verify the camera profile and all four crop boxes in event recognition mode. Other configurations continue to request full photos.
+- Full originals captured at startup, on recovery and once per minute download in resumable 1,024-byte chunks. Each receipt binds the original to its exposure. If a compact transfer fails, the recovered original is kept separately and the measurement gap stays open.
+- Capture history shows the actual fine-dial crop when a full photo is unavailable.
+
 ## 0.2.0-dev113
 
 - Record unexpected capture HTTP response codes. A transient response can recover on a fresh scheduled capture after readiness checks. An older unclassified HTTP failure can be reviewed while its exposure stays unknown.

@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev118
+version: 0.2.0-dev120
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -54,6 +54,7 @@ schema:
   mqtt_enabled: bool
   mqtt_output_mode: list(reading|consumption|gas_consumption)
   capture_enabled: bool
+  capture_interval_seconds: int(10,3600)?
   interval_seconds: int(6,3600)
   recognition_mode: list(FULL|EVENT_LAST_TWO)
   event_selection_policy:

@@ -35,8 +35,9 @@ def _public_decision(request,request_sha,result_state):
         _check(isinstance(value,list) and len(value)<=32 and all(type(v) is str and v in DECISION_REASONS for v in value),'event_historical_decision_reasons')
         return list(value)
     mask=request['reader_observed'];mode=request['recommendation']['requested_mode']
+    compact='compact_packet_sha256' in request
     _check(isinstance(mask,list) and 1<=len(mask)<=32 and all(type(v) is bool for v in mask) and any(mask)
-        and mode in ('FULL','LAST_TWO') and (all(mask) if mode=='FULL' else sum(mask)==min(2,len(mask))),'event_historical_decision_mask')
+        and mode in ('FULL','LAST_TWO') and (sum(mask)==1 if compact else all(mask) if mode=='FULL' else sum(mask)==min(2,len(mask))),'event_historical_decision_mask')
     recommendation=request['recommendation'];intervals={}
     for key in ('requested_interval_seconds','supported_interval_seconds'):
         value=recommendation.get(key);_check(finite_number(value) and value>0,'event_historical_decision_interval');intervals[key]=value
@@ -46,7 +47,7 @@ def _public_decision(request,request_sha,result_state):
         or (timing['state']=='unavailable' and type(timing['reason']) is str and timing['reason'] in TIMING_REASONS and timing['elapsed_seconds'] is None),'event_historical_decision_timing')
     _check(type(request['deadline_missed']) is bool and result_state in ('estimated','rejected')
         and isinstance(request_sha,str) and re.fullmatch('[a-f0-9]{64}',request_sha),'event_historical_decision_types')
-    return dict(schema_version=1,reader_observed=list(mask),requested_mode=mode,
+    return dict(schema_version=1,reader_observed=list(mask),requested_mode=('FINE' if compact else mode),
         reasons=reasons(recommendation.get('reasons')),full_reason=reasons(request['full_reason']),
         timing=dict(timing),deadline_missed=request['deadline_missed'],request_sha256=request_sha,
         result_state=result_state,**intervals)
@@ -69,6 +70,12 @@ def _read(db,event,source,pipeline,context,evidence=None,*,records=None):
     request=_decode(row[0],MAX_REQUEST_BYTES);request_sha=row[1]
     _check(isinstance(request,dict) and _digest(request)==request_sha,'event_historical_request_hash')
     keys={'reader_observed','recommendation','timing','deadline_missed','flags','full_reason','schema_version','event','pipeline_id','context_id','format_id','configuration','capabilities','feedback','last_full_event'}
+    compact=request.get('compact_packet_sha256')
+    if compact is not None:
+        import compact_capture
+        record=compact_capture.evidence(db,event)
+        _check(record and record[0]==compact and request['reader_observed']==compact_capture.fine_mask(record,source,pipeline,len(request['reader_observed'])),'compact_observation_binding')
+        keys.add('compact_packet_sha256')
     version=request.get('schema_version')
     _check(type(version) is int and version in (1,2) and set(request)==(keys if version==1 else keys|{'observation_eligibility'}),'event_historical_request_schema')
     if version==2:
@@ -79,7 +86,7 @@ def _read(db,event,source,pipeline,context,evidence=None,*,records=None):
     _check(request['pipeline_id']==pipeline and request['context_id']==context and request['format_id']==format_id,'event_historical_request_identity')
     _check(isinstance(request['configuration'],dict) and isinstance(request['capabilities'],dict) and isinstance(request['recommendation'],dict) and isinstance(request['flags'],dict) and isinstance(request['timing'],dict) and isinstance(request['full_reason'],list) and type(request['deadline_missed']) is bool,'event_historical_policy_schema')
     mask=request['reader_observed'];_check(isinstance(mask,list) and 1<=len(mask)<=32 and any(mask) and all(type(x) is bool for x in mask),'event_historical_mask')
-    mode=request['recommendation'].get('requested_mode');_check(mode in ('FULL','LAST_TWO') and (all(mask) if mode=='FULL' else sum(mask)==min(2,len(mask))),'event_historical_mode_mask')
+    mode=request['recommendation'].get('requested_mode');_check(mode in ('FULL','LAST_TWO') and (sum(mask)==1 if compact else all(mask) if mode=='FULL' else sum(mask)==min(2,len(mask))),'event_historical_mode_mask')
     # Preserve historical decisions; never re-run old policy against current code/config.
     mask_sha=_digest(mask)
     binding=records['binding'] if records is not None else db.execute('SELECT source_sha,mask_sha,result_sha,request_sha FROM event_recognition_bindings WHERE event_id=? AND pipeline=? AND context=?',(event,pipeline,context)).fetchone()

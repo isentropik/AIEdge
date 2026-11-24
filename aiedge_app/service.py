@@ -4,7 +4,7 @@ from http_server import AppHTTPServer
 from pathlib import Path
 from capture import Store,Camera,Collector
 from capture_context import capture_context,capture_trial_context
-from options import load as load_options
+from options import load as load_options, split_capture_schedule
 
 def publication_state(store,recognition,reading_format,consumption,photo_register=None):
     # Capture events can share a JPEG. Match the exact accounting event, then
@@ -200,7 +200,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from diagnostics import build
                 body=json.dumps(build(store,collector,recognition,setup,reading_format,mqtt_output,configuration,consumption,archive),indent=2,allow_nan=False).encode()
                 self.send_response(200);self.send_header('Content-Type','application/json');self.send_header('Cache-Control','no-store');self.send_header('Content-Disposition','attachment; filename="aiedge-diagnostics.json"');self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body);return
-            if store is None and (route.startswith('/api/') or route.startswith('/image/') or route.startswith('/reference/')):
+            if store is None and (route.startswith('/api/') or route.startswith('/image/') or route.startswith('/compact-preview/') or route.startswith('/reference/')):
                 self.reply({'error':'App storage could not be opened. Capture and MQTT are stopped. Check the data volume or restore a backup, then restart AIEdge.','code':'storage_startup_failed'},503);return
             if route=='/api/capture-trial/results':
                 from trial_results import build
@@ -356,6 +356,10 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 except ValueError:self.reply({'error':'Invalid capture history page.'},400);return
                 body=json.dumps(page).encode();kind='application/json'
             elif route=='/api/captures':body=json.dumps(store.recent()).encode();kind='application/json'
+            elif route.startswith('/compact-preview/'):
+                from compact_capture import preview
+                try:body=preview(store,route.removeprefix('/compact-preview/'));kind='image/png'
+                except (ValueError,OSError,sqlite3.Error):self.send_error(404);return
             elif route.startswith('/image/'):
                 try:body=store.image(route.removeprefix('/image/'));kind='image/jpeg'
                 except (ValueError,FileNotFoundError):self.send_error(404);return
@@ -377,7 +381,8 @@ def run_service(stop_signals):
     args=parser.parse_args()
     options,configuration=load_options(args.data)
     stop_signals.checkpoint()
-    interval=options['interval_seconds'];enabled=options['capture_enabled']
+    interval, options = split_capture_schedule(options)
+    enabled = options['capture_enabled']
     storage_error=False
     try:store=Store(args.data)
     except (OSError,sqlite3.Error):
@@ -416,6 +421,7 @@ def run_service(stop_signals):
             else:
                 from ha_event_selection import configure
                 selected=configure(options,store,recognition,reading_format,args.accounting_library)
+                selected.ha_selection['fixed_interval_seconds'] = interval
             recognition=selected;setup.recognition=selected;reading_format.recognition=selected
         except (OSError,sqlite3.Error,ValueError,TypeError,UnicodeError,RecursionError):
             configuration={'state':'invalid','code':'event_selection_configuration_invalid'};enabled=False;selection_error=True
@@ -451,6 +457,9 @@ def run_service(stop_signals):
         camera=Camera(options['camera_url'],options.get('camera_token',''),options.get('camera_username',''),options.get('camera_password',''),performance=store.performance)
     if enabled:
         collector=Collector(store,camera,interval,recovery_floor=getattr(recognition,'observation_first_event',1))
+    if enabled and hasattr(recognition,'observation_context'):
+        from compact_capture import CompactCapture
+        collector.compact=CompactCapture(store,camera,recognition)
     reviews=None
     if store:
         from review_store import Reviews

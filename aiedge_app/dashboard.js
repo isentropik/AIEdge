@@ -162,16 +162,19 @@ function gallery(rows){
     const card=document.createElement('button');card.type='button';card.className='panel capture';
     card.onclick=()=>{location.hash='captures/'+row.event_id;};
     card.setAttribute('aria-label','Review capture '+date(row.captured_at));
-    const image=document.createElement('img');if(!row.image_expired)image.src='image/'+row.sha256;
+    const image=document.createElement('img');if(row.compact_preview){
+      image.src='compact-preview/'+row.event_id;card.disabled=true;
+      card.setAttribute('aria-label','Fine dial crop '+date(row.captured_at));
+    }else if(!row.image_expired)image.src='image/'+row.sha256;
     if(row.image_expired){image.hidden=true;card.disabled=true;}
-    image.alt='Meter capture '+date(row.captured_at);image.loading='lazy';
+    image.alt=(row.compact_preview?'Fine dial crop ':'Meter capture ')+date(row.captured_at);image.loading='lazy';
     image.onerror=()=>{image.hidden=true;card.classList.add('image-unavailable');};
     const body=document.createElement('div');body.className='body';
     const stamp=document.createElement('div');stamp.textContent='Captured '+date(row.captured_at);
     const meta=document.createElement('small');meta.textContent=Math.round(row.bytes/1024)+' KB · '+(row.duplicate_image?'Repeated image · ':'')+(row.review_error?'Review unavailable':row.reviewed_dials===null||row.reviewed_dials===undefined?'Unlabeled':row.reviewed_dials+' of '+row.review_dials+' reviewed');
     const received=document.createElement('small');received.textContent='Received '+date(row.received_at);received.style.display='block';
     body.title='Frame '+row.frame_id;
-    const action=document.createElement('div');action.className='capture-action';const label=document.createElement('span');label.textContent=row.image_expired?'Photo expired · reading kept':'Review image';action.append(label);
+    const action=document.createElement('div');action.className='capture-action';const label=document.createElement('span');label.textContent=row.compact_preview==='anchor_pending'?'Fine dial · full photo transferring':row.compact_preview?'Fine dial crop':row.image_expired?'Photo expired · reading kept':'Review image';action.append(label);
     body.append(stamp,received,meta,action);card.append(image,body);$('gallery').append(card);
   }
 }
