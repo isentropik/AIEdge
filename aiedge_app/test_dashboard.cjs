@@ -68,6 +68,25 @@ test('deferred scroll reset cannot jump a later page when an older route finishe
  await tick();app.location.hash='#setup/image';app.listeners.hashchange();app.location.hash='#settings';app.listeners.hashchange();
  callbacks.shift()();assert.equal(scrolls.length,0);callbacks.shift()();assert.deepEqual(scrolls,[[0,0]]);
 });
+test('a transfer context hold explains the gap and clears after capture resumes',async()=>{
+ let held=true,statusCalls=0;
+ const current=()=>({...state,last_error:held?{error:'transfer_context_changed'}:null});
+ const app=fixture(async url=>{
+   if(url==='api/overview')return response({mqtt:{state:'connected',overview_meter:'gas'},
+     capture_error:held?'transfer_context_changed':null});
+   if(url==='api/status'){statusCalls++;return response(current());}
+   return response(page);
+ },false,{AIEdgeIntegration:{render(){}}});
+ await tick();
+ assert.equal(app.get('error').hidden,false);
+ assert.equal(app.get('error').textContent,'Capture paused. Recovery settings or software changed after a photo transfer was interrupted. Review the gap to resume capture.');
+ held=false;
+ await app.get('refresh').onclick();await tick();
+ assert.equal(app.get('error').hidden,true);
+ assert.equal(app.get('error').textContent,'');
+ app.get('refresh').onclick();await tick();
+ assert.equal(statusCalls,2);
+});
 test('failed history does not clear a successful current reading',async()=>{
  const app=fixture(async url=>{if(url.includes('capture-history'))throw new TypeError('network');return response(state);});
  showCaptures(app);

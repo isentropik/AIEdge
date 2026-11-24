@@ -3,20 +3,8 @@ from http.server import BaseHTTPRequestHandler
 from http_server import AppHTTPServer
 from pathlib import Path
 from capture import Store,Camera,Collector
+from capture_context import capture_context,capture_trial_context
 from options import load as load_options
-
-def capture_trial_context(setup,recognition,reading_format):
-    # An active reader exists before the first photo. A latest-result state does
-    # not reliably identify it while storage is empty or inference is pending.
-    calibration=setup.status()
-    with recognition.lock:
-        reader=recognition.reader
-        saved=reading_format.status()
-        context=dict(calibration_revision=calibration.get('revision'),
-                    pipeline_id=reader.pipeline_id if reader else None,
-                    format_revision=saved['revision'])
-        if getattr(recognition,'observation_context',None):context['observation_context']=recognition.observation_context
-        return context
 
 def publication_state(store,recognition,reading_format,consumption,photo_register=None):
     # Capture events can share a JPEG. Match the exact accounting event, then
@@ -284,7 +272,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 # Keep ledger scans, recognition and recovery checks off this path.
                 mqtt=mqtt_output.status() if mqtt_output else {'state':'disabled','error':None}
                 remember_chart(mqtt)
-                self.reply({'mqtt':mqtt})
+                last_error=collector.last_error if collector else None
+                self.reply({'mqtt':mqtt,'capture_error':last_error.get('error') if last_error else None})
                 return
             if route=='/api/status':
                 state=store.status();state.update(capture_enabled=collector is not None,missed_slots=collector.missed_slots if collector else 0)
@@ -474,17 +463,7 @@ def run_service(stop_signals):
         if saved:image_controls.calibration_saved(saved.get('reference_sha256'))
     if collector and setup and reading_format and recognition:
         def continuation_context():
-            import hashlib
-            # Bind the reviewed permission to the running settings, recognition
-            # context, and installed recovery implementation; never expose secrets.
-            from capture_recovery import digest
-            files=('capture_recovery.py','capture.py','service.py','lifecycle.py','camera_status.py')
-            return {'options_sha256':digest(options),
-                    'recognition':capture_trial_context(setup,recognition,reading_format),
-                    'first_event':collector.recovery_floor,
-                    'source':{name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in files},
-                    'camera_controls':{name:hashlib.sha256((Path(args.data)/name).read_bytes()).hexdigest() if (Path(args.data)/name).is_file() else None
-                                       for name in ('camera-lighting-operation.json','camera-image-operation.json','camera-auto-operation.json','camera-auto.json')}}
+            return capture_context(options,args.data,setup,recognition,reading_format,collector.recovery_floor)
         collector.continuation_context=continuation_context
         collector.recover_interrupted_startup()
     preview=CameraSetup(camera,setup,interval,enabled,lighting,image_controls,auto_control) if store and configuration.get('state')=='ready' else None

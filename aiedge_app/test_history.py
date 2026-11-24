@@ -21,7 +21,8 @@ class HistoryTests(unittest.TestCase):
             release.wait(10)
             raise sqlite3.OperationalError('busy')
         store.status.side_effect=blocked_status
-        server=ThreadingHTTPServer(('127.0.0.1',0),handler(store,False,None,mqtt_output=SimpleNamespace(status=lambda:mqtt)))
+        collector=SimpleNamespace(last_error={'error':'transfer_context_changed'})
+        server=ThreadingHTTPServer(('127.0.0.1',0),handler(store,False,collector,mqtt_output=SimpleNamespace(status=lambda:mqtt)))
         thread=threading.Thread(target=server.serve_forever);thread.start()
         def read(path):
             with urllib.request.urlopen(f'http://127.0.0.1:{server.server_port}/api/'+path,timeout=3) as response:
@@ -32,7 +33,9 @@ class HistoryTests(unittest.TestCase):
                 diagnostic=pool.submit(read,'status')
                 try:
                     self.assertTrue(entered.wait(2))
-                    self.assertEqual(read('overview'),{'mqtt':mqtt})
+                    self.assertEqual(read('overview'),{'mqtt':mqtt,'capture_error':'transfer_context_changed'})
+                    collector.last_error=None
+                    self.assertEqual(read('overview'),{'mqtt':mqtt,'capture_error':None})
                     self.assertEqual(store.method_calls,[unittest.mock.call.status()])
                     self.assertFalse(diagnostic.done())
                 finally:release.set()

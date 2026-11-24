@@ -3,6 +3,10 @@ import copy,json,sqlite3,tempfile,threading,time,unittest
 from email.message import Message
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from unittest.mock import patch
+from pathlib import Path
+from types import SimpleNamespace
+import shutil
+import capture_context
 from capture import Camera as Transport,Collector,Store
 from camera_status import ReadinessTransportError
 from test_capture_continuation import Camera,configure,READY,request
@@ -21,6 +25,85 @@ class TransferRecoveryTests(unittest.TestCase):
     def rows(self,table):
         with self.store.connect() as db:return db.execute('SELECT * FROM '+table+' ORDER BY rowid').fetchall()
     def failed(self):self.worker.once();self.worker.once()
+    def test_chart_change_during_partial_jpeg_recovers_a_new_slot_after_restart(self):
+        setup=SimpleNamespace(status=lambda:{'revision':'meter-a'})
+        formats=SimpleNamespace(status=lambda:{'revision':'format-a'})
+        reader=SimpleNamespace(lock=threading.Lock(),reader=SimpleNamespace(pipeline_id='pipeline-a'))
+        options={'capture_enabled':True,'interval_seconds':6,'daily_history_entity':'sensor.old_chart'}
+        def context():
+            return capture_context.capture_context(options,self.temp.name,setup,reader,formats,1)
+        original=context()
+        source=Path(capture_context.__file__).parent
+        package=Path(self.temp.name)/'installed'
+        package.mkdir()
+        for name in original['source']:
+            shutil.copyfile(source/name,package/name)
+        with patch.object(capture_context,'__file__',str(package/'capture_context.py')):
+            self.worker.continuation_context=context
+            (package/'service.py').write_text('previous chart route')
+            self.failed()
+            ident=self.worker.transfer_attempt
+            (package/'service.py').write_text('updated chart route')
+            (package/'gas-charts.js').write_text('updated chart display')
+            options['daily_history_entity']='sensor.new_chart'
+            self.assertEqual(context(),original)
+            for key in ('camera_url','interval_seconds','recognition_mode','event_selection_policy'):
+                with patch.dict(options,{key:'changed'}):
+                    self.assertNotEqual(context(),original,key)
+            with patch.object(reader,'observation_context','other',create=True):
+                self.assertNotEqual(context(),original)
+            for control in original['camera_controls']:
+                path=Path(self.temp.name)/control
+                path.write_text('changed')
+                self.assertNotEqual(context(),original)
+                path.unlink()
+            with (package/'capture.py').open('a') as f:f.write('# changed recovery implementation')
+            self.assertNotEqual(context(),original)
+            shutil.copyfile(source/'capture.py',package/'capture.py')
+            worker=Collector(Store(self.temp.name),self.camera,6)
+            worker.continuation_context=context
+            worker.once()
+            self.assertIsNone(worker.transfer_attempt)
+            self.assertEqual(self.camera.calls,2)
+            worker.once()
+            self.assertEqual(self.camera.calls,3)
+            with self.store.connect() as db:
+                rec=r.continuation_record(db,ident)
+                self.assertEqual(rec['approval_reference'],r.TRANSFER_POLICY)
+                self.assertTrue(rec['unknown_outcome_preserved'])
+                self.assertIsNone(rec['gap_delta'])
+                self.assertTrue(r.boundary(db,2))
+
+    def test_reviewed_resume_clears_only_accepted_transfer_after_context_hold(self):
+        self.failed()
+        ident=self.worker.transfer_attempt
+        unknown=self.rows('continuous_capture_outcomes')[-1]
+        # Older builds recorded a different context digest. They require a
+        # review when the old digest cannot establish equivalent settings.
+        self.worker.continuation_context=lambda:{'settings':'new recovery context'}
+        self.worker.once()
+        self.assertEqual(self.worker.last_error['error'],'transfer_context_changed')
+        self.assertTrue(self.worker.stop.is_set())
+        self.assertEqual(self.worker.transfer_attempt,ident)
+        action=request(self.worker)
+        with self.assertRaises(ValueError):
+            self.worker.continue_after_gap(dict(action,review_sha256='wrong'))
+        self.assertTrue(self.worker.stop.is_set())
+        self.assertEqual(self.worker.transfer_attempt,ident)
+        self.worker.continue_after_gap(action)
+        self.assertIsNone(self.worker.transfer_attempt)
+        self.assertFalse(self.worker.stop.is_set())
+        self.assertEqual(self.camera.calls,2)
+        self.worker.once()
+        self.assertIsNone(self.worker.last_error)
+        self.assertEqual(self.camera.calls,3)
+        self.assertEqual(self.rows('continuous_capture_outcomes')[1],unknown)
+        self.assertEqual(self.rows('continuous_capture_outcomes')[-1][1:3],('committed',2))
+        self.assertNotEqual(self.rows('continuous_capture_attempts')[-1][0],ident)
+        self.assertEqual(len(self.rows('capture_continuations')),1)
+        with self.store.connect() as db:
+            self.assertTrue(r.boundary(db,2))
+            self.assertIsNone(r.continuation_record(db,ident)['gap_delta'])
     def test_dev112_ledger_can_be_reviewed_without_migrating_it(self):
         self.camera.results=iter([True,ValueError('camera_http_error')])
         self.failed()
