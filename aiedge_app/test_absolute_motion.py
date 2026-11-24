@@ -123,6 +123,40 @@ class AbsoluteMotionTests(unittest.TestCase):
         self.assertLess(D(new["outer"][0]), D(new["level"]))
         self.assertNotIn("delta", new["display"])
 
+    def test_agreeing_dials_only_reanchor_across_a_break_with_reachable_bounds(self):
+        two = source(2)
+        rows = {1: (self.one, phase("4.64")), 2: (two, phase(".10"))}
+        # The current absolute bands permit a further turn, but an unbroken
+        # fine-dial track still determines which turn actually occurred.
+        def observed(opts):
+            with patch.object(motion, "phases", return_value=rows):
+                return motion.update(self.t, self.store, {"format": DOC}, two, None, 0, gap_options=opts)
+        self.assertEqual(observed(options("445.1"))["anchor"], self.one)
+        self.store.db.execute("insert into capture_failure_boundaries values(1)")
+        self.assertEqual(observed(options("445.1"))["display"], self.t["display"])
+        self.assertEqual(observed(options("440.1"))["anchor"], two)
+
+    def test_current_full_photo_and_accounting_must_support_the_same_bounds(self):
+        src = self.one
+        full = dict(schema_version=1, source_sha256=src["source_sha256"], pipeline_id="pipe",
+                    partial=False, reader_observed=[True, True], document_observed=[True, True])
+        def absolute(lo, hi):
+            return dict(unit="ft3", bounds=dict(state="bounded", wraps_register=False,
+                                                ranges=[dict(lower=lo, upper=hi)]))
+        raw = dict(absolute(435, 436), state="ambiguous", format_id="fmt", source_sha256=src["source_sha256"])
+        doc = dict(pipeline_id="pipe", dials=[dict(value_per_revolution=1000), dict(value_per_revolution=5)])
+        c = dict(observation_support=full, observation_accepted=True,
+                 absolute=dict(absolute(435.5, 440), provenance="temporal_consumption_bounds"))
+        snap = dict(format=doc, consumption=c, _raw_meter_reading=raw)
+        self.assertEqual(motion.observed_bands(snap,src), [(D("435.5"), D("436"))])
+        for change in [dict(partial=True),dict(document_observed=[True,False]),dict(reader_observed=[1,1]),
+                       dict(source_sha256="different"),dict(pipeline_id="old")]:
+            c["observation_support"]=dict(full, **change)
+            self.assertIsNone(motion.observed_bands(snap,src))
+        c["observation_support"]=full
+        c["absolute"]=dict(absolute(450,451),provenance="temporal_consumption_bounds")
+        self.assertFalse(motion.observed_bands(snap,src))
+
     def test_mismatched_saved_predecessor_cannot_move_estimate(self):
         rows = {
             1: (source(1, source_sha256="different"), phase("4.64")),

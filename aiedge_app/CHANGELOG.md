@@ -1,3 +1,9 @@
+## 0.2.0-dev113
+
+- Record unexpected capture HTTP response codes. A transient response can recover on a fresh scheduled capture after readiness checks. An older unclassified HTTP failure can be reviewed while its exposure stays unknown.
+- After a capture break, use the mutually consistent bounds from a complete meter photo to re-establish the displayed register estimate.
+- Show supported partial-hour rates and their cumulative lines. The chart identifies partial coverage and keeps missing clock readings open.
+
 ## 0.2.0-dev112
 
 - Keep a verified meter estimate and its bounds with the capture ledger when a full photo expires. Historical charts can use the saved estimate after a restart.

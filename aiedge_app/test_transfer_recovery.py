@@ -21,6 +21,61 @@ class TransferRecoveryTests(unittest.TestCase):
     def rows(self,table):
         with self.store.connect() as db:return db.execute('SELECT * FROM '+table+' ORDER BY rowid').fetchall()
     def failed(self):self.worker.once();self.worker.once()
+    def test_dev112_ledger_can_be_reviewed_without_migrating_it(self):
+        self.camera.results=iter([True,ValueError('camera_http_error')])
+        self.failed()
+        with self.store.connect() as db:
+            db.execute("drop table capture_http_responses")
+            self.assertIsNone(r.recoverable_timeout(db))
+        self.assertTrue(request(self.worker)['review_sha256'])
+        with self.store.connect() as db:self.assertFalse(r.http_table_exists(db))
+
+    def test_unrelated_response_stays_held(self):
+        self.camera.results=iter([True,ValueError('camera_http_418')])
+        self.failed()
+        with self.store.connect() as db:self.assertIsNone(r.recoverable_timeout(db))
+        with self.assertRaisesRegex(ValueError,'requires_terminal_timeout'):request(self.worker)
+
+    def test_legacy_http_hold_requires_review_and_leaves_gap_open(self):
+        self.camera.results=iter([True,ValueError('camera_http_error'),True])
+        self.failed()
+        with self.store.connect() as db:self.assertIsNone(r.recoverable_timeout(db))
+        action=request(self.worker)
+        self.assertTrue(self.worker.stop.is_set())
+        self.worker.continue_after_gap(action)
+        self.assertEqual(self.camera.calls,2)
+        self.worker.once()
+        self.assertEqual([row[1] for row in self.rows('continuous_capture_outcomes')],['committed','unknown','committed'])
+        with self.store.connect() as db:
+            self.assertIsNone(r.continuation_record(db,action['attempt_id'])['gap_delta'])
+            self.assertTrue(r.boundary(db,2))
+
+    def test_typed_http_failure_recovers_after_restart_and_readiness(self):
+        self.camera.results=iter([True,r.TransientHTTPResponse(502),True])
+        self.failed()
+        ident=self.worker.transfer_attempt
+        with self.store.connect() as db:
+            self.assertEqual(r.recoverable_timeout(db),ident)
+            self.assertEqual(r.transfer_record(db,ident)[0],{'stage':'http_response','status':502})
+        restarted=configure(Collector(Store(self.temp.name),self.camera,6,recovery_floor=2))
+        self.camera.ready['state']='busy'
+        restarted.once()
+        with patch.object(self.camera,'readiness',side_effect=ReadinessTransportError()):restarted.once()
+        self.camera.ready.update(READY)
+        restarted.once()
+        self.assertEqual(self.camera.calls,2)
+        restarted.once()
+        self.assertEqual(self.camera.calls,3)
+        self.assertEqual(self.rows('capture_continuations')[0][4],r.HTTP_POLICY)
+        with self.store.connect() as db:self.assertTrue(r.boundary(db,2))
+
+    def test_untyped_response_never_auto_resumes_or_clears_later_error(self):
+        self.camera.results=iter([True,ValueError('camera_http_502')])
+        self.failed()
+        self.assertTrue(self.worker.stop.is_set())
+        with self.store.connect() as db:self.assertIsNone(r.recoverable_timeout(db))
+        self.store.fail('camera_authentication_failed')
+        with self.assertRaisesRegex(ValueError,'later_failure'):request(self.worker)
     def test_timeout_is_durable_unknown_with_no_partial_image(self):
         self.failed()
         self.assertEqual([row[1] for row in self.rows('continuous_capture_outcomes')],['committed','unknown'])

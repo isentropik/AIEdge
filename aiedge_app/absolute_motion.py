@@ -5,7 +5,7 @@ from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from hashlib import sha256
 
 from capture_clock import interval
-from daily_constraints import number, supported
+from daily_constraints import WorkLimit, bands, number, supported
 from dial_travel import advance_band, phases
 from nominal_motion import PAGE, step
 from optical_daily import endpoint
@@ -13,7 +13,8 @@ from optical_daily import endpoint
 METHOD = "photo_anchored_fine_dial"
 ASSUMPTION = (
     "Uses the feasible band nearest the measured photo center when available. "
-    "Otherwise starts in the middle feasible photo band, lower on a tie. "
+    "Without a measured center, starts in the middle feasible band, lower on a tie. "
+    "After a break it uses the smallest reachable forward reading. "
     "Follows the smallest supported forward movement. Re-anchors after a break require "
     "an independent absolute reading. Consumption across gaps is unknown."
 )
@@ -111,7 +112,38 @@ def matches_measurement(state, source):
     )
 
 
-def update(track, store, snapshot, source, options, floor, photo_center=None):
+def observed_bands(snapshot, source):
+    """Intersect the full current photo with the independently constrained meter range."""
+    raw = snapshot.get("_raw_meter_reading") or {}
+    consumption = snapshot["consumption"]
+    document = snapshot["format"]
+    support = consumption.get("observation_support") or {}
+    if (
+        raw.get("state") != "ambiguous"
+        or raw.get("source_sha256") != source["source_sha256"]
+        or raw.get("format_id") != source["format_id"]
+        or consumption.get("observation_accepted") is not True
+        or type(support.get("schema_version")) is not int or support["schema_version"] != 1
+        or support.get("partial") is not False
+        or support.get("pipeline_id") != document["pipeline_id"]
+        or support.get("source_sha256") != source["source_sha256"]
+    ):
+        return None
+    for key in ("reader_observed", "document_observed"):
+        mask = support.get(key)
+        if not isinstance(mask, list) or len(mask) != len(document["dials"]) or not all(v is True for v in mask):
+            return None
+    try:
+        modulus = number(document["dials"][0]["value_per_revolution"])
+        measured = bands({"absolute": dict(raw, provenance="single_image")}, modulus)
+        current = bands(consumption, modulus)
+        if measured and current:
+            return supported(measured, current, 0, 0)
+    except (ArithmeticError, KeyError, TypeError, ValueError, WorkLimit):
+        return None
+
+
+def update(track, store, snapshot, source, options, floor, photo_center=None, *, gap_options=None):
     """Use bounded indexed reads; a cursor or display date never substitutes for a meter event."""
     if not track:
         return start(source, options, floor, photo_center=photo_center)
@@ -161,6 +193,8 @@ def update(track, store, snapshot, source, options, floor, photo_center=None):
     for eid in range(first, stop + 1):
         row = samples.get(eid)
         if not row:
+            if eid in breaks:
+                options = options or gap_options
             break
         current, phase = row
         prev = track["source"]
@@ -171,6 +205,7 @@ def update(track, store, snapshot, source, options, floor, photo_center=None):
             or timing["state"] != "continuous"
             or timing["elapsed_seconds"] >= 660
         ):
+            options = options or gap_options
             break
         limit = rate * number(current["monotonic_us"] - prev["monotonic_us"]) / 1000000
         absolute = options if eid == source["event_id"] else None
@@ -233,10 +268,15 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age):
     floor = number(legacy.get("value_ft3", 0))
     options = None
     photo_center = None
+    gap_only = False
     if proof and proof.get("source") == src and proof.get("bands_ft3"):
         options = [tuple(map(number, b)) for b in proof["bands_ft3"]]
         if "photo_center_ft3" in proof:
             photo_center = number(proof["photo_center_ft3"])
+    elif track and obs and reason in ("no_continuous_candidate", "whole_turn_unconfirmed"):
+        options = observed_bands(snapshot, src)
+        gap_only = True
+    if options:
         if state:
             # An independent anchor must be reachable from the last accepted register reading.
             seconds = elapsed_seconds(
@@ -279,7 +319,8 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age):
         options = [tuple(map(number, b)) for b in state["bands_ft3"]]
     if not track and not options:
         return None, False
-    track = update(track, store, snapshot, src, options, floor, photo_center)
+    track = update(track, store, snapshot, src, None if gap_only else options, floor,
+                   photo_center, gap_options=options if gap_only else None)
     if not track:
         return None, False
     latest = track["display"]

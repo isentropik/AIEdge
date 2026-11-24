@@ -137,7 +137,7 @@ class Store:
             if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
         self.performance.admit(event,digest,request_started)
         return True
-    def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None,request_timeout=False):
+    def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None,request_timeout=False,http_status=None):
         if outcome not in ('rejected','unknown'):raise ValueError('capture_failure_outcome_invalid')
         with self.lock,self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -147,6 +147,12 @@ class Store:
             if attempt is not None:
                 import capture_recovery
                 capture_recovery.finish_transaction(db,attempt,outcome,error=error)
+                if http_status is not None:
+                    if (http_status not in capture_recovery.TRANSIENT_HTTP or error!=f'camera_http_{http_status}' or
+                            outcome!='unknown' or context is None or transfer is not None or request_timeout):
+                        raise ValueError('http_response_evidence_invalid')
+                    db.execute('INSERT INTO capture_http_responses VALUES(?,?,?,?)',(attempt,http_status,
+                        capture_recovery.digest(capture_recovery.continuation_binding(db,attempt)),capture_recovery.digest(context)))
                 if request_timeout:
                     if outcome!='unknown' or error not in ('camera_timeout','camera_connection_reset') or context is None or transfer is not None:raise ValueError('request_timeout_invalid')
                     db.execute('INSERT INTO capture_request_timeouts VALUES(?,?,?)',(attempt,capture_recovery.digest(capture_recovery.continuation_binding(db,attempt)),capture_recovery.digest(context)))
@@ -330,9 +336,11 @@ class Camera:
                 except OSError:body=''
                 code={401:'camera_authentication_failed',403:'camera_authentication_failed',
                       404:'camera_api_unavailable',405:'camera_api_unavailable',
-                      409:'camera_busy',429:'camera_busy',503:'camera_unavailable'}.get(exc.code,'camera_http_error')
+                      409:'camera_busy',429:'camera_busy',503:'camera_unavailable'}.get(exc.code,f'camera_http_{exc.code}')
                 if exc.code==503 and len(body)<=256:code=CAMERA_FAILURES.get(body,code)
             finally:exc.close()
+            from capture_recovery import TRANSIENT_HTTP,TransientHTTPResponse
+            if exc.code in TRANSIENT_HTTP:raise TransientHTTPResponse(exc.code) from None
             if code=='camera_clock_changed':
                 from capture_recovery import FreshnessRejected
                 raise FreshnessRejected() from None
@@ -546,9 +554,12 @@ class Collector:
             outcome='rejected' if rejected else 'unknown'
             try:
                 typed_request=isinstance(e,capture_recovery.RequestTimeout)
-                qualified=attempt is not None and isinstance(e,(capture_recovery.BodyTimeout,capture_recovery.RequestTimeout)) and context is not None
+                response=isinstance(e,capture_recovery.TransientHTTPResponse)
+                qualified=attempt is not None and (typed_request or response or isinstance(e,capture_recovery.BodyTimeout)) and context is not None
                 if qualified:
-                    self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt,transfer=None if typed_request else e.evidence,context=context,request_timeout=typed_request)
+                    self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt,context=context,
+                                    transfer=e.evidence if isinstance(e,capture_recovery.BodyTimeout) else None,
+                                    request_timeout=typed_request,http_status=e.status if response else None)
                 else:self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt)
                 with self.store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,self.recovery_floor)
                 if qualified:
