@@ -631,7 +631,7 @@ test('one plot switches windows immediately, keeps real zero whiskers and reject
  }
  answer(response(result));await tick();closeChecks([1,2,4]);
  chart.onkeydown({key:'Home',preventDefault(){}});
- assert.match(chart.attributes['aria-valuetext'],/Total 0.00 ft³.*0.00 ft³ used/);
+ assert.match(chart.attributes['aria-valuetext'],/Total 0.00 ft³.*Rate 0.00 ft³\/h/);
  filter.value='6';filter.onchange();assert.equal(marks().length,3);
  const next={...recent,through:src(5),hour:span(1,5,2,3),quarters:[span(1,2,0,1),span(2,3,0,1),span(3,4,0,1),span(4,5,0,1)]};
  ui.render({recent:next});assert.equal(marks().length,3);
@@ -656,11 +656,11 @@ test('Today fills earlier hours only from an archive paired to the movement chec
    groups:[[[midnight+hour-1000,7,5,9,3]]],meter_prefix:{...meter_prefix,anchor:match?meter_prefix.anchor:[start[0],11,7]}}),Clock);
   ui.render({daily,daily_nominal:nominal,movement_history:{midnight,points}});await tick();
   const host=ui.get('day-curve');host.onkeydown({key:'Home',preventDefault(){}});
-  assert.equal(ui.get('day-tip-amount').textContent,match?'Total 2.00 ft³':'No verified total this hour');
+  assert.equal(ui.get('day-tip-amount').textContent,match?'2.00 ft³':'—');
   if(match){
    assert(host.attributes['aria-valuetext'].includes('5.00–9.00'));
    host.onkeydown({key:'ArrowRight',preventDefault(){}});
-   assert.equal(ui.get('day-tip-amount').textContent,'No verified total this hour');
+   assert.equal(ui.get('day-tip-amount').textContent,'—');
   }
  }
 });
@@ -794,7 +794,7 @@ test('movement headline and chart stay on their meter event when range-only publ
  assert.equal(host.dataset.endEvent,undefined);
 });
 
-test('wide rate buckets divide by actual DST and edge durations and suppress an incomplete group',async()=>{
+test('a 24-hour view shows each real hour across the fall clock change and omits only a missing rate',async()=>{
   const midnight=Date.parse('2026-11-01T00:00:00-07:00'),hour=3600000;
   const zone='America/Los_Angeles',end=midnight+6*hour+15000;
   const hours=Array.from({length:6},(_,i)=>({start:midnight+i*hour,end:midnight+(i+1)*hour,use:i+2}));
@@ -807,10 +807,9 @@ test('wide rate buckets divide by actual DST and edge durations and suppress an 
     await tick();
     const marks=ui.get('day-curve').children[0].children.filter(n=>n.attributes.class==='plot-usage-dot');
     const rates=marks.map(n=>n.attributes['data-rate']);
-    assert.deepEqual(rates,missing?[7]:[4,7]);
-    const last=marks.at(-1).attributes;
-    assert.equal(last['data-hour-end']-last['data-start'],hour);
-    if(!missing)assert.equal(marks[0].attributes['data-hour-end']-marks[0].attributes['data-start'],5*hour);
+    assert.deepEqual(rates,missing?[2,3,5,6,7]:[2,3,4,5,6,7]);
+    assert.deepEqual(marks.map(n=>n.attributes['data-hour-end']),rows.map(q=>q.end));
+    for(const mark of marks)assert.equal(mark.attributes['data-hour-end']-mark.attributes['data-start'],hour);
   }
 });
 

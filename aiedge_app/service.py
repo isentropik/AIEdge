@@ -254,7 +254,8 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     zone=state.get('timezone') or mqtt.get('overview_timezone')
                     policy=getattr(getattr(mqtt_output,'daily',None),'evidence_policy',{}) or {}
                     document=reading_format.status()['format'] if reading_format else None
-                    result=chart_hours.snapshot(end,zone,usage,document,policy,minutes=int(interval[0])) if zone and chart_hours else {}
+                    result=chart_hours.snapshot(end,zone,usage,document,policy,minutes=int(interval[0]),
+                                                profile=interval==['60']) if zone and chart_hours else {}
                 except (ValueError,TypeError,KeyError,OSError,HTTPException,sqlite3.Error,ZoneInfoNotFoundError):
                     self.reply({'error':'chart_history_unavailable'},503);return
                 self.reply(result);return

@@ -106,6 +106,60 @@ class LedgerHours:
         self.photo_cache = {}
         self.lock = Lock()
 
+    def gap_registers(self, gaps, state, document):
+        """Read saved full-dial observations at the edges of substantial outages."""
+        import json
+        from event_observation_read import read_batch
+        from observation_support import observed_rows
+        from absolute_motion import observed_bands
+        from reading_bounds import display_bounds
+
+        times = sorted({t for a,b in gaps if b-a >= 600000 for t in (a,b)})
+        if not times or not state or not state.get('event_id'):
+            return {}
+        revision = validate(document)[1]
+        result = {}
+        with self.store.connect() as db:
+            head = db.execute('SELECT camera FROM capture_events JOIN frames USING(camera,frame_id) '
+                              'WHERE event_id=? AND sha256=? AND captured_at=?',
+                              (state['event_id'],state['source_sha256'],state['measured_at'])).fetchone()
+            if not head:
+                return {}
+            for t in times:
+                dt = datetime.fromtimestamp(t/1000,timezone.utc)
+                rows = db.execute('SELECT e.event_id,b.context,f.sha256,r.result FROM frames f '
+                    'JOIN capture_events e USING(camera,frame_id) JOIN event_recognition_bindings b '
+                    'ON b.event_id=e.event_id AND b.source_sha=f.sha256 JOIN consumption_records r '
+                    'ON r.event_id=e.event_id JOIN consumption_segments s ON s.segment_id=r.segment_id '
+                    'WHERE f.camera=? AND f.captured_at>=? AND f.captured_at<? AND e.event_id<=? '
+                    'AND b.pipeline=? AND s.format_id=?',
+                    (head[0],dt.isoformat(timespec='microseconds'),(dt+timedelta(milliseconds=1)).isoformat(timespec='microseconds'),
+                     state['event_id'],document['pipeline_id'],revision)).fetchall()
+                if len(rows)!=1:
+                    continue
+                eid, context, digest, record = rows[0]
+                try:
+                    inf = read_batch(db,[dict(event_id=eid,context_id=context,source_sha256=digest)],document['pipeline_id'])[0]['result']
+                    consumption = json.loads(record)
+                except (ValueError,TypeError,KeyError,IndexError,AttributeError,RecursionError,OverflowError):
+                    # A damaged optional endpoint cannot contribute a dial turn.
+                    continue
+                obs = inf.get('event_observation') or {}
+                if (not isinstance(consumption, dict) or obs != consumption.get('event_observation') or obs.get('event_id')!=eid or
+                        obs.get('camera')!=head[0] or obs.get('format_id')!=revision or obs.get('source_sha256')!=digest or
+                        inf.get('state')!='estimated' or observed_rows(inf)!=[True]*len(document['dials'])):
+                    continue
+                dials = [inf['dial_positions'][d['index']] for d in document['dials']]
+                if any(r.get('state')!='estimated' or not isinstance(r.get('position'),(int,float))
+                       or not 0<=r['position']<10 for r in dials):
+                    continue
+                ranges = display_bounds(document,[r['position'] for r in dials])
+                raw = dict(state='ambiguous', unit=document['unit'], format_id=revision, source_sha256=digest, bounds=ranges)
+                bands = observed_bands(dict(format=document,consumption=consumption,_raw_meter_reading=raw),obs)
+                if bands:
+                    result[t] = [(float(lo),float(hi)) for lo,hi in bands]
+        return result
+
     def opening(self,stamp,end,day_start,state,document,policy):
         """Measure from the exact first tracked exposure to the next ten-minute tick."""
         if not state or not document or document.get('unit')!='ft3' or not document.get('maximum_rate_per_second'):
