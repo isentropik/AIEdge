@@ -136,6 +136,29 @@ class AbsoluteMotionTests(unittest.TestCase):
         self.assertEqual(observed(options("445.1"))["display"], self.t["display"])
         self.assertEqual(observed(options("440.1"))["anchor"], two)
 
+    def test_missing_phase_before_recorded_break_can_reanchor_only_on_full_photo(self):
+        for eid in (4, motion.PAGE + 4):
+            with self.subTest(eid=eid):
+                head = source(eid)
+                rows = {1: (self.one, phase("4.64")), eid: (head, phase(".1"))}
+                db = self.store.db
+                db.execute("delete from consumption_segment_links")
+                def project(bands):
+                    def samples(db, lo, hi, *args, **kwargs):
+                        return {t: row for t, row in rows.items() if lo <= t <= hi}
+                    with patch.object(motion, "phases", samples):
+                        return motion.update(self.t, self.store, {"format": DOC}, head, None, 0,
+                                             gap_options=bands)
+                self.assertEqual(project(options("440.1")), self.t)
+                db.execute("insert into consumption_segment_links values(?)", (eid,))
+                self.assertEqual(project(None), self.t)
+                self.assertEqual(project(options("9999.1")), self.t)
+                anchored = project(options("440.1"))
+                self.assertEqual((anchored["source"], anchored["anchor"]), (head, head))
+                self.assertNotIn("delta", anchored["display"])
+                rows[1] = (source(1, source_sha256="wrong"), phase("4.64"))
+                self.assertEqual(project(options("440.1")), self.t)
+
     def test_current_full_photo_and_accounting_must_support_the_same_bounds(self):
         src = self.one
         full = dict(schema_version=1, source_sha256=src["source_sha256"], pipeline_id="pipe",

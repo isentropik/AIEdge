@@ -36,6 +36,34 @@ class AccountingMigrationTests(unittest.TestCase):
             self.recognition=EventRecognition(self.store,self.reader,self.document,self.config,self.capabilities)
         self.worker._drop();self.formats=FormatStore(self.temp.name,self.recognition)
         self.worker=Consumption(self.store,self.recognition,self.formats,LIBRARY)
+    def test_capture_only_edit_resumes_both_checkpoints(self):
+        old = self.recognize_consume(100)
+        self.recognize_consume(100.1)
+        saved = self.snapshot()
+        previous = self.recognition.observation_context, self.worker.engine
+        original = Path.read_bytes
+        def recovery_edit(path):
+            if path.name in ('capture.py', 'capture_recovery.py'):
+                return original(path) + b'\n# A transfer retry implementation changed.\n'
+            return original(path)
+        with patch.object(Path, 'read_bytes', recovery_edit):
+            self.recognition = EventRecognition(self.store, self.reader, self.document, self.config, self.capabilities)
+            self.formats = FormatStore(self.temp.name, self.recognition)
+            self.restart_consumption()
+        self.assertEqual((self.recognition.observation_context, self.worker.engine), previous)
+        self.assertEqual(self.snapshot(), saved)
+        self.assertEqual(self.recognize_consume(100.2)['segment_id'], old['segment_id'])
+
+    def test_failure_boundary_interpretation_change_resets_identity(self):
+        self.recognize_consume(100)
+        previous = self.recognition.observation_context, self.worker.engine
+        with patch('meter_identity.boundary_hash', return_value='f'*64):
+            new = EventRecognition(self.store, self.reader, self.document, self.config, self.capabilities)
+            accountant = Consumption(self.store, new, FormatStore(self.temp.name, new), LIBRARY)
+        self.assertNotEqual(new.observation_context, previous[0])
+        self.assertNotEqual(accountant.engine, previous[1])
+        self.assertEqual(new.observation_first_event, 2)
+
     def test_source_upgrade_is_future_only_and_preserves_history(self):
         self.old_context();old=self.recognize_consume(100);self.recognize_consume(100.1)
         old_context=self.recognition.observation_context;before=self.snapshot();calls=list(self.reader.calls)

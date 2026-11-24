@@ -163,6 +163,8 @@ def update(track, store, snapshot, source, options, floor, photo_center=None, *,
     with store.connect() as db:
         samples = phases(db, old["event_id"], stop, doc, source, same_clock=False)
         predecessor = samples.get(old["event_id"])
+        if predecessor is None and gap_options:
+            predecessor = phases(db, old["event_id"], old["event_id"], doc, old).get(old["event_id"])
         if not predecessor or predecessor[0] != old:
             return track
         breaks = {
@@ -186,15 +188,25 @@ def update(track, store, snapshot, source, options, floor, photo_center=None, *,
                 source["event_id"]
             )
         )
+        if head is None and gap_options:
+            head = phases(db, source["event_id"], source["event_id"], doc, source).get(source["event_id"])
         if not head or head[0] != source:
             return track
+        # A worker may have saved a final JPEG without a usable fine-dial
+        # observation before shutdown. That hole can precede the recorded break.
+        # The new full photo establishes position only; never infer motion over it.
+        confirmed_break = old["context_id"] != source["context_id"] or bool(breaks)
+        if gap_options and not confirmed_break and stop < source["event_id"]:
+            confirmed_break = bool(db.execute(
+                "SELECT 1 FROM capture_failure_boundaries WHERE after_event_id >= ? AND after_event_id < ? "
+                "UNION ALL SELECT 1 FROM consumption_segment_links WHERE first_event > ? AND first_event <= ? LIMIT 1",
+                (stop, source["event_id"], stop, source["event_id"]),
+            ).fetchone())
     # When a real link is missing, only an independent, current absolute measurement can re-anchor.
     # This changes meter position, never the consumption ledger or the existing daily checkpoint.
     for eid in range(first, stop + 1):
         row = samples.get(eid)
         if not row:
-            if eid in breaks:
-                options = options or gap_options
             break
         current, phase = row
         prev = track["source"]
@@ -220,6 +232,8 @@ def update(track, store, snapshot, source, options, floor, photo_center=None, *,
         track = updated
     else:
         return track
+    if confirmed_break:
+        options = options or gap_options
     if options:
         # A new absolute observation may fix position on the far side of a discontinuity.
         # The maximum rate limits which forward re-anchors are reachable across the elapsed time.

@@ -22,7 +22,7 @@ COPY retention_settings.py published_usage.py resumed_usage.py resumed_evidence.
 COPY capture_trial.py capture-trial.js ./
 COPY capture_context.py ./
 COPY trial_results.py image_retention.py gap_images.py daily_mqtt.py daily_records.py daily_range.py daily_constraints.py daily_empirical.py recovery_range.py reviewed_photo.py recent_usage.py ./
-COPY observation_support.py wheel_capture_policy.py event_selection.py event_recognition.py event_selection_config.py event_observation_read.py selector_observation.py ./
+COPY observation_support.py wheel_capture_policy.py event_selection.py event_recognition.py event_selection_config.py event_observation_read.py selector_observation.py meter_identity.py ./
 COPY event_mode.py ha_event_selection.py event-selection-ui.js ./
 COPY image_edit.py image-editor.js ./
 COPY meter_profile.py meter-profile.js ./

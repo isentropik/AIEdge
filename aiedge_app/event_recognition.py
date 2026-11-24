@@ -1,8 +1,8 @@
 """Explicit opt-in event recognition; default Recognition/service remain unchanged."""
-import hashlib,json,sqlite3
+import json,sqlite3
 import capture_clock
 import capture_recovery
-from pathlib import Path
+import meter_identity
 from recognition import Recognition,decode_result,MAX_RESULT_BYTES
 from reading_format import validate,finite_number
 from observation_support import observed_rows
@@ -33,15 +33,14 @@ class EventRecognition(Recognition):
         check(len(self.document['dials'])==len(reader.dials) and sorted(d['index'] for d in self.document['dials'])==list(range(len(reader.dials))),'event_dial_mapping')
         recommend({'first':True},capabilities,configuration)
         self.configuration=decode(encoded(configuration));self.capabilities=decode(encoded(capabilities))
-        deps=['event_recognition.py','event_selection.py','event_mode.py','ha_event_selection.py','event_selection_config.py','event_observation_read.py','selector_observation.py','wheel_capture_policy.py','reader.py','recognition.py','observation_support.py','consumption.py','accounting_native.py','capture_clock.py','reading_format.py','capture_recovery.py','capture.py']
-        self.observation_context=digest({'version':1,'format_id':self.format_id,'pipeline':reader.pipeline_id,'document':self.document,'configuration':self.configuration,'capabilities':self.capabilities,
-                                         'sources':{n:hashlib.sha256(Path(__file__).with_name(n).read_bytes()).hexdigest() for n in deps}})
         with store.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS event_selection_contexts(context TEXT PRIMARY KEY,pipeline TEXT NOT NULL,format_id TEXT NOT NULL,first_event INTEGER NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS event_recognition_requests(event_id INTEGER NOT NULL,pipeline TEXT NOT NULL,context TEXT NOT NULL,request TEXT NOT NULL,request_sha TEXT NOT NULL,PRIMARY KEY(event_id,pipeline,context))')
             db.execute('CREATE TABLE IF NOT EXISTS event_recognition_cache(source_sha TEXT NOT NULL,pipeline TEXT NOT NULL,mask_sha TEXT NOT NULL,mask TEXT NOT NULL,result TEXT NOT NULL,result_sha TEXT NOT NULL,PRIMARY KEY(source_sha,pipeline,mask_sha))')
             db.execute('CREATE TABLE IF NOT EXISTS event_recognition_bindings(event_id INTEGER NOT NULL,pipeline TEXT NOT NULL,context TEXT NOT NULL,source_sha TEXT NOT NULL,mask_sha TEXT NOT NULL,result_sha TEXT NOT NULL,request_sha TEXT NOT NULL,PRIMARY KEY(event_id,pipeline,context))')
+            self.observation_context = meter_identity.observation(
+                db, self.format_id, reader.pipeline_id, self.document, self.configuration, self.capabilities)
             row=db.execute('SELECT pipeline,format_id,first_event FROM event_selection_contexts WHERE context=?',(self.observation_context,)).fetchone()
             if row:
                 latest=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
