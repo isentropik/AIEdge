@@ -64,10 +64,14 @@
       </div>
       <div class="plot-frame"><div id="day-curve" class="trend-chart"></div>
         <div id="day-tip" class="plot-tip" aria-hidden="true" hidden>
-          <strong id="day-tip-title"></strong><span id="day-tip-amount"></span>
-          <small id="day-tip-note"></small>
+          <strong id="day-tip-title"></strong>
+          <div class="tip-metrics">
+            <span class="tip-total">Cumulative</span><b id="day-tip-amount"></b><small id="day-tip-total-range"></small>
+            <span class="tip-rate">Rate</span><b id="day-tip-rate"></b><small id="day-tip-rate-range"></small>
+          </div>
         </div></div>
       <small id="day-history-status" role="status"></small>
+      <button type="button" id="gas-range-scale" aria-pressed="false" aria-controls="day-curve" hidden>Zoom to rates</button>
     </figure>
   </section>
   <details class="panel usage-card usage-history">

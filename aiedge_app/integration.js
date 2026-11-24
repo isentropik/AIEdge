@@ -333,6 +333,22 @@ function renderHistory(segment, daily, zone, policy) {
  setOptional('elapsed-method', qualified ? conditions.concat('Usage during gaps is unknown.').join(' ') : '');
 }
 
+let chartCard=null;
+function renderChartHeadline(){
+ if(!chartCard)return;
+ const {usage,zone}=chartCard,absolute=usage.absolute_nominal;
+ const result=window.AIEdgeCharts?.registerHeadline?.(absolute,zone),source=sourceOf(absolute);
+ if(!result||!source)return;
+ $('usage-estimate').textContent=displayedVolume(result.total,2)+' ft³';
+ $('usage-estimate').title='Change in the chart register since the daily opening';
+ bindReading('usage-estimate',source,result.total);
+ setOptional('usage-time',measuredLine(source,zone));
+ setOptional('usage-assumption',(result.partial?'Register change · partial daily opening':'Register change since midnight')+
+   (result.reconciled?' · dial turns reconciled':''));
+ const tracked=usage.daily_nominal;
+ setOptional('usage-bounds',tracked?.method==='nominal_meter_movement_v1'&&tracked.value_ft3!=null?
+   'Tracked dial movement '+displayedVolume(tracked.value_ft3,2)+' ft³':'');
+}
 function render(state) {
  const mqtt = state?.mqtt;
  const usage = mqtt?.usage || {};
@@ -341,6 +357,7 @@ function render(state) {
  if (other && !$('capture-operations').dataset.initialized) $('capture-operations').open = true;
  if (mqtt?.overview_meter || mqtt?.state === 'disabled') $('capture-operations').dataset.initialized = 'true';
  const zone = usage.daily_nominal?.timezone || usage.daily?.timezone || usage.resumed?.timezone || usage.recent?.timezone || mqtt?.overview_timezone;
+ chartCard=other?null:{usage,zone};
  const headline = renderOverviewDaily(usage.daily_nominal, usage.daily, mqtt?.overview_daily_method==='nominal_meter_movement_v1');
  bindReading('usage-estimate', headline?.source, headline?.value);
  if (headline?.method==='nominal_meter_movement_v1') headline.movement=usage.movement_history;
@@ -350,6 +367,7 @@ function render(state) {
    mqtt?.overview_meter==='gas'?zone:null,currentHeadline?.source?.captured_at);
  if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily||usage.chart_daily,other ? null : currentHeadline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
+ renderChartHeadline();
  if (mqtt?.overview_connected === false || mqtt?.nominal_error) {
    if (sourceOf(usage.daily_nominal)) setOptional('usage-assumption',[$('usage-assumption').textContent,'Last published'].filter(Boolean).join(' · '));
  }
@@ -360,6 +378,6 @@ function render(state) {
  renderResumed(usage.resumed);
  renderHistory(usage.historical, usage.daily, zone, mqtt?.overview_policy);
 }
-window.AIEdgeIntegration={render};
+window.AIEdgeIntegration={render,renderChartHeadline};
 if(location.hash==='#settings')load();
 })();

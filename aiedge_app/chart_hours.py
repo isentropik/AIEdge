@@ -152,6 +152,55 @@ def parsed(rows, entity, zone, daily):
     return result
 
 
+def measured_hours(ticks,published,optical,gaps,cuts,splits,register_changes):
+    hours = []
+    for a,b in zip(ticks,ticks[1:]):
+        left,right = published[a],published[b]
+        measured = optical.get(b)
+        if measured and measured['basis']=='carried_register':
+            carry=measured['carry']
+            origin=carry.get('reference_time',carry['start'])
+            if not any(origin<t<=b for t in register_changes):
+                hours.append(measured)
+            continue
+        if measured and measured['basis']=='photo_replay':
+            if not any(a<t<=b for t in register_changes):
+                hours.append(measured)
+            continue
+        internal=[(l,r) for l,r in gaps if l<b and a<r]
+        if measured and any(span not in measured.get('supported_spans',()) for span in internal):
+            measured=None
+        if measured:
+            measured = {k:v for k,v in measured.items() if k!='supported_spans'}
+        crossed = (bisect_left(cuts,b+1)!=bisect_left(cuts,a+1) or
+                   bisect_left(splits,b+1)!=bisect_left(splits,a+1) or internal)
+        # Independently positioned absolute registers survive an interior
+        # acquisition break. Relative and coarse readings cannot establish
+        # consumption across that break solely from their published numbers.
+        if (not left or not right or left[2]!=right[2] or right[0]<left[0]
+                or crossed and left[2][1]!='photo_anchored_fine_dial'):
+            if measured and 'use' in measured:
+                hours.append(measured)
+            continue
+        bounds = None
+        delta = right[0]-left[0]
+        if left[1] and right[1]:
+            lo=max(Decimal(0),right[1][0]-left[1][1])
+            hi=right[1][1]-left[1][0]
+            if hi>=lo:
+                bounds=[float(lo.quantize(CENT,rounding=ROUND_FLOOR)),float(hi.quantize(CENT,rounding=ROUND_CEILING))]
+        if measured:
+            lo,hi=measured['bounds']
+            if not lo<=float(delta)<=hi:
+                if 'use' in measured:
+                    hours.append(measured)
+                continue
+            bounds=[max(bounds[0],lo),min(bounds[1],hi)] if bounds else [lo,hi]
+        hours.append(dict(start=a,end=b,use=float(delta),bounds=bounds,basis='register',
+                          opening=float(left[0]),closing=float(right[0])))
+    return hours
+
+
 class ChartHours:
     def __init__(self, meter, daily, fetch=recorder, breaks=lambda a,b: (), ledger=None):
         self.meter, self.daily, self.fetch, self.breaks = meter,daily,fetch,breaks
@@ -183,7 +232,7 @@ class ChartHours:
             missing.append('daily' if daily else 'register')
             return []
 
-    def snapshot(self, stamp, zone_name, usage=None, document=None, policy=None, minutes=60):
+    def snapshot(self, stamp, zone_name, usage=None, document=None, policy=None, minutes=60, *, profile=False):
         zone = ZoneInfo(zone_name)
         end = datetime.fromtimestamp(stamp/1000,timezone.utc)
         if minutes not in (10,60):
@@ -192,6 +241,11 @@ class ChartHours:
         start = end-timedelta(hours=2 if minutes==10 else 25)
         today = end.astimezone(zone).date()
         midnight = datetime.combine(today,time.min,zone)
+        if profile:
+            # The first visible rate needs its preceding interval. A rolling
+            # window crossing midnight also needs the prior day's opening.
+            earliest = (end-timedelta(hours=29)).astimezone(zone).date()
+            start = datetime.combine(earliest,time.min,zone).astimezone(timezone.utc)-timedelta(minutes=11)
         # Recorder indexing uses publication time. Use the capture timestamp for math and
         # admit delayed publications only if they describe a reading in this snapshot.
         fetch_end = end+timedelta(minutes=12)
@@ -202,6 +256,24 @@ class ChartHours:
         uses_archive=(tracked.get('method')=='nominal_meter_movement_v1' and archive.get('points')
                       and archive.get('midnight')==millis(midnight) and tracked.get('day')==today.isoformat())
         daily = [p for p in self.readings(self.daily,start,fetch_end,zone,True,missing) if p[0]<=stamp]
+        # Recorder can lag the Overview by one publication. Accept that
+        # event at its own timestamp through the same validation as history.
+        if profile:
+            for rows,head,entity,is_daily in ((registers,(usage or {}).get('absolute_nominal'),self.meter,False),
+                                              (daily,tracked,self.daily,True)):
+                if head and head.get('status') not in ('held_at_last_reading','stale'):
+                    tail=parsed([dict(entity_id=entity,state=head.get('value_ft3'),attributes=head)],entity,zone,is_daily)
+                    if tail and (not rows or rows[-1][0]<tail[0][0]<=stamp and rows[-1][3]<tail[0][3]) and tail[0][0]<=stamp:
+                        p=list(tail[0])
+                        if rows:
+                            prior=rows[-1]
+                            epoch=prior[5][1] if is_daily else prior[5][0]
+                            if is_daily:
+                                p[5]=(p[5][0],epoch+int(p[5][0]!=prior[5][0] or p[1]<prior[1]))
+                            else:
+                                p[5]=(epoch+int(p[1]<prior[1]),*p[5][1:])
+                            p[4]=p[5]!=prior[5] or p[0]-prior[0]>=660000
+                        rows.append(tuple(p))
         cuts = sorted(self.breaks(start,fetch_end))
         times = [p[0] for p in registers]
         splits = [p[0] for p in registers if p[4]]
@@ -241,51 +313,7 @@ class ChartHours:
         offsets = []
         optical = self.ledger.snapshot(ticks,(usage or {}).get('daily_nominal'),document,policy or {},published,gaps,
                                        (usage or {}).get('movement_history'),offsets) if self.ledger else {}
-        hours = []
-        for a,b in zip(ticks,ticks[1:]):
-            left,right = published[a],published[b]
-            measured = optical.get(b)
-            if measured and measured['basis']=='carried_register':
-                carry=measured['carry']
-                origin=carry.get('reference_time',carry['start'])
-                if not any(origin<t<=b for t in register_changes):
-                    hours.append(measured)
-                continue
-            if measured and measured['basis']=='photo_replay':
-                if not any(a<t<=b for t in register_changes):
-                    hours.append(measured)
-                continue
-            internal=[(l,r) for l,r in gaps if l<b and a<r]
-            if measured and any(span not in measured.get('supported_spans',()) for span in internal):
-                measured=None
-            if measured:
-                measured = {k:v for k,v in measured.items() if k!='supported_spans'}
-            crossed = (bisect_left(cuts,b+1)!=bisect_left(cuts,a+1) or
-                       bisect_left(splits,b+1)!=bisect_left(splits,a+1) or internal)
-            # Independently positioned absolute registers survive an interior
-            # acquisition break. Relative and coarse readings cannot establish
-            # consumption across that break solely from their published numbers.
-            if (not left or not right or left[2]!=right[2] or right[0]<left[0]
-                    or crossed and left[2][1]!='photo_anchored_fine_dial'):
-                if measured and 'use' in measured:
-                    hours.append(measured)
-                continue
-            bounds = None
-            delta = right[0]-left[0]
-            if left[1] and right[1]:
-                lo=max(Decimal(0),right[1][0]-left[1][1])
-                hi=right[1][1]-left[1][0]
-                if hi>=lo:
-                    bounds=[float(lo.quantize(CENT,rounding=ROUND_FLOOR)),float(hi.quantize(CENT,rounding=ROUND_CEILING))]
-            if measured:
-                lo,hi=measured['bounds']
-                if not lo<=float(delta)<=hi:
-                    if 'use' in measured:
-                        hours.append(measured)
-                    continue
-                bounds=[max(bounds[0],lo),min(bounds[1],hi)] if bounds else [lo,hi]
-            hours.append(dict(start=a,end=b,use=float(delta),bounds=bounds,basis='register',
-                              opening=float(left[0]),closing=float(right[0])))
+        hours = measured_hours(ticks,published,optical,gaps,cuts,splits,register_changes)
 
         # Sample the previous day's daily series at clock hours before downsampling it.
         # Raw interruptions matter only when they prevent a boundary from being measured.
@@ -386,7 +414,7 @@ class ChartHours:
                 if leg['basis']=='fine_dial' and any((l,r) not in leg.get('supported_spans',()) for l,r in inner if l<b and a<r):
                     continue
                 spans.append({k:leg[k] for k in ('start','end','bounds','use') if k in leg})
-        if minutes==60 and self.ledger:
+        if minutes==60 and self.ledger and not profile:
             for a,b in unknown:
                 if a not in available or b not in available:
                     continue
@@ -394,11 +422,43 @@ class ChartHours:
                 increment=tracked_hour(a,b,detail) if not detail['missing'] else None
                 if increment:
                     partial.append(increment)
-        return dict(minutes=minutes,zone=zone_name,end=stamp,midnight=millis(midnight),groups=groups,gaps=gaps,
+        result = dict(minutes=minutes,zone=zone_name,end=stamp,midnight=millis(midnight),groups=groups,gaps=gaps,
                     resets=resets,hours=hours,unknownHours=unknown,missing=missing,
                     dailyHours=daily_hours,offsets=offsets,trackedLevels=tracked_levels,partialHours=partial,evidenceSpans=spans,
                     openingLevels=openings,
                     flowCeiling=flow_ceiling(document,policy))
+        if profile:
+            from register_chart import register_profile
+            outages = archive.get('dial_gaps', [])
+            photos = self.ledger.gap_registers(outages, tracked, document) if self.ledger and document else {}
+            # Recover sub-hour optical anchors only where the absolute series
+            # cannot resolve an hour. All zooms consume these same anchors.
+            fine_legs = []
+            if self.ledger and document:
+                spans = []
+                last_tick = stamp - stamp % 60000
+                while datetime.fromtimestamp(last_tick/1000,zone).minute % 10:
+                    last_tick -= 60000
+                for a,b in zip(ticks,[*ticks[1:],last_tick]):
+                    if b<=a or b<stamp-26*HOUR:
+                        continue
+                    if published.get(a) and published.get(b) and b<stamp-2*HOUR:
+                        continue
+                    if spans and spans[-1][1]==a:
+                        spans[-1][1]=b
+                    else:
+                        spans.append([a,b])
+                for a,b in spans:
+                    fine_ticks=list(range(a,b+1,600000))
+                    if len(fine_ticks)<2:
+                        continue
+                    positions={t:boundary(t) for t in fine_ticks}
+                    observed=self.ledger.snapshot(fine_ticks,tracked,document,policy or {},positions,outages)
+                    fine_legs.extend(measured_hours(fine_ticks,positions,observed,outages,cuts,splits,register_changes))
+            result['registerProfile'] = register_profile(stamp, zone, registers, daily, hours, outages,
+                                                          cuts, photos, result['flowCeiling'], fine_legs,
+                                                          min(document['dials'],key=lambda d:d['value_per_revolution']) if document else None)
+        return result
 
 
 def ledger_breaks(store,start,end):
