@@ -52,6 +52,65 @@ class ChartHoursTests(unittest.TestCase):
         self.assertEqual((h['opening'],h['closing'],h['use']),(102,110,8))
         self.assertEqual(h['end']-h['start'],3600000)
 
+    def test_first_hour_fetches_only_the_visible_meter_and_does_not_fill_a_break(self):
+        observations=self.rows([(i*60,i+100) for i in range(-12,63)])
+        queries=[]
+        def fetch(entity,start,end):
+            queries.append(entity)
+            return [[r for when,r in observations if start<=when<end]]
+        cut=millis(self.hour+timedelta(minutes=7))
+        api=ChartHours(self.meter,self.daily,fetch,lambda a,b:[cut])
+        end=millis(self.hour+timedelta(hours=1,seconds=3))
+        window=api.published_window(end,'UTC','1',{},None,{})
+        self.assertTrue(queries and set(queries)=={self.meter})
+        self.assertEqual(len(window['points']),8)
+        self.assertIn(millis(self.hour+timedelta(minutes=10)),window['blocked'])
+        self.assertIsNone(next(iter(window['openings'].values())))
+        self.assertEqual(window['points'][-1][1]-window['points'][-2][1],10)
+
+    def test_verified_window_reuses_the_correct_format_and_keeps_its_source_time(self):
+        rows=self.rows([(i*60,i+150) for i in range(-72,74)])
+        def fetch(entity,start,end):
+            return [[r for when,r in rows if start<=when<end and entity==self.meter]]
+        api=ChartHours(self.meter,self.daily,fetch)
+        usage={'movement_history':{'format':'a','dial_from':[1,2]}}
+        end=millis(self.hour+timedelta(hours=1,seconds=4))
+        doc={'unit':'other','dials':[{'value_per_revolution':5,'position_error':.1}]}
+        old=api.snapshot(end,'UTC',usage,doc,{},profile=True)
+        for t in (end,end+600000):
+            quick=api.published_window(t,'UTC','1',usage,doc,{})
+            self.assertEqual(quick['asOf'],end)
+            self.assertEqual(quick['close'],end-4000)
+            self.assertEqual(quick['registerProfile']['points'],[r for r in old['registerProfile']['points']
+                if quick['start']-600000<=r[0]<=quick['close']])
+        different={'movement_history':{'format':'b','dial_from':[1,2]}}
+        self.assertNotIn('asOf',api.published_window(end,'UTC','1',different,doc,{}))
+
+    def test_window_http_route_validates_scale_and_keeps_full_history_separate(self):
+        from service import handler
+        from unittest.mock import Mock
+        from time import time
+        charts=Mock()
+        mqtt=Mock()
+        mqtt.status.return_value={'overview_timezone':'UTC','usage':{}}
+        mqtt.daily.evidence_policy={}
+        request=object.__new__(handler(Mock(),False,None,mqtt_output=mqtt,chart_hours=charts))
+        request.client_address=('127.0.0.1',12345)
+        request.headers={'Host':'localhost'}
+        request.reply=Mock()
+        stamp=int(time()*1000)
+        request.path=f'/api/chart-window?end={stamp}&window=1'
+        request.read_request()
+        charts.published_window.assert_called_once_with(stamp,'UTC','1',{},None,{})
+        charts.snapshot.assert_not_called()
+        for query in ('window=10','minutes=10','window=1&window=6'):
+            request.path=f'/api/chart-window?end={stamp}&'+query
+            request.read_request()
+            self.assertEqual(request.reply.call_args.args[1],400)
+        request.path=f'/api/chart-hours?end={stamp}'
+        request.read_request()
+        charts.snapshot.assert_called_once_with(stamp,'UTC',{},None,{},minutes=60,profile=True)
+
     def test_partial_day_first_frame_sets_level_without_filling_the_overnight_hour(self):
         first=self.hour+timedelta(seconds=25)
         first_tick=millis(self.hour)+600000

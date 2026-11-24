@@ -284,7 +284,8 @@ async function refreshUsage(){
       overviewCaptureError=state.capture_error;
       nextHealthCheck=0;
     }
-    if(!busy && activePage==='overview' && !$('capture-operations').open && (!compactOverview() || Date.now()>=nextHealthCheck)){
+    const healthCanWait=compactOverview()&&!state.capture_error&&window.AIEdgeCharts?.loadingWindow;
+    if(!busy && !healthCanWait && activePage==='overview' && !$('capture-operations').open && (!compactOverview() || Date.now()>=nextHealthCheck)){
       nextHealthCheck=Date.now()+60000;
       refreshStatus();
     }
