@@ -673,12 +673,15 @@ function completedTick(stamp,zone,minutes){
 }
 function fetchCalendar(current){
   const {end:stamp,zone,minutes}=current;
-  fetch('api/chart-hours?end='+stamp+(minutes===60?'':'&minutes='+minutes),
+  const prepared=current===calendar&&minutes===60&&!browsing&&!current.force;
+  fetch('api/chart-hours?end='+stamp+(prepared?'&prepared=1':minutes===60?'':'&minutes='+minutes),
     {cache:'no-store',signal:AbortSignal.timeout(45000)})
     .then(async r=>{
       if(!r.ok)throw Error();
       const data=await r.json();
-      if(data.end!==stamp||data.zone!==zone||data.midnight!==current.midnight||
+      const coversRequestedTick=prepared&&Number.isSafeInteger(data.end)&&data.end<=stamp&&
+        completedTick(data.end,zone,10)===completedTick(stamp,zone,10);
+      if((data.end!==stamp&&!coversRequestedTick)||data.zone!==zone||data.midnight!==current.midnight||
          (data.minutes??60)!==minutes||!Array.isArray(data.hours)||!Array.isArray(data.groups))throw Error();
       current.data=data;current.status='ready';
       if(current===calendar&&data.registerProfile?.registerHead)cardCalendar=current;
@@ -697,7 +700,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v1:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v2:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -712,7 +715,8 @@ function rememberWindow(current,scale,start,end){
     registerProfile:{points,openings:profile.openings,gaps:profile.gaps.filter(overlaps),
       modeled:profile.modeled.filter(overlaps),conflicts:profile.conflicts.filter(overlaps),
       reconciled:profile.reconciled,ceiling:profile.ceiling,provisionalFrom:profile.provisionalFrom,
-      fineBounds:profile.fineBounds.filter(overlaps)}};
+      fineBounds:profile.fineBounds.filter(overlaps),
+      changeBounds:(profile.changeBounds??[]).filter(r=>from<=r[1]&&r[1]<=end)}};
   try{sessionStorage.setItem(savedKey(scale),JSON.stringify(saved));}catch{}
 }
 function savedWindow(current,scale){
@@ -781,7 +785,7 @@ function setCalendar(zone,stamp,identity){
      stamp&&!calendar.pinned){
     calendar?.cancel?.abort();
     calendar={end:calendarStamp,zone,midnight:localOpening(calendarStamp,zone),minutes:60,data:null,
-      status:'loading',pinned:!!stamp,identity};
+      status:'loading',pinned:!!stamp,force:fresh,identity};
     detail=null;
   }
   if(calendar.status==='loading'&&!browsing)stageWindow(calendar);
@@ -805,6 +809,7 @@ function registerSummary(hourly,start,end,minutes,view){
   const edges=chartBoundaries(start,end,minutes,zone);
   const hours=new Map(data.hours.map(q=>[q.end,q]));
   const fineBounds=new Map(profile.fineBounds.map(([a,b,lo,hi])=>[a,{end:b,bounds:[lo,hi]}]));
+  const changes=new Map((profile.changeBounds??[]).map(([a,b,lo,hi])=>[a+'/'+b,[lo,hi]]));
   const days=Object.keys(profile.openings).map(Number).sort((a,b)=>a-b);
   const openingAt=t=>days.findLast(day=>day<=t);
   const baseAt=t=>profile.openings[openingAt(t)];
@@ -825,7 +830,15 @@ function registerSummary(hourly,start,end,minutes,view){
     const q=difference(base,p,t-opening);
     if(!q)return null;
     if(t===opening)return [t,0,0,0];
+    if(!base[4])useMeasuredRange(q,opening,t);
     return [t,q.use,q.bounds?.[0]??null,q.bounds?.[1]??null];
+  }
+  function useMeasuredRange(q,from,to){
+    const range=changes.get(from+'/'+to);
+    if(!range)return;
+    const lo=Math.max(q.bounds?.[0]??0,range[0]),hi=Math.min(q.bounds?.[1]??Infinity,range[1]);
+    if(lo<=q.use+0.000002&&q.use<=hi+0.000002&&lo<=hi)
+      q.bounds=[Math.min(lo,q.use),Math.max(hi,q.use)];
   }
   function applyIntervalBounds(q,from,to){
     // Count each measured change once. Leave uncovered spans at their
@@ -892,6 +905,7 @@ function registerSummary(hourly,start,end,minutes,view){
     const a=points.get(from),b=points.get(t),q=difference(a,b,t-from);
     if(!q||profile.blocked?.includes(t))continue;
     applyIntervalBounds(q,from,t);
+    useMeasuredRange(q,from,t);
     const gap=profile.gaps.find(([l,r])=>l<t&&t<r||l<from&&from<r)||
       profile.gaps.find(([l,r])=>r-l>=600000&&l<t&&from<r);
     const model=profile.modeled.find(([l,r])=>l<t&&t<r||l<from&&from<r);

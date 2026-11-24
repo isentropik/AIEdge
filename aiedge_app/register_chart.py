@@ -1,9 +1,102 @@
 """One display-only register history for every gas chart time scale."""
 from bisect import bisect_left
 from datetime import datetime, time, timedelta
+from heapq import heappop, heappush
+from math import ceil, floor, inf, isfinite
 
 from meter_history import millis
 from daily_constraints import InconsistentConstraints
+
+
+def measured_change_bounds(points, openings, legs, conflicts=()):
+    """Combine bounds on meter levels and measured changes without treating a preferred turn as evidence."""
+    if not points:
+        return []
+    scale = 1_000_000
+    index = {p[0]:i for i,p in enumerate(points)}
+    origin = len(points)
+    centers = [round(p[1]*scale) for p in points] + [0]
+    graph = [[] for _ in centers]
+    def constraint(i,j,upper):
+        # A bound on Xj-Xi is an edge. Subtracting the displayed centers gives
+        # nonnegative weights for shortest paths; it does not constrain the readings.
+        slack = ceil(upper*scale) - (centers[j]-centers[i])
+        if slack >= -2:
+            graph[i].append((j,max(0,slack)))
+
+    runs=[]
+    for j,(_,_,lo,hi,epoch) in enumerate(points):
+        runs.append(runs[-1] if j and points[j-1][4]==epoch else j)
+        if lo is not None:
+            constraint(j,origin,-lo)
+        if hi is not None:
+            constraint(origin,j,hi)
+        if j and points[j-1][4]==epoch:
+            constraint(j,j-1,0)  # The same meter can only move forward.
+    rejected = {tuple(row) for row in conflicts}
+    for a,b,lo,hi in legs:
+        i,j=index.get(a),index.get(b)
+        if i is None or j is None or runs[i]!=runs[j] or (a,b,lo,hi) in rejected:
+            continue
+        delta=centers[j]-centers[i]
+        if floor(lo*scale)-2<=delta<=ceil(hi*scale)+2:
+            constraint(i,j,hi)
+            constraint(j,i,-lo)
+
+    # Only the preceding ten minutes, preceding hour and actual daily opening
+    # are displayed. Keep the full calculation on the server and send those pairs.
+    pairs=set()
+    days=sorted(int(day) for day in openings)
+    for j,p in enumerate(points):
+        t=p[0]
+        starts=[t-600000,t-3600000]
+        day=bisect_left(days,t)-1
+        if day>=0:
+            a=days[day]
+            base=openings.get(a,openings.get(str(a)))
+            if base and not base[4]:
+                starts.append(a)
+        for a in starts:
+            i=index.get(a)
+            if i is not None and runs[i]==runs[j]:
+                pairs.add((i,j))
+    # Each shortest path is a sum of compatible inequalities. Shared absolute
+    # offsets cancel, and overlapping hour and ten-minute evidence is counted once.
+    needed={}
+    for i,j in pairs:
+        needed.setdefault(i,set()).add(j)
+        needed.setdefault(j,set()).add(i)
+    distances={}
+    for start,targets in needed.items():
+        best={start:0}
+        queue=[(0,start)]
+        left=len(targets)
+        while queue and left:
+            cost,i=heappop(queue)
+            if cost!=best[i]:
+                continue
+            if i in targets:
+                distances[start,i]=cost
+                left-=1
+            for j,weight in graph[i]:
+                candidate=cost+weight
+                if candidate<best.get(j,inf):
+                    best[j]=candidate
+                    heappush(queue,(candidate,j))
+    out=[]
+    for i,j in sorted(pairs):
+        upper=distances.get((i,j),inf)
+        if not isfinite(upper):
+            continue
+        delta=centers[j]-centers[i]
+        lo=max(0,delta-distances.get((j,i),inf))/scale
+        hi=(delta+upper)/scale
+        left,right=points[i],points[j]
+        endpoint_lo=max(0,right[2]-left[3]) if right[2] is not None and left[3] is not None else 0
+        endpoint_hi=right[3]-left[2] if right[3] is not None and left[2] is not None else inf
+        if lo>endpoint_lo+.000002 or hi<endpoint_hi-.000002:
+            out.append([left[0],right[0],lo,hi])
+    return out
 
 
 def reconcile(points, legs, bands_at, gaps, near_register, ceiling, tracked_changes):
@@ -424,6 +517,9 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
         out['reconciliationIssue']=str(exc) or 'work limit'
     out['reconciled']=conflicts is not None
     out['conflicts']=conflicts or []
+    if conflicts is not None:
+        measured = [[q['start'],q['end'],*q['bounds']] for q in hours if q.get('bounds')]
+        out['changeBounds'] = measured_change_bounds(points,out['openings'],[*measured,*fine_bounds],conflicts)
     by_time={p[0]:p for p in points}
     out['readingEstimates']={}
     for t in near:

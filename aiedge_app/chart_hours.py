@@ -6,7 +6,11 @@ from functools import lru_cache
 from http.client import HTTPException
 import re
 import math
-from threading import Lock
+import hashlib
+import json
+import logging
+import time as clock
+from threading import Event, Lock
 from zoneinfo import ZoneInfo
 
 from gas_trend import recorder
@@ -208,6 +212,8 @@ class ChartHours:
         self.ledger = ledger
         self.closed_page = lru_cache(maxsize=28)(self.page)
         self.profile_lock = Lock()
+        self.build_lock = Lock()
+        self.stopping = Event()
         self.last_profile = None
 
     def page(self, entity, start, end):
@@ -222,6 +228,8 @@ class ChartHours:
         closed = datetime.now(timezone.utc)-timedelta(minutes=15)
         rows = []
         while cur < end:
+            if self.stopping.is_set():
+                raise InterruptedError('chart_shutdown')
             stop = min(end,cur+timedelta(hours=3))
             read = self.closed_page if stop-cur == timedelta(hours=3) and stop < closed else self.page
             rows.extend(read(entity,cur,stop))
@@ -261,6 +269,7 @@ class ChartHours:
                          if q.get('bounds') and q['end']>lower and q['start']<close]
                 profile = dict(p,points=[r for r in p['points'] if lower<=r[0]<=close],
                                fineBounds=[r for r in p['fineBounds'] if lower<r[1] and r[0]<close])
+                profile['changeBounds']=[r for r in p.get('changeBounds',[]) if lower<=r[1]<=close]
                 for field in ('gaps','modeled','conflicts'):
                     profile[field] = [r for r in p.get(field,[]) if lower<r[1] and r[0]<close]
                 for field in ('registerHead','readingEstimates'):
@@ -317,7 +326,24 @@ class ChartHours:
         archive=(usage or {}).get('movement_history') or {}
         if not archive.get('format') or not document:
             return None
-        return zone,archive['format'],archive.get('dial_from'),document,policy
+        return [zone,archive['format'],archive.get('dial_from'),archive.get('dial_gaps',[]),
+                (usage.get('absolute_nominal') or {}).get('method'),document,policy]
+
+    def prepared(self, stamp, zone, usage, document, policy):
+        """Serve the latest completed chart interval at its original evidence timestamp."""
+        key = self.profile_key(zone, usage, document, policy)
+        with self.build_lock:
+            if self.stopping.is_set():
+                raise InterruptedError('chart_shutdown')
+            with self.profile_lock:
+                cached = self.last_profile
+            if key and cached and cached[0] == key:
+                data = cached[1]
+                local = datetime.fromtimestamp(stamp/1000, ZoneInfo(zone))
+                tick = millis(local.replace(minute=local.minute//10*10, second=0, microsecond=0))
+                if tick <= data['end'] <= stamp and data['registerProfile']['points'][-1][0] >= tick:
+                    return data
+            return self.snapshot(stamp,zone,usage,document,policy,profile=True)
 
     def snapshot(self, stamp, zone_name, usage=None, document=None, policy=None, minutes=60, *, profile=False):
         zone = ZoneInfo(zone_name)
@@ -361,6 +387,8 @@ class ChartHours:
                                 p[5]=(epoch+int(p[1]<prior[1]),*p[5][1:])
                             p[4]=p[5]!=prior[5] or p[0]-prior[0]>=660000
                         rows.append(tuple(p))
+        if self.stopping.is_set():
+            raise InterruptedError('chart_shutdown')
         cuts = sorted(self.breaks(start,fetch_end))
         times = [p[0] for p in registers]
         splits = [p[0] for p in registers if p[4]]
@@ -536,6 +564,8 @@ class ChartHours:
                     else:
                         spans.append([a,b])
                 for a,b in spans:
+                    if self.stopping.is_set():
+                        raise InterruptedError('chart_shutdown')
                     fine_ticks=list(range(a,b+1,600000))
                     if len(fine_ticks)<2:
                         continue
@@ -551,6 +581,92 @@ class ChartHours:
                     if self.last_profile is None or self.last_profile[1]['end']<=stamp:
                         self.last_profile = key,result
         return result
+
+
+class BackgroundCharts:
+    """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
+    def __init__(self, hours, mqtt, reading_format, path):
+        self.hours = hours
+        self.mqtt = mqtt
+        self.reading_format = reading_format
+        self.path = path
+        self.published = Event()
+        self.stop = hours.stopping
+        self.completed = None
+        self.retry_after = 0
+        self.attempted = None
+
+    def request_stop(self):
+        self.stop.set()
+        self.published.set()
+
+    def load(self):
+        try:
+            with self.path.open('rb') as stream:
+                raw = stream.read(2*1024*1024 + 1)
+            if len(raw) > 2*1024*1024:
+                return
+            checksum, payload = raw.split(b'\n', 1)
+            if hashlib.sha256(payload).hexdigest().encode() != checksum:
+                return
+            version, meter, daily, key, data = json.loads(payload)
+            if (version, meter, daily) != (1, self.hours.meter, self.hours.daily):
+                return
+            if not key or not data['registerProfile']['points'] or data['missing']:
+                return
+            with self.hours.profile_lock:
+                if self.hours.last_profile is None:
+                    self.hours.last_profile = key, data
+        except (OSError, KeyError, ValueError, TypeError):
+            return
+
+    def prepare(self):
+        mqtt = self.mqtt.status()
+        usage = mqtt.get('usage') or {}
+        daily = usage.get('daily_nominal') or {}
+        zone = daily.get('timezone')
+        if not daily.get('measured_at') or not zone:
+            return
+        doc = self.reading_format.status()['format']
+        policy = self.mqtt.daily.evidence_policy or {}
+        key = self.hours.profile_key(zone, usage, doc, policy)
+        if not key:
+            return
+        source = datetime.fromisoformat(daily['measured_at'])
+        if source.tzinfo is None:
+            return
+        stamp = millis(source)
+        local = source.astimezone(ZoneInfo(zone))
+        tick = millis(local.replace(minute=local.minute//10*10, second=0, microsecond=0))
+        slot = key, tick
+        if self.completed == slot or self.attempted == slot and clock.monotonic() < self.retry_after:
+            return
+        self.attempted = slot
+        self.retry_after = clock.monotonic() + 60
+        data = self.hours.prepared(stamp, zone, usage, doc, policy)
+        if self.stop.is_set() or data['missing'] or not data.get('registerProfile',{}).get('points'):
+            return
+        from setup_store import Setup
+        payload = json.dumps([1,self.hours.meter,self.hours.daily,key,data],
+                             allow_nan=False,separators=(',',':')).encode()
+        Setup._atomic(self.path, hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
+        if data['registerProfile']['points'][-1][0] >= tick:
+            self.completed = slot
+            self.retry_after = 0
+
+    def run(self):
+        self.load()
+        while not self.stop.is_set():
+            self.published.wait()
+            self.published.clear()
+            if self.stop.is_set():
+                return
+            try:
+                self.prepare()
+            except Exception as exc:
+                # A chart failure must never change capture or MQTT publication.
+                if not self.stop.is_set():
+                    logging.getLogger(__name__).warning('Background chart preparation failed (%s)', type(exc).__name__)
 
 
 def ledger_breaks(store,start,end):
