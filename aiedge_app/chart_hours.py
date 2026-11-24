@@ -6,6 +6,7 @@ from functools import lru_cache
 from http.client import HTTPException
 import re
 import math
+from threading import Lock
 from zoneinfo import ZoneInfo
 
 from gas_trend import recorder
@@ -206,6 +207,8 @@ class ChartHours:
         self.meter, self.daily, self.fetch, self.breaks = meter,daily,fetch,breaks
         self.ledger = ledger
         self.closed_page = lru_cache(maxsize=28)(self.page)
+        self.profile_lock = Lock()
+        self.last_profile = None
 
     def page(self, entity, start, end):
         history = self.fetch(entity,start,end)
@@ -231,6 +234,90 @@ class ChartHours:
         except (OSError, HTTPException, ValueError, KeyError):
             missing.append('daily' if daily else 'register')
             return []
+
+    def published_window(self, stamp, zone_name, window, usage, document, policy):
+        """First paint from published meter observations. Optical reconciliation follows separately."""
+        zone = ZoneInfo(zone_name)
+        minute = 60000
+        step = 10*minute if window == '1' else HOUR
+        end = stamp//minute*minute
+        while datetime.fromtimestamp(end/1000,zone).minute % (step//minute):
+            end -= minute
+        midnight = datetime.combine(datetime.fromtimestamp(stamp/1000,zone).date(),time.min,zone)
+        start = millis(midnight) if window == 'today' else end-int(window)*HOUR
+        first = start-step
+        key = self.profile_key(zone_name,usage,document,policy)
+        with self.profile_lock:
+            cached = self.last_profile
+        if cached and key and key == cached[0] and end-step <= cached[1]['end'] <= stamp:
+            data = cached[1]
+            p = data['registerProfile']
+            close = end if data['end']>=end else end-step
+            begin = start if window=='today' else close-int(window)*HOUR
+            if (data['midnight']==millis(midnight) and millis(midnight)<=close and begin<=close and
+                    p['points'][0][0]<=begin-step and p['points'][-1][0]>=close):
+                lower = begin-step
+                hours = [dict(start=q['start'],end=q['end'],bounds=q['bounds']) for q in data['hours']
+                         if q.get('bounds') and q['end']>lower and q['start']<close]
+                profile = dict(p,points=[r for r in p['points'] if lower<=r[0]<=close],
+                               fineBounds=[r for r in p['fineBounds'] if lower<r[1] and r[0]<close])
+                for field in ('gaps','modeled','conflicts'):
+                    profile[field] = [r for r in p.get(field,[]) if lower<r[1] and r[0]<close]
+                for field in ('registerHead','readingEstimates'):
+                    profile.pop(field,None)
+                return dict(end=stamp,asOf=data['end'],window=window,zone=zone_name,midnight=data['midnight'],
+                            start=begin,close=close,hours=hours,registerProfile=profile)
+        first_day = datetime.fromtimestamp(start/1000,zone).date()
+        since = datetime.fromtimestamp((first-11*minute)/1000,timezone.utc)
+        until = datetime.fromtimestamp(stamp/1000,timezone.utc)+timedelta(minutes=12)
+        missing = []
+        rows = [r for r in self.readings(self.meter,since,until,zone,False,missing)
+                if r[0] <= stamp]
+        times = [r[0] for r in rows]
+        epochs = {identity:i for i,identity in enumerate(dict.fromkeys(r[5] for r in rows))}
+        cuts = sorted(self.breaks(since,until))
+        gaps = (usage.get('movement_history') or {}).get('dial_gaps') or []
+        def interrupted(a,b):
+            return bisect_left(cuts,b+1)!=bisect_left(cuts,a+1) or any(l<b and a<r for l,r in gaps)
+        def observed(t):
+            i = bisect_left(times,t)
+            if i < len(rows) and times[i] == t:
+                a = b = rows[i]
+            elif 0 < i < len(rows):
+                a,b = rows[i-1:i+1]
+                if b[4] or a[5]!=b[5] or interrupted(a[0],b[0]):
+                    return None
+            else:
+                return None
+            if a[5][1] != 'photo_anchored_fine_dial':
+                return None
+            value = a[1] if a is b else a[1]+(b[1]-a[1])*Decimal(t-a[0])/(b[0]-a[0])
+            bounds = (float(a[2][0]),float(b[2][1])) if a[2] and b[2] else (None,None)
+            return [float(value),*bounds,epochs[a[5]]]
+        samples = []
+        for t in range(first,end+1,step):
+            point = observed(t)
+            if point is not None:
+                samples.append([t,*point])
+        openings = {}
+        for day in (first_day,midnight.date()):
+            t = millis(datetime.combine(day,time.min,zone))
+            point = observed(t)
+            openings[t] = [*point,False] if point is not None else None
+        # An interrupted interval can have observed endpoints. Defer its rate
+        # until historical evidence can establish what those endpoints support.
+        breaks = [r[0] for r in rows if r[4]]
+        blocked = [t for t in range(start,end+1,step) if interrupted(t-step,t) or
+                   bisect_left(breaks,t+1)!=bisect_left(breaks,t-step+1)]
+        return dict(end=stamp,zone=zone_name,window=window,start=start,close=end,midnight=millis(midnight),
+                    points=samples,openings=openings,blocked=blocked,ceiling=flow_ceiling(document,policy))
+
+    @staticmethod
+    def profile_key(zone,usage,document,policy):
+        archive=(usage or {}).get('movement_history') or {}
+        if not archive.get('format') or not document:
+            return None
+        return zone,archive['format'],archive.get('dial_from'),document,policy
 
     def snapshot(self, stamp, zone_name, usage=None, document=None, policy=None, minutes=60, *, profile=False):
         zone = ZoneInfo(zone_name)
@@ -458,6 +545,11 @@ class ChartHours:
             result['registerProfile'] = register_profile(stamp, zone, registers, daily, hours, outages,
                                                           cuts, photos, result['flowCeiling'], fine_legs,
                                                           min(document['dials'],key=lambda d:d['value_per_revolution']) if document else None)
+            key = self.profile_key(zone_name,usage,document,policy)
+            if key and not missing and result['registerProfile']['points']:
+                with self.profile_lock:
+                    if self.last_profile is None or self.last_profile[1]['end']<=stamp:
+                        self.last_profile = key,result
         return result
 
 

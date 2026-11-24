@@ -645,7 +645,13 @@ function chart(){
   };
 }
 const drawDay=chart();
-let selection='today',rolling=null,activeSelection=null;
+const scaleKey='aiedge-active-scale:'+location.pathname;
+const validScales=['1','6','12','24','today'];
+try{
+  const stored=sessionStorage.getItem(scaleKey);
+  if(validScales.includes(stored))$('usage-period').value=stored;
+}catch{}
+let selection=$('usage-period').value||'today',rolling=null,activeSelection=null;
 let dayView=null;
 let calendar=null,browsing=null,cardCalendar=null;
 function localOpening(end,zone){
@@ -665,8 +671,8 @@ function rateMinutes(selection){
 function completedTick(stamp,zone,minutes){
   return stamp-(stamp+offsetAt(stamp,zone))%(minutes*60000);
 }
-function loadCalendar(stamp,zone,minutes){
-  const current={end:stamp,zone,midnight:localOpening(stamp,zone),minutes,data:null,status:'loading'};
+function fetchCalendar(current){
+  const {end:stamp,zone,minutes}=current;
   fetch('api/chart-hours?end='+stamp+(minutes===60?'':'&minutes='+minutes),
     {cache:'no-store',signal:AbortSignal.timeout(45000)})
     .then(async r=>{
@@ -676,11 +682,82 @@ function loadCalendar(stamp,zone,minutes){
          (data.minutes??60)!==minutes||!Array.isArray(data.hours)||!Array.isArray(data.groups))throw Error();
       current.data=data;current.status='ready';
       if(current===calendar&&data.registerProfile?.registerHead)cardCalendar=current;
-    }).catch(()=>{current.status='unavailable';}).finally(()=>{
+    }).catch(()=>{current.status='unavailable';current.retryAfter=Date.now()+15000;}).finally(()=>{
       if(current===calendar&&current.status==='ready')requestDetail();
       if(current===calendar||current===detail||current===browsing?.fine)showSummary(dayView);
     });
+}
+function loadCalendar(stamp,zone,minutes){
+  const current={end:stamp,zone,midnight:localOpening(stamp,zone),minutes,data:null,status:'loading'};
+  fetchCalendar(current);
   return current;
+}
+function afterPaint(callback){
+  if(document.hidden){setTimeout(callback,0);return;}
+  requestAnimationFrame(()=>setTimeout(callback,0));
+}
+function savedKey(scale){
+  return 'aiedge-chart-v1:'+JSON.stringify([location.pathname,scale]);
+}
+function rememberWindow(current,scale,start,end){
+  const data=current.data,profile=data.registerProfile;
+  if(!current.identity||!profile?.points.length)return;
+  const from=completedTick(start-1,current.zone,rateMinutes(scale));
+  const between=p=>p[0]>=from&&p[0]<=end;
+  const overlaps=p=>p[1]>from&&p[0]<=end;
+  const points=profile.points.filter(between);
+  if(!points.length)return;
+  const saved={identity:current.identity,end:data.end,close:end,start,scale,zone:data.zone,midnight:data.midnight,
+    hours:data.hours.filter(q=>q.end>=from&&q.start<=end).map(({start,end,bounds})=>({start,end,bounds})),
+    registerProfile:{points,openings:profile.openings,gaps:profile.gaps.filter(overlaps),
+      modeled:profile.modeled.filter(overlaps),conflicts:profile.conflicts.filter(overlaps),
+      reconciled:profile.reconciled,ceiling:profile.ceiling,provisionalFrom:profile.provisionalFrom,
+      fineBounds:profile.fineBounds.filter(overlaps)}};
+  try{sessionStorage.setItem(savedKey(scale),JSON.stringify(saved));}catch{}
+}
+function savedWindow(current,scale){
+  if(!current.identity)return null;
+  try{
+    const saved=JSON.parse(sessionStorage.getItem(savedKey(scale)));
+    if(saved?.scale===scale&&saved.identity===current.identity&&saved.zone===current.zone&&saved.midnight===current.midnight&&
+       saved.end<=current.end&&saved.close<=completedTick(current.end,current.zone,rateMinutes(scale))&&
+       current.end-saved.close<2*rateMinutes(scale)*60000&&
+       saved.registerProfile?.points.length)return saved;
+  }catch{}
+  return null;
+}
+function stageWindow(current){
+  const scale=selection;
+  if(current.stageScale===scale)return;
+  current.cancel?.abort();
+  current.stageScale=scale;
+  current.preview=savedWindow(current,scale);
+  const cancel=new AbortController();
+  current.cancel=cancel;
+  const active=()=>calendar===current&&selection===scale&&!browsing&&!cancel.signal.aborted&&current.status==='loading';
+  afterPaint(async()=>{
+    if(!active())return;
+    try{
+      if(!current.preview){
+        const response=await fetch('api/chart-window?end='+current.end+'&window='+scale,
+          {cache:'no-store',signal:AbortSignal.any([cancel.signal,AbortSignal.timeout(4000)])});
+        if(!active()||!response.ok)return;
+        const w=await response.json();
+        if(w.end!==current.end||w.zone!==current.zone||w.window!==scale||w.midnight!==current.midnight||
+           w.close!==completedTick(w.asOf??current.end,current.zone,rateMinutes(scale)))return;
+        if(w.registerProfile?.points.length)current.preview={...w,end:w.asOf};
+        else if(w.points?.length)current.preview={...w,hours:[],published:true,registerProfile:{points:w.points,openings:w.openings,
+          blocked:w.blocked,gaps:[],modeled:[],conflicts:[],reconciled:true,ceiling:w.ceiling,fineBounds:[]}};
+      }
+    }catch{}finally{
+      if(active()){
+        try{showSummary(dayView);}catch{current.preview=null;}
+        afterPaint(()=>{
+          if(active()&&!current.historyStarted){current.historyStarted=true;fetchCalendar(current);}
+        });
+      }
+    }
+  });
 }
 let manualChartRefresh=false,detail=null,calendarStamp=0,visibleSummary=null;
 window.addEventListener('aiedge-refresh-images',()=>{manualChartRefresh=true;});
@@ -689,8 +766,9 @@ function requestDetail(){
   if(detail?.zone===calendar.zone&&completedTick(detail.end,calendar.zone,10)===completedTick(calendarStamp,calendar.zone,10))return;
   detail=loadCalendar(calendarStamp,calendar.zone,10);
 }
-function setCalendar(zone,stamp){
-  if(!zone || (calendar && calendar.zone!==zone)){
+function setCalendar(zone,stamp,identity){
+  if(!zone || (calendar && (calendar.zone!==zone||calendar.identity!==identity))){
+    calendar?.cancel?.abort();
     browsing=null;calendar=null;cardCalendar=null;detail=null;visibleSummary=null;
     $('gas-period-row').hidden=true;$('gas-latest').hidden=true;
     if(!zone)return;
@@ -698,13 +776,15 @@ function setCalendar(zone,stamp){
   calendarStamp=stamp?Date.parse(stamp):Date.now();
   const fresh=manualChartRefresh;
   manualChartRefresh=false;
-  const refreshMinutes=calendar?.data?.registerProfile?10:60;
-  if(fresh||calendar?.zone!==zone||completedTick(calendarStamp,zone,refreshMinutes)!==completedTick(calendar.end,zone,refreshMinutes)||
+  const refreshMinutes=calendar?.data?.registerProfile||calendar?.status==='loading'?10:60;
+  if(fresh||calendar?.zone!==zone||calendar.retryAfter<=Date.now()||completedTick(calendarStamp,zone,refreshMinutes)!==completedTick(calendar.end,zone,refreshMinutes)||
      stamp&&!calendar.pinned){
-    calendar=loadCalendar(calendarStamp,zone,60);
-    calendar.pinned=!!stamp;
+    calendar?.cancel?.abort();
+    calendar={end:calendarStamp,zone,midnight:localOpening(calendarStamp,zone),minutes:60,data:null,
+      status:'loading',pinned:!!stamp,identity};
     detail=null;
   }
+  if(calendar.status==='loading'&&!browsing)stageWindow(calendar);
   requestDetail();
 }
 function chartBoundaries(start,end,minutes,zone){
@@ -790,6 +870,7 @@ function registerSummary(hourly,start,end,minutes,view){
     const day=openingAt(t),p=total(t,baseAt(t),day);
     const stop={to:t,from:null,point:p,reset:resets.includes(t)};
     stops.set(t,stop);
+    if(profile.blocked?.includes(t))flush();
     if(stop.reset){
       const prior=openingAt(t-1),close=total(t,profile.openings[prior],prior);
       if(close&&t>start){
@@ -809,7 +890,7 @@ function registerSummary(hourly,start,end,minutes,view){
     const from=i?edges[i-1]:completedTick(t-1,zone,minutes);
     if(from>=t)continue;
     const a=points.get(from),b=points.get(t),q=difference(a,b,t-from);
-    if(!q)continue;
+    if(!q||profile.blocked?.includes(t))continue;
     applyIntervalBounds(q,from,t);
     const gap=profile.gaps.find(([l,r])=>l<t&&t<r||l<from&&from<r)||
       profile.gaps.find(([l,r])=>r-l>=600000&&l<t&&from<r);
@@ -828,7 +909,7 @@ function registerSummary(hourly,start,end,minutes,view){
   const host=$('day-curve');
   host.dataset.endTime=new Date(end).toISOString();
   if(view?.event&&!browsing)host.dataset.endEvent=String(view.event);else delete host.dataset.endEvent;
-  drawDay([],start,zone,JSON.stringify(['register',data.end,start,end,minutes]),null,hourly.midnight,null,ordered,
+  drawDay([],start,zone,JSON.stringify(['register',data.end,start,end,minutes,data.published?'published':'verified']),null,hourly.midnight,null,ordered,
     [],null,null,null,{series,extent,resets,closes,edges,profile:true});
 }
 function showSummary(view){
@@ -836,6 +917,23 @@ function showSummary(view){
   const {zone,midnight,data}=hourly;
   const stamp=browsing?.end??calendarStamp;
   const minutes=rateMinutes(selection),fine=minutes===10;
+  if(!browsing&&(hourly.status==='loading'||hourly.status==='unavailable'&&hourly.preview)){
+    const p=hourly.preview;
+    if(p&&hourly.stageScale===selection){
+      // The source and time of a saved window remain its own while it is on screen.
+      navZone=zone;navKey='';
+      $('gas-period-day').textContent=dateLabel(selection==='today'?p.start:p.close);
+      $('gas-period-time').textContent=windowLabel({start:p.start,end:p.close});
+      $('gas-period-row').hidden=false;
+      for(const id of ['gas-previous','gas-next','gas-jump'])$(id).disabled=true;
+      registerSummary({...hourly,data:p},p.start,p.close,minutes,null);
+      $('day-history-status').textContent+=hourly.status==='unavailable'?' · History unavailable':
+        p.published?' · Checking dial history':' · Checking for updates';
+    }else if(visibleSummary?.selection!==selection||visibleSummary.zone!==zone||visibleSummary.midnight!==midnight){
+      drawDay(null,null,zone,null,'Loading selected chart…');
+    }
+    return;
+  }
   if(data?.registerProfile?.points.length){
     const points=data.registerProfile.points;
     const end=Math.min(browsing?.end??completedTick(hourly.end,zone,minutes),completedTick(points.at(-1)[0],zone,minutes));
@@ -850,6 +948,7 @@ function showSummary(view){
     visibleSummary={selection,zone,midnight};
     window.AIEdgeIntegration?.renderChartHeadline?.();
     registerSummary(hourly,start,end,minutes,view);
+    if(!browsing&&hourly.savedScale!==selection){rememberWindow(hourly,selection,start,end);hourly.savedScale=selection;}
     return;
   }
   const short=browsing?browsing.fine:detail;
@@ -1230,6 +1329,7 @@ async function day(daily,headline,recent){
   latest=headline && {...headline,savedOnly:daily?.historical_only===true,historyCompatible:Boolean(key)||sameSaved,sameDailyBounds:Boolean(key) && (headline.method==='nominal_meter_movement_v1' || headline.method==='range_midpoint_v1' && !['stale','partial_coverage'].includes(headline.status)) &&
     daily?.status!=='stale' && daily.through.event_id===headline.source.event_id && daily.through.source_sha256===headline.source.source_sha256 &&
     daily.through.captured_at===headline.source.captured_at};
+  if(calendar&&(calendar.status==='loading'||calendar.data?.registerProfile?.points.length)){showDay();return;}
   requestTracked(headline);
   recentWindow=null;
   // Accept the other published range only when its final source is also the
@@ -1405,6 +1505,8 @@ function period(selectionValue,data){
     selectWindow(window,windows,browsing.hourly,browsing.anchor,next);
   }
   selection=next;rolling=data;
+  if(changed)try{sessionStorage.setItem(scaleKey,next);}catch{}
+  if(changed&&calendar?.status==='loading'&&!browsing)stageWindow(calendar);
   for(const button of $('gas-scales').querySelectorAll('[data-scale]'))
     button.setAttribute('aria-pressed',String(next===button.dataset.scale));
   if(changed)requestDetail();
@@ -1469,6 +1571,7 @@ function updateNavigation(hourly,start,end){
   const key=JSON.stringify([selection,start,end,hourly.zone,windows]);
   if(key===navKey&&!$('gas-period-row').hidden)return;
   navKey=key;navZone=hourly.zone;navWindows=windows;
+  $('gas-jump').disabled=false;
   $('gas-period-row').hidden=false;
   const index=periodIndex();
   $('gas-previous').disabled=index>=windows.length-1;
@@ -1568,5 +1671,6 @@ function registerHeadline(absolute,zone){
     absolute.upper_ft3!=null&&next>Number(absolute.upper_ft3)))return null;
   return {total:next-base[0],partial:base[4],reconciled:Math.abs(next-value)>.011};
 }
-window.AIEdgeCharts={day,period,setCalendar,registerHeadline,get hourly(){return !!calendar;}};
+window.AIEdgeCharts={day,period,setCalendar,registerHeadline,get hourly(){return !!calendar;},
+  get loadingWindow(){return calendar?.status==='loading'&&!calendar.historyStarted;}};
 })();

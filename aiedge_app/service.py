@@ -221,13 +221,15 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     self.reply({'error':'trial_request_id_invalid'},400);return
                 result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
                 self.reply(result);return
-            if route=='/api/chart-hours':
+            if route in ('/api/chart-hours','/api/chart-window'):
                 from datetime import datetime, timezone
                 from http.client import HTTPException
                 from zoneinfo import ZoneInfoNotFoundError
                 try:
                     query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,max_num_fields=2,keep_blank_values=True)
-                    if set(query)-{'end','minutes'} or len(query.get('end',[]))!=1:raise ValueError()
+                    staged=route=='/api/chart-window'
+                    if set(query)-{'end','window' if staged else 'minutes'} or len(query.get('end',[]))!=1:raise ValueError()
+                    if staged and query.get('window') not in (['1'],['6'],['12'],['24'],['today']):raise ValueError()
                     interval=query.get('minutes',['60'])
                     if interval not in (['10'],['60']):raise ValueError()
                     end=int(query['end'][0])
@@ -242,8 +244,13 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     zone=state.get('timezone') or mqtt.get('overview_timezone')
                     policy=getattr(getattr(mqtt_output,'daily',None),'evidence_policy',{}) or {}
                     document=reading_format.status()['format'] if reading_format else None
-                    result=chart_hours.snapshot(end,zone,usage,document,policy,minutes=int(interval[0]),
-                                                profile=interval==['60']) if zone and chart_hours else {}
+                    if not zone or not chart_hours:
+                        result={}
+                    elif staged:
+                        result=chart_hours.published_window(end,zone,query['window'][0],usage,document,policy)
+                    else:
+                        result=chart_hours.snapshot(end,zone,usage,document,policy,minutes=int(interval[0]),
+                                                    profile=interval==['60'])
                 except (ValueError,TypeError,KeyError,OSError,HTTPException,sqlite3.Error,ZoneInfoNotFoundError):
                     self.reply({'error':'chart_history_unavailable'},503);return
                 self.reply(result);return

@@ -364,7 +364,9 @@ function render(state) {
  $('usage-estimate').title=headline?.method==='range_midpoint_v1'?'Estimate at the midpoint of the daily range':headline?.method==='nominal_meter_movement_v1'?'Starting estimate plus meter movement':'';
  const currentHeadline = headline?.zone && headline.day === calendarDay(new Date(),headline.zone) ? headline : null;
  if(['','#overview'].includes(location.hash))window.AIEdgeCharts?.setCalendar?.(
-   mqtt?.overview_meter==='gas'?zone:null,currentHeadline?.source?.captured_at);
+   mqtt?.overview_meter==='gas'?zone:null,currentHeadline?.source?.captured_at,
+   usage.movement_history?.format?JSON.stringify([usage.movement_history.format,usage.movement_history.dial_from,
+     usage.absolute_nominal?.method,currentHeadline?.day]):null);
  if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily||usage.chart_daily,other ? null : currentHeadline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  renderChartHeadline();

@@ -345,7 +345,8 @@ function gasOverview(trend, date=Date) {
    get(id).clientWidth=500;
    get(id).addEventListener=(name,fn)=>{get(id)['on'+name]=fn;};
   }
-  Object.assign(context,{ResizeObserver:class {observe(){}},fetch:trend,AbortSignal});
+  Object.assign(context,{ResizeObserver:class {observe(){}},fetch:trend,AbortSignal,AbortController,
+    requestAnimationFrame:fn=>queueMicrotask(fn),setTimeout:fn=>queueMicrotask(fn)});
   vm.runInNewContext(fs.readFileSync(path.join(__dirname,'gas-charts.js'),'utf8'),context);
  }
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'),context);
