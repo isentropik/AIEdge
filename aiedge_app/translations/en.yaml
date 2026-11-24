@@ -1,0 +1,7 @@
+configuration:
+  capture_interval_seconds:
+    name: Photo capture interval (seconds)
+    description: Minimum time between scheduled photo requests, from 10 to 3600 seconds. If empty, the app uses the existing interval with a 10-second minimum. An active transfer finishes before the next request starts.
+  interval_seconds:
+    name: Legacy interval (seconds)
+    description: Existing setups also use this value for meter recognition. Use the photo capture interval to change how often photos are taken.

@@ -81,6 +81,13 @@ class BodyTimeout(ValueError):
         super().__init__('camera_connection_reset' if reset else 'camera_timeout')
 
 def validate_transfer_evidence(value):
+    if isinstance(value,dict) and value.get('stage')=='compact_body':
+        if (set(value)!={'stage','expected_bytes','received_bytes','expected_sha256'} or
+                type(value['expected_bytes']) is not int or not 5<=value['expected_bytes']<=32768 or
+                type(value['received_bytes']) is not int or not 0<=value['received_bytes']<value['expected_bytes'] or
+                not isinstance(value['expected_sha256'],str) or not re.fullmatch('[0-9a-f]{64}',value['expected_sha256'])):
+            raise ValueError('transfer_evidence_invalid')
+        return
     fields={'stage','expected_bytes','received_bytes','frame_id','captured_at','expected_sha256','clock_id','monotonic_us'}
     if not isinstance(value,dict) or set(value)!=fields or value['stage']!='jpeg_body':raise ValueError('transfer_evidence_invalid')
     if (type(value['expected_bytes']) is not int or not 4<=value['expected_bytes']<=4*1024*1024
@@ -405,7 +412,7 @@ def recoverable_storage(db):
 def transfer_policy_for(evidence):
     if evidence['stage']=='http_response':return HTTP_POLICY
     if evidence.get('transport_error')=='connection_reset':return RESET_POLICY
-    return {'awaiting_response':REQUEST_POLICY,'jpeg_body':TRANSFER_POLICY,
+    return {'awaiting_response':REQUEST_POLICY,'jpeg_body':TRANSFER_POLICY,'compact_body':TRANSFER_POLICY,
             'interrupted_capture':INTERRUPTION_POLICY}[evidence['stage']]
 
 

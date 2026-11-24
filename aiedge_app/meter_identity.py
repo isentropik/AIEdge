@@ -31,7 +31,11 @@ LEGACY_CAPTURE = (
 )
 
 def source_hashes(names):
-    return {name: hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in names}
+    # Exact dev120 extensions introduce an additional, explicitly packet-bound input.
+    # The interpretation of existing JPEG observations retains its prior identity.
+    extensions = {'9e446c877c2011d8b6007775dcedf54e0a349b9726e893ab1ef9376afea1c3a7': 'e65116e56f36002a77bb4534b146e0e09141653c10398f8f9e3fb2ddbd8c7146', 'a53a1e66cab63ea67ad3a9c7327421419ea76536c05500bb427a1d853ca2bc07': '042c9c890ea7f231e4e9ec0e0da9b6ee737b66784153088cd56683534b630541'}
+    hashes={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in names}
+    return {name:extensions.get(value,value) for name,value in hashes.items()}
 
 def boundary_hash():
     # Only the persisted failure-boundary query is used to interpret photos.

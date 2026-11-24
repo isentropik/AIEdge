@@ -129,6 +129,23 @@ class Archive:
             with self.store.connect() as captures:
                 # An archive enabled later can copy every surviving photo. Record
                 # expired entries separately; never acknowledge a missing JPEG as copied.
+                # Compact-only exposures have no full JPEG to archive. They keep their
+                # capture and fine observation. A retained anchor must wait for its original.
+                if captures.execute("SELECT 1 FROM sqlite_master WHERE name='compact_exposures'").fetchone():
+                    progress=cursor
+                    for eid,anchor,source in captures.execute('SELECT e.event_id,c.anchor,c.original_sha FROM capture_events e '
+                            'LEFT JOIN compact_exposures c ON c.event_id=e.event_id WHERE e.event_id>? '
+                            'ORDER BY e.event_id LIMIT 256',(cursor,)):
+                        if anchor!=0:
+                            if anchor==1 and not (self.store.root/'images'/(source+'.jpg')).is_file() and not captures.execute(
+                                    'SELECT 1 FROM retired_images WHERE sha256=?',(source,)).fetchone():
+                                if progress!=cursor:break
+                                return None
+                            break
+                        progress=eid
+                    if progress!=cursor:
+                        db.execute('UPDATE targets SET cursor=? WHERE directory=?',(progress,config['directory']))
+                        return None
                 prefix = captures.execute("""SELECT e.event_id,r.sha256 FROM capture_events e
                     JOIN frames f USING(camera,frame_id) LEFT JOIN retired_images r ON r.sha256=f.sha256
                     WHERE e.event_id>? ORDER BY e.event_id LIMIT 256""",(cursor,)).fetchall()

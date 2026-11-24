@@ -4,6 +4,7 @@ from pathlib import Path
 from capture import Camera
 
 MAX_OPTIONS = 65536
+MIN_CAPTURE_INTERVAL_SECONDS = 10
 DEFAULTS = dict(camera_url='', camera_token='', camera_username='', camera_password='',
                 capture_enabled=False, mqtt_enabled=False, mqtt_output_mode='reading', interval_seconds=30,
                 recognition_mode='FULL',event_selection_policy={},daily_evidence_policy={},
@@ -16,11 +17,18 @@ class InvalidOptions(ValueError):
         self.code, self.field = code, field
         super().__init__(code)
 
+def split_capture_schedule(options):
+    """Use a separate photo interval without changing the reader or in-flight photo identity."""
+    source_options = options.copy()
+    fallback = max(MIN_CAPTURE_INTERVAL_SECONDS, source_options['interval_seconds'])
+    interval = source_options.pop('capture_interval_seconds', fallback)
+    return interval, source_options
+
 
 def validate(document):
     if not isinstance(document, dict):
         raise InvalidOptions('options_invalid')
-    if any(key not in DEFAULTS for key in document):
+    if any(key not in DEFAULTS and key != 'capture_interval_seconds' for key in document):
         raise InvalidOptions('options_unknown_field')
     options = DEFAULTS | document
     from daily_empirical import validate as validate_daily_policy
@@ -35,6 +43,10 @@ def validate(document):
     interval = options['interval_seconds']
     if type(interval) is not int or not 6 <= interval <= 3600:
         raise InvalidOptions('options_invalid_field', 'interval_seconds')
+    if 'capture_interval_seconds' in options:
+        scheduled = options['capture_interval_seconds']
+        if type(scheduled) is not int or not MIN_CAPTURE_INTERVAL_SECONDS <= scheduled <= 3600:
+            raise InvalidOptions('options_invalid_field', 'capture_interval_seconds')
     from event_mode import validate_options
     try:validate_options(options['recognition_mode'],options['event_selection_policy'],interval)
     except (ValueError,TypeError):raise InvalidOptions('options_event_policy_invalid') from None
