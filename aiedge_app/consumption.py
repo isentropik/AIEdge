@@ -1,8 +1,8 @@
 """Durable relative consumption. Replays capture events; never fabricates turns."""
 import hashlib,json,re,sqlite3,threading,uuid
-from pathlib import Path
 import capture_clock
 import capture_recovery
+import meter_identity
 from datetime import datetime
 from accounting_native import AccountingNative
 from recognition import decode_result,MAX_RESULT_BYTES
@@ -20,13 +20,6 @@ class Consumption:
         self.observation_context=getattr(recognition,'observation_context',None)
         if self.observation_context is not None and (not isinstance(self.observation_context,str) or not re.fullmatch('[a-f0-9]{64}',self.observation_context)):
             raise ValueError('invalid_consumption_observation_context')
-        dependencies=('consumption.py','accounting_native.py','reading_format.py','capture_clock.py','recognition.py',
-                      'temporal_reading.py','reading_bounds.py','observation_support.py','capture_recovery.py')
-        contract={'native':self.native.identity,'sources':{name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in dependencies},'schema':2}
-        if self.observation_context is not None:
-            contract['observation_context']=self.observation_context
-            contract['event_sources']={name:hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest() for name in ('event_recognition.py','event_selection.py','wheel_capture_policy.py')}
-        self.engine=hashlib.sha256(json.dumps(contract,sort_keys=True).encode()).hexdigest()
         self.stop=threading.Event();self.lock=threading.Lock();self.last_error=None;self.blocked=False
         self.tracker=None;self.absolute=None;self.segment=None;self.cursor=0;self.previous=None;self.anchor=None;self.latest_accepted_full=None
         self.state={'state':'not_configured','value':None,'accuracy_verified':False,'training_allowed':False}
@@ -39,6 +32,7 @@ class Consumption:
             db.execute('CREATE TABLE IF NOT EXISTS consumption_segment_links(segment_id TEXT PRIMARY KEY,prior_segment_id TEXT NOT NULL,unresolved_gap_reason TEXT NOT NULL,first_event INTEGER NOT NULL,FOREIGN KEY(segment_id) REFERENCES consumption_segments(segment_id),FOREIGN KEY(prior_segment_id) REFERENCES consumption_segments(segment_id))')
             db.execute('SELECT segment_id,format_id,engine_id,first_event,gap_reason,document FROM consumption_segments LIMIT 0')
             db.execute('SELECT singleton,segment_id FROM consumption_active LIMIT 0')
+            self.engine = meter_identity.accounting(db, self.native.identity, self.observation_context)
             db.execute('SELECT segment_id,event_id,result FROM consumption_records LIMIT 0')
     def _drop(self):
         if self.tracker:self.tracker.close()

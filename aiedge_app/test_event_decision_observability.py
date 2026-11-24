@@ -1,5 +1,4 @@
 """Synthetic SQLite only: no capture, image decoding, models, native or network."""
-import ast
 import contextlib
 import copy
 import hashlib
@@ -12,6 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import event_observation_read as reader
+import meter_identity
 import trial_results
 import wheel_capture_policy
 
@@ -154,13 +154,11 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(self.f.read()['decision']['full_reason'],['gap'])
     def test_integrated_context_contains_getter_and_selector_and_is_new(self):
         here=Path(__file__).resolve().parent
-        body=ast.parse((here/'event_recognition.py').read_text())
-        deps=next(ast.literal_eval(node.value) for node in ast.walk(body) if isinstance(node,ast.Assign)
-                  and any(isinstance(t,ast.Name) and t.id=='deps' for t in node.targets))
+        deps=meter_identity.OBSERVATION
         self.assertIn('event_observation_read.py',deps)
         self.assertIn('selector_observation.py',deps)
         old=json.loads((here/'test_fixtures/dev29-context-source-sha256.json').read_text())
-        new={name:hashlib.sha256((here/name).read_bytes()).hexdigest() for name in deps}
+        new=meter_identity.source_hashes(deps)
         self.assertNotEqual(old,new)
         self.assertNotEqual(old['event_observation_read.py'],new['event_observation_read.py'])
         self.assertNotEqual(digest({'sources':old}),digest({'sources':new}))
