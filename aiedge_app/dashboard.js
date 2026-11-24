@@ -2,6 +2,8 @@
 'use strict';
 const $=id=>document.getElementById(id);
 const captureErrors={
+ transfer_context_changed:'Capture paused. Recovery settings or software changed after a photo transfer was interrupted. Review the gap to resume capture.',
+ unknown_capture_outcome:'Capture paused. The app could not confirm that the last photo was saved. Review the gap to resume capture.',
  ConnectionResetError:'Capture connection reset. The attempt is recorded as unknown.',
  camera_connection_reset:'Capture connection reset. The attempt is recorded as unknown.',
  duplicate_camera_header:'Camera returned repeated capture metadata. The image was rejected.',
@@ -77,6 +79,7 @@ window.addEventListener('hashchange',route);
 let busy=false,timer=null,galleryKey=null,imageHash=null,imageFailed=false;
 let historyPage=null,historyCursors=[null],historyBusy=false,historyFailed=false;
 let usageBusy=false,lastGas=null,nextHealthCheck=0,gasMode=null;
+let overviewCaptureError;
 function historyPath(){const before=historyCursors[historyCursors.length-1];return 'api/capture-history'+(before?'?before='+before:'');}
 function historyControls(){
  $('history-newer').disabled=historyBusy||historyCursors.length===1;
@@ -277,7 +280,11 @@ async function refreshUsage(){
   try {
     const state=await get('api/overview');
     acceptUsage(state);
-    if(activePage==='overview' && !$('capture-operations').open && (!compactOverview() || Date.now()>=nextHealthCheck)){
+    if(Object.hasOwn(state,'capture_error') && overviewCaptureError!==state.capture_error){
+      overviewCaptureError=state.capture_error;
+      nextHealthCheck=0;
+    }
+    if(!busy && activePage==='overview' && !$('capture-operations').open && (!compactOverview() || Date.now()>=nextHealthCheck)){
       nextHealthCheck=Date.now()+60000;
       refreshStatus();
     }

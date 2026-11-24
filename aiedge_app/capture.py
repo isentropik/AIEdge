@@ -462,8 +462,16 @@ class Collector:
                 # Commit the durable acceptance before waking the existing worker.
                 # If shutdown raced the commit, leave it stopped. A future normal
                 # startup reads the acceptance without erasing the original fault.
+                if self.transfer_attempt==result['attempt_id']:
+                    self.transfer_attempt=None
+                    self.transfer_not_before=0
+                    self.transfer_failures=0
+                if self.storage_attempt==result['attempt_id']:
+                    self.storage_attempt=None
+                    self.storage_wait=False
                 if not self.shutdown.is_set():
                     self.camera_state=dict(ready,checked_at=now())
+                    self.readiness_retry_delay=0;self.readiness_failures=0
                     self.recovery_state='waiting_for_next_slot';self.last_error=None;self.stop.clear()
                 return result
     def recovery_status(self):
