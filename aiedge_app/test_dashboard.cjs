@@ -814,6 +814,27 @@ test('wide rate buckets divide by actual DST and edge durations and suppress an 
   }
 });
 
+test('six-hour chart renders tracked partial rates, prefers complete rates and leaves unsupported hours open',async()=>{
+  const midnight=Date.parse('2026-11-23T00:00Z'),hour=3600000,at=i=>midnight+i*hour,end=at(6)+1000;
+  const hours=[{start:at(0),end:at(1),use:7,bounds:[6,8]}];
+  const partialHours=[{start:at(0),end:at(1),use:1},{start:at(1),end:at(2),use:3,bounds:[2,5]},
+    {start:at(2),end:at(3),use:2},{start:at(4),end:at(5),use:4}];
+  const trackedLevels=[0,7,10,12,13,17].map((value,i)=>[at(i),value,'day']);
+  const ui=gasOverview(async()=>response({zone:'UTC',end,midnight,minutes:60,hours,partialHours,trackedLevels,
+    dailyHours:trackedLevels.map(([t,value])=>[t,value,null,null]),groups:[],resets:[midnight]}));
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(end).toISOString());
+  ui.charts.period('6',null);
+  await tick();
+  const marks=ui.get('day-curve').children[0].children;
+  const ofClass=name=>marks.filter(n=>n.attributes.class===name).map(n=>n.attributes);
+  assert.deepEqual(ofClass('plot-usage-dot').map(n=>n['data-rate']),[7,3,2,4]);
+  assert.deepEqual(ofClass('plot-whisker').map(n=>n['data-hour-end']),[at(1),at(2)]);
+  assert(!marks.some(n=>n.attributes['data-day-series']!=null &&
+    n.attributes['data-start']<=at(3)&&n.attributes['data-end']>=at(4)));
+  assert.match(ui.get('day-history-status').textContent,/Includes partial rates/);
+});
+
 test('a closing daily reading supports earlier totals only through measured hours',async()=>{
   const midnight=Date.parse('2026-11-23T00:00Z'),hour=3600000,end=midnight+6*hour+1000;
   const hours=[2,3,5].map(i=>({start:midnight+i*hour,end:midnight+(i+1)*hour,use:2,bounds:[1,3]}));

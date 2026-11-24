@@ -146,7 +146,7 @@ class Tests(unittest.TestCase):
                (503,b'Illumination failed','camera_lighting_failed'),
                (503,b'private details','camera_unavailable'),
                (503,b'private details'*100,'camera_unavailable'),
-               (500,b'private details','camera_http_error')]
+               (500,b'private details','camera_http_500'),(418,b'private details','camera_http_418')]
         try:
             for code,body,expected in cases:
                 Fixture.status,Fixture.body=code,body
