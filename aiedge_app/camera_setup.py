@@ -1,10 +1,43 @@
 """Explicit setup photos, separate from scheduled captures and reading evidence."""
 import threading
+import time
 import uuid
 from contextlib import nullcontext
+from http.client import HTTPException
+from urllib.error import HTTPError
+from urllib.request import Request
 from capture import validate
 from capture_clock import parse as parse_clock
 from camera_control_snapshot import CameraControlSnapshot
+
+
+def check_camera_login(camera):
+    endpoint = '/auth/setup'
+    expected = b'Website password is already configured.'
+    result = dict(endpoint=endpoint, unauthenticated=None, configured_login=None,
+                  expected_body_matched=False, verified=False)
+    if not camera.basic:
+        return dict(result, error='camera_basic_login_missing')
+    deadline = time.monotonic() + 10
+    for field in ('unauthenticated', 'configured_login'):
+        authenticated = field == 'configured_login'
+        headers = {'Authorization': 'Basic ' + camera.basic} if authenticated else {}
+        request = Request(camera.origin + endpoint, headers=headers, method='GET')
+        request.aiedge_deadline = deadline
+        try:
+            with camera.opener.open(request, timeout=max(.001, deadline - time.monotonic())) as response:
+                result[field] = response.status
+                if authenticated and response.status == 200:
+                    result['expected_body_matched'] = response.read(len(expected) + 1) == expected
+        except HTTPError as exc:
+            with exc:
+                result[field] = exc.code
+        except (HTTPException, OSError, ValueError):
+            return dict(result, error='camera_login_request_failed')
+        if not authenticated and result[field] != 401:
+            return dict(result, error='camera_challenge_unverified')
+    result['verified'] = result['configured_login'] == 200 and result['expected_body_matched']
+    return result
 
 
 def image_orientation(headers):

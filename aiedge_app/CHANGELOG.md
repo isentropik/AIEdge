@@ -1,3 +1,7 @@
+## 0.2.0-dev121
+
+- An operator can check the capture client's saved camera login through Home Assistant. The check reads the camera's password status and returns the two HTTP results.
+
 ## 0.2.0-dev120
 
 - The photo capture interval is adjustable from 10 to 3,600 seconds. Existing six-second capture schedules use ten seconds while retaining their recognition settings.
