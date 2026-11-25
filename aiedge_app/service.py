@@ -89,7 +89,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 from event_mode import edit_allowed
                 try:edit_allowed(recognition)
                 except ValueError as exc:self.reply({'error':str(exc),'code':'event_selection_restart_required'},409);return
-            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/archive','/api/retention','/api/chart-photo-recovery','/api/capture-trial','/api/capture-continuation'):self.send_error(404);return
+            if route not in ('/api/setup/meter','/api/setup/reference','/api/setup/save','/api/setup/suggest-markers','/api/setup/image-edit','/api/setup/image-preview','/api/reading-format','/api/reviews','/api/camera-setup','/api/camera-login-check','/api/archive','/api/retention','/api/chart-photo-recovery','/api/capture-trial','/api/capture-continuation'):self.send_error(404);return
             try:
                 self.connection.settimeout(10)
                 length=int(self.headers.get('Content-Length','0'))
@@ -122,7 +122,12 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                                        'X-AIEdge-Preview-SHA256':hashlib.sha256(preview).hexdigest()}.items():self.send_header(name,value)
                     self.end_headers();self.wfile.write(preview);return
                 data=json.loads(body)
-                if route=='/api/capture-continuation':
+                if route=='/api/camera-login-check':
+                    from camera_setup import check_camera_login
+                    if data != {}:raise ValueError('camera_login_check_expects_empty_object')
+                    if collector is None:self.reply({'error':'capture_client_unavailable'},503);return
+                    result=check_camera_login(collector.camera)
+                elif route=='/api/capture-continuation':
                     if collector is None:self.reply({'error':'continuation_capture_disabled'},409);return
                     result=collector.continue_after_gap(data)
                 elif route=='/api/capture-trial':
