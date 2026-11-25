@@ -259,11 +259,11 @@ def update(track, store, snapshot, source, options, floor, photo_center=None, *,
     return track
 
 
-def project(prior, record, reason, snapshot, obs, daily, now, max_age):
+def project(prior, record, reason, snapshot, obs, daily, now, max_age, originals=None):
     track = (prior or {}).get("absolute_motion")
     proof = snapshot.get("_photo_register")
     store = getattr(daily, "store", None)
-    if store is None or (not track and not (proof or {}).get("bands_ft3")):
+    if store is None or (not track and not (proof or {}).get("bands_ft3") and originals is None):
         return track, False
     src = endpoint(snapshot, obs, True, now, max_age)
     if (
@@ -331,10 +331,16 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age):
             )
     elif track and state and not reason and matches_measurement(state, src):
         options = [tuple(map(number, b)) for b in state["bands_ft3"]]
-    if not track and not options:
-        return None, False
-    track = update(track, store, snapshot, src, None if gap_only else options, floor,
-                   photo_center, gap_options=options if gap_only else None)
+    before = track
+    if track or options:
+        track = update(track, store, snapshot, src, None if gap_only else options, floor,
+                       photo_center, gap_options=options if gap_only else None)
+    # Finish ordinary bounded replay first. Look for an independent original
+    # only when the saved register has stalled on an observed event.
+    support = (snapshot.get('consumption') or {}).get('observation_support') or {}
+    if (originals is not None and obs and isinstance(support.get('partial'), bool)
+            and (not track or track['source'] != src and before and track['source'] == before['source'])):
+        track = originals.recover(track, record, legacy, snapshot, src)
     if not track:
         return None, False
     latest = track["display"]

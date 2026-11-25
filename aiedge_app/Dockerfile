@@ -20,7 +20,7 @@ COPY assets ./assets
 COPY camera_control_snapshot.py camera_auto.py auto_capture.py auto_preview.py ./
 COPY retention_settings.py published_usage.py resumed_usage.py resumed_evidence.py photo_forward.py ha_gas_sensors.py nominal_daily.py nominal_motion.py optical_daily.py nominal_register.py absolute_motion.py photo_register.py dial_travel.py integration.js ./
 COPY capture_trial.py capture-trial.js ./
-COPY capture_context.py compact_capture.py ./
+COPY capture_context.py compact_capture.py original_meter.py ./
 COPY trial_results.py image_retention.py gap_images.py daily_mqtt.py daily_records.py daily_range.py daily_constraints.py daily_empirical.py recovery_range.py reviewed_photo.py recent_usage.py ./
 COPY observation_support.py wheel_capture_policy.py event_selection.py event_recognition.py event_selection_config.py event_observation_read.py selector_observation.py meter_identity.py ./
 COPY event_mode.py ha_event_selection.py event-selection-ui.js ./

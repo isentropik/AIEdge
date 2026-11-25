@@ -151,11 +151,19 @@ def photo_projection(prior, record, reason, snapshot, now, max_age):
 class AbsolutePublisher:
     def __init__(self, path):
         self.path = path
+        self.originals = None
         self.sent = None
         self.displayed = None
 
     def publish(self, output, obs, snapshot):
         key = output.config['unique_id']
+        now = datetime.now(timezone.utc)
+        max_age = max(90, getattr(output, 'interval', 0) * 3)
+        meter_snapshot, meter_obs = snapshot, obs
+        if self.originals and obs is None and snapshot.get('_daily_publication_pending'):
+            completed = self.originals.completed(snapshot, now, max_age)
+            if completed:
+                meter_snapshot, meter_obs = completed
         with closing(sqlite3.connect(self.path, timeout=1)) as db, db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('CREATE TABLE IF NOT EXISTS nominal_register (identity TEXT PRIMARY KEY, record TEXT NOT NULL)')
@@ -165,14 +173,17 @@ class AbsolutePublisher:
             if record is None:
                 proof = snapshot.get('_photo_register') or {}
                 source = proof.get('source') or {}
-                if not proof.get('bands_ft3') or not source.get('camera'):
+                if not proof.get('bands_ft3'):
+                    if not self.originals or not meter_obs:
+                        return
+                    source = (meter_snapshot.get('consumption') or {}).get('event_observation') or {}
+                if not source.get('camera'):
                     return
                 record = dict(state=None, format_id=source['format_id'],
                               source_identity=hashlib.sha256(source['camera'].encode()).hexdigest())
-            now = datetime.now(timezone.utc)
-            max_age = max(90, getattr(output, 'interval', 0) * 3)
             coarse, fresh = photo_projection(prior, record, reason, snapshot, now, max_age)
-            motion, current = project(prior, record, reason, snapshot, obs, getattr(output, 'daily', None), now, max_age)
+            motion, current = project(prior, record, reason, meter_snapshot, meter_obs, getattr(output, 'daily', None), now, max_age,
+                                      originals=self.originals)
             record = dict(record)
             if coarse:
                 record['photo_register'] = coarse

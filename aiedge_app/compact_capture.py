@@ -113,6 +113,7 @@ def initialize(db):
                'PRIMARY KEY(camera,seq))')
     db.execute('CREATE TABLE IF NOT EXISTS original_receipts(camera TEXT,seq INTEGER,frame TEXT,sha TEXT,'
                'size INTEGER,proof_sha TEXT,event_id INTEGER,PRIMARY KEY(camera,seq))')
+    db.execute('CREATE INDEX IF NOT EXISTS original_receipts_event ON original_receipts(camera,event_id)')
 
 
 def request(camera,path,*,headers=None,body=None,deadline,limit):

@@ -1,3 +1,7 @@
+## 0.2.0-dev123
+
+- The gas meter can recover after a capture gap using a verified full photo that arrived after newer fine-dial readings. It applies subsequent observations in capture order and preserves unknown usage across the gap.
+
 ## 0.2.0-dev122
 
 - A capture that ended with a busy camera can be reviewed and left as an unknown gap. After the camera reports ready, an operator can resume capture at the next scheduled slot.
