@@ -700,7 +700,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v2:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v3:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -714,6 +714,9 @@ function rememberWindow(current,scale,start,end){
     hours:data.hours.filter(q=>q.end>=from&&q.start<=end).map(({start,end,bounds})=>({start,end,bounds})),
     registerProfile:{points,openings:profile.openings,gaps:profile.gaps.filter(overlaps),
       modeled:profile.modeled.filter(overlaps),conflicts:profile.conflicts.filter(overlaps),
+      recoveredGaps:(profile.recoveredGaps??[]).filter(overlaps),unknownGaps:(profile.unknownGaps??[]).filter(overlaps),
+      supportedTicks:(profile.supportedTicks??[]).filter(t=>from<=t&&t<=end),
+      estimatedChangeBounds:(profile.estimatedChangeBounds??[]).filter(r=>from<=r[1]&&r[1]<=end),
       reconciled:profile.reconciled,ceiling:profile.ceiling,provisionalFrom:profile.provisionalFrom,
       fineBounds:profile.fineBounds.filter(overlaps),
       changeBounds:(profile.changeBounds??[]).filter(r=>from<=r[1]&&r[1]<=end)}};
@@ -809,6 +812,17 @@ function registerSummary(hourly,start,end,minutes,view){
   const edges=chartBoundaries(start,end,minutes,zone);
   const hours=new Map(data.hours.map(q=>[q.end,q]));
   const fineBounds=new Map(profile.fineBounds.map(([a,b,lo,hi])=>[a,{end:b,bounds:[lo,hi]}]));
+  const unknown=profile.unknownGaps??[], recovered=profile.recoveredGaps??[];
+  const supported=new Set(profile.supportedTicks??[]);
+  const estimatedBounds=new Map((profile.estimatedChangeBounds??[]).map(([a,b,lo,hi])=>[a+'/'+b,[lo,hi]]));
+  const insideUnknown=t=>unknown.some(([l,r])=>l<t&&t<r);
+  function missingChange(from,to){
+    if(insideUnknown(from)||insideUnknown(to))return true;
+    if(!unknown.some(([l,r])=>l<to&&from<r))return false;
+    // Independent readings at both clock boundaries can support an interval
+    // average even when the camera missed a photo inside that interval.
+    return !(supported.has(from)&&supported.has(to)) && hours.get(to)?.start!==from && fineBounds.get(from)?.end!==to;
+  }
   const changes=new Map((profile.changeBounds??[]).map(([a,b,lo,hi])=>[a+'/'+b,[lo,hi]]));
   const days=Object.keys(profile.openings).map(Number).sort((a,b)=>a-b);
   const openingAt=t=>days.findLast(day=>day<=t);
@@ -880,7 +894,7 @@ function registerSummary(hourly,start,end,minutes,view){
     run=[];
   }
   for(const t of edges){
-    const day=openingAt(t),p=total(t,baseAt(t),day);
+    const day=openingAt(t),p=insideUnknown(t)?null:total(t,baseAt(t),day);
     const stop={to:t,from:null,point:p,reset:resets.includes(t)};
     stops.set(t,stop);
     if(profile.blocked?.includes(t))flush();
@@ -895,7 +909,7 @@ function registerSummary(hourly,start,end,minutes,view){
     }
     if(!p){flush();continue;}
     extent.push(p[3]??p[1]);
-    if(run.length&&points.get(run.at(-1)[0])[3]!==points.get(t)[3])flush();
+    if(run.length&&(points.get(run.at(-1)[0])[3]!==points.get(t)[3]||missingChange(run.at(-1)[0],t)))flush();
     run.push(p);
   }
   flush();
@@ -903,15 +917,20 @@ function registerSummary(hourly,start,end,minutes,view){
     const from=i?edges[i-1]:completedTick(t-1,zone,minutes);
     if(from>=t)continue;
     const a=points.get(from),b=points.get(t),q=difference(a,b,t-from);
-    if(!q||profile.blocked?.includes(t))continue;
+    if(!q||profile.blocked?.includes(t)||missingChange(from,t))continue;
     applyIntervalBounds(q,from,t);
     useMeasuredRange(q,from,t);
+    const selected=estimatedBounds.get(from+'/'+t);
+    if(selected && selected[0]<=q.use+.000002 && q.use<=selected[1]+.000002)
+      q.bounds=[Math.max(q.bounds?.[0]??0,Math.min(selected[0],q.use)),
+                Math.min(q.bounds?.[1]??Infinity,Math.max(selected[1],q.use))];
     const gap=profile.gaps.find(([l,r])=>l<t&&t<r||l<from&&from<r)||
       profile.gaps.find(([l,r])=>r-l>=600000&&l<t&&from<r);
     const model=profile.modeled.find(([l,r])=>l<t&&t<r||l<from&&from<r);
     const conflict=!profile.reconciled || profile.conflicts.some(([a,b])=>a<t&&from<b);
     const provisional=conflict||profile.provisionalFrom!=null&&t>profile.provisionalFrom;
-    Object.assign(q,{start:from,end:t,provisional,estimated:!!(gap||model||provisional)});
+    Object.assign(q,{start:from,end:t,provisional,estimated:!!(gap||model||provisional||
+      unknown.some(([l,r])=>l<t&&from<r)||recovered.some(([l,r])=>l<t&&from<r))});
     const stop=stops.get(t);
     Object.assign(stop,{hour:q,range:q.bounds});
   }

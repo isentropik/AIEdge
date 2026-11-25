@@ -171,6 +171,10 @@ def reconcile(points, legs, bands_at, gaps, near_register, ceiling, tracked_chan
         if q['end']-q['start']==3600000 and q.get('basis') in ('fine_dial','carried_register','photo_replay') and q.get('use') is not None:
             use=round(q['use']*scale)
             add(i,j,max(0,use-1),use+1)
+    for i,j,q in accepted:
+        if q.get('basis')=='gap_flow':
+            use=round(q['use']*scale)
+            add(i,j,max(0,use-1),use+1)
     # Choose a physically possible turn while all independently bounded
     # optical changes are still enforced. A preference cannot displace them.
     attempts=0
@@ -230,12 +234,15 @@ def reconcile(points, legs, bands_at, gaps, near_register, ceiling, tracked_chan
 
     # Prefer the published register where it exists. At an outage, pin the
     # feasible endpoints before placing any intermediate tick on the line.
+    bridges=[(q['start'],q['end']) for _,_,q in accepted if q.get('basis')=='gap_flow']
     for t in sorted(near_register,reverse=True):
+        if any(a<t<b for a,b in bridges):
+            continue
         pin(index[t],points[index[t]][1])
     for t in sorted(bands_at):
         if t in index:
             pin(index[t],points[index[t]][1])
-    bridges=[(a,b) for a,b in gaps if a in index and b in index]
+    bridges.extend((a,b) for a,b in gaps if a in index and b in index)
     for a,b in bridges:
         for t in (a,b):
             pin(index[t],points[index[t]][1])
@@ -269,7 +276,7 @@ def sample(times, levels, t):
     return (a[0] + fraction*(b[0]-a[0]), a[1], b[2], a[3])
 
 
-def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, ceiling, fine_legs=(), dial=None):
+def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, ceiling, fine_legs=(), dial=None, gap_flow=()):
     """Use absolute anchors and independently measured travel. Never edit an observation."""
     raw = [p for p in registers if p[5][1] == 'photo_anchored_fine_dial']
     anchors = {}
@@ -441,9 +448,11 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
         out['openings'][midnight] = [*opening, partial] if opening else None
         day += timedelta(days=1)
     # The transport contains clock samples, not one point per camera exposure.
-    # Include both real endpoints of sizable outages so the dashed segment
-    # spans the actual interruption on zoom, and the actual latest observation.
+    # Include actual outage endpoints and the latest observation for reconciliation.
     ticks = {t for g in interruptions if g[1]-g[0] >= 600000 for t in g}
+    estimates = [dict(g,basis='gap_flow') for g in gap_flow if 'use' in g]
+    for g in estimates:
+        ticks.update((g['start'],g['end']))
     ticks.update((times[0], times[-1], stamp))
     if raw:
         ticks.add(raw[-1][0])
@@ -511,7 +520,7 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
         if left and right and left[3]==right[3] and left[0]<=right[0]:
             tracked_changes.append((a[0],b[0],right[0]-left[0]))
     try:
-        conflicts=reconcile(points,[*hours,*fine_legs],bands_at,out['gaps'],near,ceiling,tracked_changes)
+        conflicts=reconcile(points,[*hours,*fine_legs,*estimates],bands_at,out['gaps'],near,ceiling,tracked_changes)
     except InconsistentConstraints as exc:
         conflicts=None
         out['reconciliationIssue']=str(exc) or 'work limit'
@@ -519,8 +528,31 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
     out['conflicts']=conflicts or []
     if conflicts is not None:
         measured = [[q['start'],q['end'],*q['bounds']] for q in hours if q.get('bounds')]
-        out['changeBounds'] = measured_change_bounds(points,out['openings'],[*measured,*fine_bounds],conflicts)
+        gap_bounds=[[q['start'],q['end'],*q['bounds']] for q in estimates]
+        out['changeBounds'] = measured_change_bounds(points,out['openings'],[*measured,*fine_bounds,*gap_bounds],conflicts)
     by_time={p[0]:p for p in points}
+    out['recoveredGaps'],out['unknownGaps']=[],[]
+    supported=set(near)
+    selected=[]
+    for leg in [*hours,*fine_legs]:
+        if leg.get('use') is not None and leg.get('bounds') and [leg['start'],leg['end'],*leg['bounds']] not in out['conflicts']:
+            supported.update((leg['start'],leg['end']))
+    for g in gap_flow:
+        a,b=g['start'],g['end']
+        left,right=by_time.get(a),by_time.get(b)
+        if (conflicts is not None and 'use' in g and [a,b,*g['bounds']] not in conflicts
+                and left and right and left[4]==right[4]
+                and abs(right[1]-left[1]-g['use'])<=.000003):
+            out['recoveredGaps'].append([a,b,g['use']])
+            selected.append([a,b,*g['selected_bounds']])
+            supported.update(t for t in by_time if a<=t<=b)
+        else:
+            out['unknownGaps'].append([a,b])
+    out['supportedTicks']=sorted(t for t in supported if t%60000==0)
+    if selected:
+        estimated=measured_change_bounds(points,{},[*measured,*fine_bounds,*gap_bounds,*selected],conflicts)
+        out['estimatedChangeBounds']=[r for r in estimated if any(a<r[1] and r[0]<b for a,b,*_ in selected)
+                                      and r[1]-r[0] in (600000,3600000)]
     out['readingEstimates']={}
     for t in near:
         measured=sample(raw_times,raw_levels,t)
