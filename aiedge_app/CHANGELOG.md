@@ -1,3 +1,7 @@
+## 0.2.0-dev125
+
+- Recover the absolute meter from a verified saved original when the first reading after a capture break contains only the fine dial. Preserve the unknown usage during the break.
+
 ## 0.2.0-dev124
 
 - Gas charts use the larger pointer and nearby fine-dial photos to estimate usage across a failed capture when both support quiet flow. Rates are interval averages. The original capture records and published meter readings are preserved.

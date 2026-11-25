@@ -135,3 +135,44 @@ class OriginalMeterTests(unittest.TestCase):
         self.pub.displayed=None
         self.receipt()
         self.assertEqual((self.publish()['anchor_event_id'],self.publish()['event_id']),(2,4))
+
+    def test_fine_only_tip_requires_fresh_bound_evidence_and_does_not_accept_usage(self):
+        src = self.samples[4][0]
+        pipeline = self.doc['pipeline_id']
+        packet = 'b'*64
+        support = dict(schema_version=1,source_sha256=src['source_sha256'],pipeline_id=pipeline)
+        mask = [False,True]
+        inference = dict(state='estimated',dial_positions=[dict(state='unavailable'),dict(state='estimated',position=.6)],
+                         observation_support=dict(support,observed=mask),compact_packet_sha256=packet,
+                         source_sha256=src['source_sha256'],pipeline_id=pipeline)
+        raw = json.dumps(inference)
+        record = dict(event_id=4,event_observation=src,source_sha256=src['source_sha256'],format_id=self.fmt,
+                      segment_id='seg',observation_context='ctx',observation_accepted=False,state='unavailable',
+                      reason='consumption_partial_requires_full_anchor',
+                      observation_support=dict(support,partial=True,reader_observed=mask,document_observed=mask))
+        self.rec.observation_context = 'ctx'
+        with self.store.connect() as db:
+            db.execute('CREATE TABLE consumption_records(segment_id TEXT,event_id INTEGER,result TEXT)')
+            db.execute('CREATE TABLE consumption_active(singleton INTEGER,segment_id TEXT)')
+            db.execute("INSERT INTO consumption_active VALUES(1,'seg')")
+            db.execute("INSERT INTO consumption_records VALUES('seg',4,?)",(json.dumps(record),))
+            db.execute('INSERT INTO compact_exposures VALUES(?,?,?,?,?,?,?,?,?)',
+                       (4,packet,b'',src['source_sha256'],0,pipeline,1,raw,sha256(raw.encode()).hexdigest()))
+        snap = dict(format=self.doc,consumption=record,_timing_event_id=4,_publication_segment_id='seg')
+        completed = self.pub.originals.completed
+        with patch.object(original_meter,'read_batch',return_value=[{'result':dict(inference,event_observation=src)}]):
+            history, tip = completed(snap,self.now,90)
+            self.assertEqual(tip,src)
+            self.assertIs(history['consumption']['observation_accepted'],False)
+            self.assertIsNone(completed(snap,self.now+timedelta(minutes=5),90))
+            self.assertIsNone(completed(dict(snap,_publication_segment_id='other'),self.now,90))
+            self.rec.observation_context = 'other'
+            self.assertIsNone(completed(snap,self.now,90))
+            self.rec.observation_context = 'ctx'
+            with self.store.connect() as db:
+                db.execute("UPDATE consumption_records SET result=?",(json.dumps(dict(record,reason='dial_unavailable')),))
+            self.assertIsNone(completed(snap,self.now,90))
+            with self.store.connect() as db:
+                db.execute('UPDATE consumption_records SET result=?',(json.dumps(record),))
+                db.execute("UPDATE compact_exposures SET result_sha='damaged'")
+            self.assertIsNone(completed(snap,self.now,90))

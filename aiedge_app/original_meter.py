@@ -4,12 +4,14 @@ from decimal import Decimal
 import json
 
 from absolute_motion import elapsed_seconds, start, update
+from compact_capture import evidence, saved_result
 from daily_constraints import number, supported
 from dial_travel import advance_band, phases
 from event_observation_read import read_batch
 from event_selection import digest
 from mqtt_consumption import fresh_range
 from observation_support import observed_rows
+from optical_daily import endpoint
 from reading_bounds import feasible_ranges
 
 
@@ -21,11 +23,13 @@ class OriginalMeter:
         self.after = 0
 
     def completed(self, snapshot, now, max_age):
-        """Recognition can trail acquisition. Publish the completed event's own time."""
+        """Identify a completed absolute-meter input at its own exposure time."""
         from capture_recovery import publication_blocked
         doc = snapshot['format']
         latest = snapshot.get('_timing_event_id')
-        if not latest or not snapshot.get('_daily_publication_pending'):
+        waiting = snapshot.get('_daily_publication_pending') or snapshot.get('_absolute_anchor_pending')
+        missing_anchor = 'consumption_partial_requires_full_anchor'
+        if not latest or not (waiting or (snapshot.get('consumption') or {}).get('reason') == missing_anchor):
             return None
         with self.store.connect() as db:
             if not db.execute("SELECT 1 FROM sqlite_master WHERE name='compact_exposures'").fetchone():
@@ -38,9 +42,11 @@ class OriginalMeter:
                 JOIN frames f USING(camera,frame_id) JOIN capture_clocks k USING(camera,frame_id)
                 WHERE r.segment_id=(SELECT segment_id FROM consumption_active WHERE singleton=1)
                 ORDER BY r.event_id DESC LIMIT 1''').fetchone()
-            if not row or row[1] >= latest or publication_blocked(db,latest,getattr(self.store,'active_capture_attempt',None)):
+            if not row or row[1] > latest or publication_blocked(db,latest,getattr(self.store,'active_capture_attempt',None)):
                 return None
             raw, event, stamp, sha, camera, clock, segment = row
+            if snapshot.get('_publication_segment_id') not in (None,segment):
+                return None
             if not db.execute('SELECT 1 FROM capture_events e JOIN capture_clocks k USING(camera,frame_id) '
                               'JOIN compact_exposures c USING(event_id) WHERE e.event_id=? AND e.camera=? '
                               'AND k.clock_id=? AND c.pipeline=? AND e.event_id=(SELECT MAX(event_id) FROM capture_events)',
@@ -53,7 +59,7 @@ class OriginalMeter:
                 record = json.loads(raw)
             except (ValueError, TypeError):
                 return None
-            if not isinstance(record, dict):
+            if not isinstance(record, dict) or (event == latest and record.get('reason') != missing_anchor):
                 return None
             src = record.get('event_observation') or {}
             ctx = self.recognition.observation_context
@@ -64,15 +70,33 @@ class OriginalMeter:
             hist = dict(format=doc,latest=dict(captured_at=stamp,sha256=sha),consumption=record,
                         _timing_event_id=event,_publication_segment_id=segment)
             obs = fresh_range(hist,max_age,clock=now)
-            if obs is None:
-                return None
             try:
                 inf = read_batch(db,[src],doc['pipeline_id'])[0]['result']
+                if inf.get('event_observation') != src:
+                    return None
+                if obs is not None:
+                    return (hist,obs) if digest(inf) == record.get('observation_inference_sha256') else None
+                # The relative tracker lacks a full anchor. Its refusal remains
+                # in the ledger. Only the absolute meter may use this fine
+                # observation with an independently verified register position.
+                support = record.get('observation_support') or {}
+                if (record.get('state') != 'unavailable' or record.get('reason') != missing_anchor
+                        or record.get('observation_accepted') is not False or support.get('partial') is not True
+                        or support.get('source_sha256') != sha or support.get('pipeline_id') != doc['pipeline_id']
+                        or endpoint(hist,src,True,now,max_age) != src):
+                    return None
+                packet = evidence(db,event)
+                fine = doc['dials'][-1]['index']
+                if not packet or packet[4] != fine or inf.get('state') != 'estimated':
+                    return None
+                mask = [i == fine for i in range(len(doc['dials']))]
+                if (observed_rows(inf) != mask or support.get('reader_observed') != mask
+                        or support.get('document_observed') != [mask[d['index']] for d in doc['dials']]
+                        or saved_result(packet) != {k:v for k,v in inf.items() if k != 'event_observation'}):
+                    return None
             except (ValueError, TypeError, KeyError, IndexError):
                 return None
-            if inf.get('event_observation') != src or digest(inf) != record.get('observation_inference_sha256'):
-                return None
-            return hist, obs
+            return hist, src
 
     def candidates(self, doc, head, segment, after):
         # Restrict to receipts in this accounting segment. The JPEG can arrive
