@@ -1,3 +1,7 @@
+## 0.2.0-dev124
+
+- Gas charts use the larger pointer and nearby fine-dial photos to estimate usage across a failed capture when both support quiet flow. Rates are interval averages. The original capture records and published meter readings are preserved.
+
 ## 0.2.0-dev123
 
 - The gas meter can recover after a capture gap using a verified full photo that arrived after newer fine-dial readings. It applies subsequent observations in capture order and preserves unknown usage across the gap.

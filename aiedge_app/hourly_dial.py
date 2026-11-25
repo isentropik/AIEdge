@@ -106,6 +106,10 @@ class LedgerHours:
         self.photo_cache = {}
         self.lock = Lock()
 
+    def gap_flow(self,start,stamp,state,document,rate):
+        from chart_gap_flow import photo_gaps
+        return photo_gaps(self.store,start,stamp,state,document,rate)
+
     def gap_registers(self, gaps, state, document):
         """Read saved full-dial observations at the edges of substantial outages."""
         import json

@@ -270,7 +270,9 @@ class ChartHours:
                 profile = dict(p,points=[r for r in p['points'] if lower<=r[0]<=close],
                                fineBounds=[r for r in p['fineBounds'] if lower<r[1] and r[0]<close])
                 profile['changeBounds']=[r for r in p.get('changeBounds',[]) if lower<=r[1]<=close]
-                for field in ('gaps','modeled','conflicts'):
+                profile['estimatedChangeBounds']=[r for r in p.get('estimatedChangeBounds',[]) if lower<=r[1]<=close]
+                profile['supportedTicks']=[t for t in p.get('supportedTicks',[]) if lower<=t<=close]
+                for field in ('gaps','modeled','conflicts','recoveredGaps','unknownGaps'):
                     profile[field] = [r for r in p.get(field,[]) if lower<r[1] and r[0]<close]
                 for field in ('registerHead','readingEstimates'):
                     profile.pop(field,None)
@@ -572,9 +574,11 @@ class ChartHours:
                     positions={t:boundary(t) for t in fine_ticks}
                     observed=self.ledger.snapshot(fine_ticks,tracked,document,policy or {},positions,outages)
                     fine_legs.extend(measured_hours(fine_ticks,positions,observed,outages,cuts,splits,register_changes))
+            gap_flow = getattr(self.ledger,'gap_flow',None)
+            flow = gap_flow(start,stamp,tracked,document,result['flowCeiling']) if gap_flow else []
             result['registerProfile'] = register_profile(stamp, zone, registers, daily, hours, outages,
                                                           cuts, photos, result['flowCeiling'], fine_legs,
-                                                          min(document['dials'],key=lambda d:d['value_per_revolution']) if document else None)
+                                                          min(document['dials'],key=lambda d:d['value_per_revolution']) if document else None, flow)
             key = self.profile_key(zone_name,usage,document,policy)
             if key and not missing and result['registerProfile']['points']:
                 with self.profile_lock:
@@ -610,7 +614,7 @@ class BackgroundCharts:
             if hashlib.sha256(payload).hexdigest().encode() != checksum:
                 return
             version, meter, daily, key, data = json.loads(payload)
-            if (version, meter, daily) != (1, self.hours.meter, self.hours.daily):
+            if (version, meter, daily) != (2, self.hours.meter, self.hours.daily):
                 return
             if not key or not data['registerProfile']['points'] or data['missing']:
                 return
@@ -647,7 +651,7 @@ class BackgroundCharts:
         if self.stop.is_set() or data['missing'] or not data.get('registerProfile',{}).get('points'):
             return
         from setup_store import Setup
-        payload = json.dumps([1,self.hours.meter,self.hours.daily,key,data],
+        payload = json.dumps([2,self.hours.meter,self.hours.daily,key,data],
                              allow_nan=False,separators=(',',':')).encode()
         Setup._atomic(self.path, hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
         if data['registerProfile']['points'][-1][0] >= tick:
