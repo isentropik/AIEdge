@@ -455,6 +455,9 @@ def run_service(stop_signals):
             daily = DailyPublisher(store, options.get('daily_evidence_policy'),
                                    checkpoint=Path(args.data) / 'daily-supported-source.json')
             mqtt_output=MqttOutput(args.data,publication_snapshot,interval,daily=daily,performance=store.performance,output_mode=options.get('mqtt_output_mode','reading'))
+            if photo_register and hasattr(recognition, 'observation_context'):
+                from original_meter import OriginalMeter
+                mqtt_output.gas_sensors.absolute.originals = OriginalMeter(store, recognition)
         except (OSError,ValueError,UnicodeError):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     camera=None
