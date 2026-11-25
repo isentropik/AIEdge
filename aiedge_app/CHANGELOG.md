@@ -1,3 +1,7 @@
+## 0.2.0-dev122
+
+- A capture that ended with a busy camera can be reviewed and left as an unknown gap. After the camera reports ready, an operator can resume capture at the next scheduled slot.
+
 ## 0.2.0-dev121
 
 - An operator can check the capture client's saved camera login through Home Assistant. The check reads the camera's password status and returns the two HTTP results.
