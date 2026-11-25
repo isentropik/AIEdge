@@ -337,9 +337,12 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age, originals
                        photo_center, gap_options=options if gap_only else None)
     # Finish ordinary bounded replay first. Look for an independent original
     # only when the saved register has stalled on an observed event.
-    support = (snapshot.get('consumption') or {}).get('observation_support') or {}
+    consumption = snapshot.get('consumption') or {}
+    support = consumption.get('observation_support') or {}
+    waiting_for_anchor = consumption.get('reason') == 'consumption_partial_requires_full_anchor'
     if (originals is not None and obs and isinstance(support.get('partial'), bool)
-            and (not track or track['source'] != src and before and track['source'] == before['source'])):
+            and (not track or track['source'] != src and before
+                 and (waiting_for_anchor or track['source'] == before['source']))):
         track = originals.recover(track, record, legacy, snapshot, src)
     if not track:
         return None, False

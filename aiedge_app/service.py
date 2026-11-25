@@ -32,6 +32,9 @@ def publication_state(store,recognition,reading_format,consumption,photo_registe
                          and (after != event or accounted.get('event_id') != event
                               or accounted.get('state') in ('pending', 'recovering')))
     snapshot = {'_raw_meter_reading':raw_reading if not blocked and after==event else None,
+            '_absolute_anchor_pending':bool(not blocked and after==event and accounted and
+                    accounted.get('reason')=='consumption_partial_requires_full_anchor' and
+                    type(accounted.get('event_id')) is int and event is not None and accounted['event_id']<event),
             '_daily_publication_pending':daily_pending,'latest':latest,'reading':reading,'consumption':consumption_public,'format':saved['format'],'_timing_event_id':event,
             '_publication_segment_id':accounted.get('segment_id') if accounted else None}
     if photo_register is not None and consumption_public is not None:

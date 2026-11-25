@@ -160,7 +160,7 @@ class AbsolutePublisher:
         now = datetime.now(timezone.utc)
         max_age = max(90, getattr(output, 'interval', 0) * 3)
         meter_snapshot, meter_obs = snapshot, obs
-        if self.originals and obs is None and snapshot.get('_daily_publication_pending'):
+        if self.originals and obs is None:
             completed = self.originals.completed(snapshot, now, max_age)
             if completed:
                 meter_snapshot, meter_obs = completed
