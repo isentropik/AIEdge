@@ -1,3 +1,7 @@
+## 0.2.0-dev127
+
+- Evaluate photo retention in short database reads and protect capture admission while cleanup runs.
+
 ## 0.2.0-dev125
 
 - Recover the absolute meter from a verified saved original when the first reading after a capture break contains only the fine dial. Preserve the unknown usage during the break.
