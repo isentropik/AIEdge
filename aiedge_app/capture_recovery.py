@@ -255,7 +255,7 @@ def digest(value):return hashlib.sha256(canonical(value).encode()).hexdigest()
 def continuation_binding(db,ident):
     row=db.execute('SELECT a.attempt_id,a.first_event,a.after_event_id,a.started_at,o.outcome,o.event_id,o.error,o.finished_at FROM continuous_capture_attempts a JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.attempt_id=?',(ident,)).fetchone()
     if (not row or row[4:6]!=('unknown',None) or
-            row[6] not in ('camera_timeout','storage_low_space','capture_interrupted','camera_connection_reset','ConnectionResetError','camera_http_error')
+            row[6] not in ('camera_timeout','camera_busy','storage_low_space','capture_interrupted','camera_connection_reset','ConnectionResetError','camera_http_error')
             and row[6] not in TRANSIENT_ERRORS):
         raise ValueError('continuation_requires_terminal_timeout')
     try:
@@ -339,7 +339,7 @@ def continuation_review(db,first,context):
         else:raise ValueError('capture_recovery_ledger_invalid')
     if len(unknown)!=1 or not rows or rows[-1][0]!=unknown[0]:raise ValueError('continuation_requires_one_latest_unknown')
     ident=unknown[0];binding=continuation_binding(db,ident)
-    if binding['attempt'][6]=='ConnectionResetError' or binding['attempt'][6].startswith('camera_http_'):
+    if binding['attempt'][6] in ('ConnectionResetError','camera_busy') or binding['attempt'][6].startswith('camera_http_'):
         after=binding['failure_boundary'][0]
         typed_http=http_response(db,ident)
         later=db.execute('SELECT 1 FROM failures WHERE rowid>? AND (?=0 OR error!=?) LIMIT 1',
