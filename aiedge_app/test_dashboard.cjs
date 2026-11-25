@@ -104,7 +104,11 @@ test('stalled history does not hold back status rendering',async()=>{
  showCaptures(app);
  await tick();assert.equal(app.get('meter-value').textContent,'123');
  assert.equal(app.get('camera-status').textContent,'Camera ready');
+ assert.equal(app.get('history-summary').textContent,'Loading captures…');
+ assert.equal(app.get('empty-gallery').hidden,true);
  finish(response(page));await tick();assert.equal(app.get('refresh').disabled,false);
+ assert.equal(app.get('history-summary').textContent,'No stored captures');
+ assert.equal(app.get('empty-gallery').hidden,false);
 });
 test('status failure clears the current value while successful history remains available',async()=>{
  const app=fixture(async url=>{if(url==='api/status')throw new TypeError('offline');return response(page);});
@@ -464,7 +468,7 @@ test('the daily chart follows the displayed publication through delayed history,
  assert.match(chart.attributes['aria-valuetext'],/Total 0.00 ft³.*Partial coverage/);
  ui.render({daily:range(8),daily_nominal:{...partial,method:'nominal_meter_movement_v1',coverage_started_at:source(3).captured_at}});
  assert.match(ui.get('usage-assumption').textContent,/Partial coverage · Fine dial since/);
- assert.match(ui.get('usage-bounds').textContent,/^Full-day range /);
+ assert.match(ui.get('usage-bounds').textContent,/^Earlier daily range .*Meter event 8$/);
  assertEnd(10);
  ui.render({daily_nominal:{day,timezone,status:'opening_balance',value_ft3:'0.00'}});
  assert.equal(chart.dataset.endEvent,undefined);assert.equal(chart.hidden,true);

@@ -1,3 +1,7 @@
+## 0.2.0-dev128
+
+- Show weekly gas meter reading history. Identify older daily bounds, the last plotted usage data and loading capture history.
+
 ## 0.2.0-dev127
 
 - Evaluate photo retention in short database reads and protect capture admission while cleanup runs.
