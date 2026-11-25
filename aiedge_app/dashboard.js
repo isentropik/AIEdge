@@ -84,7 +84,8 @@ function historyPath(){const before=historyCursors[historyCursors.length-1];retu
 function historyControls(){
  $('history-newer').disabled=historyBusy||historyCursors.length===1;
  $('history-older').disabled=historyBusy||!historyPage?.next_before;
- $('history-summary').textContent=historyPage?.items.length?(historyCursors.length===1?'Latest captures':'Earlier captures')+' · '+historyPage.items.length:historyFailed&&!historyPage?'History unavailable':'No stored captures';
+ $('history-summary').textContent=historyPage?.items.length?(historyCursors.length===1?'Latest captures':'Earlier captures')+' · '+historyPage.items.length:historyPage?'No stored captures':historyFailed?'History unavailable':'Loading captures…';
+ $('empty-gallery').hidden=!historyPage||historyFailed||historyPage.items.length>0;
 }
 async function moveHistory(older){
  if(historyBusy)return;

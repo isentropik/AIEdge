@@ -229,6 +229,26 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                     self.reply({'error':'trial_request_id_invalid'},400);return
                 result.update(trial.availability() if trial else {'can_start':False,'block_reason':'trial_unavailable'})
                 self.reply(result);return
+            if route=='/api/register-history':
+                from datetime import date
+                from http.client import HTTPException
+                from register_history import snapshot as register_snapshot
+                try:
+                    query=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query,keep_blank_values=True,max_num_fields=2)
+                    if set(query)-{'days','end'} or query.get('days') not in (['7'],['28'],['91']):
+                        raise ValueError()
+                    until=date.fromisoformat(query['end'][0]) if 'end' in query else None
+                    if until and (until.year<1971 or until.year>9998 or query['end']!=[until.isoformat()]):
+                        raise ValueError()
+                except (ValueError,OverflowError):
+                    self.reply({'error':'invalid_history_period'},400);return
+                if not chart_hours or not mqtt_output:
+                    self.reply({'error':'register_history_unavailable'},503);return
+                try:
+                    result=register_snapshot(chart_hours.meter,mqtt_output.status(),int(query['days'][0]),until)
+                except (ValueError,TypeError,KeyError,OSError,HTTPException,OverflowError):
+                    self.reply({'error':'register_history_unavailable'},503);return
+                self.reply(result);return
             if route in ('/api/chart-hours','/api/chart-window'):
                 from datetime import datetime, timezone
                 from http.client import HTTPException
@@ -342,7 +362,7 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/css; charset=utf-8'
             elif route=='/favicon.svg':
                 body=(Path(__file__).parent/'favicon.svg').read_bytes();kind='image/svg+xml'
-            elif route in ('/gas-charts.js','/event-selection-ui.js','/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js','/integration.js'):
+            elif route in ('/register-history.js','/gas-charts.js','/event-selection-ui.js','/capture-trial.js','/notices.js','/setup.js','/meter-profile.js','/reading-format.js','/dashboard.js','/editor-geometry.js','/image-editor.js','/reference-image.js','/capture-review.js','/setup-flow.js','/camera-lighting.js','/camera-image.js','/archive.js','/integration.js'):
                 body=(Path(__file__).parent/route[1:]).read_bytes();kind='text/javascript; charset=utf-8'
             elif route.startswith('/reference/') and setup:
                 try:body=setup.reference(route.removeprefix('/reference/'));kind='image/png' if body.startswith(b'\x89PNG') else 'image/jpeg'

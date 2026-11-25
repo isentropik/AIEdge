@@ -258,14 +258,18 @@ function renderOverviewDaily(nominal, daily, meterBased=false) {
  const nativeSource = nominal.bounds_event_id ? sourceOf({event_id:nominal.bounds_event_id,
    measured_at:nominal.bounds_measured_at, source_sha256:nominal.bounds_source_sha256}) : measured;
  const nativeMatches = native && sameEvent(nativeSource, measured);
+ let rangeSource = native ? nativeSource : null;
  let bounds = native ? 'Range ' + Number(nominal.lower_ft3).toFixed(2) + '–' + Number(nominal.upper_ft3).toFixed(2) + ' ft³' + (nativeSource && !nativeMatches ? ' · ' + sourceLine(nativeSource, zone) : '') : '';
  if (ranged && daily.day === day && daily.timezone === zone && (!native ||
      (movement ? end.event_id > (nativeSource?.event_id ?? 0) || sameEvent(end,nativeSource) : sameEvent(end,measured)))) {
    bounds = 'Range ' + daily.label + (sameEvent(end, measured) ? '' : ' · ' + sourceLine(end, zone));
+   rangeSource = end;
  }
  const boundsLow=ranged&&daily.day===day?daily.lower:nominal.lower_ft3;
  const boundsHigh=ranged&&daily.day===day?daily.upper:nominal.upper_ft3;
- if(partial&&movement&&bounds&&boundPair(boundsLow,boundsHigh)&&
+ if (rangeSource && Date.parse(rangeSource.captured_at) < Date.parse(measured.captured_at)) {
+   bounds = bounds.replace(/^Range /, 'Earlier daily range ');
+ } else if(partial&&movement&&bounds&&boundPair(boundsLow,boundsHigh)&&
     (+nominal.value_ft3<+boundsLow||+nominal.value_ft3>+boundsHigh)){
    bounds=bounds.replace(/^Range /,'Full-day range ');
  }

@@ -28,6 +28,10 @@ function timeFormat(zone,style) {
 function clock(t,zone,exact=false) {
   return timeFormat(zone,exact?'exact':'minute').format(t);
 }
+function plottedThrough(stops,zone) {
+  const last=stops.findLast(s=>s.point||s.hour?.use!=null);
+  return last?'Through '+clock(last.to,zone):'No supported readings in this window';
+}
 function zonePart(format,t) {
   return format.formatToParts(t).find(p=>p.type==='timeZoneName').value;
 }
@@ -938,7 +942,7 @@ function registerSummary(hourly,start,end,minutes,view){
   const status=minutes<60?minutes+'-min averages':minutes/60+'-hour averages';
   const modeledHere=ordered.some(s=>s.hour?.estimated);
   $('day-history-status').textContent=[status,modeledHere?'Hollow dots show estimated rates':'',
-    baseAt(end)?.[4]?'Partial daily total':'','Through '+clock(end,zone)].filter(Boolean).join(' · ');
+    baseAt(end)?.[4]?'Partial daily total':'',plottedThrough(ordered,zone)].filter(Boolean).join(' · ');
   const host=$('day-curve');
   host.dataset.endTime=new Date(end).toISOString();
   if(view?.event&&!browsing)host.dataset.endEvent=String(view.event);else delete host.dataset.endEvent;
@@ -1210,7 +1214,7 @@ function showSummary(view){
     !buckets.some(q=>q.use!=null)?'No supported rate in this window':'';
   const missingHour=status==='ready'&&unknown.length===1?'Rate unknown '+clockSpan(...unknown[0],zone):'';
   $('day-history-status').textContent=[minutes<60?minutes+'-min averages':minutes/60+'-hour averages',view?.partialCoverage||browsing&&start<hourly.end-25*hourMs?'Partial daily total':'',
-    buckets.some(q=>q.partial)?'Includes partial rates':'',missingHour,message||'Through '+clock(end,zone)].filter(Boolean).join(' · ');
+    buckets.some(q=>q.partial)?'Includes partial rates':'',missingHour,message||plottedThrough(ordered,zone)].filter(Boolean).join(' · ');
   drawDay([],start,zone,key,null,midnight,null,ordered,[],null,null,null,
     {series,extent,resets,closes,edges});
 }
