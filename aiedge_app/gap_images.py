@@ -65,14 +65,16 @@ def gap_pairs(db, with_events=False):
     return [(rows[a][1],rows[b][1]) for a,b in ordered]
 
 
-def older_keep(db, eligible, pinned, slots, byte_limit=OLDER_BYTES, report=None, evidence=None):
-    sizes = dict(db.execute('SELECT sha256,MAX(bytes) FROM frames GROUP BY sha256'))
+def older_keep(db, eligible, pinned, slots, byte_limit=OLDER_BYTES, report=None, evidence=None, sizes=None):
+    if sizes is None:
+        sizes = dict(db.execute('SELECT sha256,MAX(bytes) FROM frames GROUP BY sha256'))
+    available = eligible | pinned
     kept = set()
     used = 0
     def admit(group):
         nonlocal used
         # Do not spend the bounded evidence pool on an already broken pair.
-        if not set(group) <= eligible | pinned:
+        if not set(group) <= available:
             return False
         add = set(group) & eligible - pinned - kept
         size = sum(sizes[s] for s in add)
@@ -91,7 +93,6 @@ def older_keep(db, eligible, pinned, slots, byte_limit=OLDER_BYTES, report=None,
     for image in sorted(eligible - pinned - gap_members):
         admit((image,))
     if report is not None:
-        available = eligible | pinned
         retained = kept | pinned
         closed = [p for a,b,p in evidence if a != b]
         pending = [p for a,b,p in evidence if a == b]

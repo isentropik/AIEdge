@@ -1,22 +1,38 @@
 """Fixed local image retention. Measurement rows and their source digests are permanent."""
-import re
 import hashlib
+import os
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
 
 from capture import verified_image
 from durable_file import sync_directory
-from gap_images import older_keep, gap_pairs
+from gap_images import older_keep
+from retention_history import RetentionHistory, digest_bucket, version
 from retention_settings import read as read_settings, save as save_settings
+from reviewed_photo import NAME as REVIEW_FILE
 
 RECENT_EVENTS = 500
 DEVELOPMENT_IMAGES = 250
 DIGEST = re.compile("[a-f0-9]{64}")
-# Every use of a shared JPEG must qualify. A manual capture pins its image.
-USES = """SELECT e.event_id, EXISTS(SELECT 1 FROM continuous_capture_outcomes o
-            WHERE o.event_id=e.event_id AND o.outcome='committed')
-          FROM frames f JOIN capture_events e USING(camera,frame_id) WHERE f.sha256=?"""
+
+
+class SelectionChanged(Exception):
+    """Protection inputs changed while a retention decision was being prepared."""
+
+
+def identity(path):
+    try:
+        st = path.lstat()
+        return st.st_dev, st.st_ino, st.st_mode, st.st_size, st.st_mtime_ns, st.st_ctime_ns
+    except FileNotFoundError:
+        return None
+
+
+def archive_cursor(db):
+    return db.execute("SELECT MIN(cursor) FROM ar.targets WHERE inflight IS NOT NULL OR directory IN "
+                      "(SELECT directory FROM ar.settings WHERE enabled=1)").fetchone()[0]
 
 
 class ImageRetention:
@@ -27,6 +43,11 @@ class ImageRetention:
         self.photo_register = photo_register
         self.reading_format = reading_format
         self.stop = threading.Event()
+        self.history = RetentionHistory()
+        self.plan_lock = threading.Lock()
+        self.image_facts = {}
+        self.fact_versions = {}
+        self.fact_schema = None
 
     def settings(self):
         with self.store.lock:
@@ -71,85 +92,138 @@ class ImageRetention:
         values.update(r['source_sha256'] for r in load(self.store.root))
         return values
 
-    def _candidates(self, db, cutoff, report=None):
+    def file_version(self):
+        return tuple(identity(self.store.root/name) for name in (
+            'images', 'references', 'retention-pins.txt', REVIEW_FILE, 'image-retention.json'))
+
+    def _refresh_images(self, db, files):
+        revisions = dict(db.execute('SELECT page,revision FROM retention_pages WHERE page<=-2'))
+        facts = self.image_facts
+        if self.fact_schema!=self.history.schema or self.fact_versions.get(-2)!=revisions.get(-2):
+            facts = {}
+        changed = [image for image in files if image not in facts or
+                   self.fact_versions.get(digest_bucket(image))!=revisions.get(digest_bucket(image))]
+        current = {image:facts[image] for image in files if image in facts}
+        for offset in range(0,len(changed),128):
+            batch = changed[offset:offset+128]
+            current.update(dict.fromkeys(batch))
+            placeholders = ','.join('?' for _ in batch)
+            rows = db.execute(f"""SELECT e.event_id, f.sha256, f.bytes, f.training_allowed,
+                EXISTS(SELECT 1 FROM continuous_capture_outcomes o WHERE o.event_id=e.event_id AND o.outcome='committed'),
+                EXISTS(SELECT 1 FROM human_reviews h WHERE h.sha256=f.sha256),
+                EXISTS(SELECT 1 FROM retired_images r WHERE r.sha256=f.sha256 AND r.pending=0)
+                FROM frames f LEFT JOIN capture_events e USING(camera,frame_id)
+                WHERE f.sha256 IN ({placeholders})""",batch).fetchall()
+            for event,image,size,training,ordinary,reviewed,retired in rows:
+                maximum, latest, protect = current[image] or (0,None,False)
+                if event is not None and not retired:
+                    if not DIGEST.fullmatch(image):
+                        raise ValueError("retention digest invalid")
+                    latest = event if latest is None else max(latest,event)
+                    protect = protect or training or not ordinary or reviewed
+                current[image] = max(size,maximum),latest,protect
+        self.image_facts, self.fact_versions, self.fact_schema = current, revisions, self.history.schema
+
+    def _selection(self, db, cutoff, evidence, report):
         pinned = self.pins()
         eligible = set()
-        rows = db.execute("""SELECT e.event_id, f.sha256, f.training_allowed,
-            EXISTS(SELECT 1 FROM continuous_capture_outcomes o WHERE o.event_id=e.event_id AND o.outcome='committed'),
-            EXISTS(SELECT 1 FROM human_reviews h WHERE h.sha256=f.sha256),
-            EXISTS(SELECT 1 FROM retired_images r WHERE r.sha256=f.sha256 AND r.pending=0)
-            FROM capture_events e JOIN frames f USING(camera,frame_id) ORDER BY e.event_id""")
-        for event, image, training, ordinary, reviewed, retired in rows:
-            if retired:
+        sizes = {}
+        with os.scandir(self.store.root/'images') as listing:
+            files = {f.name[:-4] for f in listing if f.name.endswith('.jpg') and len(f.name)>=6 and f.is_file(follow_symlinks=False)}
+        try:
+            with os.scandir(self.store.root/'references') as listing:
+                references = {f.name[:-6] for f in listing if f.name.endswith('.image') and os.path.exists(f.path)}
+        except FileNotFoundError:
+            references = set()
+        self._refresh_images(db,files)
+        for image,facts in self.image_facts.items():
+            if facts is None:
                 continue
-            if not DIGEST.fullmatch(image):
-                raise ValueError("retention digest invalid")
-            if (event > cutoff or training or not ordinary or reviewed
-                    or (self.store.root/"references"/(image+".image")).exists()):
-                pinned.add(image)
-            else:
-                eligible.add(image)
-        present = {s for s in eligible | pinned
-                   if (self.store.root/'images'/(s+'.jpg')).is_file()
-                   and not (self.store.root/'images'/(s+'.jpg')).is_symlink()}
+            sizes[image],latest,protect = facts
+            if latest is not None:
+                if latest>cutoff or protect or image in references:
+                    pinned.add(image)
+                else:
+                    eligible.add(image)
+        present = (eligible | pinned).intersection(files)
         settings = read_settings(self.store.root)
         config = settings['config']
         # Existing gap evidence never competes with discretionary development photos.
         # Keep a surviving endpoint even when its counterpart was already lost.
-        evidence = gap_pairs(db, with_events=True)
         gap_members = {s for _,_,pair in evidence for s in pair} & present
         pinned.update(gap_members)
         slots = config['older_images'] if settings['revision'] != 'default' else DEVELOPMENT_IMAGES
         keep = older_keep(db, eligible & present, pinned & present, slots,
-                          byte_limit=config['older_megabytes'] * 1024**2, report=report, evidence=evidence)
+                          byte_limit=config['older_megabytes'] * 1024**2, report=report, evidence=evidence, sizes=sizes)
         if report is not None:
-            sizes = dict(db.execute('SELECT sha256,MAX(bytes) FROM frames GROUP BY sha256'))
             report.update(protected_gap_images=len(gap_members),
                           protected_gap_bytes=sum(sizes[s] for s in gap_members),
                           present_images=len(present), present_bytes=sum(sizes[s] for s in present),
                           policy='preserve_existing_gap_endpoints', settings_revision=settings['revision'])
-        return sorted((eligible & present) - pinned - keep)
+        return (eligible & present) - pinned - keep
+
+    def _plan(self, db, limit=None, archive=False, report=None):
+        with self.plan_lock:
+            return self._read_plan(db,limit,archive,report)
+
+    def _read_plan(self, db, limit, archive, report):
+        consumed = (self.consumption.status().get("event_id") or 0) if self.consumption is not None else None
+        if archive:
+            db.execute('ATTACH DATABASE ? AS ar',(str(self.archive.root/'archive.sqlite3'),))
+        for _ in range(3):
+            token,head,gaps = self.history.snapshot(db)
+            files = self.file_version()
+            cutoff = head - self.recent_events()
+            cursor = archive_cursor(db) if archive else None
+            for bound in (limit, consumed, cursor):
+                if bound is not None:
+                    cutoff = min(cutoff,bound)
+            allowed = self._selection(db,cutoff,gaps,report)
+            if token==version(db) and files==self.file_version():
+                return cutoff,allowed,(token,files,cursor)
+        raise SelectionChanged()
+
+    def _candidates(self, db, cutoff, report=None):
+        return sorted(self._plan(db,cutoff,report=report)[1])
 
     def candidates(self):
-        # Query worker status before taking the SQLite lock (worker lock order).
-        consumed = (self.consumption.status().get("event_id") or 0) if self.consumption is not None else None
         with self.store.connect() as db:
-            db.execute("BEGIN")
-            head = db.execute("SELECT COALESCE(MAX(event_id),0) FROM capture_events").fetchone()[0]
-            cutoff = head - self.recent_events()
-            if consumed is not None:
-                cutoff = min(cutoff, consumed)
-            return cutoff, self._candidates(db, cutoff)
+            cutoff,allowed,_ = self._plan(db)
+            return cutoff,sorted(allowed)
+
+    def _current(self, db, stamp):
+        return stamp==(version(db),self.file_version(),archive_cursor(db))
+
+    def _protected(self, db, image, cutoff):
+        if (self.store.root/'references'/(image+'.image')).exists():
+            return True
+        return db.execute("""SELECT 1 FROM frames f JOIN capture_events e USING(camera,frame_id)
+            WHERE f.sha256=? AND (e.event_id>? OR NOT EXISTS
+            (SELECT 1 FROM continuous_capture_outcomes o WHERE o.event_id=e.event_id AND o.outcome='committed'))
+            UNION ALL SELECT 1 FROM frames WHERE sha256=? AND training_allowed!=0
+            UNION ALL SELECT 1 FROM human_reviews WHERE sha256=? LIMIT 1""",(image,cutoff,image,image)).fetchone() is not None
 
     def retire(self, images, cutoff):
         # A committed intent survives power loss. Admission and review use the
         # same SQLite writer boundary. New captures can safely reuse a digest.
-        with self.archive.lock, self.store.lock, self.store.connect() as db:
-            db.execute("ATTACH DATABASE ? AS ar",(str(self.archive.root/"archive.sqlite3"),))
-            db.execute("BEGIN IMMEDIATE")
-            cursors = db.execute("SELECT MIN(cursor) FROM ar.targets WHERE inflight IS NOT NULL OR directory IN (SELECT directory FROM ar.settings WHERE enabled=1)").fetchone()[0]
-            if cursors is not None:
-                cutoff = min(cutoff, cursors)
-            allowed = set(self._candidates(db, cutoff))
-            for image in images:
-                if image not in allowed:
-                    continue
-                uses = db.execute(USES,(image,)).fetchall()
-                if not uses or any(event > cutoff or not ordinary for event,ordinary in uses):
-                    continue
-                if db.execute("SELECT 1 FROM human_reviews WHERE sha256=? LIMIT 1",(image,)).fetchone():
-                    continue
-                if db.execute("SELECT 1 FROM frames WHERE sha256=? AND training_allowed!=0 LIMIT 1",(image,)).fetchone():
-                    continue
+        with self.store.connect() as db:
+            cutoff,allowed,stamp = self._plan(db,cutoff,archive=True)
+            verified = {}
+            for image in allowed.intersection(images):
                 path = self.store.root/"images"/(image+".jpg")
-                if path.is_symlink() or (self.store.root/"references"/(image+".image")).exists():
-                    continue
+                before = identity(path)
                 verified_image(path,image)
-                db.execute("INSERT OR IGNORE INTO retired_images VALUES(?,1)",(image,))
-            db.commit()
+                verified[image] = before
+            with self.archive.lock,self.store.lock:
+                db.execute('BEGIN IMMEDIATE')
+                if self._current(db,stamp):
+                    for image,before in verified.items():
+                        if (before is not None and before==identity(self.store.root/'images'/(image+'.jpg'))
+                                and not self._protected(db,image,cutoff)):
+                            db.execute('INSERT OR IGNORE INTO retired_images VALUES(?,1)',(image,))
+                db.commit()
 
     def finish_pending(self):
-        consumed = (self.consumption.status().get("event_id") or 0) if self.consumption is not None else None
         # Read and fit outside the capture and archive writer locks. Only delete
         # intents examined in this batch, and recheck them under the writer lock.
         with self.store.connect() as db:
@@ -166,37 +240,30 @@ class ImageRetention:
                     path=self.store.root/'images'/(digest+'.jpg')
                     if path.is_file() and not path.is_symlink():
                         preserve_photo(self.store,self.photo_register,document,digest,verified_image(path,digest))
-        with self.archive.lock, self.store.lock, self.store.connect() as db:
-            db.execute("ATTACH DATABASE ? AS ar",(str(self.archive.root/"archive.sqlite3"),))
-            db.execute("BEGIN IMMEDIATE")
-            placeholders=','.join('?' for _ in pending)
-            rows = db.execute("SELECT sha256 FROM retired_images WHERE pending=1 AND sha256 IN ("+placeholders+")",pending).fetchall()
-            if not rows:
-                return 0
-            head = db.execute("SELECT COALESCE(MAX(event_id),0) FROM capture_events").fetchone()[0]
-            cutoff = head - self.recent_events()
-            if consumed is not None:
-                cutoff = min(cutoff, consumed)
-            cursor = db.execute("SELECT MIN(cursor) FROM ar.targets WHERE inflight IS NOT NULL OR directory IN (SELECT directory FROM ar.settings WHERE enabled=1)").fetchone()[0]
-            if cursor is not None:
-                cutoff = min(cutoff, cursor)
-            allowed = set(self._candidates(db, cutoff))
-            completed = []
-            for image, in rows:
-                if not DIGEST.fullmatch(image):
-                    raise ValueError("retirement intent invalid")
-                path = self.store.root/"images"/(image+".jpg")
-                # A new failure/pin may arrive after the durable delete intent.
-                # Cancel only an unexecuted intent, never claim an absent photo.
-                if image not in allowed and path.exists():
-                    db.execute("DELETE FROM retired_images WHERE sha256=? AND pending=1", (image,))
-                    continue
-                path.unlink(missing_ok=True)
-                completed.append((image,))
-            if rows:
-                sync_directory(self.store.root/"images")
-                db.executemany("UPDATE retired_images SET pending=0 WHERE sha256=?",completed)
-            return len(rows)
+        with self.store.connect() as db:
+            cutoff,allowed,stamp = self._plan(db,archive=True)
+            with self.archive.lock,self.store.lock:
+                db.execute('BEGIN IMMEDIATE')
+                if not self._current(db,stamp):
+                    db.rollback()
+                    return 0
+                completed = []
+                for image in pending:
+                    if not DIGEST.fullmatch(image):
+                        raise ValueError("retirement intent invalid")
+                    if not db.execute('SELECT 1 FROM retired_images WHERE sha256=? AND pending=1',(image,)).fetchone():
+                        continue
+                    path = self.store.root/'images'/(image+'.jpg')
+                    if path.is_symlink() or (path.exists() and (image not in allowed or self._protected(db,image,cutoff))):
+                        db.execute('DELETE FROM retired_images WHERE sha256=? AND pending=1',(image,))
+                    else:
+                        path.unlink(missing_ok=True)
+                        completed.append((image,))
+                if completed:
+                    sync_directory(self.store.root/'images')
+                    db.executemany('UPDATE retired_images SET pending=0 WHERE sha256=?',completed)
+                db.commit()
+                return len(pending)
 
     def sweep(self):
         while self.finish_pending() and not self.stop.is_set():
@@ -213,7 +280,6 @@ class ImageRetention:
         report = {'checked_at':datetime.now(timezone.utc).isoformat(),
                   'recent_events':self.recent_events(), 'protected_exceptions':True}
         with self.store.connect() as db:
-            db.execute('BEGIN')
             self._candidates(db, cutoff, report)
         self.store.retention_evidence = report
 
@@ -222,6 +288,8 @@ class ImageRetention:
             try:
                 self.sweep()
                 self.store.retention_error = None
+            except SelectionChanged:
+                pass  # Re-evaluate the pending work on the next sweep.
             except (OSError, ValueError, sqlite3.Error):
                 self.store.retention_error = "image_retention_incomplete"
             self.stop.wait(30)
