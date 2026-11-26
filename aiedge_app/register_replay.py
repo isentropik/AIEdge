@@ -29,13 +29,10 @@ def seed(db, doc, identity, originals=None):
     if source['format_id'] != validate(doc)[1]:
         return None
     dials = doc['dials']
-    if observed_rows(inf) == [True] * len(dials):
-        bands = full_bands(inf, doc)
-    elif originals:
+    bands = full_bands(inf, doc) if observed_rows(inf) == [True] * len(dials) else []
+    if not bands and originals:
         sample = phases(db, event, event, doc, source).get(event)
         bands = originals.read_bands(doc, source, sample[1]) if sample and sample[0] == source else None
-    else:
-        return None
     if bands:
         return source, (bands[0][0], bands[-1][1])
 

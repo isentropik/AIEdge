@@ -480,7 +480,7 @@ def run_service(stop_signals):
             mqtt_output=MqttOutput(args.data,publication_snapshot,interval,daily=daily,performance=store.performance,output_mode=options.get('mqtt_output_mode','reading'))
             if photo_register and hasattr(recognition, 'observation_context'):
                 from original_meter import OriginalMeter
-                mqtt_output.gas_sensors.absolute.originals = OriginalMeter(store, recognition)
+                mqtt_output.gas_sensors.absolute.originals = OriginalMeter(store, recognition, photo_register)
         except (OSError,ValueError,UnicodeError):
             configuration={'state':'invalid','code':'mqtt_identity_unavailable'};enabled=False
     camera=None

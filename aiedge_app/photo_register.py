@@ -265,8 +265,14 @@ def hundreds(profile, ref, img, doc, positions, indices):
     # correction also requires an independently visible printed index.
     wrapped = confirmed == [False, True] and positions[-3] - fitted[-3] >= 9
     correction = abs(displacement(fitted[-3], positions[-3]))
+    # Small offsets can make adjacent model bands disjoint at a carry. A
+    # visible index and two corroborated face measurements still establish a
+    # register range. Keep each fit's measured spread in that intersection.
+    corroborated = all(abs(displacement(f["photo"], f["model"])) <=
+                       dials[j]["position_error"] + f["half_spread"]
+                       for j, f in zip((-3, -2), details))
     if not wrapped and not (indexed and confirmed[-1] and correction <= 1
-                            and (covered or correction >= dials[-3]["position_error"])):
+                            and (covered or corroborated or correction >= dials[-3]["position_error"])):
         return None
     result = feasible_ranges(scales, fitted, errors)
     if result["state"] != "bounded" or result.get("wraps_register"):
@@ -292,6 +298,22 @@ class PhotoRegister:
         self.store = store
         self.setup = setup
         self.reference = lru_cache(maxsize=1)(lambda digest: gray(setup.reference(digest)))
+
+    def fit_original(self, doc, inf, blob, indices):
+        """Measure both conflicting pointers on the same calibrated original."""
+        profile_state = self.setup.status()
+        profile = profile_state["calibration"]
+        if (doc.get("unit") != "ft3" or profile_state["revision"] != inf.get("profile")
+                or len(profile["dials"]) != len(doc["dials"])
+                or hashlib.sha256(blob).hexdigest() != inf["source_sha256"]):
+            return None
+        positions = [inf["dial_positions"][d["index"]]["position"] for d in doc["dials"]]
+        if not all(type(v) in (int, float) and isfinite(v) and 0 <= v < 10 for v in positions):
+            return None
+        reference = profile["reference_sha256"]
+        found = hundreds(profile, self.reference(reference), gray(blob), doc, positions, indices)
+        if found:
+            return dict(found, reference_sha256=reference)
 
     def check(self, snap, inf, *, image=None):
         raw = snap.get("_raw_meter_reading") or {}
@@ -349,25 +371,9 @@ class PhotoRegister:
                 or not src["clock_id"]
             ):
                 return None
-            setup = self.setup.status()
-            profile = setup["calibration"]
-            if setup["revision"] != inf["profile"] or len(profile["dials"]) != len(doc["dials"]):
-                return None
-            positions = [inf["dial_positions"][d["index"]]["position"] for d in doc["dials"]]
-            if not all(type(v) in (int, float) and isfinite(v) and 0 <= v < 10 for v in positions):
-                return None
             blob = self.store.image(sha) if image is None else image
-            if hashlib.sha256(blob).hexdigest() != sha:
-                return None
-            found = hundreds(
-                profile,
-                self.reference(profile["reference_sha256"]),
-                gray(blob),
-                doc,
-                positions,
-                raw["consistency"]["dial_indices"],
-            )
+            found = self.fit_original(doc, inf, blob, raw["consistency"]["dial_indices"])
             if found:
-                return dict(found, source=dict(src), reference_sha256=profile["reference_sha256"])
+                return dict(found, source=dict(src))
         except (OSError, ValueError, TypeError, KeyError, IndexError, ArithmeticError):
             return None
