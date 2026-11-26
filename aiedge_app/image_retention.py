@@ -60,8 +60,12 @@ class ImageRetention:
         with self.archive.lock, self.store.lock:
             return save_settings(self.store.root, config, revision)
 
+    def _preserve_original_dials(self, document, digest, image):
+        from original_dials import preserve
+        return preserve(self.store, self.reading_format.recognition, self.photo_register, document, digest, image)
+
     def recover_chart_photo(self, image):
-        """Recompute a chart observation only for an original, already expired JPEG."""
+        """Recover numeric evidence from a matching, already expired original."""
         from hourly_photo import preserve_photo
         if self.photo_register is None or self.reading_format is None:
             raise ValueError('photo_reader_unavailable')
@@ -73,9 +77,10 @@ class ImageRetention:
         if not document or document['unit']!='ft3':
             raise ValueError('gas_reading_format_unavailable')
         count=preserve_photo(self.store,self.photo_register,document,digest,image)
-        if not count:
+        supported=self._preserve_original_dials(document,digest,image)
+        if not count and not supported:
             raise ValueError('photo_has_no_supported_register')
-        return dict(source_sha256=digest,verified_anchors=count)
+        return dict(source_sha256=digest,verified_anchors=count,meter_evidence=supported)
 
     def recent_events(self):
         saved = read_settings(self.store.root)
@@ -212,7 +217,11 @@ class ImageRetention:
             for image in allowed.intersection(images):
                 path = self.store.root/"images"/(image+".jpg")
                 before = identity(path)
-                verified_image(path,image)
+                blob = verified_image(path,image)
+                if self.photo_register is not None:
+                    document = self.reading_format.status()['format']
+                    if document and document['unit']=='ft3':
+                        self._preserve_original_dials(document,image,blob)
                 verified[image] = before
             with self.archive.lock,self.store.lock:
                 db.execute('BEGIN IMMEDIATE')
@@ -239,7 +248,10 @@ class ImageRetention:
                         raise ValueError("retirement intent invalid")
                     path=self.store.root/'images'/(digest+'.jpg')
                     if path.is_file() and not path.is_symlink():
-                        preserve_photo(self.store,self.photo_register,document,digest,verified_image(path,digest))
+                        blob = verified_image(path,digest)
+                        preserve_photo(self.store,self.photo_register,document,digest,blob)
+                        # Also repair an intent left pending by an earlier version.
+                        self._preserve_original_dials(document,digest,blob)
         with self.store.connect() as db:
             cutoff,allowed,stamp = self._plan(db,archive=True)
             with self.archive.lock,self.store.lock:

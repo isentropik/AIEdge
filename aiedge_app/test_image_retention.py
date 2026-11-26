@@ -11,6 +11,19 @@ from test_capture import headers
 
 
 class ImageRetentionTests(unittest.TestCase):
+    def test_measurement_write_failure_keeps_jpeg_available_to_meter(self):
+        from types import SimpleNamespace
+        self.worker.photo_register = object()
+        self.worker.reading_format = SimpleNamespace(status=lambda: {'format': {'unit': 'ft3'}})
+        cutoff, candidates = self.worker.candidates()
+        digest = candidates[0]
+        with patch.object(self.worker, '_preserve_original_dials', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                self.worker.retire([digest], cutoff)
+        self.assertEqual(self.store.image(digest), self.blobs[digest][1])
+        with self.store.connect() as db:
+            self.assertIsNone(db.execute('SELECT pending FROM retired_images WHERE sha256=?',(digest,)).fetchone())
+
     @patch('hourly_photo.preserve_photo',side_effect=OSError('storage unavailable'))
     def test_anchor_write_failure_keeps_photo_and_pending_intent(self,save):
         from types import SimpleNamespace

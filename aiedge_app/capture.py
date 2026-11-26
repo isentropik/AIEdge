@@ -72,6 +72,9 @@ class Store:
             db.execute('CREATE INDEX IF NOT EXISTS capture_events_camera ON capture_events(camera,event_id)')
             db.execute('CREATE INDEX IF NOT EXISTS frames_sha256 ON frames(sha256)')
             db.execute('CREATE TABLE IF NOT EXISTS retired_images(sha256 TEXT PRIMARY KEY,pending INTEGER NOT NULL CHECK(pending IN (0,1)))')
+            db.execute('CREATE TABLE IF NOT EXISTS original_dial_evidence (source_sha TEXT NOT NULL, '
+                       'format_id TEXT NOT NULL, record TEXT NOT NULL, record_sha TEXT NOT NULL, '
+                       'PRIMARY KEY(source_sha,format_id))')
             db.execute('CREATE TABLE IF NOT EXISTS register_photo_anchors (event_id INTEGER NOT NULL, '
                        'format_id TEXT NOT NULL, calibration TEXT NOT NULL, source_sha TEXT NOT NULL, '
                        'context TEXT NOT NULL, level TEXT NOT NULL, lower_ft3 TEXT NOT NULL, upper_ft3 TEXT NOT NULL, '

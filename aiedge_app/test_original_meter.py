@@ -98,6 +98,55 @@ class OriginalMeterTests(unittest.TestCase):
         self.pub.publish(self.out,obs,snap)
         return self.pub.displayed[1]
 
+    def retained_photo(self):
+        from original_dials import preserve
+        source, phase = self.samples[2]
+        digest = source['source_sha256']
+        image = self.store.image(digest)
+        faces = SimpleNamespace(setup=SimpleNamespace(status=lambda:dict(revision='cal')))
+        self.reader.read_jpeg = lambda data: dict(self.read(data), profile='cal')
+        direct = self.pub.originals.read_bands(self.doc, source, phase)
+        self.assertTrue(direct)
+        self.assertTrue(preserve(self.store,self.rec,faces,self.doc,digest,image))
+        self.assertTrue(preserve(self.store,self.rec,faces,self.doc,digest,image))
+        with self.store.connect() as db:
+            db.execute('INSERT INTO retired_images VALUES(?,0)',(digest,))
+        (self.store.root/'images'/(digest+'.jpg')).unlink()
+        return source, phase, direct
+
+    def test_expired_evidence_requires_receipt_and_same_phase_format_and_checksum(self):
+        source, phase, expected = self.retained_photo()
+        meter = self.pub.originals
+        self.assertEqual(meter.read_bands(self.doc,source,phase),expected)
+        self.assertEqual(meter.read_bands(self.doc,source,(Decimal(2),Decimal(2))),[])
+        self.assertEqual(meter.read_bands(self.doc,dict(source,format_id='other'),phase),[])
+        self.assertEqual(self.publish()['event_id'],1)
+        self.receipt()
+        with self.store.connect() as db:
+            db.execute("UPDATE original_dial_evidence SET record_sha='damaged'")
+        self.assertEqual(self.publish()['event_id'],1)
+
+    def test_expired_evidence_recovers_after_restart_without_filling_failed_capture(self):
+        self.receipt()
+        self.retained_photo()
+        self.pub = AbsolutePublisher(self.checkpoint)
+        self.pub.originals = original_meter.OriginalMeter(Store(self.store.root),self.rec)
+        shown = self.publish()
+        self.assertEqual((shown['event_id'],shown['anchor_event_id'],Decimal(shown['value_ft3'])),
+                         (4,2,Decimal('100.29')))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT delta FROM consumption_segment_links WHERE first_event=2').fetchone(),(None,))
+
+    def test_calibration_mismatch_prevents_evidence_commit(self):
+        from original_dials import preserve
+        digest = self.samples[2][0]['source_sha256']
+        self.reader.read_jpeg = lambda data: dict(self.read(data), profile='other')
+        faces = SimpleNamespace(setup=SimpleNamespace(status=lambda:dict(revision='cal')))
+        with self.assertRaisesRegex(ValueError,'calibration_changed'):
+            preserve(self.store,self.rec,faces,self.doc,digest,self.store.image(digest))
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM original_dial_evidence').fetchone(),(0,))
+
     def test_late_receipt_reanchors_then_replays_and_survives_restart(self):
         self.assertEqual(self.publish()['event_id'],1)
         self.receipt()

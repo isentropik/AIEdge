@@ -371,8 +371,21 @@ class PhotoRegister:
                 or not src["clock_id"]
             ):
                 return None
-            blob = self.store.image(sha) if image is None else image
-            found = self.fit_original(doc, inf, blob, raw["consistency"]["dial_indices"])
+            try:
+                blob = self.store.image(sha) if image is None else image
+            except FileNotFoundError:
+                from original_dials import saved
+                with self.store.connect() as db:
+                    evidence = saved(db, sha, src["format_id"], doc["pipeline_id"])
+                positions = [inf["dial_positions"][d["index"]]["position"] for d in doc["dials"]]
+                if (not evidence or not evidence.get("fits") or evidence["positions"] != positions
+                        or evidence["calibration"] != inf.get("profile")
+                        or self.setup.status()["revision"] != evidence["calibration"]):
+                    return None
+                keys = ("bands_ft3", "fits", "reference_sha256", "photo_center_ft3", "register_ft3", "resolution_ft3")
+                found = {key: evidence[key] for key in keys if key in evidence}
+            else:
+                found = self.fit_original(doc, inf, blob, raw["consistency"]["dial_indices"])
             if found:
                 return dict(found, source=dict(src))
         except (OSError, ValueError, TypeError, KeyError, IndexError, ArithmeticError):

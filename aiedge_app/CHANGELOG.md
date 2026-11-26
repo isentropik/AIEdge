@@ -1,3 +1,7 @@
+## 0.2.0-dev134
+
+- Keep the dial positions, calibrated pointer fits and allowed register readings when a gas-meter photo expires. Meter recovery can reuse that exposure after a restart. An archived original can restore the same evidence for a previously expired photo.
+
 ## 0.2.0-dev133
 
 - Recover the absolute meter after a capture gap when the saved full photo independently resolves a conflict between the 10,000 and 1,000 ft³ dials. Check the fitted register against the fine dial from that same exposure. The failed capture remains unknown.
