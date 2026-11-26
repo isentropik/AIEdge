@@ -27,7 +27,7 @@ COPY event_mode.py ha_event_selection.py event-selection-ui.js ./
 COPY image_edit.py image-editor.js ./
 COPY meter_profile.py meter-profile.js ./
 COPY notices.js ./
-COPY gas_trend.py chart_coverage.py tracked_bounds.py chart_hours.py chart_gap_flow.py register_chart.py chart_rate_photos.py optical_rate.py hourly_dial.py hourly_photo.py meter_history.py register_history.py register-history.js gas_periods.py gas-charts.js ./
+COPY gas_trend.py chart_coverage.py tracked_bounds.py chart_hours.py chart_gap_flow.py chart_gap_original.py register_chart.py chart_rate_photos.py optical_rate.py hourly_dial.py hourly_photo.py meter_history.py register_history.py register-history.js gas_periods.py gas-charts.js ./
 COPY archive.py archive_copy.py archive.js camera_image.py camera-image.js camera_lighting.py camera-lighting.js camera_setup.py setup-flow.js parity.css service.py http_server.py durable_file.py diagnostics.py performance.py lifecycle.py options.py capture.py capture_recovery.py capture_clock.py camera_transport.py camera_status.py accounting_native.py consumption.py temporal_reading.py recognition.py review_store.py reader.py reading_format.py reading_bounds.py mqtt_output.py overview_history.py mqtt_consumption.py native.py calibration.py calibration_builder.py marker_suggestions.py setup_store.py saved_file.py editor-geometry.js reference-image.js setup.js reading-format.js dashboard.js capture-review.js app.css index.html favicon.svg package_assets.py verify_runtime.py ./
 RUN python verify_runtime.py --library /opt/aiedge/libaiedge_native.so --accounting-library /opt/aiedge/libaiedge_accounting.so
 ENV PYTHONUNBUFFERED=1

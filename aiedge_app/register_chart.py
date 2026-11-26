@@ -468,13 +468,23 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
     bands_at={}
     out['photoConflicts']=[]
     frame_ranges={}
+    projected={g['next_boundary']['time']:g['next_boundary'] for g in estimates if 'next_boundary' in g}
     for leg in [*hours,*fine_legs]:
         for field,t in (('opening',leg['start']),('closing',leg['end'])):
             proof=leg.get('photo_evidence',{}).get(field,{})
             values=[f['value'] for f in proof.get('frames',[])]
             if values:
                 frame_ranges[t]=(min(values),max(values))
-    for t,v,lo,hi,_ in points:
+    for point in points:
+        t,v,lo,hi,_=point
+        if t in projected and t not in photos and lo is not None and hi is not None:
+            q=projected[t]
+            ranges=[(max(a,lo),min(b,hi)) for a,b in q['bands'] if a<=hi and lo<=b]
+            if ranges:
+                bands_at[t]=ranges
+                preferred=q['phase']+round((v-q['phase'])/q['turn'])*q['turn']
+                if any(a<=preferred<=b for a,b in ranges):
+                    point[1]=preferred
         if t in photos:
             # A gap photo is an independent absolute observation. Retain every
             # turn compatible with the register envelope, including alternatives
@@ -558,6 +568,9 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
             out['recoveredGaps'].append([a,b,g['use']])
             selected.append([a,b,*g['selected_bounds']])
             supported.update(t for t in by_time if a<=t<=b)
+            following=g.get('next_boundary',{}).get('time')
+            if following in bands_at and any(lo<=by_time[following][1]<=hi for lo,hi in g['next_boundary']['bands']):
+                supported.add(following)
         else:
             out['unknownGaps'].append([a,b])
     out['supportedTicks']=sorted(t for t in supported if t%60000==0)

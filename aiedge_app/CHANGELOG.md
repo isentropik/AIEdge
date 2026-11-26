@@ -1,3 +1,7 @@
+## 0.2.0-dev132
+
+- Use saved full photos to recover a chart interval when the compact captures only measured the fine dial. Surrounding dial readings must agree, and the capture history retains the failed transfer.
+
 ## 0.2.0-dev131
 
 - When browsing an earlier hour, load that hour’s measured dial rates and separate whiskers. Show the cumulative line while the interval evidence loads.
