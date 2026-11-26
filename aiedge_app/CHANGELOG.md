@@ -1,3 +1,7 @@
+## 0.2.0-dev136
+
+- Recover interrupted compact photo transfers from cameras that retain the same packet.
+
 ## 0.2.0-dev135
 
 - Replay a reviewed absolute meter checkpoint from retained dial evidence and preserve the measured exposures used in recovery.
