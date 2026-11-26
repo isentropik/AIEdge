@@ -543,6 +543,7 @@ class Collector:
             self.camera_state=dict(readiness,checked_at=now())
             state=readiness.get('state')
             if state!='ready':
+                retry_readiness=state=='busy'
                 code={'busy':'camera_busy','camera_unavailable':'camera_unavailable',
                       'settings_unavailable':'camera_settings_unavailable',
                       'startup_recovery':'camera_startup_recovery',
@@ -614,9 +615,8 @@ class Collector:
                         return
                 except (OSError,sqlite3.Error,ValueError):pass
             if retry_readiness and attempt is None and reason is None:
-                # Retry only a typed passive-GET transport failure, after its
-                # failure/gap is durable and every existing hold is rechecked.
-                # Never admit a retry of a submitted capture request.
+                # Busy and transport failures on the passive probe precede any POST.
+                # Keep the durable boundary before scheduling another probe.
                 self.readiness_failures+=1
                 self.readiness_retry_delay=min(60,6*2**min(self.readiness_failures-1,4))
                 self.recovery_state='waiting_for_camera'

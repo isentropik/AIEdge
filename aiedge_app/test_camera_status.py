@@ -75,7 +75,6 @@ class CameraStatusTests(unittest.TestCase):
             self.assertEqual((device.gets,device.posts),(3,0))
     def test_nonfreshness_readiness_failure_holds_without_post(self):
         for state,code,changes in [
-                ('busy','camera_busy',{'camera_available':None}),
                 ('settings_unavailable','camera_settings_unavailable',{'settings_ready':False}),
                 ('startup_recovery','camera_startup_recovery',{'settings_ready':False}),
                 ('clock_unsynchronized','camera_clock_unsynchronized',{'clock_synchronized':False}),
@@ -93,6 +92,24 @@ class CameraStatusTests(unittest.TestCase):
                 self.assertEqual((device.gets,device.posts,store.status()['captures']),(1,0,0))
                 self.assertEqual(store.status()['failures'],1)
                 self.assertFalse(store.status()['training_allowed'])
+    def test_busy_before_capture_retries_only_the_passive_probe(self):
+        from capture_recovery import boundary
+        with fixture() as (camera,device),tempfile.TemporaryDirectory() as directory:
+            store=Store(directory)
+            collector=Collector(store,camera,10)
+            device.payload=READY|{'state':'busy','camera_available':None}
+            for count in (1,2):
+                collector.once()
+                self.assertEqual(collector.recovery_status()['state'],'waiting_for_camera')
+                self.assertEqual(collector.last_error['error'],'camera_busy')
+                self.assertEqual((device.gets,device.posts),(count,0))
+            device.payload=READY.copy()
+            collector.once()
+            self.assertEqual((device.gets,device.posts),(3,1))
+            self.assertEqual(collector.recovery_status()['state'],'ready')
+            with store.connect() as db:
+                self.assertTrue(boundary(db,1))
+                self.assertEqual(db.execute('SELECT count(*) FROM continuous_capture_attempts').fetchone()[0],1)
     def test_connection_failure_is_visible_and_does_not_capture(self):
         with fixture() as (camera,device),tempfile.TemporaryDirectory() as directory:
             collector=Collector(Store(directory),camera,30)

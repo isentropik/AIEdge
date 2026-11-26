@@ -64,14 +64,25 @@ def preserve(store, recognition, faces, document, source_sha, image):
     pipeline = document['pipeline_id']
     with store.connect() as db:
         prior = saved(db, source_sha, fmt, pipeline)
-    if prior is not None:
-        return bool(prior['bands_ft3'])
+    if prior is not None and prior['bands_ft3']:
+        return True
     revision = faces.setup.status()['revision']
     finding = measure(recognition, faces, document, source_sha, image)
     if not revision or finding['calibration'] != revision or faces.setup.status()['revision'] != revision:
         raise ValueError('original_dial_calibration_changed')
     finding['format_id'] = fmt
     with store.connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        current = saved(db, source_sha, fmt, pipeline)
+        if current is not None and not current['bands_ft3']:
+            # An older reader could keep the observed positions without a range.
+            # Add new optical evidence only for those exact original observations.
+            if any(current.get(k) != finding.get(k) for k in ('version','positions','calibration')):
+                raise ValueError('original_dial_evidence_conflict')
+            if not finding['bands_ft3']:
+                return False
+            db.execute('UPDATE original_dial_evidence SET record=?, record_sha=? '
+                       'WHERE source_sha=? AND format_id=?', (encoded(finding), checksum(finding), source_sha, fmt))
         db.execute('INSERT OR IGNORE INTO original_dial_evidence VALUES(?,?,?,?)',
                    (source_sha, fmt, encoded(finding), checksum(finding)))
         if saved(db, source_sha, fmt, pipeline) != finding:

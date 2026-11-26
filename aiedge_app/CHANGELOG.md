@@ -1,3 +1,8 @@
+## 0.2.0-dev137
+
+- Resume scheduled capture after a busy readiness check and preserve the missed interval.
+- Recover absolute meter readings from full photos when the outer pointer tip and printed divisions can be measured.
+
 ## 0.2.0-dev136
 
 - Recover interrupted compact photo transfers from cameras that retain the same packet.

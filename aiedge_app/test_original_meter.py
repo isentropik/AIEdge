@@ -147,6 +147,29 @@ class OriginalMeterTests(unittest.TestCase):
         with self.store.connect() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM original_dial_evidence').fetchone(),(0,))
 
+    def test_retry_of_empty_evidence_requires_the_same_original_observations(self):
+        import original_dials
+        from event_selection import digest as checksum, encoded
+        source, phase = self.samples[2]
+        sha = source['source_sha256']
+        image = self.store.image(sha)
+        self.reader.read_jpeg = lambda data: dict(self.read(data), profile='cal')
+        faces = SimpleNamespace(setup=SimpleNamespace(status=lambda:dict(revision='cal')))
+        empty = dict(original_dials.measure(self.rec,faces,self.doc,sha,image),bands_ft3=[],format_id=self.fmt)
+        with self.store.connect() as db:
+            db.execute('INSERT INTO original_dial_evidence VALUES(?,?,?,?)',
+                       (sha,self.fmt,encoded(empty),checksum(empty)))
+        with patch.object(self.reader,'read_jpeg',return_value=dict(self.read(image),profile='other')):
+            with self.assertRaisesRegex(ValueError,'calibration_changed'):
+                original_dials.preserve(self.store,self.rec,faces,self.doc,sha,image)
+        with self.store.connect() as db:
+            self.assertEqual(original_dials.saved(db,sha,self.fmt,self.doc['pipeline_id']),empty)
+        self.assertTrue(original_dials.preserve(self.store,self.rec,faces,self.doc,sha,image))
+        with self.store.connect() as db:
+            updated=original_dials.saved(db,sha,self.fmt,self.doc['pipeline_id'])
+        self.assertEqual(updated['positions'],empty['positions'])
+        self.assertTrue(updated['bands_ft3'])
+
     def test_late_receipt_reanchors_then_replays_and_survives_restart(self):
         self.assertEqual(self.publish()['event_id'],1)
         self.receipt()

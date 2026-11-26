@@ -84,9 +84,15 @@ def radial_samples(image, center, rays, radii):
             + (1-dx)*dy*image[iy+1, ix] + dx*dy*image[iy+1, ix+1])
 
 
-def dark_stroke(angles, intensity, widths, change=None):
+def dark_stroke(angles, intensity, widths, change=None, *, local_contrast=False):
     """Require one isolated ink stroke of the expected angular width."""
-    dark = np.flatnonzero(intensity < 75)
+    threshold = 75
+    if local_contrast:
+        ink, paper = np.quantile(intensity, (.06, .80))
+        if paper - ink < 45:
+            return None
+        threshold = (ink + paper) / 2
+    dark = np.flatnonzero(intensity < threshold)
     centers = []
     for run in np.split(dark, np.flatnonzero(np.diff(dark) > 1) + 1):
         if not len(run) or run[0] == 0 or run[-1] == len(angles)-1:
@@ -160,7 +166,7 @@ def read_face(diff, item, error):
     return ((lo + hi) / 2) % 10, (hi - lo) / 2
 
 
-def bracketed_tip(image, diff, item, guess, error, *, covered_division=False):
+def bracketed_tip(image, diff, item, guess, error, *, covered_division=False, outer_tip=False):
     """Read the moving tip against the two printed divisions on either side."""
     mark = item["landmarks"]
     rim = np.asarray(mark["rim_points"], dtype=float)
@@ -176,17 +182,31 @@ def bracketed_tip(image, diff, item, guess, error, *, covered_division=False):
     def strokes(center, angles, radii, widths, moving):
         ray = rays(angles)
         ink = radial_samples(image, center, ray, radii)
-        change = radial_samples(diff, center, ray, radii) if moving else None
-        if ink is None or moving and change is None:
+        change = radial_samples(diff, center, ray, radii) if moving or outer_tip else None
+        if ink is None or (moving or outer_tip) and change is None:
             return []
-        readings = [dark_stroke(angles, row, widths, change[i] if moving else None)
-                    for i, row in enumerate(ink)]
-        return [v for v in readings if v is not None]
+        readings = []
+        for i, row in enumerate(ink):
+            value = dark_stroke(angles, row, widths, change[i] if moving else None,
+                                local_contrast=outer_tip)
+            if value is None:
+                continue
+            if outer_tip and not moving:
+                # A moving tip protruding past the rim cannot serve as a printed tick.
+                reference = dark_stroke(angles, row+change[i], widths, local_contrast=True)
+                if reference is None or abs(reference-value) > error:
+                    continue
+            readings.append(value)
+        return readings
 
+    # The digits can overlap the inner shaft. Independently measure the outer
+    # tip and the exposed print beyond the rim when the inner scan is unusable.
+    tip_radii = (.90, .915, .93, .945, .96) if outer_tip else (.84, .86, .88, .90, .92)
+    mark_radii = (1.04, 1.06, 1.08, 1.10, 1.12) if outer_tip else (1.02, 1.04, 1.06, 1.08)
     values = []
     for center in (rim.mean(axis=0), np.asarray(mark["needle_pivot"], dtype=float)):
         tips = strokes(center, guess+np.arange(-.50, .501, .005),
-                       (.84, .86, .88, .90, .92), (.10, .36), True)
+                       tip_radii, (.10, .36), True)
         if len(tips) < 3 or np.ptp(tips) > error:
             return None
         middle = round(float(np.mean(tips)))
@@ -197,7 +217,7 @@ def bracketed_tip(image, diff, item, guess, error, *, covered_division=False):
         marks = []
         for tick in (left_tick, left_tick+span):
             observed = strokes(center, tick+np.arange(-.20, .201, .005),
-                               (1.02, 1.04, 1.06, 1.08), (.02, .16), False)
+                               mark_radii, (.02, .16), False)
             if len(observed) < 2 or np.ptp(observed) > error:
                 return None
             marks.append((min(observed), max(observed)))
@@ -251,6 +271,8 @@ def hundreds(profile, ref, img, doc, positions, indices):
                 # A pointer covering a printed mark leaves its two neighbors visible.
                 indexed_fit = bracketed_tip(aligned, diff, item, positions[j], errors[j], covered_division=True)
                 covered = indexed_fit is not None
+            if indexed_fit is None:
+                indexed_fit = bracketed_tip(aligned, diff, item, positions[j], errors[j], outer_tip=True)
             if indexed_fit is not None:
                 fit = indexed_fit
                 indexed = True

@@ -142,6 +142,23 @@ class FaceTests(unittest.TestCase):
         clipped = np.where(angles < -.32, 30, 150)
         self.assertIsNone(dark_stroke(angles, clipped, (.1,.36), 150-clipped))
 
+    def test_outer_tip_in_variable_light_requires_two_stationary_divisions(self):
+        y,x=np.indices((480,640))
+        radius=np.hypot(x-320,y-240)/70
+        angle=(np.arctan2(x-320,240-y)*5/np.pi)%10
+        item=dict(direction='cw',landmarks=dict(needle_pivot=[320,240],
+                  rim_points=[[320,170],[390,240],[320,310],[250,240]]))
+        ticks=(radius>1.02)&(radius<1.15)&((abs(angle-5)<.045)|(abs(angle-6)<.045))
+        ref=np.where(ticks,95.,210.)
+        image=ref.copy()
+        image[(radius>.89)&(radius<.98)&(abs(angle-5.45)<.12)]=95
+        def fit(reference):
+            return bracketed_tip(image,reference-image,item,5.40,.1,outer_tip=True)
+        self.assertAlmostEqual(fit(ref)[0],5.45,delta=.03)
+        self.assertIsNone(fit(image))
+        ref[ticks & (angle>5.5)]=210
+        self.assertIsNone(fit(ref))
+
     def test_same_side_bias_requires_visible_index_and_preserves_hundreds_carry(self):
         profile, ref, img, doc = dial_faces(.51, 5.01)
         pos = [2.05, .13, 4.97, 1.8]
