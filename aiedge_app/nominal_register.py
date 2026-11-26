@@ -151,11 +151,22 @@ def photo_projection(prior, record, reason, snapshot, now, max_age):
 class AbsolutePublisher:
     def __init__(self, path):
         self.path = path
+        self.repair_checked = False
         self.originals = None
         self.sent = None
         self.displayed = None
 
     def publish(self, output, obs, snapshot):
+        if not self.repair_checked:
+            self.repair_checked = True
+            from register_repair import apply_request
+            try:
+                result = apply_request(self.path, snapshot['format'])
+                if result != 'no_request':
+                    print('Absolute meter repair:', result, flush=True)
+            except (ValueError, OSError, KeyError, TypeError, ArithmeticError, sqlite3.Error) as exc:
+                # A rejected one-time repair must leave normal publication and capture running.
+                print('Absolute meter repair rejected:', type(exc).__name__, flush=True)
         key = output.config['unique_id']
         now = datetime.now(timezone.utc)
         max_age = max(90, getattr(output, 'interval', 0) * 3)
