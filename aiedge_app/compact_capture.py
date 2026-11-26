@@ -18,6 +18,7 @@ from PIL import Image
 
 from camera_status import unique_object
 from capture import camera_header, now
+from capture_recovery import BodyTimeout
 from durable_file import sync_directory
 
 FRAME_SIZE = (640, 480)
@@ -25,6 +26,8 @@ LIGHT_SETTLE_SECONDS = 2.5
 CHUNK = 1024
 PACKET_LIMIT = 32768
 ORIGINAL_LIMIT = 262144
+REPLAY_CHUNK = 2048
+REPLAY_SECONDS = 5
 
 
 def digest(data):
@@ -116,6 +119,14 @@ def initialize(db):
     db.execute('CREATE INDEX IF NOT EXISTS original_receipts_event ON original_receipts(camera,event_id)')
 
 
+class PartialCompact(BodyTimeout):
+    """The camera advertised a retained packet before the capture response broke."""
+    def __init__(self, evidence, headers, prefix, *, reset):
+        super().__init__(evidence, reset=reset)
+        self.headers = headers
+        self.prefix = prefix
+
+
 def request(camera,path,*,headers=None,body=None,deadline,limit):
     values = dict(headers or {})
     if camera.token:
@@ -135,7 +146,6 @@ def request(camera,path,*,headers=None,body=None,deadline,limit):
             raise ValueError('compact_response_length')
         expected=int(n)
         if path=='/api/v1/compact':
-            from capture_recovery import BodyTimeout
             packet_sha=camera_header(reply.headers,'X-AIEdge-SHA256')
             if camera_header(reply.headers,'Content-Type')!='application/x-aiedge-q25' or not sha(packet_sha):
                 raise ValueError('compact_response_metadata')
@@ -146,13 +156,39 @@ def request(camera,path,*,headers=None,body=None,deadline,limit):
                     if not block:raise ConnectionResetError('compact body ended early')
                     data.extend(block)
             except (TimeoutError,ConnectionError,http.client.IncompleteRead) as exc:
-                raise BodyTimeout(dict(stage='compact_body',expected_bytes=expected,received_bytes=len(data),
-                                       expected_sha256=packet_sha),reset=isinstance(exc,ConnectionError)) from exc
+                evidence = dict(stage='compact_body', expected_bytes=expected, received_bytes=len(data),
+                                expected_sha256=packet_sha)
+                reset = isinstance(exc, ConnectionError)
+                if camera_header(reply.headers, 'X-AIEdge-Compact-Replay') == '1':
+                    raise PartialCompact(evidence, reply.headers, bytes(data), reset=reset) from exc
+                raise BodyTimeout(evidence, reset=reset) from exc
             return reply.headers,bytes(data)
         data=reply.read(expected)
         if len(data)!=expected:
             raise http.client.IncompleteRead(data,expected-len(data))
         return reply.headers,data
+
+
+def resume_compact(camera, partial):
+    expected = partial.evidence['expected_bytes']
+    packet_sha = partial.evidence['expected_sha256']
+    data = bytearray(partial.prefix)
+    deadline = time.monotonic() + REPLAY_SECONDS
+    while len(data) < expected:
+        offset = str(len(data))
+        length = min(REPLAY_CHUNK, expected - len(data))
+        headers, chunk = request(camera, '/api/v1/compact/part', deadline=deadline, limit=length,
+                                 headers={'X-AIEdge-SHA256': packet_sha, 'X-AIEdge-Offset': offset})
+        if (headers is None or len(chunk) != length or
+                camera_header(headers, 'Content-Type') != 'application/octet-stream' or
+                camera_header(headers, 'X-AIEdge-SHA256') != packet_sha or
+                camera_header(headers, 'X-AIEdge-Size') != str(expected) or
+                camera_header(headers, 'X-AIEdge-Offset') != offset):
+            raise ValueError('compact_replay_metadata')
+        data.extend(chunk)
+    if digest(data) != packet_sha:
+        raise ValueError('compact_replay_integrity')
+    return bytes(data)
 
 
 def fine_read(reader,canvas,index,source,packet_sha):
@@ -208,6 +244,7 @@ class CompactCapture:
         posted=time.monotonic()
         cancel=threading.Event()
         drain=None
+        resumed_bytes=0
         if self.original_pending:
             drain=threading.Thread(target=self._while_settling,args=(cancel,posted),name='aiedge-original-chunk')
             drain.start()
@@ -215,6 +252,16 @@ class CompactCapture:
             headers,data=request(self.camera,'/api/v1/compact',body=b'{}',
                 headers={'Content-Type':'application/json','X-AIEdge-Anchor':str(int(self.force_anchor))},
                 deadline=time.monotonic()+20,limit=PACKET_LIMIT)
+        except PartialCompact as partial:
+            try:
+                data = resume_compact(self.camera, partial)
+            except urllib.error.HTTPError as error:
+                error.close()
+                raise partial from error
+            except (OSError, ValueError, http.client.HTTPException) as error:
+                raise partial from error
+            headers = partial.headers
+            resumed_bytes = len(data) - len(partial.prefix)
         except urllib.error.HTTPError as e:
             with e:
                 reason=e.read(257)
@@ -235,6 +282,7 @@ class CompactCapture:
         if headers is None or camera_header(headers,'Content-Type')!='application/x-aiedge-q25':
             raise ValueError('compact_response_type')
         anchor=camera_header(headers,'X-AIEdge-Anchor')
+        replay_available = camera_header(headers, 'X-AIEdge-Compact-Replay') == '1'
         if anchor not in ('0','1','deferred') or (self.force_anchor and anchor=='0'):
             raise ValueError('compact_anchor_unconfirmed')
         packet_sha=camera_header(headers,'X-AIEdge-SHA256')
@@ -263,7 +311,10 @@ class CompactCapture:
         verified=time.monotonic()
         self.timing={'request_to_observation_seconds':round(verified-posted,3),
                      'scheduled_slot_to_observation_seconds':round(verified-self.nominal_slot,3) if self.nominal_slot is not None else None,
-                     'observed':result['state']=='estimated','original_retained':anchor=='1'}
+                     'observed':result['state']=='estimated','original_retained':anchor=='1',
+                     'compact_replay_available': replay_available}
+        if resumed_bytes:
+            self.timing['compact_bytes_recovered'] = resumed_bytes
         self.original_pending=self.original_pending or anchor=='1'
         self.force_anchor=anchor=='deferred' or result['state']!='estimated'
         return True
