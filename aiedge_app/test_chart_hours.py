@@ -13,6 +13,17 @@ class ChartHoursTests(unittest.TestCase):
     daily = 'sensor.daily'
     hour = datetime(2026,11,22,18,tzinfo=timezone.utc)
 
+    def test_selected_ten_minute_history_keeps_disjoint_optical_rates(self):
+        proof=dict(use=.01,bands=[[0,.1],[4.9,5.1]])
+        class Ledger:
+            def snapshot(self,ticks,*args):
+                a,b=ticks[-2:]
+                return {b:dict(basis='fine_dial',start=a,end=b,use=.01,bounds=[0,5.1],optical_rate=proof)}
+        chart=ChartHours(self.meter,self.daily,lambda *args:[],ledger=Ledger())
+        end=millis(self.hour)
+        history=chart.snapshot(end,'UTC',minutes=10)
+        self.assertEqual(history['rateIntervals'],[[end-600000,end,proof]])
+
     def test_partial_level_uses_only_same_basis_tracked_change_across_missing_ticks(self):
         step=600000
         d=dict(hours=[dict(start=t*step,end=(t+1)*step,use=2) for t in (0,1,2,5)],

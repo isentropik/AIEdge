@@ -1,3 +1,7 @@
+## 0.2.0-dev131
+
+- When browsing an earlier hour, load that hour’s measured dial rates and separate whiskers. Show the cumulative line while the interval evidence loads.
+
 ## 0.2.0-dev130
 
 - Use the configured meter flow limit for daily usage, recovery and reviewed photo calculations. Existing household capacity options are ignored.

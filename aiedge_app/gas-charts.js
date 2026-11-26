@@ -812,7 +812,7 @@ function chartBoundaries(start,end,minutes,zone){
   if(end>start)edges.push(end);
   return edges;
 }
-function registerSummary(hourly,start,end,minutes,view){
+function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
   const {data,zone}=hourly, profile=data.registerProfile;
   const points=new Map(profile.points.map(([t,...p])=>[t,p]));
   const resets=Object.keys(profile.openings).map(Number).filter(t=>start<=t&&t<=end);
@@ -831,6 +831,8 @@ function registerSummary(hourly,start,end,minutes,view){
     return !(supported.has(from)&&supported.has(to)) && hours.get(to)?.start!==from && fineBounds.get(from)?.end!==to;
   }
   const opticalRates=new Map((profile.rateIntervals??[]).map(([a,b,proof])=>[a+'/'+b,proof]));
+  for(const [a,b,proof] of rateDetail?.data?.rateIntervals??[])opticalRates.set(a+'/'+b,proof);
+  const waitingForRates=rateDetail && !Array.isArray(rateDetail.data?.rateIntervals);
   const changes=new Map((profile.changeBounds??[]).map(([a,b,lo,hi])=>[a+'/'+b,[lo,hi]]));
   const days=Object.keys(profile.openings).map(Number).sort((a,b)=>a-b);
   const openingAt=t=>days.findLast(day=>day<=t);
@@ -940,7 +942,7 @@ function registerSummary(hourly,start,end,minutes,view){
       q={use,bands,bounds:[bands[0][0],bands.at(-1)[1]]};
     }else{
       // A cold register-only preview can draw the total while the rate proof loads.
-      if(data.published)continue;
+      if(data.published||waitingForRates)continue;
       q=difference(points.get(from),points.get(t),t-from);
       if(!q)continue;
       applyIntervalBounds(q,from,t);
@@ -971,7 +973,7 @@ function registerSummary(hourly,start,end,minutes,view){
   const host=$('day-curve');
   host.dataset.endTime=new Date(end).toISOString();
   if(view?.event&&!browsing)host.dataset.endEvent=String(view.event);else delete host.dataset.endEvent;
-  drawDay([],start,zone,JSON.stringify(['register',data.end,start,end,minutes,data.published?'published':'verified']),null,hourly.midnight,null,ordered,
+  drawDay([],start,zone,JSON.stringify(['register',data.end,start,end,minutes,data.published?'published':'verified',rateDetail?.status]),null,hourly.midnight,null,ordered,
     [],null,null,null,{series,extent,resets,closes,edges,profile:true});
 }
 function showSummary(view){
@@ -1009,7 +1011,10 @@ function showSummary(view){
     updateNavigation(hourly,start,end);
     visibleSummary={selection,zone,midnight};
     window.AIEdgeIntegration?.renderChartHeadline?.();
-    registerSummary(hourly,start,end,minutes,view);
+    const rateDetail=fine?browsing?.fine:null;
+    registerSummary(hourly,start,end,minutes,view,rateDetail);
+    if(rateDetail?.status==='loading')$('day-history-status').textContent+=' · Checking dial history';
+    if(rateDetail?.status==='unavailable')$('day-history-status').textContent+=' · Dial history unavailable';
     if(!browsing&&hourly.savedScale!==selection){rememberWindow(hourly,selection,start,end);hourly.savedScale=selection;}
     return;
   }
@@ -1602,10 +1607,18 @@ function selectWindow(chosen,windows,hourly,anchor,value){
   visibleSummary=null;
   browsing=null;
   if(!chosen || chosen.end===windows[0].end && chosen.start===windows[0].start)return;
-  let fine=old?.fine??detail;
-  if(!hourly.data?.registerProfile && rateMinutes(value)===10 &&
-     (!fine || fine.zone!==hourly.zone || chosen.end>fine.end || chosen.start<completedTick(fine.end,fine.zone,10)-2*hourMs)){
-    fine=loadCalendar(chosen.end,hourly.zone,10);
+  let fine=null;
+  if(rateMinutes(value)===10){
+    const span=600000;
+    const profile=hourly.data?.registerProfile;
+    const known=new Set((profile?.rateIntervals??[]).filter(([a,b])=>b-a===span).map(([,b])=>b));
+    if(!profile || Array.isArray(profile.rateIntervals) &&
+       chartBoundaries(chosen.start,chosen.end,10,hourly.zone).some(t=>!known.has(t))){
+      const previous=old?.fine??detail;
+      fine=previous?.zone===hourly.zone && previous.status!=='unavailable' &&
+        chosen.end<=previous.end && chosen.start-span>=completedTick(previous.end,hourly.zone,10)-2*hourMs
+        ?previous:loadCalendar(chosen.end,hourly.zone,10);
+    }
   }
   browsing={...chosen,hourly,anchor,fine,view:old?old.view:dayView};
 }
