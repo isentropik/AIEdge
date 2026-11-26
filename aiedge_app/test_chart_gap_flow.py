@@ -25,6 +25,15 @@ class GapFlowTests(unittest.TestCase):
     def test_ambiguous_coarse_wrap_is_withheld(self):
         self.assertIsNone(self.flow([(0,0),(0,0)],[(0,0),(0,0)],4800))
 
+    def test_compact_neighbors_can_check_motion_without_a_slower_dial(self):
+        before = [(None,4.99),(None,4.99),(971.58,4.9916)]
+        after = [(971.33,4.9928),(971.11,4.9905),(None,4.991)]
+        motion = self.flow(before,after,502)
+        self.assertAlmostEqual(motion['use'],.0012)
+        self.assertGreater(motion['bounds'][1],5)
+        self.assertIsNone(self.flow(before, [after[0],(None,4.99)],502))
+        self.assertIsNone(self.flow([(None,4.6),before[-1]],after,502))
+
     def test_meter_capacity_allows_half_a_turn_but_photos_exclude_a_whole_turn(self):
         model = estimate([(950,1),(950,1)],[(950,1),(950,1)],1248,5,1000,.05,10,1700/3600)
         self.assertEqual(model['use'],0)

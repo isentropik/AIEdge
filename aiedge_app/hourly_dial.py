@@ -99,9 +99,11 @@ def dial_hour(db, source, document, rate, start, end, first, last):
 
 
 class LedgerHours:
-    def __init__(self,store,photos=None):
+    def __init__(self,store,photos=None,recognition=None):
         from register_replay import ChartRegisterReplay
         from chart_rate_photos import ChartRatePhotos
+        from chart_gap_original import GapOriginals
+        self.gap_originals = GapOriginals(store, recognition) if recognition else None
         self.rate_photos = ChartRatePhotos()
         self.register_replay = ChartRegisterReplay(store)
         self.store = store
@@ -112,7 +114,7 @@ class LedgerHours:
 
     def gap_flow(self,start,stamp,state,document,rate):
         from chart_gap_flow import photo_gaps
-        return photo_gaps(self.store,start,stamp,state,document,rate)
+        return photo_gaps(self.store,start,stamp,state,document,rate,self.gap_originals)
 
     def gap_registers(self, gaps, state, document):
         """Read saved full-dial observations at the edges of substantial outages."""

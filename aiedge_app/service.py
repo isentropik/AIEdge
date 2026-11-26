@@ -544,7 +544,7 @@ def run_service(stop_signals):
     from chart_hours import BackgroundCharts, ChartHours, ledger_breaks
     from hourly_dial import LedgerHours
     hours=ChartHours(options['meter_history_entity'],options['nominal_history_entity'],
-                     breaks=lambda start,end:ledger_breaks(store,start,end),ledger=LedgerHours(store,photo_register)) if trend else None
+                     breaks=lambda start,end:ledger_breaks(store,start,end),ledger=LedgerHours(store,photo_register,recognition)) if trend else None
     prepared = BackgroundCharts(hours,mqtt_output,reading_format,Path(args.data)/'chart-history-v1.json') if hours else None
     if prepared:
         mqtt_output.chart_published = prepared.published

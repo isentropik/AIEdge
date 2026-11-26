@@ -623,7 +623,7 @@ class BackgroundCharts:
             if hashlib.sha256(payload).hexdigest().encode() != checksum:
                 return
             version, meter, daily, key, data = json.loads(payload)
-            if (version, meter, daily) != (4, self.hours.meter, self.hours.daily):
+            if (version, meter, daily) != (5, self.hours.meter, self.hours.daily):
                 return
             if not key or not data['registerProfile']['points'] or data['missing']:
                 return
@@ -660,7 +660,7 @@ class BackgroundCharts:
         if self.stop.is_set() or data['missing'] or not data.get('registerProfile',{}).get('points'):
             return
         from setup_store import Setup
-        payload = json.dumps([4,self.hours.meter,self.hours.daily,key,data],
+        payload = json.dumps([5,self.hours.meter,self.hours.daily,key,data],
                              allow_nan=False,separators=(',',':')).encode()
         Setup._atomic(self.path, hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
         if data['registerProfile']['points'][-1][0] >= tick:

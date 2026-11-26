@@ -46,9 +46,12 @@ def estimate(before, after, seconds, fine_turn, coarse_turn, fine_error, coarse_
     if k0 != k1:
         if len(before)<2 or len(after)<2:
             return None
+        if all(p[0] is None for p in [*before[:-1],*after[1:]]):
+            return None
         coarse_spread = 0
         for side in (before,after):
-            co = [offset(p[0],side[0][0],coarse_turn) for p in side]
+            observed = [p[0] for p in side if p[0] is not None]
+            co = [offset(v,observed[0],coarse_turn) for v in observed]
             fi = [offset(p[1],side[0][1],fine_turn) for p in side]
             coarse_spread = max(coarse_spread,max(co)-min(co))
             if max(fi)-min(fi)>2*fine_error:
@@ -59,7 +62,7 @@ def estimate(before, after, seconds, fine_turn, coarse_turn, fine_error, coarse_
                 selected_bounds=[bounds[0],min(bounds[1],center+2*fine_error)])
 
 
-def photo_gaps(store, start, stamp, state, document, rate):
+def photo_gaps(store, start, stamp, state, document, rate, originals=None):
     if not state or not document or not rate or len(document['dials'])<2:
         return []
     revision=validate(document)[1]
@@ -101,6 +104,11 @@ def photo_gaps(store, start, stamp, state, document, rate):
                 continue
             poses={}
             absolute={}
+            # Only a missing chart boundary calls for decoding archived JPEGs.
+            # Enclosing captures can bound the tick without creating a capture there.
+            use_originals = (originals is not None and a//600000 != b//600000
+                             and {'original_receipts','compact_exposures'} <= tables)
+            compact = {}
             try:
                 for item in read_batch(db,[dict(event_id=i,context_id=c,source_sha256=s) for i,c,s in refs],pipeline) if refs else ():
                     reading=item['result']
@@ -109,7 +117,12 @@ def photo_gaps(store, start, stamp, state, document, rate):
                     indices=(coarse['index'],fine['index'])
                     if (reading['state']!='estimated' or obs['format_id']!=revision or obs['camera']!=camera or
                             millis(datetime.fromisoformat(obs['captured_at']))>stamp or
-                            not all(mask[i] for i in indices)):
+                            not mask[fine['index']]):
+                        continue
+                    if not mask[coarse['index']]:
+                        if use_originals:
+                            fast = reading['dial_positions'][fine['index']]['position']
+                            compact[obs['event_id']] = (obs,fast)
                         continue
                     vals=[reading['dial_positions'][i]['position'] for i in indices]
                     if all(isinstance(v,(int,float)) and isfinite(v) and 0<=v<10 for v in vals):
@@ -122,6 +135,18 @@ def photo_gaps(store, start, stamp, state, document, rate):
                             absolute[obs['event_id']]=[(float(lo),float(hi)) for lo,hi in ranges.get('intervals',())]
             except (ValueError,TypeError,KeyError,IndexError,sqlite3.Error):
                 continue
+            if (eid not in poses or eid+1 not in poses) and compact:
+                edges = [poses[i][0] if i in poses else compact.get(i,(None,))[0] for i in (eid,eid+1)]
+                if (not all(edges) or edges[0]['context_id']!=edges[1]['context_id'] or
+                        interval(*edges)['state']!='continuous'):
+                    continue
+                for i,(obs,fast) in compact.items():
+                    # Fine-only neighbors establish motion on each flank. A slower
+                    # dial must actually be visible in BOTH endpoint photographs.
+                    slow = originals.pair(db,obs,document,fast)
+                    if slow is None and i in (eid,eid+1):
+                        break
+                    poses[i]=(obs,(None if slow is None else slow*ct/10,fast*ft/10))
             if eid not in poses or eid+1 not in poses:
                 continue
             first,last=poses[eid][0],poses[eid+1][0]
@@ -165,4 +190,18 @@ def photo_gaps(store, start, stamp, state, document, rate):
                 motion['selected_bounds']=[min(a for a,_ in selected),max(b for _,b in selected)]
             if motion:
                 gap.update(motion)
+                if use_originals and any(i in compact for i in (eid,eid+1)):
+                    gap['originals']=True
+        if originals and 'consumption_segment_links' in tables:
+            for g in gaps:
+                if not g.get('originals'):
+                    continue
+                tick=(g['end']//600000+1)*600000
+                following=[q for q in gaps if g['end']<=q['start']<tick]
+                if not following or following[-1]['end']>=tick or tick>stamp:
+                    continue
+                boundary=originals.next_boundary(db,dict(camera=camera,format_id=revision),document,rate,
+                                                 following[-1]['events'][1],tick,state['event_id'])
+                if boundary:
+                    g['next_boundary']=boundary
         return gaps
