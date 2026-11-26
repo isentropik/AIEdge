@@ -12,13 +12,14 @@ from event_selection import digest
 from mqtt_consumption import fresh_range
 from observation_support import observed_rows
 from optical_daily import endpoint
-from reading_bounds import feasible_ranges
+from reading_bounds import diagnose_inconsistency, feasible_ranges
 
 
 class OriginalMeter:
-    def __init__(self, store, recognition):
+    def __init__(self, store, recognition, photo_register=None):
         self.store = store
         self.recognition = recognition
+        self.photo_register = photo_register
         self.page = None
         self.after = 0
 
@@ -144,14 +145,22 @@ class OriginalMeter:
                     or result['state'] != 'estimated' or observed_rows(result) != [True] * len(doc['dials'])):
                 return []
             dials = doc['dials']
-            ranges = feasible_ranges([d['value_per_revolution'] for d in dials],
-                                     [result['dial_positions'][d['index']]['position'] for d in dials],
+            positions = [result['dial_positions'][d['index']]['position'] for d in dials]
+            ranges = feasible_ranges([d['value_per_revolution'] for d in dials], positions,
                                      [d['position_error'] for d in dials])
-            if ranges['state'] != 'bounded' or ranges['wraps_register']:
+            if ranges['state'] == 'inconsistent' and self.photo_register:
+                indices = diagnose_inconsistency(doc, positions).get('dial_indices')
+                proof = self.photo_register.fit_original(doc, result, image, indices)
+                if not proof:
+                    return []
+                pairs = [tuple(map(number, pair)) for pair in proof['bands_ft3']]
+            elif ranges['state'] == 'bounded' and not ranges['wraps_register']:
+                pairs = ranges['intervals']
+            else:
                 return []
             # The full JPEG and the separately encoded crop describe one exposure.
             turn = number(dials[-1]['value_per_revolution'])
-            return [band for pair in ranges['intervals'] if (band := advance_band(pair, phase, turn, 0))]
+            return [band for pair in pairs if (band := advance_band(pair, phase, turn, 0))]
         except (OSError, ValueError, TypeError, IndexError, KeyError, ArithmeticError):
             return []
 

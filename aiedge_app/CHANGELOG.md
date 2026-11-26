@@ -1,3 +1,7 @@
+## 0.2.0-dev133
+
+- Recover the absolute meter after a capture gap when the saved full photo independently resolves a conflict between the 10,000 and 1,000 ft³ dials. Check the fitted register against the fine dial from that same exposure. The failed capture remains unknown.
+
 ## 0.2.0-dev132
 
 - Use saved full photos to recover a chart interval when the compact captures only measured the fine dial. Surrounding dial readings must agree, and the capture history retains the failed transfer.

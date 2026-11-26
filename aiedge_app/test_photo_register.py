@@ -54,6 +54,49 @@ def dial_faces(upper=0.43, lower=4.43):
 
 
 class FaceTests(unittest.TestCase):
+    def test_small_disagreement_can_resolve_when_both_pointers_and_index_are_visible(self):
+        from reading_bounds import diagnose_inconsistency
+        profile, ref, img, doc = dial_faces(.43, 5.01)
+        positions = [2.05, .39, 5.10, 1.8]
+        self.assertEqual(diagnose_inconsistency(doc, positions)['dial_indices'], [1, 2])
+        self.assertIsNone(hundreds(profile, ref, img, doc, positions, [1, 2]))
+        for face in (ref, img):
+            face[212:219, 399:402] = 12
+        proof = hundreds(profile, ref, img, doc, positions, [1, 2])
+        self.assertTrue(proof['bands_ft3'])
+        self.assertLess(abs(proof['fits'][0]['photo']-positions[1]), .1)
+        self.assertTrue(all(float(lo) <= float(hi) for lo, hi in proof['bands_ft3']))
+
+    def test_receipted_original_intersects_the_compact_phase_after_rereading_both_faces(self):
+        from threading import Lock
+        from types import SimpleNamespace
+        from decimal import Decimal
+        from original_meter import OriginalMeter
+        profile, ref, img, doc = dial_faces(.43, 5.01)
+        for face in (ref, img):
+            face[212:219, 399:402] = 12
+        def encode(face):
+            data = BytesIO()
+            Image.fromarray(face.astype('uint8')).save(data, format='PNG')
+            return data.getvalue()
+        reference, blob = encode(ref), encode(img)
+        sha = hashlib.sha256(blob).hexdigest()
+        profile['reference_sha256'] = hashlib.sha256(reference).hexdigest()
+        doc.update(unit='ft3', pipeline_id='a'*64)
+        setup = SimpleNamespace(reference=lambda key:reference,
+                                status=lambda:dict(calibration=profile,revision='calibrated'))
+        store = SimpleNamespace(image=lambda key:blob)
+        inference = dict(state='estimated', source_sha256=sha, pipeline_id=doc['pipeline_id'],
+                         profile='calibrated', dial_positions=[dict(state='estimated',position=value)
+                         for value in (2.05, .39, 5.10, 1.8)])
+        reader = SimpleNamespace(read_jpeg=lambda image:inference, pipeline_id=doc['pipeline_id'])
+        meter = OriginalMeter(store, SimpleNamespace(lock=Lock(),reader=reader), PhotoRegister(store, setup))
+        source = dict(source_sha256=sha)
+        self.assertTrue(meter.read_bands(doc, source, (Decimal('.85'), Decimal('.95'))))
+        self.assertFalse(meter.read_bands(doc, source, (Decimal('1.8'), Decimal('1.9'))))
+        inference['profile'] = 'different'
+        self.assertFalse(meter.read_bands(doc, source, (Decimal('.85'), Decimal('.95'))))
+
     def test_pointer_over_a_division_requires_both_neighboring_marks(self):
         y,x=np.indices((480,640))
         radius=np.hypot(x-320,y-240)/70
