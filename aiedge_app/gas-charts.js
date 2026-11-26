@@ -704,7 +704,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v3:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v4:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -720,6 +720,7 @@ function rememberWindow(current,scale,start,end){
       modeled:profile.modeled.filter(overlaps),conflicts:profile.conflicts.filter(overlaps),
       recoveredGaps:(profile.recoveredGaps??[]).filter(overlaps),unknownGaps:(profile.unknownGaps??[]).filter(overlaps),
       supportedTicks:(profile.supportedTicks??[]).filter(t=>from<=t&&t<=end),
+      photoConflicts:(profile.photoConflicts??[]).filter(q=>start<=q.time&&q.time<=end),
       estimatedChangeBounds:(profile.estimatedChangeBounds??[]).filter(r=>from<=r[1]&&r[1]<=end),
       reconciled:profile.reconciled,ceiling:profile.ceiling,provisionalFrom:profile.provisionalFrom,
       fineBounds:profile.fineBounds.filter(overlaps),
@@ -941,8 +942,11 @@ function registerSummary(hourly,start,end,minutes,view){
   const ordered=[...stops.values()].sort((a,b)=>a.to-b.to);
   const status=minutes<60?minutes+'-min averages':minutes/60+'-hour averages';
   const modeledHere=ordered.some(s=>s.hour?.estimated);
+  const disputed=(profile.photoConflicts??[]).filter(q=>start<=q.time&&q.time<=end);
+  const note=disputed.length===1?'Photo and register disagree at '+clock(disputed[0].time,zone):
+    disputed.length?disputed.length+' conflicting photo readings':'';
   $('day-history-status').textContent=[status,modeledHere?'Hollow dots show estimated rates':'',
-    baseAt(end)?.[4]?'Partial daily total':'',plottedThrough(ordered,zone)].filter(Boolean).join(' · ');
+    baseAt(end)?.[4]?'Partial daily total':'',note,plottedThrough(ordered,zone)].filter(Boolean).join(' · ');
   const host=$('day-curve');
   host.dataset.endTime=new Date(end).toISOString();
   if(view?.event&&!browsing)host.dataset.endEvent=String(view.event);else delete host.dataset.endEvent;

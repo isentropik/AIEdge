@@ -20,6 +20,11 @@ ASSUMPTION = (
 )
 
 
+def meter_rate(document):
+    """Physical flow constraint from the configured meter reading format."""
+    return number(document["maximum_rate_per_second"])
+
+
 def measurement(track, source):
     lo, hi = map(number, track["outer"])
     return {
@@ -143,7 +148,7 @@ def observed_bands(snapshot, source):
         return None
 
 
-def update(track, store, snapshot, source, options, floor, photo_center=None, *, gap_options=None):
+def update(track, store, snapshot, source, options, floor, photo_center=None, *, gap_options=None, rate=None):
     """Use bounded indexed reads; a cursor or display date never substitutes for a meter event."""
     if not track:
         return start(source, options, floor, photo_center=photo_center)
@@ -157,7 +162,7 @@ def update(track, store, snapshot, source, options, floor, photo_center=None, *,
         return track
     doc = snapshot["format"]
     turn = number(doc["dials"][-1]["value_per_revolution"])
-    rate = number(doc["maximum_rate_per_second"])
+    rate = meter_rate(doc) if rate is None else rate
     first = old["event_id"] + 1
     stop = min(source["event_id"], first + PAGE - 1)
     with store.connect() as db:
@@ -277,6 +282,8 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age, originals
         for k in ("event_id", "captured_at", "source_sha256", "format_id")
     ):
         return track, False
+    doc = snapshot["format"]
+    rate = meter_rate(doc)
     state = record.get("state") or {}
     legacy = (prior or {}).get("photo_register") or {}
     floor = number(legacy.get("value_ft3", 0))
@@ -298,7 +305,6 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age, originals
             )
             if seconds <= 0 or src["event_id"] <= state["event_id"]:
                 return track, False
-            rate = number(snapshot["format"]["maximum_rate_per_second"])
             options = supported(
                 options,
                 [tuple(map(number, b)) for b in state["bands_ft3"]],
@@ -327,14 +333,14 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age, originals
                 options,
                 [(floor, number(legacy["upper_exclusive_ft3"]))],
                 0,
-                number(seconds) * number(snapshot["format"]["maximum_rate_per_second"]),
+                number(seconds) * rate,
             )
     elif track and state and not reason and matches_measurement(state, src):
         options = [tuple(map(number, b)) for b in state["bands_ft3"]]
     before = track
     if track or options:
         track = update(track, store, snapshot, src, None if gap_only else options, floor,
-                       photo_center, gap_options=options if gap_only else None)
+                       photo_center, gap_options=options if gap_only else None, rate=rate)
     # Finish ordinary bounded replay first. Look for an independent original
     # only when the saved register has stalled on an observed event.
     consumption = snapshot.get('consumption') or {}
@@ -343,9 +349,12 @@ def project(prior, record, reason, snapshot, obs, daily, now, max_age, originals
     if (originals is not None and obs and isinstance(support.get('partial'), bool)
             and (not track or track['source'] != src and before
                  and (waiting_for_anchor or track['source'] == before['source']))):
-        track = originals.recover(track, record, legacy, snapshot, src)
+        track = originals.recover(track, record, legacy, snapshot, src, rate=rate)
     if not track:
         return None, False
+    if doc.get('pipeline_id') and len(doc['dials']) > 1:
+        from register_replay import refine
+        track = refine(store, doc, track, rate, originals)
     latest = track["display"]
     current = (
         track["source"] == src

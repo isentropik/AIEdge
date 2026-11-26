@@ -69,11 +69,10 @@ def flow_ceiling(document,policy):
     if not document or document.get('unit')!='ft3':
         return None
     from reading_format import validate
+    from absolute_motion import meter_rate
     try:
-        _,revision=validate(document)
-        ceiling=float(document['maximum_rate_per_second'])
-        if policy and policy.get('pipeline_id')==document['pipeline_id'] and policy.get('format_id')==revision:
-            ceiling=min(ceiling,float(policy['capacity_cfh'])/3600)
+        validate(document)
+        ceiling=float(meter_rate(document))
         return ceiling if math.isfinite(ceiling) and ceiling>0 else None
     except (KeyError,TypeError,ValueError,ArithmeticError):
         return None
@@ -272,6 +271,7 @@ class ChartHours:
                 profile['changeBounds']=[r for r in p.get('changeBounds',[]) if lower<=r[1]<=close]
                 profile['estimatedChangeBounds']=[r for r in p.get('estimatedChangeBounds',[]) if lower<=r[1]<=close]
                 profile['supportedTicks']=[t for t in p.get('supportedTicks',[]) if lower<=t<=close]
+                profile['photoConflicts']=[q for q in p.get('photoConflicts',[]) if begin<=q['time']<=close]
                 for field in ('gaps','modeled','conflicts','recoveredGaps','unknownGaps'):
                     profile[field] = [r for r in p.get(field,[]) if lower<r[1] and r[0]<close]
                 for field in ('registerHead','readingEstimates'):
@@ -391,6 +391,9 @@ class ChartHours:
                         rows.append(tuple(p))
         if self.stopping.is_set():
             raise InterruptedError('chart_shutdown')
+        replay = getattr(self.ledger, 'register_replay', None)
+        if profile and replay:
+            registers = replay.readings(registers, (usage or {}).get('absolute_nominal'), document, policy, self.stopping)
         cuts = sorted(self.breaks(start,fetch_end))
         times = [p[0] for p in registers]
         splits = [p[0] for p in registers if p[4]]
@@ -614,7 +617,7 @@ class BackgroundCharts:
             if hashlib.sha256(payload).hexdigest().encode() != checksum:
                 return
             version, meter, daily, key, data = json.loads(payload)
-            if (version, meter, daily) != (2, self.hours.meter, self.hours.daily):
+            if (version, meter, daily) != (3, self.hours.meter, self.hours.daily):
                 return
             if not key or not data['registerProfile']['points'] or data['missing']:
                 return
@@ -651,7 +654,7 @@ class BackgroundCharts:
         if self.stop.is_set() or data['missing'] or not data.get('registerProfile',{}).get('points'):
             return
         from setup_store import Setup
-        payload = json.dumps([2,self.hours.meter,self.hours.daily,key,data],
+        payload = json.dumps([3,self.hours.meter,self.hours.daily,key,data],
                              allow_nan=False,separators=(',',':')).encode()
         Setup._atomic(self.path, hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
         if data['registerProfile']['points'][-1][0] >= tick:

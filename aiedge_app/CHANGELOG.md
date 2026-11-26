@@ -1,3 +1,7 @@
+## 0.2.0-dev129
+
+- Use the configured meter capacity and measured motion of both the fine and slower dials to bound absolute readings. Recover legacy bounds from saved observations. Retain conflicting photo evidence while reconciling the rest of the usage chart.
+
 ## 0.2.0-dev128
 
 - Show weekly gas meter reading history. Identify older daily bounds, the last plotted usage data and loading capture history.

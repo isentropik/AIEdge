@@ -23,7 +23,12 @@ class GapFlowTests(unittest.TestCase):
         self.assertIsNone(self.flow([(950,1)],[(950,3)],5))
 
     def test_ambiguous_coarse_wrap_is_withheld(self):
-        self.assertIsNone(self.flow([(0,0),(0,0)],[(0,0),(0,0)],3600))
+        self.assertIsNone(self.flow([(0,0),(0,0)],[(0,0),(0,0)],4800))
+
+    def test_meter_capacity_allows_half_a_turn_but_photos_exclude_a_whole_turn(self):
+        model = estimate([(950,1),(950,1)],[(950,1),(950,1)],1248,5,1000,.05,10,1700/3600)
+        self.assertEqual(model['use'],0)
+        self.assertGreater(model['bounds'][1],0)
 
     def test_coarse_requires_flow_above_ceiling(self):
         self.assertIsNone(self.flow([(0,0)],[(21.1,1.05)],5))

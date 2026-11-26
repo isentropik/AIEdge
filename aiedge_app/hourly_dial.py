@@ -100,6 +100,8 @@ def dial_hour(db, source, document, rate, start, end, first, last):
 
 class LedgerHours:
     def __init__(self,store,photos=None):
+        from register_replay import ChartRegisterReplay
+        self.register_replay = ChartRegisterReplay(store)
         self.store = store
         self.photos = photos
         self.cache = {}
@@ -174,8 +176,6 @@ class LedgerHours:
             return None
         revision=validate(document)[1]
         rate=number(document['maximum_rate_per_second'])
-        if policy.get('format_id')==revision and policy.get('pipeline_id')==document['pipeline_id']:
-            rate=min(rate,number(policy['capacity_cfh'])/3600)
         with self.store.connect() as db:
             row=db.execute('SELECT e.camera FROM capture_events e JOIN frames f USING(camera,frame_id) '
                            'WHERE e.event_id=? AND f.sha256=? AND f.captured_at=?',
@@ -207,8 +207,6 @@ class LedgerHours:
             return {}
         revision = validate(document)[1]
         rate = number(document['maximum_rate_per_second'])
-        if policy.get('format_id')==revision and policy.get('pipeline_id')==document['pipeline_id']:
-            rate = min(rate,number(policy['capacity_cfh'])/3600)
         times = [datetime.fromtimestamp(t/1000,timezone.utc) for t in ticks]
         with self.lock, self.store.connect() as db:
             head = db.execute('SELECT e.camera,f.captured_at,f.sha256 FROM capture_events e JOIN frames f '
