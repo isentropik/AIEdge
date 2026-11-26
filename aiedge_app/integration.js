@@ -332,7 +332,7 @@ function renderHistory(segment, daily, zone, policy) {
  $('elapsed-value').textContent = qualified ? elapsed.lower + '–' + elapsed.upper + ' ft³' : 'No supported range for this recovery period';
  setOptional('elapsed-time', qualified ? interval(elapsed.start, through, zone) + ' · Meter event ' + through.event_id : '');
  const conditions = [];
- if (qualified && policy?.capacity_cfh > 0) conditions.push('Household ceiling ' + policy.capacity_cfh + ' ft³/hour.');
+ if (qualified && policy?.meter_capacity_cfh > 0) conditions.push('Meter capacity ' + policy.meter_capacity_cfh.toLocaleString() + ' ft³/hour.');
  if (qualified && elapsed.method === 'saved_prefix_constraints_v1' && policy?.slow_allowance_ft3 > 0) conditions.push('Slow-dial allowance ±' + policy.slow_allowance_ft3 + ' ft³.');
  setOptional('elapsed-method', qualified ? conditions.concat('Usage during gaps is unknown.').join(' ') : '');
 }

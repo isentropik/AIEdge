@@ -5,7 +5,7 @@ import sqlite3
 from decimal import Decimal, localcontext
 from daily_constraints import Budget, WorkLimit, _tighten, number
 
-FIELDS = {'capacity_cfh', 'slow_allowance_ft3', 'pipeline_id', 'format_id'}
+FIELDS = {'slow_allowance_ft3', 'pipeline_id', 'format_id'}
 
 
 def validate(policy):
@@ -13,16 +13,19 @@ def validate(policy):
         raise ValueError('invalid daily evidence policy')
     if not policy:
         return {}
+    # Older Supervisor options included a household capacity. The reading
+    # format owns the flow limit, including when restoring a legacy policy.
+    policy = {k:v for k,v in policy.items() if k != 'capacity_cfh'}
     if set(policy) - {'elapsed_start_event', 'resumed_start_event'} != FIELDS:
         raise ValueError('incomplete daily evidence policy')
     if 'elapsed_start_event' in policy and (type(policy['elapsed_start_event']) is not int or policy['elapsed_start_event'] <= 0):
         raise ValueError('invalid elapsed start event')
     if 'resumed_start_event' in policy and (type(policy['resumed_start_event']) is not int or not 1 <= policy['resumed_start_event'] <= 2147483647):
         raise ValueError('invalid resumed start event')
-    for key in ('capacity_cfh', 'slow_allowance_ft3'):
-        if isinstance(policy[key], bool) or not isinstance(policy[key], (int, float, str, Decimal)):
-            raise ValueError('invalid daily policy number')
-    if not 0 < number(policy['capacity_cfh']) <= 10000 or not 6 <= number(policy['slow_allowance_ft3']) <= 100:
+    allowance = policy['slow_allowance_ft3']
+    if isinstance(allowance, bool) or not isinstance(allowance, (int, float, str, Decimal)):
+        raise ValueError('invalid daily policy number')
+    if not 6 <= number(allowance) <= 100:
         raise ValueError('daily policy outside reviewed scope')
     if any(not isinstance(policy[k], str) or not re.fullmatch('[a-f0-9]{64}', policy[k])
            for k in ('pipeline_id', 'format_id')):
@@ -143,8 +146,7 @@ def refine(db, rows, day, zone, document, baseline, policy, *, include_elapsed=T
                 seconds = number(selected[-1]['event_observation']['monotonic_us']-source['monotonic_us'])/1000000
                 initial = dict(baseline,before=source,after=source,lower='0',
                                upper=str(seconds*number(document['maximum_rate_per_second'])))
-                bounded = _tighten(selected,day,zone,document,initial,budget,edges,
-                                   number(policy['capacity_cfh'])/3600,elapsed=True)
+                bounded = _tighten(selected,day,zone,document,initial,budget,edges,elapsed=True)
                 elapsed = dict(start=source,through=bounded['through'],lower=bounded['lower'],upper=bounded['upper'])
                 elapsed_reason = None
         except WorkLimit:
@@ -168,15 +170,14 @@ def refine(db, rows, day, zone, document, baseline, policy, *, include_elapsed=T
             except errors:
                 photo_edges, reviewed, review_state = [], [], 'unavailable'
             count = len(edges)
-            result = _tighten(selected,day,zone,document,baseline,budget,edges+photo_edges,
-                              number(policy['capacity_cfh'])/3600)
+            result = _tighten(selected,day,zone,document,baseline,budget,edges+photo_edges)
             applied, reason, used = True, None, reviewed
     except WorkLimit:
         reason = 'work_limit'
     except errors:
         pass
-    return dict(result, constraint_basis=('empirical_dial_household_capacity_and_reviewed_photo' if used
-                else 'empirical_dial_and_household_capacity') if applied else 'saved_readings',
+    return dict(result, constraint_basis=('empirical_dial_meter_capacity_and_reviewed_photo' if used
+                else 'empirical_dial_and_meter_capacity') if applied else 'saved_readings',
                 empirical_constraints_applied=applied,empirical_fallback=reason,accuracy_verified=False,
                 constraint_assumptions=policy,empirical_comparisons=count,
                 unconstrained_lower=baseline['lower'],unconstrained_upper=baseline['upper'],

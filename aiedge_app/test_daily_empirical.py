@@ -24,11 +24,15 @@ class DailyEmpiricalTests(unittest.TestCase):
         with patch('daily_empirical.evidence',side_effect=lambda db,rows,p,b:[mapping[r['event_observation']['event_id']] for r in rows]):
             return refine(None,self.rows,self.f.day,timezone.utc,self.doc,self.base,self.policy if policy is None else policy)
     def test_default_disabled(self):self.assertEqual(self.solve(policy={}),self.base)
-    def test_complete_policy(self):self.assertEqual(validate(self.policy),self.policy)
+    def test_legacy_capacity_is_ignored(self):
+        expected = {k:v for k,v in self.policy.items() if k!='capacity_cfh'}
+        self.assertEqual(validate(self.policy),expected)
+        self.assertEqual(validate(expected),expected)
+        self.assertEqual(self.solve(policy=dict(self.policy,capacity_cfh=1)),self.solve(policy=expected))
     def test_reject_incomplete(self):
         for k in self.policy:
             p=dict(self.policy);p.pop(k)
-            if k!='elapsed_start_event':
+            if k not in ('elapsed_start_event','capacity_cfh'):
                 with self.assertRaises(ValueError):validate(p)
     def test_reject_unreviewed_allowance(self):
         for v in (True,5.9,'NaN','Infinity',101):
@@ -82,6 +86,7 @@ class DailyEmpiricalTests(unittest.TestCase):
     def test_capacity_is_only_an_upper_bound_not_assumed_flow(self):
         self.rows[-1]['event_observation']['monotonic_us']=112000000
         self.rows[-1]['event_observation']['captured_at']='2026-11-07T00:00:12+00:00'
+        self.doc['maximum_rate_per_second']=0.3
         r=self.solve(policy=dict(self.policy,slow_allowance_ft3=100))
         self.assertEqual((r['lower'],r['upper']),('2.00','2.00'))
     def test_saved_evidence_identity_and_source(self):

@@ -67,7 +67,8 @@ class PhotoForward:
         error = number(fine['position_error']) * TURN / 10
         if not 0 <= error < TURN/2:
             raise ValueError('invalid five-foot tolerance')
-        key = (photo['review_sha256'], segment, error)
+        rate = number(document['maximum_rate_per_second'])
+        key = (photo['review_sha256'], segment, error, rate)
         if self.key != key or self.cursor is None or self.cursor > target['event_id']:
             readings = []
             for endpoint in (origin, anchor):
@@ -102,7 +103,7 @@ class PhotoForward:
                 if phase is None:
                     continue
                 micros = source['monotonic_us']-previous['monotonic_us']
-                capacity = number(policy['capacity_cfh']) * micros / 3600000000
+                capacity = rate * micros / 1000000
                 lo, hi = supported_band(lo, hi+capacity, phase, error)
                 previous = source
             self.point, self.cursor = (previous, lo, hi), stop

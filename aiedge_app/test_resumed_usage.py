@@ -143,7 +143,7 @@ class ResumedTests(unittest.TestCase):
     def test_invalid_anchor_option(self):
         for v in (True,0,-1,'2',2147483648):
             with self.subTest(v=v),self.assertRaises(ValueError):validate(dict(self.policy,resumed_start_event=v))
-        self.assertEqual(validate(self.policy),self.policy)
+        self.assertEqual(validate(self.policy),{k:v for k,v in self.policy.items() if k != 'capacity_cfh'})
     def test_publish_acknowledgement_and_failure(self):
         result,_=self.calculate();out=Mock(base='test',interval=10,config={'unique_id':'u','device':{}})
         store=Mock();store.connect.return_value.__enter__=Mock(return_value=self.db);store.connect.return_value.__exit__=Mock(return_value=False)

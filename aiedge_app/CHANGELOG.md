@@ -1,3 +1,8 @@
+## 0.2.0-dev130
+
+- Use the configured meter flow limit for daily usage, recovery and reviewed photo calculations. Existing household capacity options are ignored.
+- Draw the gas rate from the fine and slower dial photos and show separate whiskers for distinct feasible turn counts.
+
 ## 0.2.0-dev129
 
 - Use the configured meter capacity and measured motion of both the fine and slower dials to bound absolute readings. Recover legacy bounds from saved observations. Retain conflicting photo evidence while reconciling the rest of the usage chart.

@@ -33,12 +33,10 @@ def absolute(record, modulus):
     return min(lo for lo, hi in bands), max(hi for lo, hi in bands)
 
 
-def _legacy_range(records, day, zone, document, revision, contexts=None, *, coarse=False, rate_ceiling=None):
+def _legacy_range(records, day, zone, document, revision, contexts=None, *, coarse=False):
     midnight = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
     tomorrow = datetime.combine(day + timedelta(days=1), time.min, zone).astimezone(timezone.utc)
     rate = number(document["maximum_rate_per_second"])
-    if rate_ceiling is not None:
-        rate = min(rate, number(rate_ceiling))
     modulus = number(document["dials"][0]["value_per_revolution"])
     if document["unit"] != "ft3" or rate <= 0 or modulus <= 0:
         raise ValueError("unsupported meter")
@@ -210,7 +208,7 @@ def _check_turn_continuity(records, first, modulus, turn, rate, budget):
         prior_tick = tick
 
 
-def daily_range(records, day, zone, document, revision, contexts=None, *, recovery_capacity_cfh=None, read_phases=None):
+def daily_range(records, day, zone, document, revision, contexts=None, *, read_phases=None):
     from itertools import islice
     from daily_constraints import MAX_RECORDS, tighten
     rows = list(islice(records, MAX_RECORDS + 1))
@@ -229,13 +227,11 @@ def daily_range(records, day, zone, document, revision, contexts=None, *, recove
         context.prec = 50
         budget = Budget()
         rate = number(document["maximum_rate_per_second"])
-        if recovery_capacity_cfh is not None:
-            rate = min(rate, number(recovery_capacity_cfh) / 3600)
         try:
             baseline = _legacy_range(rows, day, zone, document, revision, contexts,
-                                     coarse=True, rate_ceiling=rate)
+                                     coarse=True)
             recovered = _tighten(rows, day, zone, document, baseline, budget,
-                                 rate_ceiling=rate, fine_endpoints=())
+                                 fine_endpoints=())
             _check_turn_continuity(rows, recovered["before"]["event_id"], periods[0],
                                    periods[-1], rate, budget)
             if read_phases is not None:
@@ -249,7 +245,7 @@ def daily_range(records, day, zone, document, revision, contexts=None, *, recove
                     # Keep the temporal readings and all rate-admissible turns in the tail.
                     try:
                         recovered = _tighten(rows, day, zone, document, recovered, budget,
-                                             rate_ceiling=rate, fine_endpoints=temporal, extra_edges=edges)
+                                             fine_endpoints=temporal, extra_edges=edges)
                     except (InconsistentConstraints, WorkLimit):
                         pass
         except WorkLimit as exc:

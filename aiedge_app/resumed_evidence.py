@@ -10,15 +10,14 @@ from daily_empirical import evidence, interval_edges
 REVIEW_FILE = 'reviewed-resumed-movements.json'
 
 
-def gap_edges(db, rows, policy, budget):
+def gap_edges(db, rows, policy, budget, rate):
     edges = interval_edges(db, rows, policy, budget)
     sources = [r['event_observation'] for r in rows]
     times = [s['monotonic_us'] for s in sources]
     # A five-foot dial and a 0.1-foot combined endpoint tolerance. Sampling
     # determines which extra comparisons to try, never which turn occurred.
-    capacity = number(policy['capacity_cfh'])
     gaps = [(times[j]-times[j-1], j) for j in range(1, len(times))
-            if (times[j]-times[j-1])*capacity >= 4800000*3600]
+            if (times[j]-times[j-1])*rate >= 4800000]
     if not gaps:
         return edges
     # Cached positions only rank candidate pairs. Every selected movement is

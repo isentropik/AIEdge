@@ -90,7 +90,7 @@ class ResumedEvidenceTests(unittest.TestCase):
             self.db.execute('insert into event_recognition_cache values(?,?,?,?)',
                             (str(i),'p','m',json.dumps({'dial_positions':[{'position':i/100},{'position':0}]})))
         with patch('resumed_evidence.interval_edges',return_value=[]):
-            edges=gap_edges(self.db,self.rows,self.policy,Budget())
+            edges=gap_edges(self.db,self.rows,self.policy,Budget(),Decimal(775)/3600)
         self.assertEqual(len(edges),1)
         self.assertEqual(edges[0][2:],(0,Decimal('6.2')))
 
@@ -100,8 +100,8 @@ class ResumedEvidenceTests(unittest.TestCase):
             from unittest.mock import Mock
             db=Mock()
             db.execute.return_value=[(s['event_id'],s['context_id'],3,4) for s in self.sources]
-            self.assertEqual(gap_edges(db,self.rows,self.policy,Budget()),[])
+            self.assertEqual(gap_edges(db,self.rows,self.policy,Budget(),Decimal(775)/3600),[])
 
     def test_normal_cadence_skips_lookup(self):
         with patch('resumed_evidence.interval_edges',return_value=[]):
-            self.assertEqual(gap_edges(None,self.rows[:2],self.policy,Budget()),[])
+            self.assertEqual(gap_edges(None,self.rows[:2],self.policy,Budget(),Decimal(775)/3600),[])

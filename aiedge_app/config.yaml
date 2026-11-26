@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev129
+version: 0.2.0-dev130
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -43,6 +43,7 @@ schema:
   daily_evidence_policy:
     elapsed_start_event: int(1,2147483647)?
     resumed_start_event: int(1,2147483647)?
+    # Accepted for existing Supervisor options. The reading format supplies the limit.
     capacity_cfh: float?
     slow_allowance_ft3: float?
     pipeline_id: str?

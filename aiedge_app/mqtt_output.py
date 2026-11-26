@@ -102,6 +102,7 @@ class MqttOutput:
         self.identity=instance_id(directory);self.snapshot=snapshot;self.interval=interval
         from overview_history import OverviewHistory
         self.overview_history = OverviewHistory(directory, self.identity) if output_mode == 'gas_consumption' else None
+        self.overview_capacity_cfh = None
         self.overview_format = None
         self.history_topic = None
         self.overview_daily = self.overview_absolute = None
@@ -144,7 +145,9 @@ class MqttOutput:
                 if movement.get('dial_from'):
                     result['usage']['movement_history'].update(dial_from=movement['dial_from'], dial_gaps=movement['dial_gaps'])
             policy = getattr(self.daily, 'evidence_policy', {}) or {}
-            result['overview_policy'] = {k: policy[k] for k in ('capacity_cfh', 'slow_allowance_ft3') if k in policy}
+            result['overview_policy'] = {k: policy[k] for k in ('slow_allowance_ft3',) if k in policy}
+            if self.overview_capacity_cfh is not None:
+                result['overview_policy']['meter_capacity_cfh'] = self.overview_capacity_cfh
             point = self.overview_history.latest(self.history_topic, self.overview_format)
             if point:
                 result['usage']['historical'] = dict(point)
@@ -279,6 +282,8 @@ class MqttOutput:
         document=snapshot.get('format')
         if self.overview_history is not None:
             self.overview_format = validate(document)[1] if document and document.get('unit') == 'ft3' else False
+            rate = document.get('maximum_rate_per_second') if self.overview_format else None
+            self.overview_capacity_cfh = rate * 3600 if rate is not None else None
         if not document:
             if self.client and self.connected.is_set():self._publish(self.base+'/availability','offline',True)
             self._reset_dedup()

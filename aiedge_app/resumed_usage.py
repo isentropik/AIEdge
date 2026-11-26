@@ -48,7 +48,7 @@ class ResumedPublisher:
             key = (rows[0]['event_id'], rows[-1]['event_id'])
             if key not in cached:
                 cached.clear()
-                cached[key] = gap_edges(conn,rows,policy,work)
+                cached[key] = gap_edges(conn,rows,policy,work,Decimal(str(document['maximum_rate_per_second'])))
             return list(cached[key])
         tighter, _ = self.gap_engine.calculate(*args,compare=compare,budget=budget)
         if not tighter:

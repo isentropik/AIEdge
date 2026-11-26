@@ -319,7 +319,7 @@ function intervalRate(s){
   const volume=q?.use??tracked?.amount??(bounds?(bounds[0]+bounds[1])/2:null);
   if(from==null||to<=from||volume==null)return null;
   const factor=3600000/(to-from);
-  return {value:volume*factor,bounds:bounds?.map(v=>v*factor),volume};
+  return {value:volume*factor,bounds:bounds?.map(v=>v*factor),bands:q?.bands?.map(b=>b.map(v=>v*factor)),volume};
 }
 function formatBounds(bounds){
   return bounds?bounds.map((v,i)=>number.format(cents(v,i?'ceil':'floor')/100)).join('–'):'';
@@ -352,7 +352,7 @@ function chart(){
     title.textContent=[time,status].filter(Boolean).join(' · ');
     const total=p?.[1]??(stop.reset?0:null);
     const bounds=model.bounds.totals.get(p?.[4])??(p?.[2]!=null&&p[3]!=null?p.slice(2,4):null);
-    const totalSpan=formatBounds(bounds),rateSpan=formatBounds(stop.rate?.bounds);
+    const totalSpan=formatBounds(bounds),rateSpan=stop.rate?.bands?.map(formatBounds).join(' or ')??formatBounds(stop.rate?.bounds);
     amount.textContent=total==null?'—':number.format(total)+' ft³';
     rateValue.textContent=stop.rate?number.format(stop.rate.value)+' ft³/h':'—';
     totalRange.textContent=totalSpan?'('+totalSpan+')':'';
@@ -542,13 +542,14 @@ function chart(){
       if(!stop.rate)continue;
       const measured=stop.tracked,range=stop.rate.bounds;
       const px=x(measured?stop.point[0]:stop.to),attrs=measured?{'data-through-event':stop.point[4]}:stop.hour?{'data-hour-end':stop.to,'data-start':stop.hour.start,'data-use':stop.hour.use,'data-rate':stop.rate.value}:{};
-      if(range&&range[1]>range[0]){
-        const [lo,hi]=range,cap=Math.min(5.5,Math.max(1,(px-x(measured?.from??stop.hour?.start??stop.from))/4));
+      for(const [lo,hi] of stop.rate.bands??(range?[range]:[])){
+        if(hi<lo || hi===lo && !stop.rate.bands)continue;
+        const cap=Math.min(5.5,Math.max(1,(px-x(measured?.from??stop.hour?.start??stop.from))/4));
         const clipped=hi>usage.max,highY=usage.y(Math.min(hi,usage.max));
         const endCap=clipped?'M'+(px-cap)+' '+(highY+cap)+'l'+cap+' '+(-cap)+'l'+cap+' '+cap:
           'M'+(px-cap)+' '+highY+'h'+(cap*2);
         const whisker=svg('path',{class:'plot-whisker',...attrs,'data-lower':lo,'data-upper':hi,'data-clipped':clipped,
-          d:endCap+' M'+px+' '+highY+'V'+usage.y(lo)+' M'+(px-cap)+' '+usage.y(lo)+'h'+(cap*2)});
+          d:endCap+' M'+px+' '+highY+'V'+usage.y(Math.min(lo,usage.max))+' M'+(px-cap)+' '+usage.y(Math.min(lo,usage.max))+'h'+(cap*2)});
         nodes.push(whisker);
       }
       const py=usage.y(stop.rate.value);
@@ -704,7 +705,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v4:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v5:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -721,6 +722,7 @@ function rememberWindow(current,scale,start,end){
       recoveredGaps:(profile.recoveredGaps??[]).filter(overlaps),unknownGaps:(profile.unknownGaps??[]).filter(overlaps),
       supportedTicks:(profile.supportedTicks??[]).filter(t=>from<=t&&t<=end),
       photoConflicts:(profile.photoConflicts??[]).filter(q=>start<=q.time&&q.time<=end),
+      rateIntervals:(profile.rateIntervals??[]).filter(r=>from<=r[0]&&r[1]<=end),
       estimatedChangeBounds:(profile.estimatedChangeBounds??[]).filter(r=>from<=r[1]&&r[1]<=end),
       reconciled:profile.reconciled,ceiling:profile.ceiling,provisionalFrom:profile.provisionalFrom,
       fineBounds:profile.fineBounds.filter(overlaps),
@@ -828,6 +830,7 @@ function registerSummary(hourly,start,end,minutes,view){
     // average even when the camera missed a photo inside that interval.
     return !(supported.has(from)&&supported.has(to)) && hours.get(to)?.start!==from && fineBounds.get(from)?.end!==to;
   }
+  const opticalRates=new Map((profile.rateIntervals??[]).map(([a,b,proof])=>[a+'/'+b,proof]));
   const changes=new Map((profile.changeBounds??[]).map(([a,b,lo,hi])=>[a+'/'+b,[lo,hi]]));
   const days=Object.keys(profile.openings).map(Number).sort((a,b)=>a-b);
   const openingAt=t=>days.findLast(day=>day<=t);
@@ -921,14 +924,32 @@ function registerSummary(hourly,start,end,minutes,view){
   for(const [i,t] of edges.entries()){
     const from=i?edges[i-1]:completedTick(t-1,zone,minutes);
     if(from>=t)continue;
-    const a=points.get(from),b=points.get(t),q=difference(a,b,t-from);
-    if(!q||profile.blocked?.includes(t)||missingChange(from,t))continue;
-    applyIntervalBounds(q,from,t);
-    useMeasuredRange(q,from,t);
-    const selected=estimatedBounds.get(from+'/'+t);
-    if(selected && selected[0]<=q.use+.000002 && q.use<=selected[1]+.000002)
-      q.bounds=[Math.max(q.bounds?.[0]??0,Math.min(selected[0],q.use)),
-                Math.min(q.bounds?.[1]??Infinity,Math.max(selected[1],q.use))];
+    if(profile.blocked?.includes(t)||missingChange(from,t))continue;
+    const proof=opticalRates.get(from+'/'+t);
+    let q;
+    if(proof){
+      if(!proof.bands.length || !proof.bands.some(([lo,hi])=>lo<=proof.use&&proof.use<=hi))continue;
+      const absolute=difference(points.get(from),points.get(t),t-from)?.bounds;
+      const relative=changes.get(from+'/'+t);
+      const lower=Math.max(0,absolute?.[0]??0,relative?.[0]??0);
+      const upper=Math.min(absolute?.[1]??Infinity,relative?.[1]??Infinity);
+      const bands=proof.bands.map(([a,b])=>[Math.max(a,lower),Math.min(b,upper)]).filter(([a,b])=>a<=b);
+      if(!bands.length)continue;
+      const choices=bands.map(([lo,hi])=>Math.min(hi,Math.max(lo,proof.use)));
+      const use=choices.reduce((best,v)=>Math.abs(v-proof.use)<Math.abs(best-proof.use)?v:best);
+      q={use,bands,bounds:[bands[0][0],bands.at(-1)[1]]};
+    }else{
+      // A cold register-only preview can draw the total while the rate proof loads.
+      if(data.published)continue;
+      q=difference(points.get(from),points.get(t),t-from);
+      if(!q)continue;
+      applyIntervalBounds(q,from,t);
+      useMeasuredRange(q,from,t);
+      const selected=estimatedBounds.get(from+'/'+t);
+      if(selected && selected[0]<=q.use+.000002 && q.use<=selected[1]+.000002)
+        q.bounds=[Math.max(q.bounds?.[0]??0,Math.min(selected[0],q.use)),
+                  Math.min(q.bounds?.[1]??Infinity,Math.max(selected[1],q.use))];
+    }
     const gap=profile.gaps.find(([l,r])=>l<t&&t<r||l<from&&from<r)||
       profile.gaps.find(([l,r])=>r-l>=600000&&l<t&&from<r);
     const model=profile.modeled.find(([l,r])=>l<t&&t<r||l<from&&from<r);
