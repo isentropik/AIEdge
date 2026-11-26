@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from nominal_register import AbsolutePublisher, photo_projection
-from photo_register import bracketed_tip, dark_stroke, hundreds, PhotoRegister
+from photo_register import bracketed_tip, covered_upper_tip, dark_stroke, hundreds, PhotoRegister
 from reading_format import validate
 from test_reading_format import document
 
@@ -54,6 +54,34 @@ def dial_faces(upper=0.43, lower=4.43):
 
 
 class FaceTests(unittest.TestCase):
+    def test_covered_upper_index_requires_one_moving_tip_and_two_fixed_neighbors(self):
+        y, x = np.indices((480, 640))
+        radius = np.hypot(x-320, y-240)/70
+        angle = (np.arctan2(x-320, 240-y)*5/np.pi) % 10
+        item = dict(direction='cw', landmarks=dict(needle_pivot=[320,240],
+                    rim_points=[[320,170],[390,240],[320,310],[250,240]]))
+        index_ring = (radius > 1.02) & (radius < 1.15)
+        indices = abs((angle+.5) % 1-.5) < .045
+        reference = np.where(index_ring & indices, 90., 210.)
+        pointer_ring = (radius > .87) & (radius < .99)
+        image = reference.copy()
+        image[pointer_ring & (abs((angle-.04+5) % 10-5) < .13)] = 80
+        center, spread = covered_upper_tip(image, reference-image, item, .1)
+        center = (center+5) % 10-5
+        self.assertLess(center-spread, 0)
+        self.assertGreater(center+spread, .12)
+        self.assertLess(spread, .2)
+        self.assertIsNone(covered_upper_tip(image, image-image, item, .1))
+        missing_tick = reference.copy()
+        missing_tick[index_ring & (abs(angle-1) < .15)] = 210.
+        self.assertIsNone(covered_upper_tip(image, missing_tick-image, item, .1))
+        other = image.copy()
+        other[pointer_ring & (abs(angle-4) < .13)] = 80
+        self.assertIsNone(covered_upper_tip(other, reference-other, item, .1))
+        centered = reference.copy()
+        centered[pointer_ring & (abs((angle+5) % 10-5) < .13)] = 80
+        self.assertIsNone(covered_upper_tip(centered, reference-centered, item, .1))
+
     def test_small_disagreement_can_resolve_when_both_pointers_and_index_are_visible(self):
         from reading_bounds import diagnose_inconsistency
         profile, ref, img, doc = dial_faces(.43, 5.01)

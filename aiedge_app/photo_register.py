@@ -84,7 +84,7 @@ def radial_samples(image, center, rays, radii):
             + (1-dx)*dy*image[iy+1, ix] + dx*dy*image[iy+1, ix+1])
 
 
-def dark_stroke(angles, intensity, widths, change=None, *, local_contrast=False):
+def dark_stroke(angles, intensity, widths, change=None, *, local_contrast=False, edges=False):
     """Require one isolated ink stroke of the expected angular width."""
     threshold = 75
     if local_contrast:
@@ -93,14 +93,15 @@ def dark_stroke(angles, intensity, widths, change=None, *, local_contrast=False)
             return None
         threshold = (ink + paper) / 2
     dark = np.flatnonzero(intensity < threshold)
-    centers = []
+    strokes = []
     for run in np.split(dark, np.flatnonzero(np.diff(dark) > 1) + 1):
         if not len(run) or run[0] == 0 or run[-1] == len(angles)-1:
             continue
         width = angles[run[-1]] - angles[run[0]]
         if widths[0] <= width <= widths[1] and (change is None or change[run].mean() >= 40):
-            centers.append(float(angles[run].mean()))
-    return centers[0] if len(centers) == 1 else None
+            strokes.append((float(angles[run[0]]), float(angles[run[-1]]))
+                           if edges else float(angles[run].mean()))
+    return strokes[0] if len(strokes) == 1 else None
 
 
 def indexed_tip(image, diff, item, error):
@@ -166,7 +167,8 @@ def read_face(diff, item, error):
     return ((lo + hi) / 2) % 10, (hi - lo) / 2
 
 
-def bracketed_tip(image, diff, item, guess, error, *, covered_division=False, outer_tip=False):
+def bracketed_tip(image, diff, item, guess, error, *, covered_division=False, outer_tip=False,
+                  footprint=False):
     """Read the moving tip against the two printed divisions on either side."""
     mark = item["landmarks"]
     rim = np.asarray(mark["rim_points"], dtype=float)
@@ -188,7 +190,7 @@ def bracketed_tip(image, diff, item, guess, error, *, covered_division=False, ou
         readings = []
         for i, row in enumerate(ink):
             value = dark_stroke(angles, row, widths, change[i] if moving else None,
-                                local_contrast=outer_tip)
+                                local_contrast=outer_tip, edges=footprint and moving)
             if value is None:
                 continue
             if outer_tip and not moving:
@@ -204,9 +206,11 @@ def bracketed_tip(image, diff, item, guess, error, *, covered_division=False, ou
     tip_radii = (.90, .915, .93, .945, .96) if outer_tip else (.84, .86, .88, .90, .92)
     mark_radii = (1.04, 1.06, 1.08, 1.10, 1.12) if outer_tip else (1.02, 1.04, 1.06, 1.08)
     values = []
+    edges = []
     for center in (rim.mean(axis=0), np.asarray(mark["needle_pivot"], dtype=float)):
-        tips = strokes(center, guess+np.arange(-.50, .501, .005),
-                       tip_radii, (.10, .36), True)
+        observed_tip = strokes(center, guess+np.arange(-.50, .501, .005),
+                               tip_radii, (.10, .36), True)
+        tips = [sum(pair)/2 for pair in observed_tip] if footprint else observed_tip
         if len(tips) < 3 or np.ptp(tips) > error:
             return None
         middle = round(float(np.mean(tips)))
@@ -226,9 +230,35 @@ def bracketed_tip(image, diff, item, guess, error, *, covered_division=False, ou
                 if abs((hi-lo)-span) > error or not lo <= min(tips) <= max(tips) <= hi:
                     return None
                 values.extend(left_tick+span*(tip-lo)/(hi-lo) for tip in tips)
+                if footprint:
+                    # Both centers must place ink over the obscured division.
+                    midpoint = (lo+hi)/2
+                    if not any(left <= midpoint <= right for left, right in observed_tip):
+                        return None
+                    edges.extend(left_tick+span*(edge-lo)/(hi-lo) for pair in observed_tip for edge in pair)
     if np.ptp(values) > error:
         return None
+    if footprint:
+        # The tip covers the central index. Its visible ink edges, projected
+        # between the two exposed indices, bound the indication on this face.
+        # Two centers can put the axis on opposite sides of a graduation
+        # even while agreeing on which graduation the ink covers.
+        side_resolved = max(values) < guess or min(values) > guess
+        return ((min(edges)+max(edges))/2) % 10, float(np.ptp(edges))/2, side_resolved
     return ((min(values)+max(values))/2) % 10, float(np.ptp(values))/2
+
+
+def covered_upper_tip(image, diff, item, error):
+    """Accept exactly one moving tip bracketed by the same print in both photos."""
+    found = None
+    for division in range(10):
+        fit = bracketed_tip(image, diff, item, division, error, covered_division=True,
+                            outer_tip=True, footprint=True)
+        if fit is not None:
+            if found is not None:
+                return None
+            found = fit
+    return found[:2] if found is not None and found[2] else None
 
 
 def hundreds(profile, ref, img, doc, positions, indices):
@@ -263,6 +293,8 @@ def hundreds(profile, ref, img, doc, positions, indices):
         ):
             return None
         fit = read_face(diff, item, errors[j])
+        if fit is None and j == len(dials)-3:
+            fit = covered_upper_tip(aligned, diff, item, errors[j])
         if j == len(dials)-2:
             indexed_fit = indexed_tip(aligned, diff, item, errors[j])
             if indexed_fit is None:

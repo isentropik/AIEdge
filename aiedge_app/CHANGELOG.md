@@ -1,3 +1,7 @@
+## 0.2.0-dev138
+
+- Recover the 10,000 ft³ dial when one pointer tip covers a division and both neighboring marks can be verified on the calibrated face.
+
 ## 0.2.0-dev137
 
 - Resume scheduled capture after a busy readiness check and preserve the missed interval.
