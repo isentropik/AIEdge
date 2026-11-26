@@ -467,12 +467,14 @@ def run_service(stop_signals):
     if mqtt_enabled and (recognition is None or reading_format is None):
         configuration={'state':'invalid','code':'options_mqtt_runtime_required'}
         mqtt_enabled=False;enabled=False
-    photo_register=None
+    retention_reader=None
+    if setup and reading_format:
+        from photo_register import PhotoRegister
+        retention_reader=PhotoRegister(store,setup)
+    photo_register=retention_reader if options.get('mqtt_output_mode')=='gas_consumption' else None
     if mqtt_enabled:
         from daily_mqtt import DailyPublisher
         from mqtt_output import MqttOutput
-        from photo_register import PhotoRegister
-        photo_register=PhotoRegister(store,setup) if setup and options.get('mqtt_output_mode')=='gas_consumption' else None
         def publication_snapshot():return publication_state(store,recognition,reading_format,consumption,photo_register)
         try:
             daily = DailyPublisher(store, options.get('daily_evidence_policy'),
@@ -532,7 +534,7 @@ def run_service(stop_signals):
         except (OSError,sqlite3.Error):pass
     stop_signals.checkpoint()
     from image_retention import ImageRetention
-    retention = ImageRetention(store,archive,consumption,photo_register,reading_format) if store and archive and reviews else None
+    retention = ImageRetention(store,archive,consumption,retention_reader,reading_format) if store and archive and reviews else None
     from gas_trend import GasTrend
     from gas_periods import GasPeriods
     from meter_history import frame_ids

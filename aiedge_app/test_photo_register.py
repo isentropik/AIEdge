@@ -264,7 +264,27 @@ class SourceTests(unittest.TestCase):
             ),
         )
         reader = PhotoRegister(Saved(), Saved())
-        self.assertEqual(reader.check(snap, inference)["source"], source)
+        original = reader.check(snap, inference)
+        self.assertEqual(original["source"], source)
+        from threading import Lock
+        from types import SimpleNamespace
+        from capture import Store
+        from original_dials import preserve
+        with TemporaryDirectory() as tmp:
+            store = Store(tmp)
+            recognition = SimpleNamespace(lock=Lock(), reader=SimpleNamespace(
+                pipeline_id=doc["pipeline_id"],read_jpeg=lambda image:inference))
+            self.assertTrue(preserve(store,recognition,reader,doc,digest,image_bytes))
+            with store.connect() as db:
+                db.execute("INSERT INTO frames VALUES(?,?,?,?,?,?,0)",("fixture","24",source["captured_at"],
+                           source["captured_at"],digest,len(image_bytes)))
+                db.execute("INSERT INTO retired_images VALUES(?,0)",(digest,))
+            restored = PhotoRegister(Store(tmp), Saved())
+            self.assertEqual(restored.check(snap,inference),original)
+            changed = deepcopy(inference)
+            changed["dial_positions"][1]["position"] += 0.01
+            self.assertIsNone(restored.check(snap,changed))
+            self.assertIsNone(restored.check(snap,dict(inference,profile="different calibration")))
         for path, value in (
             (("latest", "sha256"), "c" * 64),
             (("latest", "captured_at"), "later"),
