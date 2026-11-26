@@ -100,11 +100,13 @@ class DailyTurnRecoveryTests(TestCase):
 
     def test_rate_is_only_an_upper_bound(self):
         rows=self.rows()
-        small=self.solve(rows,recovery_capacity_cfh=2160)
         normal=self.solve(rows)
+        with patch.dict(self.format,maximum_rate_per_second=.6):
+            small=self.solve(rows)
         self.assertEqual(small['lower'],normal['lower'])
         self.assertLess(Decimal(small['upper']),Decimal(normal['upper']))
-        with self.assertRaises(ValueError):self.solve(rows,recovery_capacity_cfh=1)
+        with patch.dict(self.format,maximum_rate_per_second=1/3600), self.assertRaises(ValueError):
+            self.solve(rows)
 
     def test_budget_exhaustion_withholds_recovery(self):
         with patch('daily_constraints.MAX_WORK',0):
@@ -163,7 +165,7 @@ class DailyTurnRecoveryTests(TestCase):
         db.execute.return_value=[('c',pipeline,revision,1)]
         obs=dict(rows[-1]['event_observation'],segment_id=rows[-1]['segment_id'])
         output=Mock(base='meter',interval=30,config={'unique_id':'meter','device':{}})
-        for configured_format,expected_rate in [(revision,'0.6'),('0'*64,'1')]:
+        for configured_format in (revision, '0'*64):
             policy=dict(capacity_cfh=2160,slow_allowance_ft3=6,format_id=configured_format,pipeline_id=pipeline)
             pub=DailyPublisher(store,policy)
             with (patch.dict('os.environ',TZ='UTC'),patch('daily_mqtt.datetime',wraps=datetime) as clock,
@@ -175,7 +177,7 @@ class DailyTurnRecoveryTests(TestCase):
             topic,encoded=output._publish.call_args.args
             self.assertEqual(topic,'meter/daily_range')
             payload=json.loads(encoded)
-            self.assertEqual(payload['maximum_rate_per_second'],expected_rate)
+            self.assertEqual(payload['maximum_rate_per_second'],'1')
             self.assertEqual(payload['through'],rows[-1]['event_observation'])
             midpoint=(Decimal(payload['lower'])+Decimal(payload['upper']))/2
             self.assertEqual(Decimal(payload['nominal_estimate']['value_ft3']),midpoint)

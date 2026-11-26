@@ -76,7 +76,7 @@ def constraints(db, rows, document, policy, budget):
     events = [r['event_observation']['event_id'] for r in rows]
     extra, used = [], []
     modulus = number(document['dials'][0]['value_per_revolution'])
-    rate = min(number(document['maximum_rate_per_second']), number(policy['capacity_cfh']) / 3600)
+    rate = number(document['maximum_rate_per_second'])
     for review in reviews:
         budget.spend()
         j = bisect.bisect_left(events, review['event_id'])

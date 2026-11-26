@@ -11,7 +11,7 @@ class PhotoForwardTests(unittest.TestCase):
         wall = datetime(2026, 1, 1, tzinfo=timezone.utc)
         self.rows, self.saved = {}, {}
         self.policy = dict(capacity_cfh=360, pipeline_id='pipeline', format_id='format')
-        self.document = dict(unit='ft3', pipeline_id='pipeline', dials=[{}]*5+[
+        self.document = dict(unit='ft3', pipeline_id='pipeline', maximum_rate_per_second=.1, dials=[{}]*5+[
             dict(index=5, value_per_revolution=5, position_error=.1)])
         def put(event, seconds, pos):
             src = dict(event_id=event, captured_at=(wall+timedelta(seconds=seconds)).isoformat(),

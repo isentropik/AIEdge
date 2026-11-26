@@ -38,7 +38,7 @@ class PhotoTests(unittest.TestCase):
         f=constraint_fixture.DailyConstraintsTests()
         self.rows=[f.row(1,0,[(102.5,102.6),(107.5,107.6)]),f.row(3,23,[(102.5,102.6),(107.5,107.6),(112.5,112.6)])]
         for r in self.rows:r['event_observation'].update(format_id='b'*64,clock_id='c'*32)
-        self.doc=dict(f.document,dials=[dict(value_per_revolution=n) for n in (10000000,1000000,100000,10000,1000,5)])
+        self.doc=dict(f.document,maximum_rate_per_second=.22,dials=[dict(value_per_revolution=n) for n in (10000000,1000000,100000,10000,1000,5)])
         self.policy=dict(capacity_cfh=775,format_id='b'*64,pipeline_id='a'*64)
     def save(self):
         (self.root/NAME).write_text(json.dumps(dict(schema_version=1,reviews=[self.review])),encoding='utf-8')

@@ -111,7 +111,6 @@ def recent_ranges(db, rows, document, contexts, zone, policy=None):
                 raise ValueError('recent_unsupported_geometry')
             values = evidence(db, rows, policy, budget)
             edges = recent_comparisons(rows, values, number(policy['slow_allowance_ft3']), budget)
-            rate = min(rate, number(policy['capacity_cfh']) / 3600)
 
         def interval(left, right, hour=None):
             selected = rows[left:right+1]
@@ -130,7 +129,7 @@ def recent_ranges(db, rows, document, contexts, zone, policy=None):
                                    hour['lower'], hour['upper'])] if hour else edges
             objective = (start['event_id'], end['event_id']) if hour else None
             result = _tighten(graph, stamps[right].astimezone(zone).date(), zone,
-                              document, baseline, budget, graph_edges, rate, elapsed=True,
+                              document, baseline, budget, graph_edges, elapsed=True,
                               objective_events=objective)
             return dict(start=start, through=end, lower=result['lower'], upper=result['upper'],
                         duration_seconds=str(duration))
@@ -159,7 +158,7 @@ def recent_ranges(db, rows, document, contexts, zone, policy=None):
                 quarter_constraint_scope='full_hour_saved_readings', slow_comparison_scope=scope,
                 window_basis='saved_endpoints_at_or_before_15_minute_boundaries',
                 boundary_slack_seconds=BOUNDARY_SLACK,
-                constraint_assumptions=policy, constraint_basis='empirical_dial_and_household_capacity' if policy else 'saved_readings',
+                constraint_assumptions=policy, constraint_basis='empirical_dial_and_meter_capacity' if policy else 'saved_readings',
                 label=hour['lower']+'–'+hour['upper']+' ft³')
 
 

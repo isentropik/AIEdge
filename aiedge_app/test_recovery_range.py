@@ -61,7 +61,9 @@ class RecoveryTests(unittest.TestCase):
 
     def test_policy_change_invalidates_prefix(self):
         self.run_range();old=self.engine.key
-        self.f.policy['capacity_cfh']=776
+        self.f.policy['capacity_cfh']=1
+        self.assertIsNotNone(self.run_range()[0]);self.assertEqual(self.engine.key,old)
+        self.f.doc=dict(self.f.doc,maximum_rate_per_second=3)
         self.assertIsNotNone(self.run_range()[0]);self.assertNotEqual(self.engine.key,old)
     def test_endpoint_digest_not_borrowed(self):
         with patch('recovery_range._tighten',side_effect=ValueError('contradictory evidence')):

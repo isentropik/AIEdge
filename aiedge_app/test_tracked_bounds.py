@@ -22,7 +22,7 @@ class TrackedBoundsTests(unittest.TestCase):
             CREATE TABLE continuous_capture_attempts(attempt_id,first_event,after_event_id,started_at);
             CREATE TABLE continuous_capture_outcomes(attempt_id,outcome,event_id,error,finished_at);
         """)
-        self.doc, self.rev = validate(dict(version=1,pipeline_id='a'*64,unit='ft3',maximum_rate_per_second=1,
+        self.doc, self.rev = validate(dict(version=1,pipeline_id='a'*64,unit='ft3',maximum_rate_per_second=.2,
                                            dials=[dict(index=0,value_per_revolution=5,position_error=.1)]))
         self.policy = dict(format_id=self.rev,pipeline_id='a'*64,capacity_cfh=720)
         self.opening = datetime(2026,1,1,10,tzinfo=timezone.utc)
@@ -74,7 +74,7 @@ class TrackedBoundsTests(unittest.TestCase):
         saved=self.get([gap])
         self.assertEqual(saved['joins'],[gap])
         self.assertEqual(saved['edges'][0]['use'],[0,11])
-        self.assertEqual(self.get([gap],dict(self.policy,pipeline_id='b'*64))['joins'],[])
+        self.assertEqual(self.get([gap],dict(self.policy,pipeline_id='b'*64))['joins'],[gap])
         self.db.execute('INSERT INTO capture_failure_boundaries VALUES(1)')
         blocked=self.get([gap])
         self.assertEqual(blocked['joins'],[])

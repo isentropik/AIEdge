@@ -268,6 +268,7 @@ class ChartHours:
                          if q.get('bounds') and q['end']>lower and q['start']<close]
                 profile = dict(p,points=[r for r in p['points'] if lower<=r[0]<=close],
                                fineBounds=[r for r in p['fineBounds'] if lower<r[1] and r[0]<close])
+                profile['rateIntervals']=[r for r in p.get('rateIntervals',[]) if lower<=r[0] and r[1]<=close]
                 profile['changeBounds']=[r for r in p.get('changeBounds',[]) if lower<=r[1]<=close]
                 profile['estimatedChangeBounds']=[r for r in p.get('estimatedChangeBounds',[]) if lower<=r[1]<=close]
                 profile['supportedTicks']=[t for t in p.get('supportedTicks',[]) if lower<=t<=close]
@@ -554,6 +555,7 @@ class ChartHours:
             # Recover sub-hour optical anchors only where the absolute series
             # cannot resolve an hour. All zooms consume these same anchors.
             fine_legs = []
+            rate_intervals = [[q['start'],t,q['optical_rate']] for t,q in optical.items() if 'optical_rate' in q]
             if self.ledger and document:
                 spans = []
                 last_tick = stamp - stamp % 60000
@@ -576,12 +578,14 @@ class ChartHours:
                         continue
                     positions={t:boundary(t) for t in fine_ticks}
                     observed=self.ledger.snapshot(fine_ticks,tracked,document,policy or {},positions,outages)
+                    rate_intervals.extend([q['start'],t,q['optical_rate']] for t,q in observed.items() if 'optical_rate' in q)
                     fine_legs.extend(measured_hours(fine_ticks,positions,observed,outages,cuts,splits,register_changes))
             gap_flow = getattr(self.ledger,'gap_flow',None)
             flow = gap_flow(start,stamp,tracked,document,result['flowCeiling']) if gap_flow else []
             result['registerProfile'] = register_profile(stamp, zone, registers, daily, hours, outages,
                                                           cuts, photos, result['flowCeiling'], fine_legs,
                                                           min(document['dials'],key=lambda d:d['value_per_revolution']) if document else None, flow)
+            result['registerProfile']['rateIntervals'] = rate_intervals
             key = self.profile_key(zone_name,usage,document,policy)
             if key and not missing and result['registerProfile']['points']:
                 with self.profile_lock:
@@ -617,7 +621,7 @@ class BackgroundCharts:
             if hashlib.sha256(payload).hexdigest().encode() != checksum:
                 return
             version, meter, daily, key, data = json.loads(payload)
-            if (version, meter, daily) != (3, self.hours.meter, self.hours.daily):
+            if (version, meter, daily) != (4, self.hours.meter, self.hours.daily):
                 return
             if not key or not data['registerProfile']['points'] or data['missing']:
                 return
@@ -654,7 +658,7 @@ class BackgroundCharts:
         if self.stop.is_set() or data['missing'] or not data.get('registerProfile',{}).get('points'):
             return
         from setup_store import Setup
-        payload = json.dumps([3,self.hours.meter,self.hours.daily,key,data],
+        payload = json.dumps([4,self.hours.meter,self.hours.daily,key,data],
                              allow_nan=False,separators=(',',':')).encode()
         Setup._atomic(self.path, hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
         if data['registerProfile']['points'][-1][0] >= tick:

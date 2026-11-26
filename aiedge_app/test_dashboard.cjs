@@ -897,3 +897,23 @@ test('a recovered increase remains in later cumulative runs across an unsupporte
   assert.equal(point(2),undefined);
   assert(!nodes.some(n=>n.class==='plot-usage-dot'&&n['data-hour-end']===at(3)));
 });
+
+test('optical changes drive the dot and retain separate rate whiskers',async()=>{
+  const midnight=Date.parse('2026-11-25T00:00:00Z'), step=600000;
+  const start=midnight+step,end=start+step;
+  const registerProfile={points:[[midnight,100,94,107,1],[start,100,94,107,1],[end,100.531,94,107,1]],
+    openings:{[midnight]:[100,94,107,1]},gaps:[],conflicts:[],modeled:[],fineBounds:[],reconciled:true,
+    rateIntervals:[[start,end,{use:.00235,bands:[[0,.0934],[4.9043,5.0934]]}]]};
+  const ui=gasOverview(async()=>response({zone:'UTC',end,midnight,minutes:60,hours:[],groups:[],resets:[midnight],registerProfile}));
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(end).toISOString());
+  ui.charts.period('1',null);
+  await tick();
+  const nodes=ui.get('day-curve').children[0].children.map(n=>n.attributes).filter(a=>a['data-hour-end']===end);
+  const dots=nodes.filter(n=>n.class==='plot-usage-dot');
+  assert.equal(dots.length,1);
+  assert.equal(dots[0]['data-use'],.00235);
+  assert.equal(dots[0]['data-rate'],.00235*6);
+  assert.deepEqual(nodes.filter(n=>n.class==='plot-whisker').map(n=>[n['data-lower'],n['data-upper']]),
+    [[0,.0934*6],[4.9043*6,5.0934*6]]);
+});

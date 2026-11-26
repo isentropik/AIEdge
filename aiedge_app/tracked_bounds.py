@@ -99,8 +99,6 @@ class TrackedBounds:
                 or validate(document)[1] != track['format']):
             return {}
         rate = number(document['maximum_rate_per_second'])
-        if policy.get('format_id') == track['format'] and policy.get('pipeline_id') == document['pipeline_id']:
-            rate = min(rate, number(policy['capacity_cfh']) / 3600)
         with self.lock, self.store.connect() as db:
             opening = db.execute('SELECT e.camera,f.captured_at,f.sha256 FROM capture_events e '
                                  'JOIN frames f USING(camera,frame_id) WHERE e.event_id=?', (first[2],)).fetchone()

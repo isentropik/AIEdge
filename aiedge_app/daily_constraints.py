@@ -140,7 +140,7 @@ def register_bands(record, modulus, fine_endpoints=None):
                   for lo, hi in values])
 
 
-def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rate_ceiling=None, elapsed=False, objective_events=None, fine_endpoints=None):
+def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), *, elapsed=False, objective_events=None, fine_endpoints=None):
     if len(records) > MAX_RECORDS:
         raise WorkLimit()
     midnight = datetime.combine(day, time.min, zone).astimezone(timezone.utc)
@@ -149,10 +149,8 @@ def _tighten(records, day, zone, document, baseline, budget, extra_edges=(), rat
     records = records[start:]
     modulus = number(document["dials"][0]["value_per_revolution"])
     rate = number(document["maximum_rate_per_second"])
-    if rate_ceiling is not None:
-        rate = min(rate, number(rate_ceiling))
-        if rate <= 0:
-            raise ValueError("invalid daily capacity")
+    if rate <= 0:
+        raise ValueError("invalid meter flow limit")
     domains, edges, index = [], [], {}
     before = after = 0 if elapsed else None
     previous = None

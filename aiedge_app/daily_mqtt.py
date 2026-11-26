@@ -124,7 +124,7 @@ class DailyPublisher:
         policy = self.recent.policy
         recent = dict(through=daily['through'], timezone=zone_name, unknown_gaps_preserved=True,
                       constraint_assumptions=policy,
-                      constraint_basis='empirical_dial_and_household_capacity' if policy else 'saved_readings')
+                      constraint_basis='empirical_dial_and_meter_capacity' if policy else 'saved_readings')
         historical = dict(chart_period_reference=recent)
         if day == today:
             historical['chart_daily'] = daily
@@ -146,10 +146,8 @@ class DailyPublisher:
 
     def _calculate(self, db, rows, today, zone, document, revision, contexts):
         policy = self.evidence_policy
-        capacity = (policy.get('capacity_cfh') if policy.get('format_id') == revision
-                    and policy.get('pipeline_id') == document.get('pipeline_id') else None)
         from dial_travel import phases
-        result = daily_range(rows, today, zone, document, revision, contexts, recovery_capacity_cfh=capacity,
+        result = daily_range(rows, today, zone, document, revision, contexts,
                              read_phases=lambda *args: phases(db, *args))
         if policy and result.get('constraint_basis') != COARSE_BASIS:
             from daily_empirical import refine

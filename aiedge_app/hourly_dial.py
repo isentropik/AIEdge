@@ -101,6 +101,8 @@ def dial_hour(db, source, document, rate, start, end, first, last):
 class LedgerHours:
     def __init__(self,store,photos=None):
         from register_replay import ChartRegisterReplay
+        from chart_rate_photos import ChartRatePhotos
+        self.rate_photos = ChartRatePhotos()
         self.register_replay = ChartRegisterReplay(store)
         self.store = store
         self.photos = photos
@@ -207,6 +209,8 @@ class LedgerHours:
             return {}
         revision = validate(document)[1]
         rate = number(document['maximum_rate_per_second'])
+        from chart_rate_photos import comparison_allowance
+        allowance = comparison_allowance(document,revision,policy)
         times = [datetime.fromtimestamp(t/1000,timezone.utc) for t in ticks]
         with self.lock, self.store.connect() as db:
             head = db.execute('SELECT e.camera,f.captured_at,f.sha256 FROM capture_events e JOIN frames f '
@@ -369,4 +373,10 @@ class LedgerHours:
                         pair=None
                     if pair:
                         result[ticks[i+1]]=dict(pair,start=ticks[i],end=ticks[i+1])
+                leg=result.get(ticks[i+1])
+                if allowance is not None and leg and not any(l<ticks[i+1] and ticks[i]<r for l,r in gaps):
+                    rate_evidence=self.rate_photos.get(db,document,source,allowance,ticks[i],ticks[i+1],
+                                                       first,last,state['event_id'])
+                    if rate_evidence is not None:
+                        result[ticks[i+1]] = dict(leg,optical_rate=rate_evidence)
         return result

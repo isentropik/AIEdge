@@ -122,7 +122,7 @@ class RecoveryRange:
                             or source['format_id'] != policy['format_id']):
                         raise ValueError('unverified recovery context')
                 seconds = number(end['monotonic_us'] - boundary['monotonic_us']) / 1000000
-                rate = min(number(document['maximum_rate_per_second']), number(policy['capacity_cfh'])/3600)
+                rate = number(document['maximum_rate_per_second'])
                 modulus = number(document['dials'][0]['value_per_revolution'])
                 first_bands = register_bands(rows[0], modulus, fine_endpoints)
                 if not first_bands or first_bands[-1][1] + seconds*rate >= modulus:
@@ -143,7 +143,7 @@ class RecoveryRange:
                 if boundary != start:
                     edges.append((start['event_id'], boundary['event_id'], lower, upper))
                     rows = original + rows
-                result = _tighten(rows, day, zone, document, initial, budget, edges, rate,
+                result = _tighten(rows, day, zone, document, initial, budget, edges,
                                   elapsed=True, fine_endpoints=fine_endpoints)
                 if self.register_only:
                     method = 'saved_register_envelopes_v1'
@@ -152,7 +152,7 @@ class RecoveryRange:
                     if end == baseline['through']:
                         try:
                             result = _tighten(rows, day, zone, document, initial, budget,
-                                              edges, rate, elapsed=True)
+                                              edges, elapsed=True)
                             method = 'saved_register_bands_v1'
                         except (InconsistentConstraints, WorkLimit):
                             pass
