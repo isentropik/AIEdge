@@ -345,7 +345,7 @@ function gasOverview(trend, date=Date) {
  const window = {addEventListener(){}};
  const context={document,window,location:{hash:''},Intl,Date:date};
  if(trend){
-  for(const id of ['day-curve','usage-period']){
+  for(const id of ['day-curve','usage-period','gas-previous']){
    get(id).clientWidth=500;
    get(id).addEventListener=(name,fn)=>{get(id)['on'+name]=fn;};
   }
@@ -916,4 +916,36 @@ test('optical changes drive the dot and retain separate rate whiskers',async()=>
   assert.equal(dots[0]['data-rate'],.00235*6);
   assert.deepEqual(nodes.filter(n=>n.class==='plot-whisker').map(n=>[n['data-lower'],n['data-upper']]),
     [[0,.0934*6],[4.9043*6,5.0934*6]]);
+});
+
+test('browsing a previous hour requests its missing optical rates before drawing fallback dots',async()=>{
+  const midnight=Date.UTC(2026,10,25),step=600000,end=midnight+36*step,previous=end-6*step;
+  const points=Array.from({length:37},(_,i)=>[midnight+i*step,100+i/2,99+i/2,110+i/2,1]);
+  const profile={points,openings:{[midnight]:[100,99,110,1]},gaps:[],conflicts:[],modeled:[],
+    fineBounds:[],reconciled:true,rateIntervals:[]};
+  const data={midnight,zone:'UTC',hours:[],groups:[],dailyHours:[[midnight,0]],resets:[midnight]};
+  const calls=[];
+  let release;
+  const ui=gasOverview(async url=>{
+    if(url.includes('minutes=10')){
+      calls.push(url);
+      await new Promise(done=>{release=done});
+      return response({...data,minutes:10,end:previous,rateIntervals:[
+        [previous-step,previous,{use:.01,bands:[[0,.1],[4.9,5.1]]}]]});
+    }
+    return response({...data,minutes:60,end,registerProfile:profile});
+  });
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(end).toISOString());
+  ui.charts.period('1',null);
+  await tick();
+  ui.get('gas-previous').onclick();
+  const marks=()=>ui.get('day-curve').children[0].children.map(n=>n.attributes)
+    .filter(n=>n['data-hour-end']===previous);
+  assert.deepEqual(calls,['api/chart-hours?end='+previous+'&minutes=10']);
+  assert.equal(marks().length,0);
+  release();
+  await tick();
+  assert.equal(marks().find(n=>n.class==='plot-usage-dot')['data-rate'],.06);
+  assert.equal(marks().filter(n=>n.class==='plot-whisker').length,2);
 });

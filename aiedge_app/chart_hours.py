@@ -548,6 +548,8 @@ class ChartHours:
                     dailyHours=daily_hours,offsets=offsets,trackedLevels=tracked_levels,partialHours=partial,evidenceSpans=spans,
                     openingLevels=openings,
                     flowCeiling=flow_ceiling(document,policy))
+        if minutes==10:
+            result['rateIntervals']=[[q['start'],t,q['optical_rate']] for t,q in optical.items() if 'optical_rate' in q]
         if profile:
             from register_chart import register_profile
             outages = archive.get('dial_gaps', [])
