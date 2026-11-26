@@ -68,7 +68,8 @@ class ReadinessRecoveryTests(unittest.TestCase):
     def test_storage_failure_is_not_a_readiness_retry(self):
         with patch.object(self.store,'require_space',side_effect=ReadinessTransportError()):self.worker.once()
         self.assertTrue(self.worker.stop.is_set());self.assertEqual(self.camera.calls,0)
-    def test_device_nonready_status_remains_held(self):
+    def test_busy_does_not_clear_pending_capture(self):
+        recovery.begin(self.store,1)
         with patch.object(self.camera,'readiness',return_value={'state':'busy'}):self.worker.once()
         self.assertTrue(self.worker.stop.is_set());self.assertEqual(self.camera.calls,0)
     def test_status_failure_does_not_replenish_freshness_streak(self):
