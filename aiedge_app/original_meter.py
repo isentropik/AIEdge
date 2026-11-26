@@ -155,12 +155,12 @@ class OriginalMeter:
         except (OSError, ValueError, TypeError, IndexError, KeyError, ArithmeticError):
             return []
 
-    def recover(self, track, record, legacy, snapshot, head):
+    def recover(self, track, record, legacy, snapshot, head, *, rate=None):
         doc = snapshot['format']
         state = record.get('state') or {}
         after = max(state.get('event_id', 0), legacy.get('event_id', 0),
                     track['source']['event_id'] if track else 0)
-        rate = number(doc['maximum_rate_per_second'])
+        rate = number(doc['maximum_rate_per_second']) if rate is None else rate
         for source, phase in self.candidates(doc, head, snapshot['_publication_segment_id'], after):
             options = self.read_bands(doc, source, phase)
             if not options:
@@ -185,7 +185,7 @@ class OriginalMeter:
             if not options:
                 continue
             if track:
-                anchor = update(track, self.store, snapshot, source, options, floor)
+                anchor = update(track, self.store, snapshot, source, options, floor, rate=rate)
                 if anchor['source'] != source or anchor.get('needs_confirmation'):
                     continue
             else:
@@ -193,5 +193,5 @@ class OriginalMeter:
                     source, options, floor, previous=floor, limit=options[-1][1] - floor)
                 if not anchor:
                     continue
-            return update(anchor, self.store, snapshot, head, None, floor)
+            return update(anchor, self.store, snapshot, head, None, floor, rate=rate)
         return track

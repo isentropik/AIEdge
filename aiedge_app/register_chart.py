@@ -465,7 +465,8 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
             out['points'].append([t,*p])
     points=out['points']
     near=set()
-    bands_at=dict(photos)
+    bands_at={}
+    out['photoConflicts']=[]
     frame_ranges={}
     for leg in [*hours,*fine_legs]:
         for field,t in (('opening',leg['start']),('closing',leg['end'])):
@@ -474,6 +475,17 @@ def register_profile(stamp, zone, registers, daily, hours, gaps, cuts, photos, c
             if values:
                 frame_ranges[t]=(min(values),max(values))
     for t,v,lo,hi,_ in points:
+        if t in photos:
+            # A gap photo is an independent absolute observation. Retain every
+            # turn compatible with the register envelope, including alternatives
+            # away from the nominal. Keep contradictory evidence inspectable.
+            candidates=[(max(a,lo) if lo is not None else a, min(b,hi) if hi is not None else b)
+                        for a,b in photos[t]]
+            possible=[(a,b) for a,b in candidates if a<=b]
+            if possible:
+                bands_at[t]=possible
+            else:
+                out['photoConflicts'].append(dict(time=t,photo=photos[t],register=[lo,hi]))
         j=bisect_left(raw_times,t)
         if (j<len(raw_times) and t==raw_times[j] or
                 0<j<len(raw_times) and raw_times[j]-raw_times[j-1]<660000):

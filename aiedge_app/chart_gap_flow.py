@@ -24,11 +24,15 @@ def estimate(before, after, seconds, fine_turn, coarse_turn, fine_error, coarse_
     if not before or not after or seconds <= 0:
         return None
     limit = rate * seconds
-    # Above half a coarse revolution its observed direction is itself ambiguous.
-    if limit + 2*coarse_error >= coarse_turn/2:
-        return None
+    # The register moves forward. Count coarse displacements compatible with
+    # both photographs and the meter capacity before choosing a fine winding.
     left, right = before[-1], after[0]
-    coarse = offset(right[0], left[0], coarse_turn)
+    phase = right[0] - left[0]
+    first = ceil((-2*coarse_error-phase)/coarse_turn)
+    last = floor((limit+2*coarse_error-phase)/coarse_turn)
+    if first != last:
+        return None
+    coarse = phase + first * coarse_turn
     fine = right[1]-left[1]
     low, high = max(0, coarse-2*coarse_error), min(limit, coarse+2*coarse_error)
     if low > high:

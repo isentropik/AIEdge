@@ -7,7 +7,21 @@ from event_observation_read import read_batch
 from observation_support import observed_rows
 
 
-def phases(db, start, end, document, source, *, same_clock=True):
+def full_bands(result, document):
+    """Independent register alternatives from every dial in the same saved exposure."""
+    from reading_bounds import feasible_ranges
+    dials = document['dials']
+    if observed_rows(result) != [True] * len(dials):
+        return []
+    rows = [result['dial_positions'][d['index']] for d in dials]
+    if any(row.get('state') != 'estimated' for row in rows):
+        return []
+    ranges = feasible_ranges([d['value_per_revolution'] for d in dials],
+                             [row['position'] for row in rows], [d['position_error'] for d in dials])
+    return ranges.get('intervals', []) if not ranges.get('wraps_register') else []
+
+
+def phases(db, start, end, document, source, *, same_clock=True, absolute_bands=None, slow_phases=None):
     dial = min(document['dials'], key=lambda d: d['value_per_revolution'])
     turn = number(dial['value_per_revolution'])
     if 'position_error' not in dial or 'index' not in dial:
@@ -44,6 +58,19 @@ def phases(db, start, end, document, source, *, same_clock=True):
                     continue
                 middle = number(row['position']) * turn / 10
                 result[obs['event_id']] = (obs, (middle-error, middle+error))
+                if slow_phases is not None and len(document['dials']) > 1:
+                    slower = document['dials'][-2]
+                    idx = slower['index']
+                    slower_row = r['dial_positions'][idx]
+                    pos = slower_row.get('position')
+                    if mask[idx] and slower_row.get('state') == 'estimated' and type(pos) in (int,float) and 0 <= pos < 10:
+                        scale = number(slower['value_per_revolution']) / 10
+                        radius = number(slower['position_error']) * scale
+                        slow_phases[obs['event_id']] = (number(pos)*scale-radius, number(pos)*scale+radius)
+                if absolute_bands is not None:
+                    measured = full_bands(r, document)
+                    if measured:
+                        absolute_bands[obs['event_id']] = measured
         except (ValueError, ArithmeticError, KeyError, TypeError, IndexError):
             continue
     return result

@@ -47,6 +47,27 @@ class RegisterChartTests(unittest.TestCase):
         self.assertEqual(out['points'],[])
         self.assertEqual(out['openings'],{})
 
+    def test_disjoint_gap_photo_is_reported_and_other_rate_bounds_survive(self):
+        rows=[self.register(10*i,100+i) for i in range(7)]
+        t=self.midnight+3*self.tick
+        photos={t:[(97.9,98.1)]}
+        legs=[dict(start=a[0],end=b[0],basis='fine_dial',use=1,bounds=[.9,1.1]) for a,b in zip(rows,rows[1:])]
+        out=register_profile(rows[-1][0],self.zone,rows,[],[],[],[],photos,1,legs)
+        self.assertTrue(out['reconciled'])
+        self.assertEqual(out['photoConflicts'],[dict(time=t,photo=photos[t],register=[102.,104.])])
+        self.assertTrue(out['changeBounds'])
+        self.assertEqual(photos[t],[(97.9,98.1)])
+
+    def test_compatible_photo_can_differ_from_the_nominal(self):
+        rows=[self.register(10*i,100+i) for i in range(3)]
+        t=rows[1][0]
+        out=register_profile(rows[-1][0],self.zone,rows,[],[],[],[],{t:[(95,95.1),(101.4,101.5)]},1)
+        self.assertTrue(out['reconciled'])
+        self.assertEqual(out['photoConflicts'],[])
+        point=next(p for p in out['points'] if p[0]==t)
+        self.assertLessEqual(101.4,point[1])
+        self.assertLessEqual(point[1],101.5)
+
     def test_hour_and_daily_change_keep_a_shared_offset_and_the_tightest_interval_evidence(self):
         start=self.midnight
         points=[[start+i*self.tick,100+i,90+i,110+i,0] for i in range(7)]
