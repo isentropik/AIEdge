@@ -841,6 +841,22 @@ function hourlyPhotoReadings(intervals,points){
   }
   return {levels,connects};
 }
+function constrainTotal(point,low,high){
+  low=Math.max(0,low,point[2]??0);
+  high=Math.min(high,point[3]??Infinity);
+  if(low<=point[1]&&point[1]<=high){point[2]=low;point[3]=high;}
+}
+// Each link contains volume bounds over one interval. In chronological order
+// an opening constrains its close. In reverse order a close constrains its opening.
+function constrainIntervalTotals(links){
+  for(const [a,b,lo,hi] of links){
+    if(a[2]!=null&&a[3]!=null)constrainTotal(b,a[2]+lo,a[3]+hi);
+  }
+  for(let i=links.length-1;i>=0;i--){
+    const [a,b,lo,hi]=links[i];
+    if(b[2]!=null&&b[3]!=null)constrainTotal(a,b[2]-hi,b[3]-lo);
+  }
+}
 function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
   const {data,zone}=hourly, profile=data.registerProfile;
   const points=new Map(profile.points.map(([t,...p])=>[t,p]));
@@ -934,7 +950,7 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     if(Number.isFinite(high)&&low-0.000002<=q.use&&q.use<=high+0.000002)
       q.bounds=[Math.max(0,Math.min(low,q.use)),Math.max(high,q.use)];
   }
-  const stops=new Map(),series=[],extent=[];
+  const stops=new Map(),series=[];
   let run=[];
   function flush(){
     if(run.length)series.push({run});
@@ -953,13 +969,12 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     if(stop.reset){
       const prior=openingAt(t-1),close=total(t,openings[prior],prior);
       if(close&&t>start){
-        extent.push(close[3]??close[1]);
+        stop.previousDayClose=close;
         if(run.length&&connectsTo(close))run.push(close);
       }
       flush();
     }
     if(!p){flush();continue;}
-    extent.push(p[3]??p[1]);
     if(run.length&&!connectsTo(p))flush();
     run.push(p);
   }
@@ -988,7 +1003,6 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
           series.push({run:part,betweenTicks:true});
         }
         part.push(right);
-        extent.push(left[3]??left[1],right[3]??right[1]);
       }
     }
   }
@@ -1030,20 +1044,43 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     Object.assign(q,{start:from,end:t,partial:t!==completedTick(t,zone,minutes),provisional,estimated:!!(q.estimated||gap||model||provisional||
       unknown.some(([l,r])=>l<t&&from<r)||recovered.some(([l,r])=>l<t&&from<r))});
     const stop=stops.get(t);
+    Object.assign(stop,{hour:q,range:q.bounds});
+  }
+  if(minutes===60 && profile.reconciled){
+    const links=[];
+    for(let i=1;i<edges.length;i++){
+      const from=edges[i-1],t=edges[i],stop=stops.get(t);
+      // At midnight the preceding rate belongs to the old day's closing point.
+      const a=stops.get(from).point,b=stop.reset?stop.previousDayClose:stop.point;
+      if(!a||!b||openingAt(from)===from&&baseAt(from)?.[4])continue;
+      if(stop.hour?.bounds && !stop.hour.provisional){
+        links.push([a,b,...stop.hour.bounds]);
+      }else if(!stop.hour && a[3]!=null && b[3]!=null && b[1]>=a[1] &&
+               !profile.blocked?.includes(t) && !(profile.provisionalFrom!=null&&t>profile.provisionalFrom) &&
+               !profile.conflicts.some(([l,r])=>l<t&&from<r) && !unknown.some(([l,r])=>l<t&&from<r)){
+        // Two supported levels on the same meter still run forward when the
+        // dial cannot resolve a rate. There is no measured upper increment.
+        links.push([a,b,0,Infinity]);
+      }
+    }
+    constrainIntervalTotals(links);
+  }
+  for(const stop of stops.values()){
+    const q=stop.hour, t=stop.to;
     // When both tooltip rows cover the same interval, convert the displayed
     // volume to a rate. Both the register and dial must support that volume.
-    if(q.optical && stop.point && openingAt(t)===from && !baseAt(t)[4]){
+    if(q?.optical && stop.point && openingAt(t)===q.start && !baseAt(t)[4]){
       const [,volume,low,high]=stop.point;
       const lo=Math.max(q.bounds[0],low??0),hi=Math.min(q.bounds[1],high??Infinity);
       if(lo<=volume && volume<=hi){
         q.use=volume;
-        q.bounds=[lo,hi];
+        stop.range=q.bounds=[lo,hi];
         stop.point[2]=lo;
         stop.point[3]=hi;
       }
     }
-    Object.assign(stop,{hour:q,range:q.bounds});
   }
+  const extent=series.flatMap(({run})=>run.map(p=>p[3]??p[1]));
   const ordered=[...stops.values()].sort((a,b)=>a.to-b.to);
   const status=minutes<60?minutes+'-min averages':minutes/60+'-hour averages';
   const modeledHere=ordered.some(s=>s.hour?.estimated);
@@ -1257,7 +1294,7 @@ function showSummary(view){
       }
       // Zooming can place a clock-hour nominal using finer measured legs.
       // Keep its independent daily bounds when the source identity agrees.
-      if(p && clockPoint?.[2]!=null && clockPoint[3]!=null)constrain(p,clockPoint[2],clockPoint[3]);
+      if(p && clockPoint?.[2]!=null && clockPoint[3]!=null)constrainTotal(p,clockPoint[2],clockPoint[3]);
       if(p)target.set(t,p);
       if(midnightTicks.has(t))last=null;
       else if(p&&reading)last={time:t,id:reading.id,raw:reading.value,level:p[1],low:p[2],high:p[3]};
@@ -1272,22 +1309,14 @@ function showSummary(view){
   }
   // Clock-hour and ten-minute bounds can constrain each other at a shared
   // knot. Intersect only on the same measured change and same daily baseline.
-  function constrain(point,low,high){
-    low=Math.max(0,low,point[2]??0);
-    high=Math.min(high,point[3]??Infinity);
-    if(low<=point[1]&&point[1]<=high){point[2]=low;point[3]=high;}
-  }
   const links=[];
   for(const q of samples){
     const a=knots.get(q.start),b=(midnightTicks.has(q.end)?closes:knots).get(q.end);
     if(!a||!b||!q.bounds||Math.abs(b[1]-a[1]-q.use)>.011)continue;
     const [lo,hi]=q.bounds;
-    if(a[2]!=null&&a[3]!=null)constrain(b,a[2]+lo,a[3]+hi);
     links.push([a,b,lo,hi]);
   }
-  for(const [a,b,lo,hi] of links.reverse()){
-    if(b[2]!=null&&b[3]!=null)constrain(a,b[2]-hi,b[3]-lo);
-  }
+  constrainIntervalTotals(links);
   const spacing=minutes*60000;
   const edges=chartBoundaries(start,end,minutes,zone);
   function add(run){

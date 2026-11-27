@@ -1,3 +1,7 @@
+## 0.2.0-dev152
+
+- Constrain the daily cumulative range with the hourly rates on either side of each reading.
+
 ## 0.2.0-dev151
 
 - Use the volume bounds measured from the dial photos for both the cumulative band and the interval rate when they agree with the meter readings.

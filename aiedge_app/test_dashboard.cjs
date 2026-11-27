@@ -1044,6 +1044,26 @@ test('hourly cumulative points use the readings behind the rates on each support
   assert.deepEqual(profile.unknownGaps,[gap]);
 });
 
+test('Day intersects cumulative ranges forward and backward up to a missing hourly rate',async()=>{
+  const midnight=Date.UTC(2026,10,26),at=h=>midnight+h*3600000;
+  const readings=[[100,100,100],[104,100,140],[109,100,140],[112,111,113],[122,103,127],[126,100,150]];
+  const rates=[[4,3,5],[5,3,7],[4.5,4,5],null,[4,3,6]];
+  const registerProfile={points:readings.map((p,h)=>[at(h),...p,0]),openings:{[midnight]:[100,100,100,0]},
+    gaps:[],unknownGaps:[],modeled:[],conflicts:[],fineBounds:[],reconciled:true,
+    rateIntervals:rates.map((r,h)=>[at(h),at(h+1),r?{use:r[0],bands:[r.slice(1)]}:{use:null,bands:[]}])};
+  const ui=gasOverview(async()=>response({zone:'UTC',end:at(5),midnight,minutes:60,hours:[],groups:[],registerProfile}));
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(at(5)).toISOString());
+  ui.charts.period('today',null);
+  await tick();
+  const nodes=ui.get('day-curve').children[0].children.map(n=>n.attributes);
+  for(const [h,lo,hi] of [[1,3,5],[2,6,9],[3,11,13],[4,11,27],[5,14,33]]){
+    const p=nodes.find(n=>n.class==='plot-estimate-dot'&&n['data-time']===at(h));
+    assert.deepEqual([p['data-low'],p['data-high']],[lo,hi]);
+  }
+  assert(!nodes.some(n=>n.class==='plot-usage-dot'&&n['data-hour-end']===at(4)));
+});
+
 test('Day follows the absolute reading while daily is held and extends a warm ten-minute window',async()=>{
   const midnight=Date.UTC(2026,10,26), hour=3600000, first=midnight+18*hour+31*60000;
   const next=first+7*60000;
