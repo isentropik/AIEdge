@@ -1,3 +1,7 @@
+## 0.2.0-dev142
+
+- Calculate chart rates from the fine dial's movement across successive photos. Use the slower dial to check the inferred movement and draw one whisker for each supported rate.
+
 ## 0.2.0-dev141
 
 - Recover scheduled photos when the camera status connection stalls before sending headers. Retry only the passive status request within its original ten-second deadline and start a capture only after a validated ready reply.

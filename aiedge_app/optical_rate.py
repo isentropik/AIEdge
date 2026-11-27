@@ -1,6 +1,7 @@
 """Clock-interval gas usage from joint fine and slow dial observations."""
 from bisect import bisect_left
 from math import ceil, floor, inf, isfinite
+from statistics import median
 
 # Closed difference constraints. Entry [i][j] bounds x[j]-x[i]. Keep the
 # current register, both exact clock ticks and a common slow-dial offset.
@@ -57,39 +58,42 @@ def merged(ranges):
     return result
 
 
-def pointer_at(rows, stamps, t, period):
+def pointer_at(rows, stamps, t):
     j = bisect_left(stamps,t)
     if j < len(rows) and stamps[j] == t:
         return rows[j]
     if j == 0 or j == len(rows):
         return None
-    delta = (rows[j]-rows[j-1]+period/2) % period - period/2
+    delta = rows[j]-rows[j-1]
     return rows[j-1] + delta*(t-stamps[j-1])/(stamps[j]-stamps[j-1])
 
 
-def solve(samples, start, end, rate, turn, slow_turn, allowance):
-    """Each row is (wall ms, camera seconds, fine lower, fine upper, slow center).
+def unwrapped(centers, period):
+    """Follow successive observed pointer angles across zero in either direction."""
+    values = [centers[0]]
+    for center in centers[1:]:
+        winding = floor((values[-1]-center)/period + .5)
+        values.append(center + winding*period)
+    return values
 
-    Extending an exposure through a clock tick preserves both sides of that
-    tick. Distinct winding paths can only merge when one contains the other.
-    """
-    stamps = [s[0] for s in samples]
-    if len(samples)<2 or not stamps[0]<=start<end<=stamps[-1]:
+
+def slow_travel(samples, start, end, rate, period, allowance):
+    coarse = [(s[0],s[4]) for s in samples if s[4] is not None]
+    if len(coarse)<2 or not coarse[0][0]<=start<end<=coarse[-1][0]:
         return None
-    clock = [(s[1],s) for s in samples]
-    for wall,tag in ((start,START),(end,END)):
-        j = bisect_left(stamps,wall)
-        t = samples[j][1]
-        if stamps[j]!=wall:
-            before=samples[j-1]
-            t=before[1]+(t-before[1])*(wall-before[0])/(stamps[j]-before[0])
-        clock.append((t,tag))
-    clock.sort(key=lambda pair:pair[0])
+    stamps,centers = zip(*coarse)
+    if any((b-a)*rate/1000 + 2*allowance >= period/2 for a,b in zip(stamps,stamps[1:])):
+        return None
+    trace = unwrapped(centers,period)
+    return pointer_at(trace,stamps,end) - pointer_at(trace,stamps,start)
+
+
+def project(clock, rate, turn, slow_turn, allowance, follow_trace):
+    """Intersect both dial measurements, forward flow and the two exact clock ticks."""
     zones = [empty()]
     previous = clock[0][0]
-    coarse = []
     group = None
-    for index,(time,record) in enumerate(clock):
+    for index,(time,record,winding) in enumerate(clock):
         limit = rate*(time-previous)
         previous = time
         for z in zones:
@@ -102,7 +106,6 @@ def solve(samples, start, end, rate, turn, slow_turn, allowance):
             continue
         wall,_,lo,hi,slow = record
         if slow is not None:
-            coarse.append((wall,slow))
             # The configured comparison applies over at most an hour and 27 ft³.
             # Restart its offset before another slower-dial winding can fit.
             if (group is None or max(group[2],slow)-min(group[1],slow)>27
@@ -118,10 +121,13 @@ def solve(samples, start, end, rate, turn, slow_turn, allowance):
                                          and constrain(z,CURRENT,OFFSET,-slow)):
                 continue
             # The origin of the first fine revolution is arbitrary for usage.
-            first=ceil((-z[CURRENT][ZERO]-hi-EPS)/turn) if index else 0
-            last=floor((z[ZERO][CURRENT]-lo+EPS)/turn) if index else 0
+            if follow_trace or index == 0:
+                first = last = winding
+            else:
+                first = ceil((-z[CURRENT][ZERO]-hi-EPS)/turn)
+                last = floor((z[ZERO][CURRENT]-lo+EPS)/turn)
             if last-first>=MAX_ZONES:
-                return dict(use=None,bands=[],reason="optical_work_limit")
+                return []
             for k in range(first,last+1):
                 candidate=[row[:] for row in z]
                 if not (constrain(candidate,ZERO,CURRENT,hi+k*turn)
@@ -133,31 +139,58 @@ def solve(samples, start, end, rate, turn, slow_turn, allowance):
                 alternatives[:]=[other for other in alternatives if not contains(candidate,other)]
                 alternatives.append(candidate)
         zones=[z for alternatives in following.values() for z in alternatives]
-        if not zones:
-            return dict(use=None,bands=[],reason="inconsistent_observations")
-        if len(zones)>MAX_ZONES:
-            return dict(use=None,bands=[],reason="optical_work_limit")
-    bands=merged((max(0.,-z[END][START]),max(0.,z[START][END])) for z in zones)
-    centers=[(s[2]+s[3])/2 for s in samples]
-    delta=pointer_at(centers,stamps,end,turn)-pointer_at(centers,stamps,start,turn)
-    slow_stamps=[wall for wall,_ in coarse]
-    unwrapped=[coarse[0][1]] if coarse else []
-    for (a,v),(b,w) in zip(coarse,coarse[1:]):
-        movement=(w-v+slow_turn/2)%slow_turn-slow_turn/2
-        if (b-a)*rate/1000 + 2*allowance >= slow_turn/2:
-            break
-        unwrapped.append(unwrapped[-1]+movement)
-    # Select the winding nearest the observed slow movement; within that winding
-    # use the fine pointer's interpolated movement. Ties use the smaller change.
-    target=bands[0][0]
-    if len(coarse)>=2 and len(unwrapped)==len(coarse):
-        opening=pointer_at(unwrapped,slow_stamps,start,slow_turn)
-        closing=pointer_at(unwrapped,slow_stamps,end,slow_turn)
-        if opening is not None and closing is not None:
-            target=max(0.,closing-opening)
-    def estimate(band):
-        lo,hi=band
-        turns=round((min(hi,max(lo,target))-delta)/turn)
-        return max(lo,min(hi,delta+turns*turn))
-    use=min((estimate(b) for b in bands),key=lambda value:(abs(value-target),value))
-    return dict(use=use,bands=bands)
+        if not zones or len(zones)>MAX_ZONES:
+            return []
+    return merged((max(0.,-z[END][START]),max(0.,z[START][END])) for z in zones)
+
+
+def solve(samples, start, end, rate, turn, slow_turn, allowance):
+    stamps = [s[0] for s in samples]
+    if len(samples)<2 or not stamps[0]<=start<end<=stamps[-1]:
+        return None
+    centers = [(s[2]+s[3])/2 for s in samples]
+    trace = unwrapped(centers, turn)
+    times = [s[1] for s in samples]
+    clock = [(s[1],s,round((value-center)/turn)) for s,center,value in zip(samples,centers,trace)]
+    for wall,tag in ((start,START),(end,END)):
+        clock.append((pointer_at(times,stamps,wall),tag,None))
+    clock.sort(key=lambda record: record[0])
+
+    delta = pointer_at(trace,stamps,end) - pointer_at(trace,stamps,start)
+    spacings = [b-a for a,b in zip(times,times[1:])]
+    typical = median(spacings)
+    # Do not extrapolate smooth motion across missing samples. An independent
+    # measurement can still resolve the change if the constraints agree on it.
+    sparse = any(stamps[i]<end and start<stamps[i+1] and
+                 (len(samples)==2 or elapsed>=2*typical) and
+                 rate*elapsed+samples[i][3]-samples[i][2]+samples[i+1][3]-samples[i+1][2]>=turn
+                 for i,elapsed in enumerate(spacings))
+    if sparse:
+        bands = project(clock,rate,turn,slow_turn,allowance,follow_trace=False)
+        if len(bands)==1:
+            lo,hi = bands[0]
+            if hi-lo<turn:
+                use = delta + round(((lo+hi)/2-delta)/turn)*turn
+                return dict(use=max(lo,min(hi,use)),bands=[[lo,hi]])
+        return dict(use=None,bands=[],reason="insufficient_motion_samples")
+    travel = slow_travel(samples,start,end,rate,slow_turn,allowance)
+    if travel is None or abs(travel-delta)<=allowance:
+        bands = project(clock,rate,turn,slow_turn,allowance,follow_trace=True)
+        if bands:
+            lo,hi = bands[0]
+            return dict(use=max(lo,min(hi,delta)),bands=[[lo,hi]])
+
+    # Only independent slow-dial travel can justify recovering missed fine turns.
+    # A meter capacity or a partial turn inferred solely at a clock boundary cannot.
+    unknown = dict(use=None,bands=[],reason="unsupported_dial_motion")
+    if travel is None:
+        return unknown
+    turns = round((travel-delta)/turn)
+    if turns<=0:
+        return unknown
+    estimate = delta + turns*turn
+    bands = project(clock,rate,turn,slow_turn,allowance,follow_trace=False)
+    for lo,hi in bands:
+        if lo-EPS<=estimate<=hi+EPS and hi-lo<turn:
+            return dict(use=max(lo,min(hi,estimate)),bands=[[lo,hi]])
+    return unknown
