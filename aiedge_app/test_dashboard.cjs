@@ -901,15 +901,23 @@ test('a recovered increase remains in later cumulative runs across an unsupporte
 test('optical changes drive the dot and its single measurement whisker',async()=>{
   const midnight=Date.parse('2026-11-25T00:00:00Z'), step=600000;
   const start=midnight+step,end=start+step;
-  const registerProfile={points:[[midnight,100,94,107,1],[start,100,94,107,1],[end,100.531,94,107,1]],
-    openings:{[midnight]:[100,94,107,1]},gaps:[],conflicts:[],modeled:[],fineBounds:[],reconciled:true,
-    rateIntervals:[[start,end,{use:.00235,bands:[[0,.0934]]}]]};
+  const registerProfile={points:[[midnight,99.625,94,107,1],[start,100,94,107,1],[end,100.531,94,107,1]],
+    openings:{[midnight]:[99.625,94,107,1]},gaps:[],conflicts:[],modeled:[],fineBounds:[],reconciled:true,
+    rateIntervals:[[midnight,start,{use:.38,bands:[[.28,.48]]}],[start,end,{use:.00235,bands:[[0,.0934]]}]]};
   const ui=gasOverview(async()=>response({zone:'UTC',end,midnight,minutes:60,hours:[],groups:[],resets:[midnight],registerProfile}));
   ui.get('total-key-label').parentElement={};
   ui.charts.setCalendar('UTC',new Date(end).toISOString());
   ui.charts.period('1',null);
   await tick();
-  const nodes=ui.get('day-curve').children[0].children.map(n=>n.attributes).filter(a=>a['data-hour-end']===end);
+  const marks=ui.get('day-curve').children[0].children.map(n=>n.attributes);
+  const first=marks.find(a=>a.class==='plot-estimate-dot' && a['data-time']===start);
+  const firstRate=marks.find(a=>a.class==='plot-usage-dot' && a['data-hour-end']===start);
+  const firstBar=marks.find(a=>a.class==='plot-whisker' && a['data-hour-end']===start);
+  assert.equal(first['data-total'],.375);
+  assert.equal(firstRate['data-rate'],first['data-total']*6);
+  assert.deepEqual([first['data-low'],first['data-high']],[.28,.48]);
+  assert.deepEqual([firstBar['data-lower'],firstBar['data-upper']],[.28*6,.48*6]);
+  const nodes=marks.filter(a=>a['data-hour-end']===end);
   const dots=nodes.filter(n=>n.class==='plot-usage-dot');
   assert.equal(dots.length,1);
   assert.equal(dots[0]['data-use'],.00235);

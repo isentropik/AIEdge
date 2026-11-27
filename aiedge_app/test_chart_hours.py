@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from chart_hours import ChartHours,parsed,tracked_hour
+from chart_hours import ChartHours,measured_hours,parsed,tracked_hour
 from hourly_photo import carried_difference, difference, project
 from meter_history import millis
 
@@ -34,6 +34,26 @@ class ChartHoursTests(unittest.TestCase):
         end=millis(self.hour)
         history=chart.snapshot(end,'UTC',minutes=10)
         self.assertEqual(history['rateIntervals'],[[end-600000,end,proof]])
+        self.assertEqual(history['hours'][0]['bounds'],[0,.1])
+
+    def test_register_interval_uses_only_compatible_photo_volume(self):
+        start, end = 0, 3600000
+        identity = (0,'photo_anchored_fine_dial','fmt','camera','ft³')
+        opening, closing = Decimal('100'), Decimal('100.38')
+        ends = {start:(opening,(opening-2,opening+2),identity,[]),
+                end:(closing,(closing-2,closing+2),identity,[])}
+        leg = dict(start=start,end=end,basis='fine_dial',bounds=[.28,40.6])
+        def summary(proof,gaps=(),cuts=()):
+            return measured_hours([start,end],ends,{end:dict(leg,optical_rate=proof)},gaps,cuts,[],[])[0]
+        proof = dict(use=.379,bands=[[.289,.475]])
+        measured = summary(proof)
+        self.assertEqual((measured['opening'],measured['closing'],measured['use']), (100,100.38,.38))
+        self.assertEqual(measured['bounds'],proof['bands'][0])
+        for unavailable in (None,dict(use=None,bands=[]),dict(use=.38,bands=[[.3,.5],[5.3,5.5]]),
+                            dict(use=5.38,bands=[[5.3,5.5]])):
+            self.assertEqual(summary(unavailable)['bounds'],[.28,4.38])
+        self.assertEqual(summary(proof,gaps=[[1000,2000]])['bounds'],[0,4.38])
+        self.assertEqual(summary(proof,cuts=[2000])['bounds'],[.28,4.38])
 
     def test_replay_uses_anchor_on_last_accepted_exposure_in_selected_window(self):
         from types import SimpleNamespace

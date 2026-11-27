@@ -262,6 +262,29 @@ def measured_hours(ticks,published,optical,gaps,cuts,splits,register_changes):
             bounds=[max(bounds[0],lo),min(bounds[1],hi)] if bounds else [lo,hi]
         hours.append(dict(start=a,end=b,use=float(delta),bounds=bounds,basis='register',
                           opening=float(left[0]),closing=float(right[0])))
+    # Optical rate proofs store volume over their exact interval. The chart
+    # divides by elapsed hours for the rate, and accumulates the same volume
+    # bounds from midnight while retaining the observed register endpoints.
+    for i, hour in enumerate(hours):
+        start, end = hour['start'], hour['end']
+        leg = optical.get(end)
+        if not leg or leg.get('start') != start or leg.get('end') != end:
+            continue
+        proof = leg.get('optical_rate') or {}
+        bands = proof.get('bands') or []
+        if len(bands) != 1 or proof.get('use') is None:
+            continue
+        if (bisect_left(cuts, end+1) != bisect_left(cuts, start+1)
+                or any(left < end and start < right for left, right in gaps)):
+            continue
+        lo, hi = bands[0]
+        if not 0 <= lo <= proof['use'] <= hi or not math.isfinite(hi):
+            continue
+        if hour.get('bounds'):
+            lo = max(lo, hour['bounds'][0])
+            hi = min(hi, hour['bounds'][1])
+        if lo <= hour['use'] <= hi:
+            hours[i] = dict(hour, bounds=[lo, hi])
     return hours
 
 
@@ -671,7 +694,7 @@ class ChartHours:
 
 class BackgroundCharts:
     """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
-    CACHE_VERSION = 11
+    CACHE_VERSION = 12
     def __init__(self, hours, mqtt, reading_format, path):
         self.hours = hours
         self.mqtt = mqtt

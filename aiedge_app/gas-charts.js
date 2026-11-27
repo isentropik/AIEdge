@@ -704,7 +704,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v9:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v10:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -1030,6 +1030,18 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     Object.assign(q,{start:from,end:t,partial:t!==completedTick(t,zone,minutes),provisional,estimated:!!(q.estimated||gap||model||provisional||
       unknown.some(([l,r])=>l<t&&from<r)||recovered.some(([l,r])=>l<t&&from<r))});
     const stop=stops.get(t);
+    // When both tooltip rows cover the same interval, convert the displayed
+    // volume to a rate. Both the register and dial must support that volume.
+    if(q.optical && stop.point && openingAt(t)===from && !baseAt(t)[4]){
+      const [,volume,low,high]=stop.point;
+      const lo=Math.max(q.bounds[0],low??0),hi=Math.min(q.bounds[1],high??Infinity);
+      if(lo<=volume && volume<=hi){
+        q.use=volume;
+        q.bounds=[lo,hi];
+        stop.point[2]=lo;
+        stop.point[3]=hi;
+      }
+    }
     Object.assign(stop,{hour:q,range:q.bounds});
   }
   const ordered=[...stops.values()].sort((a,b)=>a.to-b.to);
