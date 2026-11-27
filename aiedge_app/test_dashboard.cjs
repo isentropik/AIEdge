@@ -950,6 +950,32 @@ test('browsing a previous hour requests its missing optical rates before drawing
   assert.equal(marks().filter(n=>n.class==='plot-whisker').length,1);
 });
 
+test('an outage at the hour keeps measured subintervals and midnight has separate closing and opening strokes',async()=>{
+  const midnight=Date.UTC(2026,10,26),step=600000,at=i=>midnight+i*step,end=at(15);
+  const points=Array.from({length:176},(_,i)=>[at(i-160),300+i,299+i,301+i,0]);
+  const opening=i=>points.find(p=>p[0]===at(i)).slice(1);
+  const proof={use:1,bands:[[.8,1.2]]};
+  const gap=[at(6)-20000,at(6)+5000];
+  const profile={points,openings:{[at(-144)]:opening(-144),[midnight]:opening(0)},gaps:[gap],unknownGaps:[gap],
+    modeled:[],conflicts:[],fineBounds:[],reconciled:true,
+    rateIntervals:[1,2,3,4,5,6,7,8,9,10,11,12].map(i=>[at(i-1),at(i),proof])};
+  const ui=gasOverview(async()=>response({zone:'UTC',end,midnight,minutes:60,hours:[],groups:[],registerProfile:profile}));
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(end).toISOString());
+  ui.charts.period('24',null);
+  await tick();
+  const nodes=ui.get('day-curve').children[0].children;
+  const strokes=nodes.filter(n=>n.attributes['data-day-series']!=null).map(n=>n.attributes);
+  assert(strokes.some(n=>n['data-end']===midnight && n['data-start']<midnight));
+  assert(nodes.some(n=>n.attributes.class==='plot-reset' && n.attributes['data-midnight']===midnight));
+  assert(!nodes.some(n=>n.attributes.class==='plot-estimate' && n.attributes.x1!=null));
+  assert(!strokes.some(n=>n['data-start']<gap[1]&&gap[0]<n['data-end']));
+  assert(strokes.some(n=>n['data-start']===at(0) && n['data-end']===at(5)));
+  assert(strokes.some(n=>n['data-start']===at(7) && n['data-end']===at(12)));
+  assert(!nodes.some(n=>n.attributes['data-hour-end']===at(6)||n.attributes['data-hour-end']===at(12)));
+  assert(!nodes.some(n=>n.attributes.class==='plot-estimate-dot' && n.attributes['data-time']===at(5)));
+});
+
 test('Day follows the absolute reading while daily is held and extends a warm ten-minute window',async()=>{
   const midnight=Date.UTC(2026,10,26), hour=3600000, first=midnight+18*hour+31*60000;
   const next=first+7*60000;
