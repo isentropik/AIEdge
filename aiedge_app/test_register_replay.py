@@ -85,3 +85,50 @@ class RegisterReplayTests(unittest.TestCase):
             self.assertEqual(fixed['outer'],['95','100.1'])
             self.assertEqual(fixed['display']['bounds_flow_limit_cfh'],2160)
             self.assertEqual(fixed['envelope_replay']['slow']['tick'],self.src(70)['monotonic_us'])
+
+    def test_conflicting_full_decode_keeps_corroborated_motion_until_next_full_photo(self):
+        doc = dict(self.doc, dials=[dict(value_per_revolution=1000), self.doc['dials'][0]])
+        earlier_decode = (D(90), D('90.1'))
+        def samples(db, first, last, *args, absolute_bands, slow_phases):
+            for i in range(first, last+1):
+                slow_phases[i] = (D('9.9'), D('10.1'))
+                if i == 2:
+                    absolute_bands[i] = [earlier_decode]
+                if i == 3:
+                    absolute_bands[i] = [(D(100), D('100.1'))]
+            return {i:(self.src(i),self.band) for i in range(first,last+1)}
+        with patch.object(replay, 'phases', samples):
+            slow = {}
+            initial = (D(95), D('100.1'))
+            first, = replay.page(self.store.db, doc, self.src(1), initial, 2, self.rate, slow)
+            self.assertEqual(first, (self.src(2), initial))
+            self.assertEqual(slow['base'], list(map(str, initial)))
+            next_photo, = replay.page(self.store.db, doc, *first, 3, self.rate, slow)
+            self.assertEqual(next_photo, (self.src(3), (D(100), D('100.1'))))
+            self.assertEqual(slow['base'], ['100','100.1'])
+            earlier_decode = (D(110), D('110.1'))
+            self.assertEqual(replay.page(self.store.db, doc, self.src(1), initial, 2, self.rate, {}), [])
+
+    def test_previous_version_stopped_checkpoint_is_replayed(self):
+        anchor = self.old['anchor']
+        old_key = [anchor['event_id'], anchor['source_sha256'], anchor['captured_at'], str(self.rate)]
+        track = dict(self.old, envelope_replay=dict(key=old_key, stopped=True))
+        first = replay.refine(self.store, self.doc, track, self.rate)
+        self.assertNotEqual(first['envelope_replay']['key'], old_key)
+        fixed = replay.refine(self.store, self.doc, first, self.rate)
+        self.assertEqual(fixed['outer'], ['95','100.1'])
+
+    def test_cold_chart_reads_the_same_original_as_publication(self):
+        from threading import Event
+        from datetime import datetime
+        originals = object()
+        chart = replay.ChartRegisterReplay(self.store, originals)
+        src = self.src(1)
+        point = (int(datetime.fromisoformat(src['captured_at']).timestamp()*1000), D('100.05'),
+                 (D(0),D(200)), 1, False, (0,'photo_anchored_fine_dial'), src['source_sha256'])
+        head = dict(event_id=1, anchor_event_id=1, anchor_source_sha256=src['source_sha256'],
+                    anchor_measured_at=src['captured_at'])
+        with patch.object(replay, 'seed', return_value=(src, (D(100),D('100.1')))) as lookup:
+            result = chart.readings([point],head,self.doc,{},Event())
+        self.assertIs(lookup.call_args.args[-1], originals)
+        self.assertEqual(result[0][2], (D(100),D('100.1')))

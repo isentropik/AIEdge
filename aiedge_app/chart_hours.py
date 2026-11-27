@@ -641,7 +641,7 @@ class ChartHours:
 
 class BackgroundCharts:
     """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
-    CACHE_VERSION = 9
+    CACHE_VERSION = 10
     def __init__(self, hours, mqtt, reading_format, path):
         self.hours = hours
         self.mqtt = mqtt

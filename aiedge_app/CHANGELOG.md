@@ -1,3 +1,11 @@
+## 0.2.0-dev148
+
+- Use the same photo-backed hourly readings for the cumulative line and the two adjacent rates when a missed capture straddles the hour. Keep the original capture history and the ten-minute view at their original resolution.
+
+## 0.2.0-dev147
+
+- Keep refining the meter bounds when the two moving dials agree across photos and a full-register decode conflicts. Rebuild the chart from the same photo evidence.
+
 ## 0.2.0-dev146
 
 - Use one photo-interpolated meter reading for the two hourly rates beside a missed hour boundary. The estimated dots preserve the original capture gap.
