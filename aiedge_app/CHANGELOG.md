@@ -1,3 +1,7 @@
+## 0.2.0-dev150
+
+- Keep the measured first hour's lower bound when consecutive readings bracket midnight and identify the first daily observation. Recorded capture failures still interrupt the chart.
+
 ## 0.2.0-dev149
 
 - Reopen a historical meter reading with the full-register photo identified by that reading. This preserves the slower-dial bounds when a newer photo has become the live meter reference.

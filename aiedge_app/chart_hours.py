@@ -191,6 +191,31 @@ def parsed(rows, entity, zone, daily, photo_levels=None, sources=None):
     return result
 
 
+def register_gaps(archive, rows, times, cuts):
+    """Keep acquisition gaps when interpreting the daily accumulator's coverage."""
+    gaps = archive.get('dial_gaps') or []
+    points = archive.get('points')
+    midnight = archive.get('midnight')
+    if not gaps or not points or midnight is None:
+        return gaps
+    first_time, _, first_event, *_ = points[0]
+    prefix = [midnight, first_time]
+    if (first_time <= midnight or prefix not in gaps
+            or archive.get('dial_from', [first_event, first_time]) != [first_event, first_time]):
+        return gaps
+    i = bisect_left(times, first_time)
+    if not 0 < i < len(rows):
+        return gaps
+    before, after = rows[i-1:i+1]
+    # Only lift the day-opening marker when the same register brackets
+    # midnight and the next photo is the accumulator's first observation.
+    if (before[0] > midnight or after[0] != first_time or after[3] != first_event or after[4]
+            or before[5] != after[5] or before[5][1] != 'photo_anchored_fine_dial'
+            or bisect_left(cuts, after[0]+1) != bisect_left(cuts, before[0]+1)):
+        return gaps
+    return [gap for gap in gaps if gap != prefix]
+
+
 def measured_hours(ticks,published,optical,gaps,cuts,splits,register_changes):
     hours = []
     for a,b in zip(ticks,ticks[1:]):
@@ -323,7 +348,7 @@ class ChartHours:
         times = [r[0] for r in rows]
         epochs = {identity:i for i,identity in enumerate(dict.fromkeys(r[5] for r in rows))}
         cuts = sorted(self.breaks(since,until))
-        gaps = (usage.get('movement_history') or {}).get('dial_gaps') or []
+        gaps = register_gaps(usage.get('movement_history') or {}, rows, times, cuts)
         def interrupted(a,b):
             return bisect_left(cuts,b+1)!=bisect_left(cuts,a+1) or any(l<b and a<r for l,r in gaps)
         def observed(t):
@@ -447,11 +472,7 @@ class ChartHours:
         splits = [p[0] for p in registers if p[4]]
         register_changes = [b[0] for a,b in zip(registers,registers[1:])
                             if a[5][0]!=b[5][0] or a[5][2:]!=b[5][2:]]
-        gaps = ((usage or {}).get('movement_history') or {}).get('dial_gaps',[])
-        # The daily accumulator starts at its first capture after midnight.
-        # That reporting boundary is not a break in the absolute register.
-        first = archive.get('points') or []
-        prefix = [millis(midnight), first[0][0]] if first and archive.get('midnight') == millis(midnight) else None
+        outages = register_gaps(archive, registers, times, cuts)
 
         def boundary(t):
             i = bisect_left(times,t)
@@ -462,9 +483,7 @@ class ChartHours:
                 return None
             a,b = registers[i-1:i+1]
             if (b[4] or a[5]!=b[5] or bisect_left(cuts,b[0]+1) != bisect_left(cuts,a[0]+1)
-                    or any(l<b[0] and a[0]<r and not (
-                        [l,r]==prefix and a[5][1]=='photo_anchored_fine_dial' and
-                        a[0]<l<=r==b[0] and b[3]==first[0][2]) for l,r in gaps)):
+                    or any(l<b[0] and a[0]<r for l,r in outages)):
                 return None
             weight = Decimal(t-a[0])/(b[0]-a[0])
             # A monotone register can be anywhere between its bracketing readings.
@@ -480,9 +499,9 @@ class ChartHours:
         published={t:boundary(t) for t in ticks}
         offsets = []
         head=chart_head(usage or {})
-        optical = self.ledger.snapshot(ticks,head,document,policy or {},published,gaps,
+        optical = self.ledger.snapshot(ticks,head,document,policy or {},published,outages,
                                        archive,offsets,tracked) if self.ledger else {}
-        hours = measured_hours(ticks,published,optical,gaps,cuts,splits,register_changes)
+        hours = measured_hours(ticks,published,optical,outages,cuts,splits,register_changes)
 
         # Sample the previous day's daily series at clock hours before downsampling it.
         # Raw interruptions matter only when they prevent a boundary from being measured.
@@ -576,11 +595,10 @@ class ChartHours:
             for a,b in runs:
                 if a not in available or b not in available or any(a<t<=b for t in register_changes):
                     continue
-                inner=(archive.get('dial_gaps') or [])
-                leg=self.ledger.snapshot([a,b],tracked,document,policy or {},{t:published[t] for t in (a,b)},inner).get(b)
+                leg=self.ledger.snapshot([a,b],tracked,document,policy or {},{t:published[t] for t in (a,b)},outages).get(b)
                 if not leg or not leg.get('bounds'):
                     continue
-                if leg['basis']=='fine_dial' and any((l,r) not in leg.get('supported_spans',()) for l,r in inner if l<b and a<r):
+                if leg['basis']=='fine_dial' and any((l,r) not in leg.get('supported_spans',()) for l,r in outages if l<b and a<r):
                     continue
                 spans.append({k:leg[k] for k in ('start','end','bounds','use') if k in leg})
         if minutes==60 and self.ledger and not profile:
@@ -600,7 +618,6 @@ class ChartHours:
             result['rateIntervals']=[[q['start'],t,q['optical_rate']] for t,q in optical.items() if 'optical_rate' in q]
         if profile:
             from register_chart import register_profile
-            outages = archive.get('dial_gaps', [])
             photos = self.ledger.gap_registers(outages, tracked, document) if self.ledger and document else {}
             # Recover sub-hour optical anchors only where the absolute series
             # cannot resolve an hour. All zooms consume these same anchors.
@@ -654,7 +671,7 @@ class ChartHours:
 
 class BackgroundCharts:
     """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
-    CACHE_VERSION = 10
+    CACHE_VERSION = 11
     def __init__(self, hours, mqtt, reading_format, path):
         self.hours = hours
         self.mqtt = mqtt
