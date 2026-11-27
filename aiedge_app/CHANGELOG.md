@@ -1,3 +1,7 @@
+## 0.2.0-dev151
+
+- Use the volume bounds measured from the dial photos for both the cumulative band and the interval rate when they agree with the meter readings.
+
 ## 0.2.0-dev150
 
 - Keep the measured first hour's lower bound when consecutive readings bracket midnight and identify the first daily observation. Recorded capture failures still interrupt the chart.
