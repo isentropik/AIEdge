@@ -106,7 +106,9 @@ class LedgerHours:
         from original_meter import OriginalMeter
         self.gap_originals = GapOriginals(store, recognition) if recognition else None
         self.rate_photos = ChartRatePhotos()
-        self.register_replay = ChartRegisterReplay(store, OriginalMeter(store, recognition, photos) if recognition else None)
+        originals = OriginalMeter(store, recognition, photos) if recognition else None
+        self.register_replay = ChartRegisterReplay(store, originals)
+        self.historical_register_replay = ChartRegisterReplay(store, originals)
         self.store = store
         self.photos = photos
         self.cache = {}

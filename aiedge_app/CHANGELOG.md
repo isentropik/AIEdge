@@ -1,3 +1,7 @@
+## 0.2.0-dev149
+
+- Reopen a historical meter reading with the full-register photo identified by that reading. This preserves the slower-dial bounds when a newer photo has become the live meter reference.
+
 ## 0.2.0-dev148
 
 - Use the same photo-backed hourly readings for the cumulative line and the two adjacent rates when a missed capture straddles the hour. Keep the original capture history and the ten-minute view at their original resolution.

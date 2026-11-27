@@ -96,7 +96,7 @@ def flow_ceiling(document,policy):
         return None
 
 
-def parsed(rows, entity, zone, daily, photo_levels=None):
+def parsed(rows, entity, zone, daily, photo_levels=None, sources=None):
     """Held publications can repeat for hours. Only their original capture time has meaning."""
     result = []
     interrupted = True
@@ -181,6 +181,8 @@ def parsed(rows, entity, zone, daily, photo_levels=None):
                 identity=(epoch,method,a.get('format_id'),a.get('camera'),unit)
                 point+= (identity,digest)
             result.append(point)
+            if sources is not None and method=='photo_anchored_fine_dial':
+                sources[event,digest]=a
             last = stamp,event,digest,value,basis
             last_publication = (row['state'],event,digest,a['value_ft3'],a['measured_at'],a.get('anchor_event_id'),method)
             interrupted = False
@@ -268,9 +270,9 @@ class ChartHours:
             cur = stop
         return rows
 
-    def readings(self, entity, start, end, zone, daily, missing, photo_levels=None):
+    def readings(self, entity, start, end, zone, daily, missing, photo_levels=None, sources=None):
         try:
-            return parsed(self.rows(entity,start,end),entity,zone,daily,photo_levels)
+            return parsed(self.rows(entity,start,end),entity,zone,daily,photo_levels,sources)
         except (OSError, HTTPException, ValueError, KeyError):
             missing.append('daily' if daily else 'register')
             return []
@@ -400,7 +402,9 @@ class ChartHours:
         fetch_end = end+timedelta(minutes=12)
         missing = []
         photo_levels={} if profile else None
-        registers = [p for p in self.readings(self.meter,start,fetch_end,zone,False,missing,photo_levels) if p[0]<=stamp]
+        replay = getattr(self.ledger, 'register_replay', None) if profile else None
+        sources = {} if replay else None
+        registers = [p for p in self.readings(self.meter,start,fetch_end,zone,False,missing,photo_levels,sources) if p[0]<=stamp]
         archive=(usage or {}).get('movement_history') or {}
         tracked=(usage or {}).get('daily_nominal') or {}
         uses_archive=(tracked.get('method')=='nominal_meter_movement_v1' and archive.get('points')
@@ -426,9 +430,18 @@ class ChartHours:
                         rows.append(tuple(p))
         if self.stopping.is_set():
             raise InterruptedError('chart_shutdown')
-        replay = getattr(self.ledger, 'register_replay', None)
-        if profile and replay:
-            registers = replay.readings(registers, (usage or {}).get('absolute_nominal'), document, policy, self.stopping)
+        if replay and registers:
+            last = registers[-1]
+            head = (usage or {}).get('absolute_nominal') or {}
+            # A historical window may end before the current full-register photo.
+            # Its last accepted exposure identifies the anchor that was in use then.
+            if (head.get('event_id'),head.get('source_sha256')) != (last[3],last[6]):
+                recorded = sources.get((last[3],last[6]))
+                if recorded and recorded.get('anchor_event_id') != head.get('anchor_event_id'):
+                    # Browsing an older anchor must not discard ongoing work on the live chart.
+                    replay = self.ledger.historical_register_replay
+                head = recorded
+            registers = replay.readings(registers, head, document, policy, self.stopping)
         cuts = sorted(self.breaks(start,fetch_end))
         times = [p[0] for p in registers]
         splits = [p[0] for p in registers if p[4]]
