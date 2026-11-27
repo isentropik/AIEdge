@@ -704,7 +704,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v7:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v8:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -953,8 +953,9 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
   for(const [i,t] of edges.entries()){
     const from=i?edges[i-1]:completedTick(t-1,zone,minutes);
     if(from>=t)continue;
-    if(profile.blocked?.includes(t)||missingChange(from,t))continue;
     const proof=opticalRates.get(from+'/'+t);
+    const interpolated=minutes===60&&t-from===hourMs&&proof?.basis==='interpolated_hour';
+    if(profile.blocked?.includes(t)||(!interpolated&&missingChange(from,t)))continue;
     let q;
     if(proof){
       if(proof.bands.length!==1 || !Number.isFinite(proof.use))continue;
@@ -965,8 +966,8 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
       const lower=Math.max(0,measuredLow,absolute?.[0]??0,relative?.[0]??0);
       const upper=Math.min(measuredHigh,absolute?.[1]??Infinity,relative?.[1]??Infinity);
       if(lower>upper)continue;
-      if(proof.basis==='register' && (proof.use<lower||upper<proof.use))continue;
-      q={use:Math.min(upper,Math.max(lower,proof.use)),bounds:[lower,upper],optical:true,estimated:proof.basis==='register'};
+      if((interpolated||proof.basis==='register') && (proof.use<lower||upper<proof.use))continue;
+      q={use:Math.min(upper,Math.max(lower,proof.use)),bounds:[lower,upper],optical:true,estimated:interpolated||proof.basis==='register'};
     }else{
       // A cold register-only preview can draw the total while the rate proof loads.
       if(data.published||waitingForRates)continue;

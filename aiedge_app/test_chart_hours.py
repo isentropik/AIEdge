@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from chart_hours import ChartHours,tracked_hour
+from chart_hours import ChartHours,parsed,tracked_hour
 from hourly_photo import carried_difference, difference, project
 from meter_history import millis
 
@@ -12,6 +12,17 @@ class ChartHoursTests(unittest.TestCase):
     meter = 'sensor.meter'
     daily = 'sensor.daily'
     hour = datetime(2026,11,22,18,tzinfo=timezone.utc)
+
+    def test_held_photo_can_supply_its_original_level_without_a_new_sample(self):
+        _,row=self.rows([(0,100)])[0]
+        row['attributes']['status']='held_at_last_reading'
+        known={}
+        self.assertEqual(parsed([row],self.meter,ZoneInfo('UTC'),False,known),[])
+        self.assertEqual(known,{(1,'1'.zfill(64),self.hour.isoformat()):100})
+        row['attributes']['value_ft3']=101
+        known={}
+        parsed([row],self.meter,ZoneInfo('UTC'),False,known)
+        self.assertFalse(known)
 
     def test_selected_ten_minute_history_preserves_measured_rate_bounds(self):
         proof=dict(use=.01,bands=[[0,.1]])

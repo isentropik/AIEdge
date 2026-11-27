@@ -1,3 +1,7 @@
+## 0.2.0-dev146
+
+- Use one photo-interpolated meter reading for the two hourly rates beside a missed hour boundary. The estimated dots preserve the original capture gap.
+
 ## 0.2.0-dev145
 
 - End the previous day's purple line at its closing total and start the next day at zero. Keep the measured portions of a broken hour visible on the cumulative chart.
