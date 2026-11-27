@@ -13,8 +13,8 @@ class ChartHoursTests(unittest.TestCase):
     daily = 'sensor.daily'
     hour = datetime(2026,11,22,18,tzinfo=timezone.utc)
 
-    def test_selected_ten_minute_history_keeps_disjoint_optical_rates(self):
-        proof=dict(use=.01,bands=[[0,.1],[4.9,5.1]])
+    def test_selected_ten_minute_history_preserves_measured_rate_bounds(self):
+        proof=dict(use=.01,bands=[[0,.1]])
         class Ledger:
             def snapshot(self,ticks,*args):
                 a,b=ticks[-2:]
@@ -319,7 +319,17 @@ class ChartHoursTests(unittest.TestCase):
             for t,u in ((stamp+600000,usage),(stamp,{**usage,'movement_history':{**usage['movement_history'],'dial_gaps':[[stamp-100,stamp]]}})):
                 with self.assertRaisesRegex(AssertionError,'history fetch'):
                     hours.prepared(t,'UTC',u,doc,{})
-            path.write_bytes(path.read_bytes()[:-4])
+            import hashlib
+            import json
+            original=path.read_bytes()
+            prior=json.loads(original.split(b'\n',1)[1])
+            prior[0]=5
+            payload=json.dumps(prior).encode()
+            path.write_bytes(hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
+            clean=ChartHours(self.meter,self.daily,offline)
+            BackgroundCharts(clean,mqtt,fmt,path).load()
+            self.assertIsNone(clean.last_profile)
+            path.write_bytes(original[:-4])
             clean=ChartHours(self.meter,self.daily,offline)
             BackgroundCharts(clean,mqtt,fmt,path).load()
             self.assertIsNone(clean.last_profile)

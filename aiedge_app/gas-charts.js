@@ -319,7 +319,7 @@ function intervalRate(s){
   const volume=q?.use??tracked?.amount??(bounds?(bounds[0]+bounds[1])/2:null);
   if(from==null||to<=from||volume==null)return null;
   const factor=3600000/(to-from);
-  return {value:volume*factor,bounds:bounds?.map(v=>v*factor),bands:q?.bands?.map(b=>b.map(v=>v*factor)),volume};
+  return {value:volume*factor,bounds:bounds?.map(v=>v*factor),volume};
 }
 function formatBounds(bounds){
   return bounds?bounds.map((v,i)=>number.format(cents(v,i?'ceil':'floor')/100)).join('–'):'';
@@ -352,7 +352,7 @@ function chart(){
     title.textContent=[time,status].filter(Boolean).join(' · ');
     const total=p?.[1]??(stop.reset?0:null);
     const bounds=model.bounds.totals.get(p?.[4])??(p?.[2]!=null&&p[3]!=null?p.slice(2,4):null);
-    const totalSpan=formatBounds(bounds),rateSpan=stop.rate?.bands?.map(formatBounds).join(' or ')??formatBounds(stop.rate?.bounds);
+    const totalSpan=formatBounds(bounds),rateSpan=formatBounds(stop.rate?.bounds);
     amount.textContent=total==null?'—':number.format(total)+' ft³';
     rateValue.textContent=stop.rate?number.format(stop.rate.value)+' ft³/h':'—';
     totalRange.textContent=totalSpan?'('+totalSpan+')':'';
@@ -542,8 +542,8 @@ function chart(){
       if(!stop.rate)continue;
       const measured=stop.tracked,range=stop.rate.bounds;
       const px=x(measured?stop.point[0]:stop.to),attrs=measured?{'data-through-event':stop.point[4]}:stop.hour?{'data-hour-end':stop.to,'data-start':stop.hour.start,'data-use':stop.hour.use,'data-rate':stop.rate.value}:{};
-      for(const [lo,hi] of stop.rate.bands??(range?[range]:[])){
-        if(hi<lo || hi===lo && !stop.rate.bands)continue;
+      if(range && (range[0]<range[1] || stop.hour?.optical && range[0]===range[1])){
+        const [lo,hi]=range;
         const cap=Math.min(5.5,Math.max(1,(px-x(measured?.from??stop.hour?.start??stop.from))/4));
         const clipped=hi>usage.max,highY=usage.y(Math.min(hi,usage.max));
         const endCap=clipped?'M'+(px-cap)+' '+(highY+cap)+'l'+cap+' '+(-cap)+'l'+cap+' '+cap:
@@ -705,7 +705,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v5:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v6:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -930,16 +930,15 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     const proof=opticalRates.get(from+'/'+t);
     let q;
     if(proof){
-      if(!proof.bands.length || !proof.bands.some(([lo,hi])=>lo<=proof.use&&proof.use<=hi))continue;
+      if(proof.bands.length!==1 || !Number.isFinite(proof.use))continue;
+      const [measuredLow,measuredHigh]=proof.bands[0];
+      if(!(measuredLow<=proof.use && proof.use<=measuredHigh))continue;
       const absolute=difference(points.get(from),points.get(t),t-from)?.bounds;
       const relative=changes.get(from+'/'+t);
-      const lower=Math.max(0,absolute?.[0]??0,relative?.[0]??0);
-      const upper=Math.min(absolute?.[1]??Infinity,relative?.[1]??Infinity);
-      const bands=proof.bands.map(([a,b])=>[Math.max(a,lower),Math.min(b,upper)]).filter(([a,b])=>a<=b);
-      if(!bands.length)continue;
-      const choices=bands.map(([lo,hi])=>Math.min(hi,Math.max(lo,proof.use)));
-      const use=choices.reduce((best,v)=>Math.abs(v-proof.use)<Math.abs(best-proof.use)?v:best);
-      q={use,bands,bounds:[bands[0][0],bands.at(-1)[1]]};
+      const lower=Math.max(0,measuredLow,absolute?.[0]??0,relative?.[0]??0);
+      const upper=Math.min(measuredHigh,absolute?.[1]??Infinity,relative?.[1]??Infinity);
+      if(lower>upper)continue;
+      q={use:Math.min(upper,Math.max(lower,proof.use)),bounds:[lower,upper],optical:true};
     }else{
       // A cold register-only preview can draw the total while the rate proof loads.
       if(data.published||waitingForRates)continue;
