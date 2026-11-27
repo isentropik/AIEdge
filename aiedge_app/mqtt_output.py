@@ -346,9 +346,9 @@ class MqttOutput:
         try:
             while not self.stop.is_set():
                 try:
-                    previous = self.overview_daily
+                    previous = self.overview_daily, self.overview_absolute
                     self.publish_snapshot(self.snapshot())
-                    if self.chart_published is not None and self.overview_daily != previous:
+                    if self.chart_published is not None and (self.overview_daily,self.overview_absolute) != previous:
                         self.chart_published.set()
                 except Exception as exc:
                     # Never expose broker responses, credentials or arbitrary exception strings.

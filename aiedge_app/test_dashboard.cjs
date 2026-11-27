@@ -949,3 +949,31 @@ test('browsing a previous hour requests its missing optical rates before drawing
   assert.equal(marks().find(n=>n.class==='plot-usage-dot')['data-rate'],.06);
   assert.equal(marks().filter(n=>n.class==='plot-whisker').length,1);
 });
+
+test('Day follows the absolute reading while daily is held and extends a warm ten-minute window',async()=>{
+  const midnight=Date.UTC(2026,10,26), hour=3600000, first=midnight+18*hour+31*60000;
+  const next=first+7*60000;
+  class Clock extends Date{constructor(...args){super(...(args.length?args:[next]));}static now(){return next;}}
+  const points=Array.from({length:26},(_,i)=>[midnight+(i-6)*hour,100+i,99+i,101+i,0]).filter(p=>p[0]<first);
+  points.push([first,125,124,126,0]);
+  const registerProfile={points,openings:{[midnight]:[106,105,107,0]},gaps:[],modeled:[],conflicts:[],fineBounds:[],
+    registerHead:[first,125,51,'a'.repeat(64),125],reconciled:true};
+  const requests=[];
+  const ui=gasOverview(async url=>{requests.push(url);return response({zone:'UTC',end:first,midnight,minutes:60,hours:[],groups:[],resets:[midnight],registerProfile});},Clock);
+  ui.get('total-key-label').parentElement={};
+  const daily={day:'2026-11-26',timezone:'UTC',method:'nominal_meter_movement_v1',value_ft3:'1',
+    source_sha256:'c'.repeat(64),event_id:29,measured_at:new Date(midnight+16*hour).toISOString(),status:'held_at_last_reading'};
+  function render(t,v,id,digest){ui.render({daily_nominal:daily,absolute_nominal:{method:'photo_anchored_fine_dial',
+    measured_at:new Date(t).toISOString(),source_sha256:digest.repeat(64),event_id:id,value_ft3:String(v),lower_ft3:v-1,upper_ft3:v+1}},
+    {overview_meter:'gas',overview_daily_method:'nominal_meter_movement_v1'});}
+  render(first,125,51,'a');await tick();
+  assert.equal(ui.get('day-curve').dataset.endTime,new Date(first).toISOString());
+  const count=requests.length;
+  render(next,126,52,'b');await tick();
+  assert.equal(ui.get('day-curve').dataset.endTime,new Date(next).toISOString(),JSON.stringify([requests,ui.get('day-curve').dataset,ui.get('day-history-status').textContent]));
+  assert.equal(requests.length,count);
+  const nodes=ui.get('day-curve').children[0].children.map(n=>n.attributes);
+  assert.equal(nodes.find(n=>n.class==='plot-estimate-dot' && n['data-time']===next)['data-total'],20);
+  assert(nodes.some(n=>n.class==='plot-usage-dot' && n['data-hour-end']===next));
+  assert.match(ui.get('day-history-status').textContent,/partial hour/);
+});

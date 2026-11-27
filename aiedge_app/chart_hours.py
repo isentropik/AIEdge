@@ -22,6 +22,24 @@ DAILY = {'range_midpoint_v1', 'observed_increments', 'nominal_meter_movement_v1'
 REGISTER = {'photo_anchored_fine_dial', 'minimum_supported_forward_movement', 'photo_register_hundreds'}
 
 
+def chart_head(usage):
+    """A held daily accumulator cannot hold back a newer published register."""
+    daily = usage.get('daily_nominal') or {}
+    absolute = usage.get('absolute_nominal') or {}
+    if absolute.get('method') != 'photo_anchored_fine_dial' or not absolute.get('event_id'):
+        return daily
+    # Event times can have different offsets or precision; compare the instants.
+    try:
+        at = datetime.fromisoformat(absolute['measured_at'])
+        if (at.tzinfo is not None and re.fullmatch('[0-9a-f]{64}',absolute.get('source_sha256','')) and
+                math.isfinite(float(absolute['value_ft3'])) and float(absolute['value_ft3'])>=0 and
+                (not daily.get('measured_at') or at>datetime.fromisoformat(daily['measured_at']))):
+            return absolute
+    except (KeyError, ValueError, TypeError, OverflowError):
+        pass
+    return daily
+
+
 def tracked_hour(start,end,detail):
     """Position the end of a partial hour with the same evidence as the ten-minute view."""
     step=600000
@@ -432,8 +450,9 @@ class ChartHours:
             cursor += timedelta(minutes=1)
         published={t:boundary(t) for t in ticks}
         offsets = []
-        optical = self.ledger.snapshot(ticks,(usage or {}).get('daily_nominal'),document,policy or {},published,gaps,
-                                       (usage or {}).get('movement_history'),offsets) if self.ledger else {}
+        head=chart_head(usage or {})
+        optical = self.ledger.snapshot(ticks,head,document,policy or {},published,gaps,
+                                       archive,offsets,tracked) if self.ledger else {}
         hours = measured_hours(ticks,published,optical,gaps,cuts,splits,register_changes)
 
         # Sample the previous day's daily series at clock hours before downsampling it.
@@ -579,7 +598,7 @@ class ChartHours:
                     if len(fine_ticks)<2:
                         continue
                     positions={t:boundary(t) for t in fine_ticks}
-                    observed=self.ledger.snapshot(fine_ticks,tracked,document,policy or {},positions,outages)
+                    observed=self.ledger.snapshot(fine_ticks,head,document,policy or {},positions,outages)
                     rate_intervals.extend([q['start'],t,q['optical_rate']] for t,q in observed.items() if 'optical_rate' in q)
                     fine_legs.extend(measured_hours(fine_ticks,positions,observed,outages,cuts,splits,register_changes))
             gap_flow = getattr(self.ledger,'gap_flow',None)
@@ -598,7 +617,7 @@ class ChartHours:
 
 class BackgroundCharts:
     """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
-    CACHE_VERSION = 6
+    CACHE_VERSION = 7
     def __init__(self, hours, mqtt, reading_format, path):
         self.hours = hours
         self.mqtt = mqtt
@@ -638,15 +657,16 @@ class BackgroundCharts:
         mqtt = self.mqtt.status()
         usage = mqtt.get('usage') or {}
         daily = usage.get('daily_nominal') or {}
-        zone = daily.get('timezone')
-        if not daily.get('measured_at') or not zone:
+        zone = daily.get('timezone') or mqtt.get('overview_timezone')
+        head = chart_head(usage)
+        if not head.get('measured_at') or not zone:
             return
         doc = self.reading_format.status()['format']
         policy = self.mqtt.daily.evidence_policy or {}
         key = self.hours.profile_key(zone, usage, doc, policy)
         if not key:
             return
-        source = datetime.fromisoformat(daily['measured_at'])
+        source = datetime.fromisoformat(head['measured_at'])
         if source.tzinfo is None:
             return
         stamp = millis(source)

@@ -367,10 +367,16 @@ function render(state) {
  if (headline?.method==='nominal_meter_movement_v1') headline.movement=usage.movement_history;
  $('usage-estimate').title=headline?.method==='range_midpoint_v1'?'Estimate at the midpoint of the daily range':headline?.method==='nominal_meter_movement_v1'?'Starting estimate plus meter movement':'';
  const currentHeadline = headline?.zone && headline.day === calendarDay(new Date(),headline.zone) ? headline : null;
+ const absolute=usage.absolute_nominal, source=sourceOf(absolute);
+ const register=source && absolute.method==='photo_anchored_fine_dial' && absolute.value_ft3!=null &&
+   Number.isFinite(Number(absolute.value_ft3)) && Number(absolute.value_ft3)>=0 ? absolute : null;
+ const dailyStamp=currentHeadline?.source?.captured_at;
+ const registerToday=register && zone && calendarDay(new Date(source.captured_at),zone)===calendarDay(new Date(),zone);
+ const chartStamp=registerToday && (!dailyStamp||Date.parse(source.captured_at)>Date.parse(dailyStamp)) ? source.captured_at : dailyStamp;
  if(['','#overview'].includes(location.hash))window.AIEdgeCharts?.setCalendar?.(
-   mqtt?.overview_meter==='gas'?zone:null,currentHeadline?.source?.captured_at,
+   mqtt?.overview_meter==='gas'?zone:null,chartStamp,
    usage.movement_history?.format?JSON.stringify([usage.movement_history.format,usage.movement_history.dial_from,
-     usage.absolute_nominal?.method,currentHeadline?.day,usage.movement_history.dial_gaps??[]]):null);
+     absolute?.method,currentHeadline?.day,usage.movement_history.dial_gaps??[]]):null,register);
  if (['','#overview'].includes(location.hash)) window.AIEdgeCharts?.day(other ? null : usage.daily||usage.chart_daily,other ? null : currentHeadline,completeHour(usage.recent)?usage.recent:null);
  renderAbsolute(usage.absolute_nominal, zone);
  renderChartHeadline();
