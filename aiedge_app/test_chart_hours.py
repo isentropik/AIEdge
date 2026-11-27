@@ -238,6 +238,52 @@ class ChartHoursTests(unittest.TestCase):
         cut=millis(self.hour+timedelta(seconds=1))
         self.assertEqual(self.run_chart(rows,[cut])['hours'],[])
 
+    def test_daily_start_marker_keeps_measured_hour_but_capture_break_still_blocks_it(self):
+        self.hour = self.hour.replace(hour=0)
+        observations = self.rows([(-5,100),(5,100),(605,100.1),(1205,100.1),(1805,100.2),
+                                  (2405,100.3),(3005,100.3),(3595,100.4),(3605,100.4)])
+        for _, row in observations:
+            row['attributes'].update(lower_ft3=90, upper_ft3=110)
+        def fetch(entity, start, stop):
+            return [[r for t,r in observations if entity==self.meter and start<=t<stop]]
+
+        opening = millis(self.hour)
+        closing = opening + 3600000
+        marker = [opening, opening+5000]
+        archive = dict(midnight=opening, points=[[marker[1],0,2,0]], dial_from=[2,marker[1]], dial_gaps=[marker])
+        class Ledger:
+            def snapshot(self,ticks,head,document,policy,published,gaps,*args):
+                if published.get(opening) and published.get(closing):
+                    return {closing:dict(start=opening,end=closing,basis='fine_dial',bounds=[.28,8],supported_spans=[])}
+                return {}
+
+        def summary(archive,cuts=()):
+            chart = ChartHours(self.meter,self.daily,fetch,lambda a,b:cuts,Ledger())
+            usage = dict(movement_history=archive)
+            full = chart.snapshot(closing+5000,'UTC',usage)
+            quick = chart.published_window(closing+5000,'UTC','today',usage,None,{})
+            return full['hours'], quick
+
+        baseline, _ = summary({})
+        actual, quick = summary(archive)
+        self.assertEqual(actual,baseline)
+        self.assertEqual(actual[0]['bounds'],[.28,8])
+        self.assertNotIn(closing,quick['blocked'])
+        self.assertEqual(archive['dial_gaps'],[marker])
+        for other,cuts in ((archive,[marker[1]]),(dict(archive,dial_from=[3,marker[1]]),[])):
+            with self.subTest(cuts=cuts,first=other['dial_from']):
+                hours, quick = summary(other,cuts)
+                self.assertEqual(hours,[])
+                self.assertIn(closing,quick['blocked'])
+        other_marker = [opening+1205000,opening+1210000]
+        hours, quick = summary(dict(archive,dial_gaps=[marker,other_marker]))
+        self.assertEqual(hours[0]['bounds'],[0,20])
+        self.assertIn(closing,quick['blocked'])
+        _, row = observations[0]
+        row['attributes']['measured_at'] = self.hour.isoformat()
+        observations[0] = self.hour, row
+        self.assertEqual(summary(archive)[0], baseline)
+
     def test_republished_old_event_between_two_clock_brackets(self):
         rows=self.rows([(-2,100),(2,102),(3600,111)])
         previous=rows[0][1]
