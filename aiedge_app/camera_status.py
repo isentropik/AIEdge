@@ -2,10 +2,16 @@
 import errno,http.client,json,re,ssl,time,urllib.error,urllib.request
 
 READINESS_IO_SECONDS = 10
+FAST_HEADER_SECONDS = 2
 
 class ReadinessTransportError(ValueError):
     """A failed passive GET; no capture request was admitted by this probe."""
-    def __init__(self):super().__init__('camera_connection_failed')
+    def __init__(self, stage=None, cause=None):
+        super().__init__('camera_connection_failed')
+        self.stage = stage
+        self.cause = type(cause).__name__
+        self.os_error = getattr(cause,'errno',None)
+        self.header_timeout = stage=='connect_or_headers' and isinstance(cause,TimeoutError)
 
 def transient_transport(error):
     reason=error.reason if isinstance(error,urllib.error.URLError) else error
@@ -49,18 +55,46 @@ def validate(payload):
         result.update(q25=True,q25_profile=profile)
     return result
 
-def probe(camera,*,deadline=None):
-    from capture import camera_header,io_deadline
-    absolute=io_deadline(READINESS_IO_SECONDS,deadline)
+def probe(camera,*,deadline=None,scheduled_stop=None):
+    from capture import io_deadline
+    from lifecycle import lifecycle_event
+    absolute = io_deadline(READINESS_IO_SECONDS,deadline)
+    fast = scheduled_stop is not None and camera.fast_readiness
+    attempts = 3 if fast else 1
+    for attempt in range(1,attempts+1):
+        started = time.monotonic()
+        header_deadline = min(absolute,started+FAST_HEADER_SECONDS) if attempt<attempts else absolute
+        try:
+            result = _get_status(camera,header_deadline,absolute)
+        except ReadinessTransportError as error:
+            retry = (attempt<attempts and error.header_timeout and
+                     time.monotonic()<absolute and not scheduled_stop.is_set())
+            event = 'camera_readiness_retry' if retry else 'camera_readiness_transport'
+            lifecycle_event(event,stage=error.stage,cause=error.cause,os_error=error.os_error,attempt=attempt)
+            if retry:
+                continue
+            if scheduled_stop is not None:
+                # Give a persistently slow camera an uninterrupted full window next time.
+                camera.fast_readiness = False
+            raise
+        if scheduled_stop is not None:
+            camera.fast_readiness = result['state']=='ready' and time.monotonic()-started < FAST_HEADER_SECONDS
+        return result
+
+def _get_status(camera,header_deadline,absolute):
+    from capture import camera_header
     headers={}
     if camera.token:headers['Authorization']='Bearer '+camera.token
     elif camera.basic:headers['Authorization']='Basic '+camera.basic
     request=urllib.request.Request(camera.origin+'/api/v1/camera',headers=headers,method='GET')
-    request.aiedge_deadline=absolute
+    request.aiedge_deadline=header_deadline
     stage='connect_or_headers'
     try:
-        with camera.opener.open(request,timeout=absolute-time.monotonic()) as response:
+        remaining=header_deadline-time.monotonic()
+        if remaining<=0:raise TimeoutError('camera_readiness_deadline')
+        with camera.opener.open(request,timeout=remaining) as response:
             stage='status_body'
+            if header_deadline<absolute:response.set_body_deadline(absolute)
             camera_header(response.headers,'Content-Type')
             raw_length=camera_header(response.headers,'Content-Length')
             if response.status!=200 or response.headers.get_content_type()!='application/json':raise ValueError('camera_status_invalid')
@@ -75,10 +109,7 @@ def probe(camera,*,deadline=None):
         exc.close();raise ValueError(code) from None
     except (urllib.error.URLError,OSError) as error:
         if transient_transport(error):
-            from lifecycle import lifecycle_event
             cause=error.reason if isinstance(error,urllib.error.URLError) else error
-            lifecycle_event('camera_readiness_transport',stage=stage,cause=type(cause).__name__,
-                            os_error=getattr(cause,'errno',None))
-            raise ReadinessTransportError() from None
+            raise ReadinessTransportError(stage,cause) from None
         raise ValueError('camera_connection_failed') from None
     except (UnicodeError,json.JSONDecodeError,TypeError,RecursionError,http.client.HTTPException):raise ValueError('camera_status_invalid') from None

@@ -27,7 +27,8 @@ CHUNK = 1024
 PACKET_LIMIT = 32768
 ORIGINAL_LIMIT = 262144
 REPLAY_CHUNK = 2048
-REPLAY_SECONDS = 5
+REPLAY_IDLE_SECONDS = 2
+COMPACT_CYCLE_SECONDS = 30
 
 
 def digest(data):
@@ -149,9 +150,13 @@ def request(camera,path,*,headers=None,body=None,deadline,limit):
             packet_sha=camera_header(reply.headers,'X-AIEdge-SHA256')
             if camera_header(reply.headers,'Content-Type')!='application/x-aiedge-q25' or not sha(packet_sha):
                 raise ValueError('compact_response_metadata')
+            replay = camera_header(reply.headers, 'X-AIEdge-Compact-Replay') == '1'
+            set_deadline = getattr(reply, 'set_body_deadline', None) if replay else None
             data=bytearray()
             try:
                 while len(data)<expected:
+                    if set_deadline:
+                        set_deadline(min(deadline, time.monotonic()+REPLAY_IDLE_SECONDS))
                     block=reply.read1(expected-len(data))
                     if not block:raise ConnectionResetError('compact body ended early')
                     data.extend(block)
@@ -159,9 +164,11 @@ def request(camera,path,*,headers=None,body=None,deadline,limit):
                 evidence = dict(stage='compact_body', expected_bytes=expected, received_bytes=len(data),
                                 expected_sha256=packet_sha)
                 reset = isinstance(exc, ConnectionError)
-                if camera_header(reply.headers, 'X-AIEdge-Compact-Replay') == '1':
+                if replay:
                     raise PartialCompact(evidence, reply.headers, bytes(data), reset=reset) from exc
-                raise BodyTimeout(evidence, reset=reset) from exc
+                failure = BodyTimeout(evidence, reset=reset)
+                failure.replay = ('not_advertised',len(data),0)
+                raise failure from exc
             return reply.headers,bytes(data)
         data=reply.read(expected)
         if len(data)!=expected:
@@ -169,25 +176,57 @@ def request(camera,path,*,headers=None,body=None,deadline,limit):
         return reply.headers,data
 
 
-def resume_compact(camera, partial):
+def resume_compact(camera, partial, deadline):
     expected = partial.evidence['expected_bytes']
     packet_sha = partial.evidence['expected_sha256']
     data = bytearray(partial.prefix)
-    deadline = time.monotonic() + REPLAY_SECONDS
+    requests = 0
+    failures = 0
+    reason = 'deadline'
     while len(data) < expected:
+        start = time.monotonic()
+        if start >= deadline:
+            partial.replay = (reason,len(data),requests)
+            raise partial
         offset = str(len(data))
         length = min(REPLAY_CHUNK, expected - len(data))
-        headers, chunk = request(camera, '/api/v1/compact/part', deadline=deadline, limit=length,
-                                 headers={'X-AIEdge-SHA256': packet_sha, 'X-AIEdge-Offset': offset})
-        if (headers is None or len(chunk) != length or
-                camera_header(headers, 'Content-Type') != 'application/octet-stream' or
-                camera_header(headers, 'X-AIEdge-SHA256') != packet_sha or
-                camera_header(headers, 'X-AIEdge-Size') != str(expected) or
-                camera_header(headers, 'X-AIEdge-Offset') != offset):
-            raise ValueError('compact_replay_metadata')
+        requests += 1
+        # One slow GET must leave time for another read of the identical offset.
+        part_deadline = min(deadline, start + min(4 + 2*failures, 8))
+        try:
+            headers, chunk = request(camera, '/api/v1/compact/part', deadline=part_deadline, limit=length,
+                                     headers={'X-AIEdge-SHA256': packet_sha, 'X-AIEdge-Offset': offset})
+            if (headers is None or len(chunk) != length or
+                    camera_header(headers, 'Content-Type') != 'application/octet-stream' or
+                    camera_header(headers, 'X-AIEdge-SHA256') != packet_sha or
+                    camera_header(headers, 'X-AIEdge-Size') != str(expected) or
+                    camera_header(headers, 'X-AIEdge-Offset') != offset):
+                raise ValueError('compact_replay_metadata')
+        except (OSError,http.client.HTTPException,ValueError) as exc:
+            cause = exc.reason if isinstance(exc,urllib.error.URLError) else exc
+            if isinstance(exc,urllib.error.HTTPError):
+                reason = f'http_{exc.code}'
+                exc.close()
+                retry = exc.code in (408,502,503,504)
+            elif isinstance(cause,(TimeoutError,ConnectionError,http.client.IncompleteRead)):
+                reason = ('timeout' if isinstance(cause,TimeoutError) else
+                          'short_body' if isinstance(cause,http.client.IncompleteRead) else 'connection_error')
+                retry = True
+            else:
+                reason = 'invalid_response' if isinstance(exc,ValueError) else 'transport_error'
+                retry = False
+            if not retry:
+                partial.replay = (reason,len(data),requests)
+                raise partial from exc
+            time.sleep(min(.25*2**min(failures,4),max(0,deadline-time.monotonic())))
+            failures += 1
+            continue
         data.extend(chunk)
+        failures = 0
+        reason = 'deadline'
     if digest(data) != packet_sha:
-        raise ValueError('compact_replay_integrity')
+        partial.replay = ('digest_mismatch',len(data),requests)
+        raise partial
     return bytes(data)
 
 
@@ -253,13 +292,7 @@ class CompactCapture:
                 headers={'Content-Type':'application/json','X-AIEdge-Anchor':str(int(self.force_anchor))},
                 deadline=time.monotonic()+20,limit=PACKET_LIMIT)
         except PartialCompact as partial:
-            try:
-                data = resume_compact(self.camera, partial)
-            except urllib.error.HTTPError as error:
-                error.close()
-                raise partial from error
-            except (OSError, ValueError, http.client.HTTPException) as error:
-                raise partial from error
+            data = resume_compact(self.camera, partial, posted + COMPACT_CYCLE_SECONDS)
             headers = partial.headers
             resumed_bytes = len(data) - len(partial.prefix)
         except urllib.error.HTTPError as e:
