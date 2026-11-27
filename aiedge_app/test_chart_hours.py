@@ -35,6 +35,35 @@ class ChartHoursTests(unittest.TestCase):
         history=chart.snapshot(end,'UTC',minutes=10)
         self.assertEqual(history['rateIntervals'],[[end-600000,end,proof]])
 
+    def test_replay_uses_anchor_on_last_accepted_exposure_in_selected_window(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        entries=self.rows([(0,100),(60,101),(120,102)])
+        for i,(_,row) in enumerate(entries):
+            attrs=row['attributes']
+            attrs['anchor_event_id']=1 if i<2 else 3
+            attrs['anchor_source_sha256']=entries[0 if i<2 else 2][1]['attributes']['source_sha256']
+            attrs['anchor_measured_at']=entries[0 if i<2 else 2][0].isoformat()
+        def fetch(entity,start,stop):
+            return [[r for t,r in entries if entity==self.meter and start<=t<stop]]
+        replay=Mock()
+        replay.readings.side_effect=lambda points,*args:points
+        historical=Mock()
+        historical.readings.side_effect=lambda points,*args:points
+        ledger=SimpleNamespace(register_replay=replay,historical_register_replay=historical,snapshot=lambda *args:{})
+        service=ChartHours(self.meter,self.daily,fetch,ledger=ledger)
+        current=entries[-1][1]['attributes']
+        usage={'absolute_nominal':current}
+        service.snapshot(millis(entries[1][0]),'UTC',usage,profile=True)
+        self.assertEqual(historical.readings.call_args.args[1],entries[1][1]['attributes'])
+        held=dict(entries[1][1],attributes=dict(entries[1][1]['attributes'],status='held_at_last_reading',anchor_event_id=3))
+        entries.insert(2,(entries[1][0]+timedelta(seconds=1),held))
+        service.snapshot(millis(entries[2][0]),'UTC',usage,profile=True)
+        self.assertEqual(historical.readings.call_args.args[1],entries[1][1]['attributes'])
+        replay.readings.assert_not_called()
+        service.snapshot(millis(entries[-1][0]),'UTC',usage,profile=True)
+        self.assertEqual(replay.readings.call_args.args[1],current)
+
     def test_partial_level_uses_only_same_basis_tracked_change_across_missing_ticks(self):
         step=600000
         d=dict(hours=[dict(start=t*step,end=(t+1)*step,use=2) for t in (0,1,2,5)],
