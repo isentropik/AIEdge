@@ -1,3 +1,7 @@
+## 0.2.0-dev145
+
+- End the previous day's purple line at its closing total and start the next day at zero. Keep the measured portions of a broken hour visible on the cumulative chart.
+
 ## 0.2.0-dev144
 
 - Keep a new photo-backed gas reading on the same Day trace when it reaches the overview before Recorder adds the display unit.

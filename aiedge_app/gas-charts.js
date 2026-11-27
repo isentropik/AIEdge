@@ -467,6 +467,7 @@ function chart(){
           if(p[2]!=null&&p[3]!=null)band.push(p);
         }
         shade();nodes.push(clipped);
+        if(series.betweenTicks)continue;
         for(const p of run)if(start<=p[0]&&p[0]<=end){
           if(model.summary.profile&&model.summary.resets.includes(p[0]))continue;
           if(p[2]!=null&&p[3]>p[2]&&run.length===1)nodes.push(svg('line',{class:'plot-bound-edge',x1:x(p[0]),x2:x(p[0]),y1:y(p[2]),y2:y(p[3])}));
@@ -478,8 +479,6 @@ function chart(){
       for(const t of model.summary.resets){
         const px=x(t);
         nodes.push(svg('line',{x1:px,x2:px,y1:top,y2:bottom,class:'plot-midnight'}));
-        const close=model.summary.closes.get(t);
-        if(close)lines.push(svg('line',{x1:px,x2:px,y1:y(close[1]),y2:y(0),class:'plot-estimate'}));
         const opening=model.summary.profile&&model.stops.find(s=>s.to===t)?.point;
         lines.push(svg('circle',{cx:px,cy:y(0),r:3.5,class:'plot-reset','data-midnight':t,
           ...(opening?{'data-time':t,'data-total':opening[1],'data-low':opening[2],'data-high':opening[3]}:{})}));
@@ -898,7 +897,7 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     if(Number.isFinite(high)&&low-0.000002<=q.use&&q.use<=high+0.000002)
       q.bounds=[Math.max(0,Math.min(low,q.use)),Math.max(high,q.use)];
   }
-  const stops=new Map(),closes=new Map(),series=[],extent=[];
+  const stops=new Map(),series=[],extent=[];
   let run=[];
   function flush(){
     if(run.length)series.push({run});
@@ -912,7 +911,6 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     if(stop.reset){
       const prior=openingAt(t-1),close=total(t,profile.openings[prior],prior);
       if(close&&t>start){
-        closes.set(t,close);
         extent.push(close[3]??close[1]);
         if(run.length&&points.get(run.at(-1)[0])[3]===points.get(t)[3])run.push(close);
       }
@@ -924,6 +922,34 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     run.push(p);
   }
   flush();
+  // If a capture gap takes out an hourly boundary, keep the parts of that
+  // hour for which the ten-minute view has both levels and dial evidence.
+  // These segments use the same cumulative estimates as the zoomed view.
+  if(minutes===60){
+    for(let i=1;i<edges.length;i++){
+      const from=edges[i-1],to=edges[i];
+      if(!missingChange(from,to))continue;
+      let part=null;
+      const step=600000;
+      for(let a=completedTick(from,zone,10);a+step<=to;a+=step){
+        const b=a+step;
+        if(a<from||unknown.some(([l,r])=>l<b&&a<r)||profile.blocked?.includes(b))continue;
+        const proof=opticalRates.get(a+'/'+b);
+        if(!proof||!Number.isFinite(proof.use)||proof.bands?.length!==1)continue;
+        const [lo,hi]=proof.bands[0];
+        if(!(lo<=proof.use&&proof.use<=hi))continue;
+        const opening=openingAt(a),base=profile.openings[opening];
+        const left=total(a,base,opening),right=total(b,base,opening);
+        if(!left||!right||right[1]<left[1])continue;
+        if(!part||part.at(-1)[0]!==a){
+          part=[left];
+          series.push({run:part,betweenTicks:true});
+        }
+        part.push(right);
+        extent.push(left[3]??left[1],right[3]??right[1]);
+      }
+    }
+  }
   for(const [i,t] of edges.entries()){
     const from=i?edges[i-1]:completedTick(t-1,zone,minutes);
     if(from>=t)continue;
@@ -977,7 +1003,7 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     end===profile.registerHead?.[0]?profile.registerHead[2]:end===view?.stamp?view.event:null;
   if(endEvent&&!browsing)host.dataset.endEvent=String(endEvent);else delete host.dataset.endEvent;
   drawDay([],start,zone,JSON.stringify(['register',data.end,start,end,minutes,data.published?'published':'verified',rateDetail?.status]),null,hourly.midnight,null,ordered,
-    [],null,null,null,{series,extent,resets,closes,edges,profile:true});
+    [],null,null,null,{series,extent,resets,edges,profile:true});
 }
 function showSummary(view){
   const hourly=browsing?.hourly??calendar;
@@ -1269,7 +1295,7 @@ function showSummary(view){
   $('day-history-status').textContent=[minutes<60?minutes+'-min averages':minutes/60+'-hour averages',view?.partialCoverage||browsing&&start<hourly.end-25*hourMs?'Partial daily total':'',
     buckets.some(q=>q.partial)?'Includes partial rates':'',missingHour,message||plottedThrough(ordered,zone)].filter(Boolean).join(' · ');
   drawDay([],start,zone,key,null,midnight,null,ordered,[],null,null,null,
-    {series,extent,resets,closes,edges});
+    {series,extent,resets,edges});
 }
 let identity='', saved=null, lastRangeSource=null, generation=0, due=0, lastAttempt=0, pending=false, latest=null, recentWindow=null;
 function showDay(){
