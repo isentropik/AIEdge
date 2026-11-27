@@ -96,7 +96,7 @@ def flow_ceiling(document,policy):
         return None
 
 
-def parsed(rows, entity, zone, daily):
+def parsed(rows, entity, zone, daily, photo_levels=None):
     """Held publications can repeat for hours. Only their original capture time has meaning."""
     result = []
     interrupted = True
@@ -110,6 +110,14 @@ def parsed(rows, entity, zone, daily):
                 interrupted = True
                 continue
             if a.get('status') in ('stale','held_at_last_reading'):
+                # A held register can still identify its original exposure.
+                # Store it separately for matching against the archived photo.
+                if photo_levels is not None and a.get('status')=='held_at_last_reading' and a.get('method')=='photo_anchored_fine_dial':
+                    source=(a.get('event_id'),a.get('source_sha256'),a.get('measured_at'))
+                    if source not in photo_levels:
+                        original=parsed([dict(row,attributes=dict(a,status='estimated'))],entity,zone,False)
+                        if original:
+                            photo_levels[source]=float(original[0][1])
                 # The publisher can repeat the previous observation between two
                 # fresh ones. Its publication time is neither a sample nor a cut.
                 same = (row['state'], a.get('event_id'), a.get('source_sha256'), a.get('value_ft3'),
@@ -136,6 +144,8 @@ def parsed(rows, entity, zone, daily):
                 if same and lo.is_finite() and hi.is_finite() and 0 <= lo <= hi and (daily or lo<=value<=hi):
                     bounds = lo,hi
             stamp = millis(t)
+            if photo_levels is not None and method=='photo_anchored_fine_dial':
+                photo_levels[event,digest,a['measured_at']]=float(value)
             basis = (method,a.get('anchor_event_id'),a.get('day'))
             if daily:
                 coverage=a.get('coverage_started_at')
@@ -258,9 +268,9 @@ class ChartHours:
             cur = stop
         return rows
 
-    def readings(self, entity, start, end, zone, daily, missing):
+    def readings(self, entity, start, end, zone, daily, missing, photo_levels=None):
         try:
-            return parsed(self.rows(entity,start,end),entity,zone,daily)
+            return parsed(self.rows(entity,start,end),entity,zone,daily,photo_levels)
         except (OSError, HTTPException, ValueError, KeyError):
             missing.append('daily' if daily else 'register')
             return []
@@ -389,7 +399,8 @@ class ChartHours:
         # admit delayed publications only if they describe a reading in this snapshot.
         fetch_end = end+timedelta(minutes=12)
         missing = []
-        registers = [p for p in self.readings(self.meter,start,fetch_end,zone,False,missing) if p[0]<=stamp]
+        photo_levels={} if profile else None
+        registers = [p for p in self.readings(self.meter,start,fetch_end,zone,False,missing,photo_levels) if p[0]<=stamp]
         archive=(usage or {}).get('movement_history') or {}
         tracked=(usage or {}).get('daily_nominal') or {}
         uses_archive=(tracked.get('method')=='nominal_meter_movement_v1' and archive.get('points')
@@ -611,6 +622,14 @@ class ChartHours:
             result['registerProfile'] = register_profile(stamp, zone, registers, daily, hours, outages,
                                                           cuts, photos, result['flowCeiling'], fine_legs,
                                                           min(document['dials'],key=lambda d:d['value_per_revolution']) if document else None, flow)
+            if flow and getattr(self.ledger,'store',None):
+                from chart_gap_rates import estimated_rates
+                from chart_rate_photos import comparison_allowance
+                from reading_format import validate
+                allowance=comparison_allowance(document,validate(document)[1],policy)
+                with self.ledger.lock,self.ledger.store.connect() as db:
+                    rate_intervals.extend(estimated_rates(db,result['registerProfile'],flow,document,zone,photo_levels,rate_intervals,
+                                                          self.ledger.rate_photos,allowance,head['event_id']))
             result['registerProfile']['rateIntervals'] = rate_intervals
             key = self.profile_key(zone_name,usage,document,policy)
             if key and not missing and result['registerProfile']['points']:
@@ -622,7 +641,7 @@ class ChartHours:
 
 class BackgroundCharts:
     """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
-    CACHE_VERSION = 8
+    CACHE_VERSION = 9
     def __init__(self, hours, mqtt, reading_format, path):
         self.hours = hours
         self.mqtt = mqtt

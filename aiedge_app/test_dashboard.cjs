@@ -976,6 +976,28 @@ test('an outage at the hour keeps measured subintervals and midnight has separat
   assert(!nodes.some(n=>n.attributes.class==='plot-estimate-dot' && n.attributes['data-time']===at(5)));
 });
 
+test('two estimated hourly rates share a clock reading inside an open capture gap',async()=>{
+  const start=Date.UTC(2026,10,26),hour=3600000,t=start+hour,end=t+hour;
+  const profile={points:[[start,100,98,102,0],[t,104,102,106,0],[end,107,105,109,0]],
+    openings:{[start]:[100,98,102,0]},gaps:[[t-50000,t+10000]],unknownGaps:[[t-50000,t+10000]],
+    modeled:[],conflicts:[],fineBounds:[],reconciled:true,rateIntervals:[
+      [start,t,{use:4,bands:[[3,5]],basis:'interpolated_hour'}],
+      [t,end,{use:3,bands:[[2,4]],basis:'interpolated_hour'}]]};
+  const ui=gasOverview(async()=>response({zone:'UTC',end,midnight:start,minutes:60,hours:[],groups:[],registerProfile:profile}));
+  ui.get('total-key-label').parentElement={};
+  ui.charts.setCalendar('UTC',new Date(end).toISOString());
+  ui.charts.period('today',null);
+  await tick();
+  const marks=ui.get('day-curve').children[0].children.map(n=>n.attributes);
+  for(const [time,rate] of [[t,4],[end,3]]){
+    const dot=marks.filter(m=>m.class==='plot-usage-dot'&&m['data-hour-end']===time);
+    assert.equal(dot.length,1);assert.equal(dot[0]['data-rate'],rate);assert.equal(dot[0]['data-estimated'],'true');
+    assert.equal(marks.filter(m=>m.class==='plot-whisker'&&m['data-hour-end']===time).length,1);
+  }
+  assert(!marks.some(m=>m['data-start']<t && m['data-end']>=t));
+  assert(!marks.some(m=>m.class==='plot-estimate-dot'&&m['data-time']===t));
+});
+
 test('Day follows the absolute reading while daily is held and extends a warm ten-minute window',async()=>{
   const midnight=Date.UTC(2026,10,26), hour=3600000, first=midnight+18*hour+31*60000;
   const next=first+7*60000;
