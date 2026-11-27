@@ -1,3 +1,7 @@
+## 0.2.0-dev144
+
+- Keep a new photo-backed gas reading on the same Day trace when it reaches the overview before Recorder adds the display unit.
+
 ## 0.2.0-dev143
 
 - Show the current Day chart through the latest photo-backed meter reading and include the measured portion of the current hour. Prepare history when the absolute register advances even if the tracked daily total is held.

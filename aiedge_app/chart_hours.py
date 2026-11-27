@@ -163,7 +163,12 @@ def parsed(rows, entity, zone, daily):
             else:
                 if last and value < last[3]:
                     epoch+=1
-                identity=(epoch,method,a.get('format_id'),a.get('camera'),a.get('unit_of_measurement'))
+                # The add-on publishes value_ft3. Recorder adds the display
+                # unit from discovery, which is absent on the same live event.
+                unit=a.get('unit_of_measurement')
+                if unit is None and method=='photo_anchored_fine_dial':
+                    unit='ft³'
+                identity=(epoch,method,a.get('format_id'),a.get('camera'),unit)
                 point+= (identity,digest)
             result.append(point)
             last = stamp,event,digest,value,basis
@@ -617,7 +622,7 @@ class ChartHours:
 
 class BackgroundCharts:
     """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
-    CACHE_VERSION = 7
+    CACHE_VERSION = 8
     def __init__(self, hours, mqtt, reading_format, path):
         self.hours = hours
         self.mqtt = mqtt

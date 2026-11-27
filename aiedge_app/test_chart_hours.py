@@ -63,6 +63,30 @@ class ChartHoursTests(unittest.TestCase):
         self.assertEqual((h['opening'],h['closing'],h['use']),(102,110,8))
         self.assertEqual(h['end']-h['start'],3600000)
 
+    def test_live_head_and_recorder_share_the_same_cumulative_register(self):
+        rows=self.rows([(-60,120),(0,121),(90,125)])
+        for _,row in rows:
+            row['attributes']['unit_of_measurement']='ft³'
+        end=millis(rows[-1][0])
+        head=dict(rows[-1][1]['attributes'])
+        del head['unit_of_measurement']
+        recorded=rows[:-1]
+        def fetch(entity,start,stop):
+            return [[r for t,r in recorded if entity==self.meter and start<=t<stop]]
+        def profile():
+            return ChartHours(self.meter,self.daily,fetch).snapshot(
+                end,'UTC',{'absolute_nominal':head},profile=True)['registerProfile']
+        live=profile()
+        recorded.append(rows[-1])
+        self.assertEqual(live['points'],profile()['points'])
+        self.assertEqual(live['points'][-1][0],end)
+        self.assertEqual(live['points'][0][4],live['points'][-1][4])
+        # A conflicting explicit unit still separates the register histories.
+        recorded.pop()
+        head['unit_of_measurement']='m³'
+        other=profile()['points']
+        self.assertNotEqual(other[0][4],other[-1][4])
+
     def test_first_hour_fetches_only_the_visible_meter_and_does_not_fill_a_break(self):
         observations=self.rows([(i*60,i+100) for i in range(-12,63)])
         queries=[]
