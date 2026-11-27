@@ -205,7 +205,7 @@ class LedgerHours:
             if leg and 'use' in leg and not leg['supported_spans']:
                 return [end,leg['use'],*leg['bounds']]
 
-    def snapshot(self,ticks,state,document,policy,published=None,gaps=(),archive=None,offsets=None):
+    def snapshot(self,ticks,state,document,policy,published=None,gaps=(),archive=None,offsets=None,daily=None):
         if (len(ticks)<2 or not state or not document or document.get('unit')!='ft3'
                 or not document.get('maximum_rate_per_second') or not state.get('event_id')):
             return {}
@@ -238,8 +238,12 @@ class LedgerHours:
             # Move it to the hour using the two actual observations around the tick.
             if offsets is not None and archive and archive.get('points'):
                 points=archive['points']
-                if (points[-1][:3]==[millis(datetime.fromisoformat(state['measured_at'])),
-                                      float(state['value_ft3']),state['event_id']] and
+                anchor=state if daily is None else daily
+                verified=anchor==state or anchor and db.execute('SELECT 1 FROM capture_events e JOIN frames f '
+                    'USING(camera,frame_id) WHERE e.camera=? AND e.event_id=? AND f.captured_at=? AND f.sha256=?',
+                    (head[0],anchor.get('event_id'),anchor.get('measured_at'),anchor.get('source_sha256'))).fetchone()
+                if (verified and points[-1][:3]==[millis(datetime.fromisoformat(anchor['measured_at'])),
+                                      float(anchor['value_ft3']),anchor['event_id']] and
                         archive.get('format')==revision):
                     by_event={p[2]:p for p in points}
                     for tick,target in zip(ticks,times):
@@ -379,6 +383,15 @@ class LedgerHours:
                 if allowance is not None and leg and not any(l<ticks[i+1] and ticks[i]<r for l,r in gaps):
                     rate_evidence=self.rate_photos.get(db,document,source,allowance,ticks[i],ticks[i+1],
                                                        first,last,state['event_id'])
+                    if rate_evidence and rate_evidence.get('reason')=='insufficient_motion_samples' and published:
+                        a,b=published.get(ticks[i]),published.get(ticks[i+1])
+                        if a and b and a[2]==b[2] and endpoint(i) and endpoint(i+1):
+                            use=float(b[0]-a[0])
+                            lo=max(0.,float(b[1][0]-a[1][1]))
+                            hi=float(b[1][1]-a[1][0])
+                            if lo<=use<=hi:
+                                rate_evidence=self.rate_photos.get(db,document,source,allowance,ticks[i],ticks[i+1],
+                                    first,last,state['event_id'],register=(use,lo,hi))
                     if rate_evidence is not None:
                         result[ticks[i+1]] = dict(leg,optical_rate=rate_evidence)
         return result

@@ -278,7 +278,9 @@ class ChartHoursTests(unittest.TestCase):
         from unittest.mock import Mock, patch
         end=self.hour+timedelta(seconds=5)
         stamp=millis(end)
-        usage={'daily_nominal':{'timezone':'UTC','measured_at':end.isoformat()},
+        usage={'daily_nominal':{'timezone':'UTC','measured_at':(end-timedelta(hours=2)).isoformat()},
+               'absolute_nominal':{'method':'photo_anchored_fine_dial','event_id':123,
+                                   'source_sha256':'a'*64,'value_ft3':'1002','measured_at':end.isoformat()},
                'movement_history':{'format':'f','dial_from':[1,2],'dial_gaps':[]}}
         doc={'dials':[{'value_per_revolution':5,'position_error':.1}]}
         mqtt=SimpleNamespace(status=lambda:{'usage':usage},daily=SimpleNamespace(evidence_policy={}))

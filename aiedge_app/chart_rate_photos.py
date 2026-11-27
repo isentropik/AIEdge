@@ -35,7 +35,7 @@ class ChartRatePhotos:
             samples.update((k,v) for k,v in page.items() if first<=k<=last)
         return samples
 
-    def get(self,db,document,source,allowance,start,end,first,last,head):
+    def get(self,db,document,source,allowance,start,end,first,last,head,register=None):
         # Adjacent guards constrain the register at a tick when the nearest
         # exposure preceded or followed it. Never step across a failed transfer.
         left=max(1,first-16)
@@ -44,7 +44,7 @@ class ChartRatePhotos:
                                          'WHERE after_event_id BETWEEN ? AND ?',(left-1,right-1))}
         cuts.update(r[0] for r in db.execute('SELECT first_event FROM consumption_segment_links '
                                              'WHERE first_event BETWEEN ? AND ?',(left,right)))
-        key=(source['camera'],source['format_id'],allowance,start,end,first,last,right,tuple(sorted(cuts)))
+        key=(source['camera'],source['format_id'],allowance,start,end,first,last,right,tuple(sorted(cuts)),register)
         if key in self.results:
             return self.results[key]
         if any(first<c<=last for c in cuts):
@@ -64,7 +64,7 @@ class ChartRatePhotos:
         while after<right and linked(after+1) and samples[after+1][1][0]<=end+GUARD_MS:
             after+=1
         rows=[samples[e][1] for e in range(before,after+1)]
-        result=solve(rows,start,end,document['maximum_rate_per_second'],5,1000,allowance)
+        result=solve(rows,start,end,document['maximum_rate_per_second'],5,1000,allowance,register)
         if result is not None:
             if len(self.results)>=256:
                 self.results.pop(next(iter(self.results)))

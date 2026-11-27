@@ -1,3 +1,8 @@
+## 0.2.0-dev143
+
+- Show the current Day chart through the latest photo-backed meter reading and include the measured portion of the current hour. Prepare history when the absolute register advances even if the tracked daily total is held.
+- Recover a sparse interval's rate from two photo-backed register readings when their difference agrees with the intervening dial observations. Show one whisker for that estimate and retain the original capture gaps.
+
 ## 0.2.0-dev142
 
 - Calculate chart rates from the fine dial's movement across successive photos. Use the slower dial to check the inferred movement and draw one whisker for each supported rate.

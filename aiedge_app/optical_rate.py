@@ -144,7 +144,7 @@ def project(clock, rate, turn, slow_turn, allowance, follow_trace):
     return merged((max(0.,-z[END][START]),max(0.,z[START][END])) for z in zones)
 
 
-def solve(samples, start, end, rate, turn, slow_turn, allowance):
+def solve(samples, start, end, rate, turn, slow_turn, allowance, register=None):
     stamps = [s[0] for s in samples]
     if len(samples)<2 or not stamps[0]<=start<end<=stamps[-1]:
         return None
@@ -166,6 +166,15 @@ def solve(samples, start, end, rate, turn, slow_turn, allowance):
                  rate*elapsed+samples[i][3]-samples[i][2]+samples[i+1][3]-samples[i+1][2]>=turn
                  for i,elapsed in enumerate(spacings))
     if sparse:
+        if register is not None:
+            # Both register ticks are bracketed by identified photos. Report their
+            # difference when it agrees with the observed fine and slow dial path.
+            # The resulting whisker is conditional on that register estimate.
+            use, lower, upper = register
+            for lo,hi in project(clock,rate,turn,slow_turn,allowance,follow_trace=True):
+                lo,hi=max(lo,lower),min(hi,upper)
+                if lo<=use<=hi and hi-lo<turn:
+                    return dict(use=use,bands=[[lo,hi]],basis='register')
         bands = project(clock,rate,turn,slow_turn,allowance,follow_trace=False)
         if len(bands)==1:
             lo,hi = bands[0]

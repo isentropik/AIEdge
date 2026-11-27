@@ -75,6 +75,14 @@ class OpticalRateTests(unittest.TestCase):
         self.assertAlmostEqual(r['use'],1)
         self.assertEqual(len(r['bands']),1)
 
+    def test_bracketed_meter_difference_recovers_only_compatible_sparse_motion(self):
+        rows=[(s*1000,s,v-.05,v+.05,20) for s,v in [(0,1),(10,1),(35,1.3),(45,1.5)]]
+        args=(rows,0,45000,1700/3600,5,1000,6)
+        self.assertIsNone(solve(*args)['use'])
+        proof=solve(*args,register=(.52,.45,.57))
+        self.assertEqual(proof,dict(basis='register',use=.52,bands=[[.45,.57]]))
+        self.assertIsNone(solve(*args,register=(3.,2.,4.))['use'])
+
     def test_policy_is_specific_to_the_reviewed_format_and_pipeline(self):
         doc=dict(pipeline_id='p',dials=[dict(value_per_revolution=1000),dict(value_per_revolution=5)])
         policy=dict(format_id='f',pipeline_id='p',slow_allowance_ft3=6)
@@ -91,3 +99,5 @@ class OpticalRateTests(unittest.TestCase):
                          'INSERT INTO capture_failure_boundaries VALUES(8);')
         evidence=ChartRatePhotos().get(db,{},dict(camera='c',format_id='f'),6,0,600000,1,62,70)
         self.assertIsNone(evidence)
+        self.assertIsNone(ChartRatePhotos().get(db,{},dict(camera='c',format_id='f'),6,0,600000,1,62,70,
+                                               register=(.52,.45,.57)))

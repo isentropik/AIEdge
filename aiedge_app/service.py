@@ -53,10 +53,11 @@ def handler(store,ingress,collector,recognition=None,setup=None,reading_format=N
     head_lock = threading.Lock()
 
     def remember_chart(mqtt):
+        from chart_hours import chart_head
         usage=mqtt.get('usage') or {}
-        daily=usage.get('daily_nominal') or {}
-        if daily.get('event_id') and daily.get('measured_at'):
-            key=millis(capture_time.fromisoformat(daily['measured_at']))
+        head=chart_head(usage)
+        if head.get('event_id') and head.get('measured_at'):
+            key=millis(capture_time.fromisoformat(head['measured_at']))
             with head_lock:
                 if not chart_heads or chart_heads[-1][0]!=key:
                     chart_heads.append((key,usage))

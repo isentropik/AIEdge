@@ -705,7 +705,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v6:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v7:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -734,7 +734,7 @@ function savedWindow(current,scale){
   try{
     const saved=JSON.parse(sessionStorage.getItem(savedKey(scale)));
     if(saved?.scale===scale&&saved.identity===current.identity&&saved.zone===current.zone&&saved.midnight===current.midnight&&
-       saved.end<=current.end&&saved.close<=completedTick(current.end,current.zone,rateMinutes(scale))&&
+       saved.end<=current.end&&saved.close<=(scale==='today'?current.end:completedTick(current.end,current.zone,rateMinutes(scale)))&&
        current.end-saved.close<2*rateMinutes(scale)*60000&&
        saved.registerProfile?.points.length)return saved;
   }catch{}
@@ -773,14 +773,15 @@ function stageWindow(current){
     }
   });
 }
-let manualChartRefresh=false,detail=null,calendarStamp=0,visibleSummary=null;
+let manualChartRefresh=false,detail=null,calendarStamp=0,visibleSummary=null,calendarRegister=null;
 window.addEventListener('aiedge-refresh-images',()=>{manualChartRefresh=true;});
 function requestDetail(){
   if(browsing||!calendar||calendar.status==='loading'||calendar.data?.registerProfile?.points.length||rateMinutes(selection)!==10)return;
   if(detail?.zone===calendar.zone&&completedTick(detail.end,calendar.zone,10)===completedTick(calendarStamp,calendar.zone,10))return;
   detail=loadCalendar(calendarStamp,calendar.zone,10);
 }
-function setCalendar(zone,stamp,identity){
+function setCalendar(zone,stamp,identity,register=null){
+  calendarRegister=register;
   if(!zone || (calendar && (calendar.zone!==zone||calendar.identity!==identity))){
     calendar?.cancel?.abort();
     browsing=null;calendar=null;cardCalendar=null;detail=null;visibleSummary=null;
@@ -938,7 +939,8 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
       const lower=Math.max(0,measuredLow,absolute?.[0]??0,relative?.[0]??0);
       const upper=Math.min(measuredHigh,absolute?.[1]??Infinity,relative?.[1]??Infinity);
       if(lower>upper)continue;
-      q={use:Math.min(upper,Math.max(lower,proof.use)),bounds:[lower,upper],optical:true};
+      if(proof.basis==='register' && (proof.use<lower||upper<proof.use))continue;
+      q={use:Math.min(upper,Math.max(lower,proof.use)),bounds:[lower,upper],optical:true,estimated:proof.basis==='register'};
     }else{
       // A cold register-only preview can draw the total while the rate proof loads.
       if(data.published||waitingForRates)continue;
@@ -956,7 +958,7 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     const model=profile.modeled.find(([l,r])=>l<t&&t<r||l<from&&from<r);
     const conflict=!profile.reconciled || profile.conflicts.some(([a,b])=>a<t&&from<b);
     const provisional=conflict||profile.provisionalFrom!=null&&t>profile.provisionalFrom;
-    Object.assign(q,{start:from,end:t,provisional,estimated:!!(gap||model||provisional||
+    Object.assign(q,{start:from,end:t,partial:t!==completedTick(t,zone,minutes),provisional,estimated:!!(q.estimated||gap||model||provisional||
       unknown.some(([l,r])=>l<t&&from<r)||recovered.some(([l,r])=>l<t&&from<r))});
     const stop=stops.get(t);
     Object.assign(stop,{hour:q,range:q.bounds});
@@ -968,10 +970,12 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
   const note=disputed.length===1?'Photo and register disagree at '+clock(disputed[0].time,zone):
     disputed.length?disputed.length+' conflicting photo readings':'';
   $('day-history-status').textContent=[status,modeledHere?'Hollow dots show estimated rates':'',
-    baseAt(end)?.[4]?'Partial daily total':'',note,plottedThrough(ordered,zone)].filter(Boolean).join(' · ');
+    ordered.at(-1)?.hour?.partial?'Includes current partial hour':'',baseAt(end)?.[4]?'Partial daily total':'',note,plottedThrough(ordered,zone)].filter(Boolean).join(' · ');
   const host=$('day-curve');
   host.dataset.endTime=new Date(end).toISOString();
-  if(view?.event&&!browsing)host.dataset.endEvent=String(view.event);else delete host.dataset.endEvent;
+  const endEvent=end===Date.parse(calendarRegister?.measured_at)?calendarRegister.event_id:
+    end===profile.registerHead?.[0]?profile.registerHead[2]:end===view?.stamp?view.event:null;
+  if(endEvent&&!browsing)host.dataset.endEvent=String(endEvent);else delete host.dataset.endEvent;
   drawDay([],start,zone,JSON.stringify(['register',data.end,start,end,minutes,data.published?'published':'verified',rateDetail?.status]),null,hourly.midnight,null,ordered,
     [],null,null,null,{series,extent,resets,closes,edges,profile:true});
 }
@@ -998,8 +1002,28 @@ function showSummary(view){
     return;
   }
   if(data?.registerProfile?.points.length){
-    const points=data.registerProfile.points;
-    const end=Math.min(browsing?.end??completedTick(hourly.end,zone,minutes),completedTick(points.at(-1)[0],zone,minutes));
+    let chart=hourly;
+    const profile=data.registerProfile, points=profile.points;
+    let end=Math.min(browsing?.end??completedTick(hourly.end,zone,minutes),completedTick(points.at(-1)[0],zone,minutes));
+    if(!browsing && selection==='today' && profile.registerHead){
+      const [at,raw,event]=profile.registerHead;
+      const t=Date.parse(calendarRegister?.measured_at), head=points.find(p=>p[0]===at);
+      if(head && at>=end && at<=stamp)end=at;
+      // The shared history is prepared once per ten-minute interval. Fold a
+      // newer, same-interval HA publication into this view at its actual time.
+      if(head && t>at && t===stamp && completedTick(t,zone,10)===completedTick(at,zone,10) &&
+         calendarRegister.event_id>event && Number(calendarRegister.value_ft3)>=raw){
+        const value=head[1]+(Number(calendarRegister.value_ft3)-raw);
+        const low=calendarRegister.lower_ft3==null?null:Number(calendarRegister.lower_ft3);
+        const high=calendarRegister.upper_ft3==null?null:Number(calendarRegister.upper_ft3);
+        if(Number.isFinite(low)&&Number.isFinite(high)&&low<=value&&value<=high &&
+           (!profile.ceiling||value-head[1]<=profile.ceiling*(t-at)/1000)){
+          const tail=[t,value,low,high,head[4]];
+          chart={...hourly,data:{...data,registerProfile:{...profile,points:[...points.filter(p=>p[0]<t),tail]}}};
+          end=t;
+        }
+      }
+    }
     const requested=browsing?.start??(selection==='today'?midnight:end-Number(selection)*hourMs);
     const earliest=completedTick(points[0][0],zone,minutes)+minutes*60000;
     const start=Math.max(requested,earliest);
@@ -1011,10 +1035,10 @@ function showSummary(view){
     visibleSummary={selection,zone,midnight};
     window.AIEdgeIntegration?.renderChartHeadline?.();
     const rateDetail=fine?browsing?.fine:null;
-    registerSummary(hourly,start,end,minutes,view,rateDetail);
+    registerSummary(chart,start,end,minutes,view,rateDetail);
     if(rateDetail?.status==='loading')$('day-history-status').textContent+=' · Checking dial history';
     if(rateDetail?.status==='unavailable')$('day-history-status').textContent+=' · Dial history unavailable';
-    if(!browsing&&hourly.savedScale!==selection){rememberWindow(hourly,selection,start,end);hourly.savedScale=selection;}
+    if(!browsing&&hourly.savedScale!==selection){rememberWindow(chart,selection,start,end);hourly.savedScale=selection;}
     return;
   }
   const short=browsing?browsing.fine:detail;
@@ -1286,6 +1310,7 @@ function showDay(){
     JSON.stringify(trackedReply.anchor)===JSON.stringify(latest.movement?.dial_from)?trackedReply:null;
   const key=JSON.stringify([identity,history?.revision,latest,recentWindow,periods?.key,loading,reply]);
   if(dayView?.key===key&&dayView.historyStatus===saved?.status){
+    if(calendar){showSummary(dayView);return;}
     if(selection!=='today'){showRolling();return;}
     if(host.dataset.endEvent===String(event)&&activeSelection==='today')return;
   }
@@ -1382,7 +1407,10 @@ function showDay(){
 
 }
 async function day(daily,headline,recent){
-  if(calendar?.pinned&&headline?.source&&Date.parse(headline.source.captured_at)!==calendar.end)return;
+  if(calendar?.pinned&&headline?.source&&Date.parse(headline.source.captured_at)!==calendar.end){
+    if(calendar.data?.registerProfile?.points.length)showSummary(dayView);
+    return;
+  }
   const key=headline?.source&&daily?.before&&daily.after&&daily.through&&daily.day===headline.day&&daily.timezone===headline.zone ? JSON.stringify([daily.day,daily.timezone,daily.through.camera,daily.through.format_id,
     daily.before.source_sha256,daily.after.source_sha256,daily.before.event_id,daily.before.captured_at,daily.after.event_id,daily.after.captured_at]) : '';
   const sameSaved=!!headline?.source&&lastRangeSource?.day===headline.day&&lastRangeSource.zone===headline.zone&&
@@ -1589,7 +1617,7 @@ function periodWindows(hourly,anchor,value){
     ...(data?.offsets||[]).map(p=>p.time),...(data?.groups||[]).filter(g=>g.length).map(g=>g[0][0])];
   const earliest=Math.min(close,...starts);
   if(value==='today'){
-    const days=[{start:midnight,end:close}];
+    const days=[{start:midnight,end:anchor}];
     for(let end=midnight;end>earliest;){
       const start=localOpening(end-1,zone);
       days.push({start,end});
