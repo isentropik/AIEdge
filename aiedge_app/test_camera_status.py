@@ -99,8 +99,13 @@ class CameraStatusTests(unittest.TestCase):
             collector=Collector(store,camera,10)
             device.payload=READY|{'state':'busy','camera_available':None}
             for count in (1,2):
+                if count==2:
+                    collector=Collector(Store(directory),camera,10)
                 collector.once()
-                self.assertEqual(collector.recovery_status()['state'],'waiting_for_camera')
+                status=collector.recovery_status()
+                self.assertEqual(status['state'],'waiting_for_camera')
+                self.assertEqual(status['failure_count'],1)
+                self.assertEqual(status['last_busy_period']['busy_probes'],count)
                 self.assertEqual(collector.last_error['error'],'camera_busy')
                 self.assertEqual((device.gets,device.posts),(count,0))
             device.payload=READY.copy()
@@ -110,6 +115,86 @@ class CameraStatusTests(unittest.TestCase):
             with store.connect() as db:
                 self.assertTrue(boundary(db,1))
                 self.assertEqual(db.execute('SELECT count(*) FROM continuous_capture_attempts').fetchone()[0],1)
+            device.payload=READY|{'state':'busy'}
+            collector.once()
+            status=collector.recovery_status()
+            self.assertEqual(status['failure_count'],2)
+            self.assertEqual(status['last_busy_period']['busy_probes'],1)
+            self.assertEqual(status['last_busy_period']['after_event_id'],1)
+
+    def test_busy_period_keeps_configured_cadence_and_first_ready_slot(self):
+        from test_delivery_timing import Clock
+        for interval in (10,30):
+            with self.subTest(interval=interval), fixture() as (camera,device), tempfile.TemporaryDirectory() as directory:
+                worker=Collector(Store(directory),camera,interval)
+                clock=Clock()
+                delays=[]
+                device.payload=READY|{'state':'busy','camera_available':None}
+                def wait(delay):
+                    delays.append(delay)
+                    clock.advance(delay)
+                    if device.gets==8:
+                        device.payload=READY.copy()
+                    elif device.gets==9:
+                        worker.request_stop()
+                with patch('capture.time.monotonic',clock), patch.object(worker.stop,'wait',side_effect=wait):
+                    worker.run()
+                self.assertEqual(delays,[interval]*9)
+                self.assertEqual((device.gets,device.posts),(9,1))
+                status=worker.recovery_status()
+                self.assertEqual(status['failure_count'],1)
+                self.assertEqual(status['last_busy_period']['busy_probes'],8)
+
+    def test_unmarked_legacy_failure_and_busy_after_post_remain_separate(self):
+        from test_capture_continuation import Camera as TestCamera,configure
+        with tempfile.TemporaryDirectory() as directory:
+            store=Store(directory)
+            store.fail('camera_busy')  # Historical failure without passive probe evidence.
+            camera=TestCamera([ValueError('camera_busy')])
+            worker=configure(Collector(store,camera,10))
+            camera.ready['state']='busy'
+            worker.once()
+            self.assertEqual(worker.recovery_status()['failure_count'],2)
+            store.fail('camera_connection_failed')
+            worker.once()
+            self.assertEqual(worker.recovery_status()['failure_count'],4)
+            camera.ready['state']='ready'
+            worker.once()
+            status=worker.recovery_status()
+            self.assertEqual((status['state'],status['failure_count']),('held',5))
+            self.assertEqual(status['last_busy_period']['busy_probes'],1)
+            self.assertEqual(status['recent_attempts'][-1]['outcome'],'unknown')
+            self.assertEqual(camera.calls,1)
+
+    def test_brief_reboot_after_busy_is_distinct_from_extended_network_outage(self):
+        from datetime import datetime,timedelta,timezone
+        from camera_status import ReadinessTransportError
+        from test_capture_continuation import Camera as TestCamera
+        start=datetime(2026,11,26,tzinfo=timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            camera=TestCamera([True])
+            worker=Collector(Store(directory),camera,10)
+            camera.ready['state']='busy'
+            with patch('capture.now',return_value=start.isoformat()):
+                worker.once()
+            worker=Collector(Store(directory),camera,10)
+            for seconds in (10,40,60,61,75):
+                stamp=(start+timedelta(seconds=seconds)).isoformat()
+                with patch('capture.now',return_value=stamp), patch.object(camera,'readiness',side_effect=ReadinessTransportError()):
+                    worker.once()
+                status=worker.recovery_status()
+                if seconds<=60:
+                    self.assertEqual(status['failure_count'],1)
+                    self.assertEqual(worker.readiness_retry_delay,0)
+                else:
+                    self.assertGreater(status['failure_count'],1)
+                    self.assertGreater(worker.readiness_retry_delay,0)
+            self.assertEqual((status['last_busy_period']['busy_probes'],status['last_busy_period']['unreachable_probes']),(1,3))
+            self.assertEqual(status['failure_count'],3)
+            camera.ready['state']='ready'
+            worker.once()
+            self.assertEqual(camera.calls,1)
+            self.assertEqual(worker.recovery_status()['state'],'ready')
     def test_connection_failure_is_visible_and_does_not_capture(self):
         with fixture() as (camera,device),tempfile.TemporaryDirectory() as directory:
             collector=Collector(Store(directory),camera,30)
@@ -124,5 +209,73 @@ class CameraStatusTests(unittest.TestCase):
             device.header_delay=5.3
             self.assertEqual(camera.readiness()['state'],'ready')
             self.assertEqual((device.gets,device.posts),(1,0))
+
+    def test_scheduled_header_timeouts_share_one_budget_and_restore_slow_probe(self):
+        from camera_status import ReadinessTransportError
+        from test_delivery_timing import Clock
+        camera=Camera('http://127.0.0.1:1')
+        clock=Clock()
+        stop=threading.Event()
+        budgets=[]
+        # Healthy initially, then two stranded connections, then a full outage.
+        # The next two healthy but slow replies must get their full allowance.
+        delays=iter((.1,None,None,.2,None,None,None,8.5,8.5))
+        def response(camera,header_deadline,absolute):
+            delay=next(delays)
+            budgets.append((round(header_deadline-clock(),1),round(absolute-clock(),1)))
+            if delay is None:
+                clock.advance(header_deadline-clock())
+                raise ReadinessTransportError('connect_or_headers',TimeoutError())
+            self.assertGreater(header_deadline-clock(),delay)
+            clock.advance(delay)
+            return READY
+        with patch('camera_status._get_status',side_effect=response),patch('camera_status.time.monotonic',clock):
+            self.assertEqual(camera.scheduled_readiness(stop),READY)
+            self.assertEqual(camera.scheduled_readiness(stop),READY)
+            with self.assertRaises(ReadinessTransportError):
+                camera.scheduled_readiness(stop)
+            self.assertEqual(camera.scheduled_readiness(stop),READY)
+            self.assertEqual(camera.scheduled_readiness(stop),READY)
+        self.assertEqual(budgets,[(10,10),(2,10),(2,8),(6,6),(2,10),(2,8),(6,6),(10,10),(10,10)])
+
+    def test_only_scheduled_pre_header_timeout_allows_a_second_get(self):
+        from camera_status import ReadinessTransportError
+        camera=Camera('http://127.0.0.1:1')
+        stop=threading.Event()
+        for error in (ReadinessTransportError('status_body',TimeoutError()),
+                      ReadinessTransportError('connect_or_headers',ConnectionRefusedError()),
+                      ValueError('camera_authentication_failed'),ValueError('camera_status_invalid')):
+            camera.fast_readiness=True
+            with self.subTest(error=repr(error)),patch('camera_status._get_status',side_effect=error) as get:
+                with self.assertRaises(type(error)):
+                    camera.scheduled_readiness(stop)
+                self.assertEqual(get.call_count,1)
+        def interrupted(*args):
+            stop.set()
+            raise ReadinessTransportError('connect_or_headers',TimeoutError())
+        with patch('camera_status._get_status',side_effect=interrupted) as get:
+            camera.fast_readiness=True
+            with self.assertRaises(ReadinessTransportError):
+                camera.scheduled_readiness(stop)
+            self.assertEqual(get.call_count,1)
+
+    def test_busy_reply_restores_one_full_probe_during_maintenance(self):
+        from camera_status import ReadinessTransportError
+        from test_delivery_timing import Clock
+        camera=Camera('http://127.0.0.1:1')
+        stop=threading.Event()
+        clock=Clock()
+        budgets=[]
+        def status(camera,header,absolute):
+            budgets.append(header-clock())
+            if len(budgets)==1:return READY
+            if len(budgets)==2:return dict(READY,state='busy')
+            raise ReadinessTransportError('connect_or_headers',TimeoutError())
+        with patch('camera_status._get_status',side_effect=status),patch('camera_status.time.monotonic',clock):
+            camera.scheduled_readiness(stop)
+            self.assertEqual(camera.scheduled_readiness(stop)['state'],'busy')
+            for _ in range(2):
+                with self.assertRaises(ReadinessTransportError):camera.scheduled_readiness(stop)
+        self.assertEqual(budgets,[10,2,10,10])
 
 if __name__=='__main__':unittest.main()

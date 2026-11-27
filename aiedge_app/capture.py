@@ -140,12 +140,19 @@ class Store:
             if clock is not None:db.execute('INSERT INTO capture_clocks VALUES(?,?,?,?)',(camera,frame,*clock))
         self.performance.admit(event,digest,request_started)
         return True
-    def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None,request_timeout=False,http_status=None):
+    def fail(self,error,*,outcome='unknown',attempt=None,transfer=None,context=None,request_timeout=False,http_status=None,replay=None,readiness_probe=False):
         if outcome not in ('rejected','unknown'):raise ValueError('capture_failure_outcome_invalid')
         with self.lock,self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            ident=db.execute('INSERT INTO failures VALUES(?,?)',(now(),error)).lastrowid
             after=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
+            at=now()
+            if readiness_probe:
+                if attempt is not None or outcome!='unknown' or error not in ('camera_busy','camera_connection_failed'):
+                    raise ValueError('invalid_readiness_probe')
+                import capture_recovery
+                if capture_recovery.record_busy_probe(db,after,at,error):
+                    return True
+            ident=db.execute('INSERT INTO failures VALUES(?,?)',(at,error)).lastrowid
             db.execute('INSERT INTO capture_failure_boundaries VALUES(?,?,?,?)',(ident,after,error,outcome))
             if attempt is not None:
                 import capture_recovery
@@ -165,6 +172,9 @@ class Store:
                     db.execute('INSERT INTO capture_transfer_timeouts VALUES(?,?,?,?)',(attempt,
                         capture_recovery.canonical(transfer),capture_recovery.digest(capture_recovery.continuation_binding(db,attempt)),
                         capture_recovery.digest(context)))
+                    if replay is not None:
+                        db.execute('INSERT INTO compact_replay_failures(attempt_id,reason,offset,requests) VALUES(?,?,?,?)',
+                                   (attempt,*replay))
     def recent(self):
         with self.lock,self.connect() as db:
             rows=db.execute('SELECT f.captured_at,f.received_at,f.sha256,f.bytes FROM capture_events e JOIN frames f ON f.camera=e.camera AND f.frame_id=e.frame_id ORDER BY e.event_id DESC LIMIT 50').fetchall()
@@ -264,6 +274,7 @@ class Camera:
         if bool(username)!=bool(password) or ':' in username or any(c in username+password for c in ('\r','\n')):raise ValueError('invalid_camera_credentials')
         self.origin=url.rstrip('/');self.token=token
         self.operation_lock=threading.RLock();self.lighting=None;self.image_controls=None
+        self.fast_readiness=False
         self.basic=base64.b64encode((username+':'+password).encode('utf-8')).decode('ascii') if username else None
         self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),DeadlineHTTPHandler(),DeadlineHTTPSHandler())
     @contextmanager
@@ -275,9 +286,11 @@ class Camera:
         if getattr(self,'auto_control',None) is not None:self.auto_control.require_capture(reference=reference)
         if self.lighting is not None:self.lighting.require_capture()
         if self.image_controls is not None:self.image_controls.require_capture(reference=reference)
-    def readiness(self,deadline=None):
+    def readiness(self,deadline=None,*,scheduled_stop=None):
         from camera_status import probe
-        return probe(self,deadline=deadline)
+        return probe(self,deadline=deadline,scheduled_stop=scheduled_stop)
+    def scheduled_readiness(self,stop):
+        return self.readiness(scheduled_stop=stop)
     def reference_capture(self):
         return self.capture(reference=True)
     def capture(self,reference=False,*,deadline=None):
@@ -520,7 +533,7 @@ class Collector:
     def _once(self):
         import capture_recovery
         from camera_status import ReadinessTransportError
-        attempt=None;retry_readiness=False;self.last_cycle_attempt=None;context=None
+        attempt=None;retry_readiness=False;busy_probe=False;self.last_cycle_attempt=None;context=None
         try:
             self.store.require_space()
             if self.storage_attempt:
@@ -530,12 +543,12 @@ class Collector:
             if self.transfer_attempt:
                 self._recover_transfer()
                 return
-            # One passive check per scheduled cycle. It is an admission snapshot,
-            # not a promise that the following capture cannot fail or become busy.
+            # Only an actual ready response can admit the capture request.
             self.camera_state={'state':'checking','checked_at':now()}
             try:
                 with self.store.performance.measure('camera_readiness'):
-                    readiness=self.camera.readiness()
+                    scheduled=getattr(self.camera,'scheduled_readiness',None)
+                    readiness=scheduled(self.shutdown) if scheduled else self.camera.readiness()
             except Exception as error:
                 self.camera_state={'state':'unavailable','checked_at':now()}
                 retry_readiness=isinstance(error,ReadinessTransportError)
@@ -543,7 +556,7 @@ class Collector:
             self.camera_state=dict(readiness,checked_at=now())
             state=readiness.get('state')
             if state!='ready':
-                retry_readiness=state=='busy'
+                busy_probe=state=='busy'
                 code={'busy':'camera_busy','camera_unavailable':'camera_unavailable',
                       'settings_unavailable':'camera_settings_unavailable',
                       'startup_recovery':'camera_startup_recovery',
@@ -588,7 +601,10 @@ class Collector:
                 if qualified:
                     self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt,context=context,
                                     transfer=e.evidence if isinstance(e,capture_recovery.BodyTimeout) else None,
-                                    request_timeout=typed_request,http_status=e.status if response else None)
+                                    request_timeout=typed_request,http_status=e.status if response else None,
+                                    replay=getattr(e,'replay',None))
+                elif busy_probe or retry_readiness:
+                    busy_probe=self.store.fail(self.last_error['error'],readiness_probe=True)
                 else:self.store.fail(self.last_error['error'],outcome=outcome,attempt=attempt)
                 with self.store.connect() as db:reason,self.rejections=capture_recovery.readiness(db,self.recovery_floor)
                 if qualified:
@@ -614,9 +630,12 @@ class Collector:
                         self.recovery_state='waiting_for_storage'
                         return
                 except (OSError,sqlite3.Error,ValueError):pass
-            if retry_readiness and attempt is None and reason is None:
-                # Busy and transport failures on the passive probe precede any POST.
-                # Keep the durable boundary before scheduling another probe.
+            if busy_probe and reason is None:
+                # A known busy period includes a brief loss of contact during reboot.
+                self.readiness_failures=0
+                self.readiness_retry_delay=0
+                self.recovery_state='waiting_for_camera'
+            elif retry_readiness and attempt is None and reason is None:
                 self.readiness_failures+=1
                 self.readiness_retry_delay=min(60,6*2**min(self.readiness_failures-1,4))
                 self.recovery_state='waiting_for_camera'

@@ -1,6 +1,7 @@
 import time
 import unittest
 from io import BytesIO
+from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.error import HTTPError
 
@@ -32,6 +33,10 @@ class ResumeTests(unittest.TestCase):
         sha = compact.digest(payload)
         self.calls = []
         self.deadlines = []
+        self.clock = 1000.
+        def advance(seconds):
+            self.clock += seconds
+        clock = SimpleNamespace(monotonic=lambda:self.clock, sleep=advance, time=time.time)
 
         def open_request(req, timeout):
             offset = req.get_header('X-aiedge-offset')
@@ -52,6 +57,10 @@ class ResumeTests(unittest.TestCase):
             if fault == 'absent':
                 raise HTTPError(req.full_url, 404, 'missing', fixtures.headers({}), BytesIO())
             if fault == 'timeout':
+                advance(timeout)
+                raise TimeoutError()
+            if fault == 'second_chunk_once' and len(self.deadlines)==2:
+                advance(timeout)
                 raise TimeoutError()
             if fault == 'wrong_bytes':
                 body = bytes([body[0] ^ 1]) + body[1:]
@@ -64,8 +73,8 @@ class ResumeTests(unittest.TestCase):
                 fields[fault] = 'wrong'
             return Reply(body, fields)
 
-        with patch.object(self.camera.opener, 'open', side_effect=open_request):
-            return self.worker.collect(time.monotonic())
+        with patch.object(self.camera.opener, 'open', side_effect=open_request), patch.object(compact,'time',clock):
+            return self.worker.collect(clock.monotonic())
 
     def test_recovers_same_exposure_and_original_anchor(self):
         self.assertTrue(self.run_capture())
@@ -95,6 +104,7 @@ class ResumeTests(unittest.TestCase):
         with self.assertRaises(BodyTimeout) as caught:
             self.run_capture(feature=False)
         self.assertEqual(caught.exception.evidence['received_bytes'], len(self.data)-526)
+        self.assertEqual(caught.exception.replay,('not_advertised',len(self.data)-526,0))
         self.assertEqual(len(self.calls), 1)
 
     def test_failed_recovery_retains_the_exact_transfer_boundary(self):
@@ -104,5 +114,23 @@ class ResumeTests(unittest.TestCase):
                 self.run_capture(fault=fault)
             self.assertEqual(caught.exception.evidence, {'stage':'compact_body', 'expected_bytes':len(self.data),
                              'received_bytes':len(self.data)-526, 'expected_sha256':compact.digest(self.data)})
-            self.assertEqual([method for method, _, _ in self.calls], ['POST', 'GET'])
+            methods=[method for method, _, _ in self.calls]
+            if fault in ('timeout','short'):
+                self.assertGreater(methods.count('GET'),1)
+                self.assertLessEqual(self.clock,1000+compact.COMPACT_CYCLE_SECONDS)
+                reason='timeout' if fault=='timeout' else 'short_body'
+            else:
+                self.assertEqual(methods,['POST','GET'])
+                reason={'absent':'http_404','wrong_bytes':'digest_mismatch'}.get(fault,'invalid_response')
+            self.assertEqual(methods.count('POST'),1)
+            offset=len(self.data) if fault=='wrong_bytes' else len(self.data)-526
+            self.assertEqual(caught.exception.replay,(reason,offset,methods.count('GET')))
             self.assertEqual(self.store.status()['captures'], 0)
+
+    def test_transient_failure_repeats_only_unverified_chunk(self):
+        self.assertTrue(self.run_capture(missing=2500,fault='second_chunk_once'))
+        prefix=len(self.data)-2500
+        offsets=[int(o) for m,_,o in self.calls if m=='GET']
+        self.assertEqual(offsets,[prefix,prefix+compact.REPLAY_CHUNK,prefix+compact.REPLAY_CHUNK])
+        self.assertEqual(self.worker.timing['compact_bytes_recovered'],2500)
+        self.assertEqual(self.store.status()['captures'],1)

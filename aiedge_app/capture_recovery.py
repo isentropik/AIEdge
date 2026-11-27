@@ -136,7 +136,38 @@ class FreshnessRejected(ValueError):
     """Only constructed after the exact acknowledged firmware HTTP 503 body."""
     def __init__(self):super().__init__(FRESHNESS)
 
+BUSY_REBOOT_GRACE_SECONDS = 60
+
+def record_busy_probe(db, after, at, error):
+    """Record passive replies on one boundary, without inferring why the camera is busy."""
+    last_attempt = db.execute('SELECT COALESCE(MAX(rowid),0) FROM continuous_capture_attempts').fetchone()[0]
+    prior = db.execute('SELECT p.failure_id,p.last_busy_at FROM capture_busy_periods p '
+                       'JOIN capture_failure_boundaries b USING(failure_id) '
+                       'WHERE p.failure_id=(SELECT MAX(rowid) FROM failures) AND b.after_event_id=? '
+                       'AND p.last_attempt_rowid=?',(after,last_attempt)).fetchone()
+    if error=='camera_connection_failed':
+        if not prior:
+            return False
+        elapsed = (datetime.fromisoformat(at)-datetime.fromisoformat(prior[1])).total_seconds()
+        if not 0 <= elapsed <= BUSY_REBOOT_GRACE_SECONDS:
+            return False
+        db.execute('UPDATE capture_busy_periods SET unreachable_probes=unreachable_probes+1,last_probe_at=? '
+                   'WHERE failure_id=?',(at,prior[0]))
+    elif prior:
+        db.execute('UPDATE capture_busy_periods SET busy_probes=busy_probes+1,last_busy_at=?,last_probe_at=? '
+                   'WHERE failure_id=?',(at,at,prior[0]))
+    else:
+        # A new photo, capture intent, or different failure ends the previous period.
+        ident = db.execute('INSERT INTO failures VALUES(?,?)',(at,error)).lastrowid
+        db.execute('INSERT INTO capture_failure_boundaries VALUES(?,?,?,?)',(ident,after,error,'unknown'))
+        db.execute('INSERT INTO capture_busy_periods VALUES(?,?,?,?,1,0)',(ident,last_attempt,at,at))
+    return True
+
 def initialize(db):
+    db.execute('CREATE TABLE IF NOT EXISTS capture_busy_periods('
+               'failure_id INTEGER PRIMARY KEY, last_attempt_rowid INTEGER NOT NULL, '
+               'last_busy_at TEXT NOT NULL, last_probe_at TEXT NOT NULL, busy_probes INTEGER NOT NULL CHECK(busy_probes>=1),'
+               'unreachable_probes INTEGER NOT NULL CHECK(unreachable_probes>=0))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_http_responses(attempt_id TEXT PRIMARY KEY,status INTEGER NOT NULL,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_failure_boundaries(failure_id INTEGER PRIMARY KEY,after_event_id INTEGER NOT NULL,error TEXT NOT NULL,outcome TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS continuous_capture_attempts(attempt_id TEXT PRIMARY KEY,first_event INTEGER NOT NULL,after_event_id INTEGER NOT NULL,started_at TEXT NOT NULL)')
@@ -145,6 +176,7 @@ def initialize(db):
     db.execute('CREATE TABLE IF NOT EXISTS storage_continuations(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,review_json TEXT NOT NULL,readiness_json TEXT NOT NULL,approval_reference TEXT NOT NULL,accepted_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_request_timeouts(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_transfer_timeouts(attempt_id TEXT PRIMARY KEY,evidence_json TEXT NOT NULL,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
+    db.execute('CREATE TABLE IF NOT EXISTS compact_replay_failures(attempt_id TEXT PRIMARY KEY REFERENCES capture_transfer_timeouts(attempt_id),reason TEXT NOT NULL,offset INTEGER NOT NULL,requests INTEGER NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS capture_interruptions(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     for action in ('UPDATE','DELETE'):
         db.execute("CREATE TRIGGER IF NOT EXISTS capture_interruptions_no_"+action.lower()+" BEFORE "+action+" ON capture_interruptions BEGIN SELECT RAISE(ABORT,'capture_interruption_immutable'); END")
@@ -174,16 +206,29 @@ def snapshot(db,first):
     names=('attempt_id','after_event_id','started_at','outcome','event_id','error','finished_at')
     failed=db.execute('SELECT COUNT(*) FROM failures').fetchone()[0]
     last=db.execute('SELECT received_at,error FROM failures ORDER BY rowid DESC LIMIT 1').fetchone()
+    busy = None
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='capture_busy_periods'").fetchone():
+        row = db.execute('SELECT b.after_event_id,f.received_at,p.last_busy_at,p.last_probe_at,p.busy_probes,p.unreachable_probes '
+                         'FROM capture_busy_periods p '
+                         'JOIN capture_failure_boundaries b USING(failure_id) JOIN failures f ON f.rowid=p.failure_id '
+                         'ORDER BY p.failure_id DESC LIMIT 1').fetchone()
+        if row:
+            busy = dict(zip(('after_event_id','first_seen_at','last_busy_at','last_probe_at','busy_probes','unreachable_probes'),row))
     transfer=db.execute('SELECT attempt_id FROM capture_transfer_timeouts ORDER BY rowid DESC LIMIT 1').fetchone()
     transfer_summary=None
     if transfer:
         evidence,_=transfer_record(db,transfer[0])
         transfer_summary={'attempt_id':transfer[0],'evidence':evidence,
                           'gap_accepted':transfer[0] in accepted_continuations(db)}
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='compact_replay_failures'").fetchone():
+            replay=db.execute('SELECT reason,offset,requests FROM compact_replay_failures WHERE attempt_id=?',transfer).fetchone()
+            if replay:
+                transfer_summary['replay']=dict(zip(('reason','offset','requests'),replay))
     return {'first_event':first,'maximum_rejections':MAX_REJECTIONS,'rejections':count,
             'rejection_policy':'consecutive_acknowledged','consecutive_rejections':consecutive,'lifetime_rejections':lifetime,
             'hold_reason':reason,'attempt_count':total,'failure_count':failed,'last_failure':dict(zip(('at','error'),last)) if last else None,'recent_attempts':[dict(zip(names,r)) for r in reversed(rows)],
-            'accepted_unknown_gaps':len(accepted_continuations(db)),'last_transfer_timeout':transfer_summary}
+            'accepted_unknown_gaps':len(accepted_continuations(db)),'last_transfer_timeout':transfer_summary,
+            'last_busy_period':busy}
 
 def rejection_streak(db,first,accepted=None):
     # Intent order is durable and independent of wall-clock adjustments. Read at

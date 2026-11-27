@@ -1,3 +1,15 @@
+## 0.2.0-dev141
+
+- Recover scheduled photos when the camera status connection stalls before sending headers. Retry only the passive status request within its original ten-second deadline and start a capture only after a validated ready reply.
+
+## 0.2.0-dev140
+
+- Keep scheduled checks on time while the camera reports busy and for up to a minute of lost contact after its last busy reply. Record one interruption with separate counts for busy replies and unanswered checks. Capture a fresh photo on the first ready check.
+
+## 0.2.0-dev139
+
+- Resume a stalled compact transfer from the retained photo. Retry interrupted reads of the same packet within one deadline and record the offset and reason if recovery fails.
+
 ## 0.2.0-dev138
 
 - Recover the 10,000 ft³ dial when one pointer tip covers a division and both neighboring marks can be verified on the calibrated face.
