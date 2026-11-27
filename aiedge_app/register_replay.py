@@ -8,6 +8,7 @@ from observation_support import observed_rows
 # Keep replay off the acquisition path. A publication reads at most this many
 # historical exposures and saves its cursor in the same checkpoint as the meter.
 PAGE = 64
+REPLAY_VERSION = 2
 
 
 def seed(db, doc, identity, originals=None):
@@ -73,6 +74,7 @@ def page(db, doc, source, outer, target, rate, slow=None):
                 or timing['elapsed_seconds'] >= 660):
             break
         limit = rate * (current['monotonic_us'] - source['monotonic_us']) / 1000000
+        previous_floor = outer[0]
         outer = advance_band(outer, phase, turn, limit)
         if outer is None:
             break
@@ -92,13 +94,19 @@ def page(db, doc, source, outer, target, rate, slow=None):
             outer = advance_band(clipped,phase,turn,0)
             if outer is None:
                 break
+        accepted_absolute = False
         if event in absolutes:
             compatible = supported(absolutes[event], [outer], 0, 0)
-            if not compatible:
+            if compatible:
+                outer = (compatible[0][0], compatible[-1][1])
+                accepted_absolute = True
+            elif slow_phase is None or not slow or any(hi >= previous_floor for _, hi in absolutes[event]):
                 break
-            outer = (compatible[0][0], compatible[-1][1])
+            # If every decoded turn would run the meter backwards, retain the
+            # motion independently supported by both dials. A forward conflict
+            # still needs independent evidence before replay can proceed.
         if slow_phase is not None:
-            if not slow or event in absolutes:
+            if not slow or accepted_absolute:
                 slow.update(slow_reference(outer,slow_phase,current['monotonic_us']))
             else:
                 slow.update(phase=list(map(str,position)),tick=current['monotonic_us'])
@@ -112,7 +120,7 @@ def refine(store, doc, track, rate, originals=None):
     from absolute_motion import measurement
     anchor = track['anchor']
     identity = (anchor['event_id'], anchor['source_sha256'], anchor['captured_at'])
-    key = [*identity, str(rate)]
+    key = [*identity, str(rate), REPLAY_VERSION]
     cursor = track.get('envelope_replay') or {}
     unavailable = dict(track, envelope_replay=dict(key=key, stopped=True))
     head = track['source']
@@ -158,9 +166,10 @@ def refine(store, doc, track, rate, originals=None):
 class ChartRegisterReplay:
     """Cache verified phases for the active register anchor in the background chart worker."""
 
-    def __init__(self, store):
+    def __init__(self, store, originals=None):
         from threading import Lock
         self.store = store
+        self.originals = originals
         self.lock = Lock()
         self.key = None
         self.bounds = {}
@@ -192,7 +201,7 @@ class ChartRegisterReplay:
         with self.lock:
             if self.key != key:
                 with self.store.connect() as db:
-                    self.cursor = seed(db, document, identity)
+                    self.cursor = seed(db, document, identity, self.originals)
                 self.key, self.bounds, self.stopped = key, {}, self.cursor is None
                 self.slow = {}
                 if self.cursor:

@@ -704,7 +704,7 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v8:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-v9:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
@@ -812,9 +812,45 @@ function chartBoundaries(start,end,minutes,zone){
   if(end>start)edges.push(end);
   return edges;
 }
+// Hourly rates carry the two photo-backed register readings used in their
+// subtraction. Reuse those values only on the hourly summary.
+function hourlyPhotoReadings(intervals,points){
+  const levels=new Map(), connects=new Set(), agreed=new Map(), pairs=[];
+  for(const [from,to,proof] of intervals){
+    if(proof?.basis!=='interpolated_hour'||to-from!==hourMs||proof.readings?.length!==2)continue;
+    const [left,right]=proof.readings;
+    if(left?.time!==from||right?.time!==to||!Number.isFinite(proof.use)||
+       proof.bands?.length!==1||!(proof.bands[0][0]<=proof.use&&proof.use<=proof.bands[0][1])||
+       !Number.isFinite(left.value)||!Number.isFinite(right.value)||right.value<left.value||
+       Math.abs(right.value-left.value-proof.use)>0.000002)continue;
+    const a=points.get(from),b=points.get(to);
+    if(!a||!b||a[3]!==b[3]||![left,right].every(({time,value})=>{
+      const [,lo,hi]=points.get(time);
+      return Number.isFinite(lo)&&Number.isFinite(hi)&&lo<=value&&value<=hi;
+    }))continue;
+    for(const {time,value} of [left,right]){
+      agreed.set(time,agreed.has(time)&&agreed.get(time)!==value?null:value);
+    }
+    pairs.push([left,right]);
+  }
+  for(const [left,right] of pairs){
+    if(agreed.get(left.time)!==left.value||agreed.get(right.time)!==right.value)continue;
+    levels.set(left.time,left.value);
+    levels.set(right.time,right.value);
+    connects.add(left.time);
+  }
+  return {levels,connects};
+}
 function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
   const {data,zone}=hourly, profile=data.registerProfile;
   const points=new Map(profile.points.map(([t,...p])=>[t,p]));
+  const photos=hourlyPhotoReadings(minutes===60&&profile.reconciled?profile.rateIntervals??[]:[],points);
+  for(const [time,value] of photos.levels)points.get(time)[0]=value;
+  const openings={...profile.openings};
+  for(const [time,value] of photos.levels){
+    const base=openings[time];
+    if(base&&!base[4]&&base[3]===points.get(time)[3])openings[time]=[value,...base.slice(1)];
+  }
   const resets=Object.keys(profile.openings).map(Number).filter(t=>start<=t&&t<=end);
   const edges=chartBoundaries(start,end,minutes,zone);
   const hours=new Map(data.hours.map(q=>[q.end,q]));
@@ -824,6 +860,7 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
   const estimatedBounds=new Map((profile.estimatedChangeBounds??[]).map(([a,b,lo,hi])=>[a+'/'+b,[lo,hi]]));
   const insideUnknown=t=>unknown.some(([l,r])=>l<t&&t<r);
   function missingChange(from,to){
+    if(to-from===hourMs&&photos.connects.has(from))return false;
     if(insideUnknown(from)||insideUnknown(to))return true;
     if(!unknown.some(([l,r])=>l<to&&from<r))return false;
     // Independent readings at both clock boundaries can support an interval
@@ -836,7 +873,7 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
   const changes=new Map((profile.changeBounds??[]).map(([a,b,lo,hi])=>[a+'/'+b,[lo,hi]]));
   const days=Object.keys(profile.openings).map(Number).sort((a,b)=>a-b);
   const openingAt=t=>days.findLast(day=>day<=t);
-  const baseAt=t=>profile.openings[openingAt(t)];
+  const baseAt=t=>openings[openingAt(t)];
   function difference(a,b,elapsed){
     if(!a||!b||a[3]!==b[3]||b[0]<a[0])return null;
     const use=b[0]-a[0];
@@ -903,22 +940,27 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
     if(run.length)series.push({run});
     run=[];
   }
+  function connectsTo(point){
+    const last=run.at(-1);
+    return last[1]<=point[1] && points.get(last[0])[3]===points.get(point[0])[3] &&
+      !missingChange(last[0],point[0]);
+  }
   for(const t of edges){
-    const day=openingAt(t),p=insideUnknown(t)?null:total(t,baseAt(t),day);
+    const day=openingAt(t),p=insideUnknown(t)&&!photos.levels.has(t)?null:total(t,baseAt(t),day);
     const stop={to:t,from:null,point:p,reset:resets.includes(t)};
     stops.set(t,stop);
     if(profile.blocked?.includes(t))flush();
     if(stop.reset){
-      const prior=openingAt(t-1),close=total(t,profile.openings[prior],prior);
+      const prior=openingAt(t-1),close=total(t,openings[prior],prior);
       if(close&&t>start){
         extent.push(close[3]??close[1]);
-        if(run.length&&points.get(run.at(-1)[0])[3]===points.get(t)[3])run.push(close);
+        if(run.length&&connectsTo(close))run.push(close);
       }
       flush();
     }
     if(!p){flush();continue;}
     extent.push(p[3]??p[1]);
-    if(run.length&&(points.get(run.at(-1)[0])[3]!==points.get(t)[3]||missingChange(run.at(-1)[0],t)))flush();
+    if(run.length&&!connectsTo(p))flush();
     run.push(p);
   }
   flush();
@@ -938,7 +980,7 @@ function registerSummary(hourly,start,end,minutes,view,rateDetail=null){
         if(!proof||!Number.isFinite(proof.use)||proof.bands?.length!==1)continue;
         const [lo,hi]=proof.bands[0];
         if(!(lo<=proof.use&&proof.use<=hi))continue;
-        const opening=openingAt(a),base=profile.openings[opening];
+        const opening=openingAt(a),base=openings[opening];
         const left=total(a,base,opening),right=total(b,base,opening);
         if(!left||!right||right[1]<left[1])continue;
         if(!part||part.at(-1)[0]!==a){

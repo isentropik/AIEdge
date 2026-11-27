@@ -998,6 +998,44 @@ test('two estimated hourly rates share a clock reading inside an open capture ga
   assert(!marks.some(m=>m.class==='plot-estimate-dot'&&m['data-time']===t));
 });
 
+test('hourly cumulative points use the readings behind the rates on each supported side of a gap',async()=>{
+  const midnight=Date.UTC(2026,10,26),hour=3600000,start=midnight+9*hour,t=start+hour,end=t+hour;
+  const left={time:start,value:110}, middle={time:t,value:113.25}, right={time:end,value:116.5};
+  const interval=(a,b)=>[a.time,b.time,{basis:'interpolated_hour',use:b.value-a.value,bands:[[2,5]],readings:[a,b]}];
+  const gap=[t-50000,t+10000];
+  const profile={points:[[midnight,100,98,102,0],[start,110,108,112,0],[t,112,111,115,0],[end,116,114,119,0]],
+    openings:{[midnight]:[100,98,102,0]},gaps:[gap],unknownGaps:[gap],modeled:[],conflicts:[],fineBounds:[],reconciled:true};
+  async function render(intervals){
+    const ui=gasOverview(async()=>response({zone:'UTC',end,midnight,minutes:60,hours:[],groups:[],
+      registerProfile:{...profile,rateIntervals:intervals}}));
+    ui.get('total-key-label').parentElement={};
+    ui.charts.setCalendar('UTC',new Date(end).toISOString());
+    ui.charts.period('today',null);
+    await tick();
+    return ui.get('day-curve').children[0].children.map(n=>n.attributes);
+  }
+  const first=interval(left,middle),second=interval(middle,right);
+  const marks=await render([first,second]);
+  const spans=(rows,a,b)=>rows.some(m=>m['data-start']<=a&&b<=m['data-end']);
+  assert(spans(marks,start,end));
+  for(const {time,value} of [left,middle,right]){
+    const dots=marks.filter(m=>m.class==='plot-estimate-dot'&&m['data-time']===time);
+    assert.equal(dots.length,1);
+    assert.equal(dots[0]['data-total'],value-100);
+  }
+  for(const time of [t,end]){
+    assert.equal(marks.find(m=>m.class==='plot-usage-dot'&&m['data-hour-end']===time)['data-rate'],3.25);
+  }
+  const oneSide=await render([first]);
+  assert(spans(oneSide,start,t));
+  assert(!spans(oneSide,t,end));
+  const disagreement=await render([first,interval({...middle,value:113.5},right)]);
+  assert(!spans(disagreement,start,t));
+  assert(!spans(disagreement,t,end));
+  assert.equal(profile.points[2][1],112);
+  assert.deepEqual(profile.unknownGaps,[gap]);
+});
+
 test('Day follows the absolute reading while daily is held and extends a warm ten-minute window',async()=>{
   const midnight=Date.UTC(2026,10,26), hour=3600000, first=midnight+18*hour+31*60000;
   const next=first+7*60000;
