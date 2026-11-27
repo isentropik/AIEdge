@@ -1,6 +1,11 @@
 import unittest
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+import sqlite3
+from unittest.mock import patch
 
 from chart_rate_photos import ChartRatePhotos, comparison_allowance
+from hourly_photo import replay_hour
 from optical_rate import solve
 
 
@@ -91,7 +96,6 @@ class OpticalRateTests(unittest.TestCase):
         self.assertIsNone(comparison_allowance(doc,'f',dict(policy,pipeline_id='other')))
 
     def test_a_failed_transfer_blocks_the_whole_interval_before_reading_phases(self):
-        import sqlite3
         db=sqlite3.connect(':memory:')
         self.addCleanup(db.close)
         db.executescript('CREATE TABLE capture_failure_boundaries(after_event_id);'
@@ -101,3 +105,66 @@ class OpticalRateTests(unittest.TestCase):
         self.assertIsNone(evidence)
         self.assertIsNone(ChartRatePhotos().get(db,{},dict(camera='c',format_id='f'),6,0,600000,1,62,70,
                                                register=(.52,.45,.57)))
+
+
+class PhotoHourTests(unittest.TestCase):
+    def setUp(self):
+        self.db = sqlite3.connect(':memory:')
+        self.addCleanup(self.db.close)
+        self.db.executescript('CREATE TABLE capture_failure_boundaries(after_event_id);'
+                              'CREATE TABLE consumption_segment_links(first_event);')
+        self.start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        self.samples, self.known = {}, {}
+        # Exterior checkpoints and a fine hand that crosses zero inside the interval.
+        for eid, phase in enumerate(['4.6','4.8','0.0','0.2','0.4','0.6'],1):
+            stamp = self.start + timedelta(seconds=10*(eid-1))
+            obs = dict(camera='c', context_id='k', clock_id='clock', monotonic_us=eid*10_000_000,
+                       source_sha256=str(eid), captured_at=stamp.isoformat())
+            middle = Decimal(phase)
+            self.samples[eid] = obs,(middle-Decimal('.05'),middle+Decimal('.05'))
+        self.remember(1,104.6)
+        self.remember(6,105.55)
+        reader = patch('hourly_photo.phases',side_effect=lambda db,a,b,*args,**kw:
+                       {e:self.samples[e] for e in range(a,b+1) if e in self.samples})
+        reader.start()
+        self.addCleanup(reader.stop)
+
+    def remember(self,event,value):
+        obs = self.samples[event][0]
+        self.known[event,obs['source_sha256'],obs['captured_at']] = value
+
+    def replay(self):
+        return replay_hour(self.db,dict(dials=[dict(value_per_revolution=5)],maximum_rate_per_second=.47),
+                           {},self.start+timedelta(seconds=15),self.start+timedelta(seconds=35),
+                           2,5,self.known,6)
+
+    def test_reconstructs_both_missing_ticks_from_consecutive_photos(self):
+        use,lo,hi = self.replay()
+        self.assertAlmostEqual(use,.4)
+        self.assertLess(lo,use)
+        self.assertGreater(hi,use)
+
+    def test_rejects_a_contradicting_middle_reading_or_unconfirmed_winding(self):
+        self.remember(4,110.15)
+        self.assertIsNone(self.replay())
+        self.known.clear()
+        self.remember(1,104.6)
+        self.assertIsNone(self.replay())
+
+    def test_requires_original_photo_identity_and_every_intermediate_observation(self):
+        original = self.samples[6][0]['source_sha256']
+        self.samples[6][0]['source_sha256'] = 'replacement'
+        self.assertIsNone(self.replay())
+        self.samples[6][0]['source_sha256'] = original
+        del self.samples[3]
+        self.assertIsNone(self.replay())
+
+    def test_refuses_clock_breaks_and_capture_failures_even_outside_the_clock_ticks(self):
+        self.samples[4][0]['clock_id'] = 'new'
+        self.assertIsNone(self.replay())
+        self.samples[4][0]['clock_id'] = 'clock'
+        for table in ['capture_failure_boundaries','consumption_segment_links']:
+            with self.subTest(table=table):
+                self.db.execute('INSERT INTO '+table+' VALUES(2)')
+                self.assertIsNone(self.replay())
+                self.db.execute('DELETE FROM '+table)

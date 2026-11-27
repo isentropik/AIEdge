@@ -1,3 +1,8 @@
+## 0.2.0-dev153
+
+- Recover an hourly rate from saved dial photos when Home Assistant history cannot bracket the hour. The replay checks published meter readings and stops at recorded capture gaps.
+- Give short whiskers visible horizontal caps on narrow Day charts.
+
 ## 0.2.0-dev152
 
 - Constrain the daily cumulative range with the hourly rates on either side of each reading.

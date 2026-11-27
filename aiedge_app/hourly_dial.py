@@ -208,7 +208,7 @@ class LedgerHours:
             if leg and 'use' in leg and not leg['supported_spans']:
                 return [end,leg['use'],*leg['bounds']]
 
-    def snapshot(self,ticks,state,document,policy,published=None,gaps=(),archive=None,offsets=None,daily=None):
+    def snapshot(self,ticks,state,document,policy,published=None,gaps=(),archive=None,offsets=None,daily=None,photo_levels=None):
         if (len(ticks)<2 or not state or not document or document.get('unit')!='ft3'
                 or not document.get('maximum_rate_per_second') or not state.get('event_id')):
             return {}
@@ -388,13 +388,21 @@ class LedgerHours:
                                                        first,last,state['event_id'])
                     if rate_evidence and rate_evidence.get('reason')=='insufficient_motion_samples' and published:
                         a,b=published.get(ticks[i]),published.get(ticks[i+1])
+                        register=None
                         if a and b and a[2]==b[2] and endpoint(i) and endpoint(i+1):
                             use=float(b[0]-a[0])
                             lo=max(0.,float(b[1][0]-a[1][1]))
                             hi=float(b[1][1]-a[1][0])
                             if lo<=use<=hi:
-                                rate_evidence=self.rate_photos.get(db,document,source,allowance,ticks[i],ticks[i+1],
-                                    first,last,state['event_id'],register=(use,lo,hi))
+                                register=(use,lo,hi)
+                        elif (not a or not b) and end-start==timedelta(hours=1):
+                            from hourly_photo import replay_hour
+                            register=replay_hour(db,document,source,start,end,first,last,photo_levels,state['event_id'])
+                            if register is None and leg.get('basis')=='photo_replay' and leg.get('photo_evidence'):
+                                register=(leg['use'],*leg['bounds'])
+                        if register is not None:
+                            rate_evidence=self.rate_photos.get(db,document,source,allowance,ticks[i],ticks[i+1],
+                                first,last,state['event_id'],register=register)
                     if rate_evidence is not None:
                         result[ticks[i+1]] = dict(leg,optical_rate=rate_evidence)
         return result
