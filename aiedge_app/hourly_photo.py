@@ -12,6 +12,82 @@ from observation_support import observed_rows
 from reading_bounds import diagnose_inconsistency
 
 
+def replay_hour(db, document, source, start, end, first, last, known, head):
+    """Interpolate both register ticks from verified photos on one continuous meter run."""
+    from hourly_dial import at_hour
+    from nominal_motion import step
+
+    if not known:
+        return None
+    # A held HA reading still identifies its original photo. Use its exposure
+    # time and digest, never the time at which HA repeated that reading.
+    seed = max((eid for eid, _, _ in known if eid <= first), default=None)
+    check = min((eid for eid, _, _ in known if last <= eid <= head), default=None)
+    if seed is None or check is None or seed >= check:
+        return None
+    if db.execute('SELECT 1 FROM capture_failure_boundaries WHERE after_event_id>=? AND after_event_id<? '
+                  'UNION ALL SELECT 1 FROM consumption_segment_links WHERE first_event>? AND first_event<=? LIMIT 1',
+                  (seed, check, seed, check)).fetchone():
+        return None
+    refs = {}
+    for (eid, digest, stamp), value in known.items():
+        if seed <= eid <= check:
+            if eid in refs:
+                return None
+            refs[eid] = (digest, stamp, number(value))
+    turn = number(document['dials'][-1]['value_per_revolution'])
+    rate = number(document['maximum_rate_per_second'])
+    # Recorder values in the chart index are binary64. Allow only conversion noise.
+    epsilon = Decimal('1e-8')
+    previous = opening = closing = None
+    for page in range(seed, check+1, 64):
+        stop = min(page+63, check)
+        samples = phases(db, page, stop, document, source, same_clock=False)
+        for eid in range(page, stop+1):
+            if eid not in samples:
+                return None
+            obs, phase = samples[eid]
+            ref = refs.get(eid)
+            if ref and (obs['source_sha256'], obs['captured_at']) != ref[:2]:
+                return None
+            if previous is None:
+                value = ref[2]
+                shift = ((value-sum(phase)/2)/turn).to_integral_value()*turn
+                if not phase[0]+shift-epsilon <= value <= phase[1]+shift+epsilon:
+                    return None
+                value = min(max(value, phase[0]+shift), phase[1]+shift)
+                chosen = (value, value)
+            else:
+                old_obs, old_sample = previous
+                timing = interval(old_obs, obs)
+                if (old_obs['context_id'] != obs['context_id'] or timing['state'] != 'continuous'
+                        or timing['elapsed_seconds'] >= 660):
+                    return None
+                limit = rate * (obs['monotonic_us']-old_obs['monotonic_us'])/1000000
+                band = step(chosen, phase, turn, limit)
+                if band is None or band[0]-chosen[1] >= turn/2:
+                    return None
+                chosen = band
+                value = chosen[0]
+                if ref and abs(value-ref[2]) > epsilon:
+                    return None
+                shift = ((value-sum(phase)/2)/turn).to_integral_value()*turn
+            when = datetime.fromisoformat(obs['captured_at'])
+            sample = (when, value, (phase[0]+shift, phase[1]+shift))
+            if previous is not None:
+                if old_sample[0] <= start <= when:
+                    opening = at_hour(start, old_sample, sample)
+                if old_sample[0] <= end <= when:
+                    closing = at_hour(end, old_sample, sample)
+            previous = obs, sample
+    if opening and closing:
+        change = closing[0]-opening[0]
+        lo = max(Decimal(0), closing[1][0]-opening[1][1])
+        hi = closing[1][1]-opening[1][0]
+        if lo <= change <= hi:
+            return tuple(map(float, (change, lo, hi)))
+
+
 def photo_anchor(db, reader, document, source, eid, *, image=None, saved=False):
     pipeline = document['pipeline_id']
     bindings = db.execute('SELECT context,source_sha FROM event_recognition_bindings '

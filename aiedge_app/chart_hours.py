@@ -449,7 +449,7 @@ class ChartHours:
         # admit delayed publications only if they describe a reading in this snapshot.
         fetch_end = end+timedelta(minutes=12)
         missing = []
-        photo_levels={} if profile else None
+        photo_levels={} if profile or minutes==60 else None
         replay = getattr(self.ledger, 'register_replay', None) if profile else None
         sources = {} if replay else None
         registers = [p for p in self.readings(self.meter,start,fetch_end,zone,False,missing,photo_levels,sources) if p[0]<=stamp]
@@ -523,7 +523,7 @@ class ChartHours:
         offsets = []
         head=chart_head(usage or {})
         optical = self.ledger.snapshot(ticks,head,document,policy or {},published,outages,
-                                       archive,offsets,tracked) if self.ledger else {}
+                                       archive,offsets,tracked,photo_levels) if self.ledger else {}
         hours = measured_hours(ticks,published,optical,outages,cuts,splits,register_changes)
 
         # Sample the previous day's daily series at clock hours before downsampling it.

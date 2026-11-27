@@ -543,7 +543,9 @@ function chart(){
       const px=x(measured?stop.point[0]:stop.to),attrs=measured?{'data-through-event':stop.point[4]}:stop.hour?{'data-hour-end':stop.to,'data-start':stop.hour.start,'data-use':stop.hour.use,'data-rate':stop.rate.value}:{};
       if(range && (range[0]<range[1] || stop.hour?.optical && range[0]===range[1])){
         const [lo,hi]=range;
-        const cap=Math.min(5.5,Math.max(1,(px-x(measured?.from??stop.hour?.start??stop.from))/4));
+        // Keep narrow whiskers visible beside the dot, within its own interval.
+        const spacing=px-x(measured?.from??stop.hour?.start??stop.from);
+        const cap=Math.min(5.5,Math.max(1,(spacing-1)/2));
         const clipped=hi>usage.max,highY=usage.y(Math.min(hi,usage.max));
         const endCap=clipped?'M'+(px-cap)+' '+(highY+cap)+'l'+cap+' '+(-cap)+'l'+cap+' '+cap:
           'M'+(px-cap)+' '+highY+'h'+(cap*2);
