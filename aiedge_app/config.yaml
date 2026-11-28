@@ -1,5 +1,5 @@
 name: AIEdge
-version: 0.2.0-dev158
+version: 0.2.0-dev159
 slug: aiedge
 stage: experimental
 url: https://github.com/isentropik/AIEdge/tree/codex/aiedge-ha-app/aiedge_app
@@ -12,8 +12,11 @@ init: false
 # Allow a bounded in-flight transfer/ledger commit to finish before forced stop.
 # The Python runtime drains for at most 35 seconds, leaving 10 seconds of margin.
 timeout: 45
-# Stop writes while Supervisor copies images, calibration and the SQLite ledger.
-backup: cold
+backup: hot
+backup_pre: python /opt/aiedge/hot_backup.py prepare
+backup_post: python /opt/aiedge/hot_backup.py finish
+backup_exclude:
+  - .aiedge-backup-work
 ingress: true
 homeassistant_api: true
 ingress_port: 8099

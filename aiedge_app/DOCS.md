@@ -342,11 +342,19 @@ Identical images share one file while retaining their separate capture events.
 All collected images are unlabeled and excluded from training until reviewed.
 Model estimates are not verified labels or evidence of reading accuracy.
 
-Include AIEdge when selecting apps for a Home Assistant backup. The app is configured
-for a cold backup: Supervisor stops it during the backup so the database and image
-files cannot change while being copied. Captures pause during that time. Images are
-not excluded, so backup size will grow with the stored collection. A local stopped-app
-copy/restore test passes; a real Supervisor backup/restore still needs validation.
+Include AIEdge when selecting apps for a Home Assistant backup. While capture runs,
+the pre-backup hook pins SQLite read transactions and copies the files belonging to
+that point in time. It verifies the databases, image references and file hashes
+before Supervisor packages the add-on. If snapshot preparation fails, Supervisor
+reports a backup error. Leave sufficient space for the database snapshot and the
+Supervisor archive in addition to the capture reserve.
+
+Supervisor owns `/data/options.json`. AIEdge moves its existing files into
+`/data/aiedge-state` on first start. A backup taken while stopped includes that
+directory. A hot backup also contains `aiedge-rollback-v1`. On restore, AIEdge
+verifies and installs the sealed snapshot before starting its capture worker.
+Ordinary restarts use the current state. Restoring rewinds the ledger and photos
+to the snapshot time. Preserve subsequent photos before rolling back a live system.
 
 New captures wait when less than 512 MiB plus one maximum-size image remains free
 on the data filesystem. They resume at a later scheduled check after space is
