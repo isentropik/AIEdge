@@ -52,6 +52,11 @@ class EventRecognition(Recognition):
                 self.observation_first_event=max(1,db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]+1)
                 db.execute('INSERT INTO event_selection_contexts VALUES(?,?,?,?)',(self.observation_context,reader.pipeline_id,self.format_id,self.observation_first_event))
         self._restart_pending=bool(row)
+    @property
+    def observation_pipeline_id(self):
+        # Activation can replace the reader only within this event pipeline.
+        return self.document['pipeline_id']
+
     def activate(self,reader,persist):
         check(reader is not None and reader.pipeline_id==self.reader.pipeline_id and len(reader.dials)==len(self.document['dials']),'event_reconfigure_requires_new_context')
         return super().activate(reader,persist)

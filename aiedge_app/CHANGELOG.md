@@ -1,3 +1,8 @@
+## 0.2.0-dev156
+
+- Shorten the checks before each scheduled capture on large ledgers. Preserve pending attempts, unknown gaps, receipt validation and the freshness-rejection limit.
+- Read the fixed event-mode pipeline identity without waiting behind image recognition. Record admission phases, the exposure time and response-header time for late captures.
+
 ## 0.2.0-dev155
 
 - Give scheduled dial photos priority over background original downloads during slow camera exchanges. Recheck an empty original queue when a new original is advertised or after one minute.

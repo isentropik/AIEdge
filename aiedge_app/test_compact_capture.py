@@ -83,6 +83,14 @@ class CompactTests(unittest.TestCase):
                 self.assertEqual(phases['concurrent_original_worker'],expect_overlap)
                 self.assertTrue(self.worker.original_pending)
 
+    def test_capture_timing_identifies_exposure_and_retained_original(self):
+        fields={}
+        self.assertTrue(self.collect('1',phases=fields))
+        with self.store.connect() as db:
+            saved=db.execute('SELECT e.event_id,f.captured_at FROM capture_events e JOIN frames f USING(camera,frame_id)').fetchone()
+        self.assertEqual((fields['event_id'],fields['exposure_utc']),saved)
+        self.assertTrue(fields['original_retained'])
+
     def test_idle_checks_empty_queue_again_on_anchor_restart_or_deadline(self):
         stop=threading.Event()
         with patch('compact_capture.time.monotonic',return_value=100),patch.object(self.worker,'download',return_value=False) as download:

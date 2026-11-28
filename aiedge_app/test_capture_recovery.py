@@ -23,6 +23,17 @@ class RecoveryTests(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def rows(self,table):
         with self.store.connect() as db:return db.execute('SELECT * FROM '+table+' ORDER BY rowid').fetchall()
+    def test_unmatched_intent_still_blocks_when_outcome_count_matches(self):
+        phases={}
+        pending,_=recovery.begin(self.store,1,phases)
+        self.assertEqual(set(phases),{'store_lock_wait_s','sqlite_writer_wait_s','ledger_checks_s','intent_write_commit_s'})
+        with self.store.connect() as db:
+            db.execute("INSERT INTO continuous_capture_outcomes VALUES('orphan','unknown',NULL,'timeout','then')")
+            self.assertTrue(recovery.unresolved(db))
+            self.assertFalse(recovery.unresolved(db,active_attempt=pending))
+        with self.assertRaisesRegex(ValueError,'unknown_capture_outcome'):
+            recovery.begin(self.store,2)
+        self.assertEqual(len(self.rows('continuous_capture_attempts')),1)
     def test_exact_http_rejection_is_typed_and_never_retried_inside_request(self):
         c=Camera('http://127.0.0.1:1')
         err=urllib.error.HTTPError(c.origin,503,'rejected',{},io.BytesIO(b'Frame is stale or clock changed during capture'))
