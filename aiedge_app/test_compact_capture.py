@@ -4,6 +4,7 @@ from io import BytesIO
 from types import SimpleNamespace
 import json
 import struct
+import threading
 import time
 import unittest
 from tempfile import TemporaryDirectory
@@ -64,12 +65,47 @@ class CompactTests(unittest.TestCase):
         self.worker=q.CompactCapture(self.store,self.camera,self.rec)
         self.data,self.image=packet()
 
-    def collect(self,anchor='0',data=None):
+    def collect(self,anchor='0',data=None,**options):
         data=self.data if data is None else data
         response=headers({'Content-Type':'application/x-aiedge-q25','X-AIEdge-Anchor':anchor,
                           'X-AIEdge-SHA256':q.digest(data)})
         with patch.object(q,'request',return_value=(response,data)):
-            return self.worker.collect(time.monotonic())
+            return self.worker.collect(time.monotonic(),**options)
+
+    def test_slow_capture_reserves_link_without_forgetting_originals(self):
+        for previous,slow_probe,expect_overlap in ((0,True,False),(5.1,False,False),(1,False,True)):
+            self.worker.original_pending=True
+            self.worker.previous_exchange_seconds=previous
+            phases={}
+            with patch.object(self.worker,'_while_settling') as original:
+                self.collect('1',reserve_link=slow_probe,interval=10,phases=phases)
+                self.assertEqual(original.called,expect_overlap)
+                self.assertEqual(phases['concurrent_original_worker'],expect_overlap)
+                self.assertTrue(self.worker.original_pending)
+
+    def test_idle_checks_empty_queue_again_on_anchor_restart_or_deadline(self):
+        stop=threading.Event()
+        with patch('compact_capture.time.monotonic',return_value=100),patch.object(self.worker,'download',return_value=False) as download:
+            self.worker.idle(stop,110)
+            self.worker.idle(stop,110)
+            self.assertEqual(download.call_count,1)
+            self.collect('1')
+            self.worker.idle(stop,110)
+            self.assertEqual(download.call_count,2)
+            with patch('compact_capture.time.monotonic',return_value=161):
+                self.worker.idle(stop,171)
+                self.assertEqual(download.call_count,3)
+            restarted=q.CompactCapture(self.store,self.camera,self.rec)
+            with patch.object(restarted,'download',return_value=False) as discover:
+                restarted.idle(stop,110)
+                discover.assert_called_once()
+
+    def test_deferred_anchor_keeps_original_drain_available_on_a_slow_link(self):
+        self.collect('deferred')
+        self.assertTrue(self.worker.original_pending)
+        with patch.object(self.worker,'_while_settling') as drain:
+            self.collect('1',reserve_link=True,interval=10)
+            drain.assert_called_once()
 
     def test_only_fine_is_observed_and_history_replays_after_restart(self):
         self.assertTrue(self.collect('deferred'))

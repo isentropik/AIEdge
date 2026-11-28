@@ -11,7 +11,7 @@ class ReadinessTransportError(ValueError):
         self.stage = stage
         self.cause = type(cause).__name__
         self.os_error = getattr(cause,'errno',None)
-        self.header_timeout = stage=='connect_or_headers' and isinstance(cause,TimeoutError)
+        self.header_timeout = stage in ('connect_or_headers','connecting','waiting_for_headers') and isinstance(cause,TimeoutError)
 
 def transient_transport(error):
     reason=error.reason if isinstance(error,urllib.error.URLError) else error
@@ -88,6 +88,7 @@ def _get_status(camera,header_deadline,absolute):
     elif camera.basic:headers['Authorization']='Basic '+camera.basic
     request=urllib.request.Request(camera.origin+'/api/v1/camera',headers=headers,method='GET')
     request.aiedge_deadline=header_deadline
+    request.aiedge_timing={}
     stage='connect_or_headers'
     try:
         remaining=header_deadline-time.monotonic()
@@ -110,6 +111,8 @@ def _get_status(camera,header_deadline,absolute):
     except (urllib.error.URLError,OSError) as error:
         if transient_transport(error):
             cause=error.reason if isinstance(error,urllib.error.URLError) else error
+            if stage=='connect_or_headers':
+                stage='waiting_for_headers' if 'connected_at' in request.aiedge_timing else 'connecting'
             raise ReadinessTransportError(stage,cause) from None
         raise ValueError('camera_connection_failed') from None
     except (UnicodeError,json.JSONDecodeError,TypeError,RecursionError,http.client.HTTPException):raise ValueError('camera_status_invalid') from None

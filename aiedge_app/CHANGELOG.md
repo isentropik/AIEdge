@@ -1,3 +1,8 @@
+## 0.2.0-dev155
+
+- Give scheduled dial photos priority over background original downloads during slow camera exchanges. Recheck an empty original queue when a new original is advertised or after one minute.
+- Record the capture stages for each missed start deadline in the add-on journal.
+
 ## 0.2.0-dev154
 
 - Rebuild saved gas charts on the first load after an add-on update. Server and browser caches still work across restarts of the same release.

@@ -210,6 +210,19 @@ class CameraStatusTests(unittest.TestCase):
             self.assertEqual(camera.readiness()['state'],'ready')
             self.assertEqual((device.gets,device.posts),(1,0))
 
+    def test_readiness_timeout_identifies_which_side_of_tcp_connect_stalled(self):
+        import camera_status
+        camera=Camera('http://127.0.0.1:1')
+        for connected,expected in ((False,'connecting'),(True,'waiting_for_headers')):
+            def timeout(req,timeout):
+                if connected:req.aiedge_timing['connected_at']=time.monotonic()
+                raise TimeoutError()
+            with patch.object(camera.opener,'open',side_effect=timeout):
+                with self.assertRaises(camera_status.ReadinessTransportError) as error:
+                    camera_status._get_status(camera,time.monotonic()+2,time.monotonic()+10)
+                self.assertEqual(error.exception.stage,expected)
+                self.assertTrue(error.exception.header_timeout)
+
     def test_scheduled_header_timeouts_share_one_budget_and_restore_slow_probe(self):
         from camera_status import ReadinessTransportError
         from test_delivery_timing import Clock
