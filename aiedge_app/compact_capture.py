@@ -129,6 +129,10 @@ class PartialCompact(BodyTimeout):
         self.prefix = prefix
 
 
+class OriginalWindowEnded(TimeoutError):
+    """The next queue request did not start before capture reclaimed its time."""
+
+
 def request(camera,path,*,headers=None,body=None,deadline,limit,timing=None):
     values = dict(headers or {})
     if camera.token:
@@ -140,11 +144,20 @@ def request(camera,path,*,headers=None,body=None,deadline,limit,timing=None):
     req.aiedge_timing = timing
     remaining = deadline-time.monotonic()
     if remaining <= 0:
+        if path in ('/api/v1/original','/api/v1/original/ack'):
+            raise OriginalWindowEnded()
         raise TimeoutError('compact_deadline')
     with camera.opener.open(req,timeout=remaining) as reply:
         if timing is not None:
             timing['headers_at']=time.monotonic()
             timing['headers_utc']=now()
+            if path=='/api/v1/original' and reply.status==200:
+                seq=reply.headers.get('X-AIEdge-Sequence','')
+                frame=reply.headers.get('X-AIEdge-Frame-Id','')
+                if re.fullmatch('[0-9]{1,20}',seq):
+                    timing['response_sequence']=int(seq)
+                if re.fullmatch('[a-f0-9]{32}-[a-f0-9]{1,16}',frame):
+                    timing['response_frame_id']=frame
         if reply.status == 204:
             return None,None
         n = camera_header(reply.headers,'Content-Length')
@@ -253,7 +266,7 @@ class CompactCapture:
     def __init__(self,store,camera,recognition):
         self.store,self.camera,self.recognition=store,camera,recognition
         self.force_anchor=True
-        self.download_error=None
+        self.download_issue=None
         self.nominal_slot=None
         self.timing=None
         self.previous_exchange_seconds=0
@@ -278,12 +291,12 @@ class CompactCapture:
         if cancel.wait(.18):return
         while not cancel.is_set() and end-time.monotonic()>.80:
             try:
-                if not self.download(end):
-                    self.original_pending=False
-                    self.queue_recheck_at=time.monotonic()+EMPTY_QUEUE_RECHECK_SECONDS
+                if not self._advance_original(end):
                     return
+            except OriginalWindowEnded:
+                return
             except (OSError,ValueError,sqlite3.Error,http.client.HTTPException) as error:
-                self.download_error=type(error).__name__
+                self._download_failed(error,'settling')
                 return
 
     def collect(self,started,*,reserve_link=False,interval=None,phases=None):
@@ -385,6 +398,55 @@ class CompactCapture:
         self.force_anchor=anchor=='deferred' or result['state']!='estimated'
         return True
 
+    @property
+    def download_error(self):
+        issue=self.download_issue
+        return issue['error'] if issue else None
+
+    def _original_request(self,operation,deadline,row=None,*,offset=None,headers=None,body=None):
+        path='/api/v1/original/ack' if operation=='ack' else '/api/v1/original'
+        timing={}
+        start=time.monotonic()
+        try:
+            return request(self.camera,path,deadline=deadline,headers=headers,body=body,
+                           limit=2 if body is not None else CHUNK,timing=timing)
+        except OriginalWindowEnded:
+            raise
+        except (OSError,ValueError,http.client.HTTPException) as error:
+            phase='connect'
+            if isinstance(error,urllib.error.HTTPError):
+                phase='http_response'
+            elif 'headers_at' in timing:
+                phase='response_body'
+            elif 'connected_at' in timing:
+                phase='request_or_headers'
+            error.original_request=dict(operation=operation,method='POST' if body is not None else 'GET',path=path,
+                phase=phase,sequence=row[0] if row else None,frame_id=row[4] if row else None,offset=offset,
+                budget_ms=round(max(0,deadline-start)*1000),elapsed_ms=round((time.monotonic()-start)*1000))
+            for field in ('response_sequence','response_frame_id'):
+                if field in timing:error.original_request[field]=timing[field]
+            if isinstance(error,urllib.error.HTTPError):error.original_request['http_status']=error.code
+            raise
+
+    def _download_failed(self,error,worker):
+        cause=error.reason if isinstance(error,urllib.error.URLError) and isinstance(error.reason,Exception) else error
+        issue=dict(at=now(),worker=worker,error=type(error).__name__,cause=type(cause).__name__,
+                   **getattr(error,'original_request',{'operation':'local'}))
+        self.download_issue=issue
+        from lifecycle import lifecycle_event
+        try:
+            lifecycle_event('original_download_failure',**issue)
+        except OSError:
+            pass  # A closed journal must not affect capture or retry.
+
+    def _advance_original(self,deadline):
+        progressed=self.download(deadline)
+        self.original_pending=progressed
+        if not progressed:
+            self.queue_recheck_at=time.monotonic()+EMPTY_QUEUE_RECHECK_SECONDS
+        self.download_issue=None
+        return progressed
+
     def _proof(self,row,deadline):
         """Recover proof for an orphan original without adding an observation across the gap."""
         seq,source,total,_,frame,packet_sha=row
@@ -399,7 +461,7 @@ class CompactCapture:
             return True
         offset=len(packet)
         hdr={'X-AIEdge-Offset':str(offset),'X-AIEdge-Original':source,'X-AIEdge-Part':'proof'}
-        headers,data=request(self.camera,'/api/v1/original',headers=hdr,deadline=deadline,limit=CHUNK)
+        headers,data=self._original_request('proof',deadline,row,offset=offset,headers=hdr)
         if headers is None:raise ValueError('original_proof_missing')
         length=int(camera_header(headers,'X-AIEdge-Size'))
         if (not 4<length<=PACKET_LIMIT or not 0<=offset<length or len(data)!=min(CHUNK,length-offset) or
@@ -465,20 +527,18 @@ class CompactCapture:
             if not self._receipt(row,deadline):
                 return True
             # The file and identity-bound receipt survive a lost acknowledgement.
-            headers,_=request(self.camera,'/api/v1/original',headers={'X-AIEdge-Offset':'0'},
-                              deadline=deadline,limit=CHUNK)
+            headers,_=self._original_request('receipt_head',deadline,row,offset=0,headers={'X-AIEdge-Offset':'0'})
             if headers is not None and camera_header(headers,'X-AIEdge-Sequence')==str(row[0]):
                 if tuple(camera_header(headers,'X-AIEdge-'+k) for k in ('Original','Frame-Id','Proof'))!=(row[1],row[4],row[5]):
                     raise ValueError('original_head_identity_changed')
-                _,reply=request(self.camera,'/api/v1/original/ack',body=f'{row[0]} {row[1]} 0'.encode(),
-                                deadline=deadline,limit=2)
+                _,reply=self._original_request('ack',deadline,row,body=f'{row[0]} {row[1]} 0'.encode())
                 if reply!=b'OK':raise ValueError('original_receipt_unconfirmed')
             with self.store.connect() as db:
                 db.execute('DELETE FROM original_download WHERE camera=? AND sequence=? AND sha=?',(camera,*row[:2]))
             return True
         hdr={'X-AIEdge-Offset':str(offset)}
         if row:hdr['X-AIEdge-Original']=row[1]
-        headers,part=request(self.camera,'/api/v1/original',headers=hdr,deadline=deadline,limit=CHUNK)
+        headers,part=self._original_request('jpeg' if row else 'queue_head',deadline,row,offset=offset,headers=hdr)
         if headers is None:
             if row:raise ValueError('original_disappeared')
             return False
@@ -511,14 +571,12 @@ class CompactCapture:
         while not stop.is_set() and due-time.monotonic()>1.25:
             try:
                 with self.camera.operation():
-                    if not self.download(min(due-.25,time.monotonic()+1.5)):
-                        self.original_pending=False
-                        self.queue_recheck_at=time.monotonic()+EMPTY_QUEUE_RECHECK_SECONDS
+                    if not self._advance_original(min(due-.25,time.monotonic()+1.5)):
                         break
-                    self.original_pending=True
-                self.download_error=None
+            except OriginalWindowEnded:
+                break
             except (OSError,ValueError,sqlite3.Error,http.client.HTTPException) as error:
-                self.download_error=type(error).__name__
+                self._download_failed(error,'idle')
                 break
 
 

@@ -1,3 +1,8 @@
+## 0.2.0-dev157
+
+- Clear the original-download warning on verified progress or a confirmed empty queue in either download worker. Keep capture failures separate.
+- Identify failed original requests by operation, phase, available frame and queue sequence, byte offset, and timing. Yield when the request budget has already elapsed before dispatch.
+
 ## 0.2.0-dev156
 
 - Shorten the checks before each scheduled capture on large ledgers. Preserve pending attempts, unknown gaps, receipt validation and the freshness-rejection limit.

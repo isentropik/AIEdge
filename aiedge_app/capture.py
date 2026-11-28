@@ -514,7 +514,9 @@ class Collector:
             else:result['state']=self.recovery_state
             result['storage_recovery_attempt']=self.storage_attempt
             if getattr(self,'compact',None):
-                result['original_download_error']=self.compact.download_error
+                issue=self.compact.download_issue
+                result['original_download_error']=issue['error'] if issue else None
+                result['original_download_issue']=issue
                 result['compact_timing']=self.compact.timing
             result['storage_recovery_policy']=capture_recovery.STORAGE_POLICY
             result['readiness_failures']=self.readiness_failures

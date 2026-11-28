@@ -98,6 +98,17 @@ test('failed history does not clear a successful current reading',async()=>{
  assert.equal(app.get('history-summary').textContent,'History unavailable');
  assert.equal(app.get('empty-gallery').hidden,true);
 });
+test('original retry clears after recovery and stays separate from capture errors',async()=>{
+ let issue={operation:'ack',cause:'TimeoutError'};
+ const app=fixture(async url=>response(url.includes('capture-history')?page:{...state,capture_recovery:{original_download_issue:issue}}));
+ showCaptures(app);await tick();
+ assert.equal(app.get('original-retry').textContent,'Acknowledging the saved photo timed out. Will retry.');
+ assert.equal(app.get('original-retry').hidden,false);
+ assert.equal(app.get('error').hidden,true);
+ issue=null;await app.get('refresh').onclick();await tick();
+ assert.equal(app.get('original-retry').hidden,true);
+ assert.equal(app.get('original-retry').textContent,'');
+});
 test('stalled history does not hold back status rendering',async()=>{
  let finish;
  const app=fixture(url=>url.includes('capture-history')?new Promise(resolve=>finish=resolve):Promise.resolve(response(state)));
