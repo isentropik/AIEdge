@@ -179,6 +179,15 @@ function gallery(rows){
     body.append(stamp,received,meta,action);card.append(image,body);$('gallery').append(card);
   }
 }
+function renderOriginalRetry(issue){
+  const notice=$('original-retry');
+  const labels={queue_head:'Checking the original-photo queue',jpeg:'Downloading the full photo',
+    proof:'Downloading photo verification data',receipt_head:'Confirming delivery of the saved photo',
+    ack:'Acknowledging the saved photo'};
+  notice.textContent=issue?(labels[issue.operation]||'Processing the full photo')+
+    (issue.cause==='TimeoutError'?' timed out. Will retry.':' will retry.'):'';
+  notice.hidden=!issue;
+}
 function render(s){
   window.renderEventSelection?.(s.event_selection,s.configuration);
   renderConsumption(s.consumption);
@@ -190,6 +199,7 @@ function render(s){
   const cameraLabels={not_checked:'Waiting for camera check',checking:'Checking camera',ready:'Camera ready',busy:'Camera busy',camera_unavailable:'Camera unavailable',settings_unavailable:'Camera settings unavailable',startup_recovery:'Camera startup recovery',clock_unsynchronized:'Waiting for camera clock',demo_mode:'Camera in demo mode',unavailable:'Camera unreachable'};
   $('camera-status').textContent=s.capture_enabled?(cameraLabels[s.camera?.state]||'Waiting for camera check'):'Capture disabled';
   $('missed').textContent=s.missed_slots;$('received').textContent=date(s.latest?.received_at);
+  renderOriginalRetry(s.capture_recovery?.original_download_issue);
   $('storage-state').textContent=({ready:'Ready',low_space:'Low space',unavailable:'Unavailable'})[s.storage?.state]||'Unavailable';
   $('storage-free').textContent=Number.isFinite(s.storage?.free_bytes)?(s.storage.free_bytes/(1024**3)).toFixed(1)+' GiB':'—';
   $('capture-time').textContent=s.latest?'Captured '+date(s.latest.captured_at):'Waiting for the first image';
@@ -251,6 +261,7 @@ async function refreshStatus(){
       $('error').hidden=false;window.AIEdgeNotices?.sync();return;
     }
     window.AIEdgeFlow?.statusUnavailable();
+    renderOriginalRetry(null);
     renderConsumption({state:'unavailable',value:null});
     $('consumption-status').textContent='Status unavailable.';
     window.latestReading={state:'unavailable',value:null};

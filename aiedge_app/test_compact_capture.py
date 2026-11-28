@@ -7,6 +7,7 @@ import struct
 import threading
 import time
 import unittest
+import urllib.error
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
@@ -108,6 +109,65 @@ class CompactTests(unittest.TestCase):
                 restarted.idle(stop,110)
                 discover.assert_called_once()
 
+    def test_either_worker_clears_failure_on_empty_or_progress(self):
+        for worker in ('idle','settling'):
+            for progress in (False,True):
+                with self.subTest(worker=worker,progress=progress):
+                    stop=threading.Event()
+                    self.worker.original_pending=True
+                    self.worker.download_issue={'error':'TimeoutError'}
+                    def advance(deadline):
+                        stop.set()
+                        return progress
+                    with patch.object(self.worker,'download',side_effect=advance) as download:
+                        if worker=='idle':
+                            self.worker.idle(stop,time.monotonic()+3)
+                        else:
+                            self.worker._while_settling(stop,time.monotonic())
+                    download.assert_called_once()
+                    self.assertIsNone(self.worker.download_error)
+                    self.assertEqual(self.worker.original_pending,progress)
+
+    def test_request_failures_record_phase_identity_and_byte_offset(self):
+        src=q.digest(self.image)
+        row=(9,src,len(self.image),self.image[:1024],'a'*32+'-3e8',q.digest(self.data))
+        with self.store.connect() as db:
+            db.execute('INSERT INTO original_download VALUES(?,?,?,?,?,?,?)',(self.camera.origin,*row))
+        def fail(camera,path,**kw):
+            self.assertEqual(path,'/api/v1/original')
+            self.assertEqual(kw['headers']['X-AIEdge-Offset'],'1024')
+            kw['timing'].update(connected_at=1,headers_at=2)
+            raise TimeoutError()
+        with patch.object(q,'request',side_effect=fail),patch('lifecycle.lifecycle_event') as journal:
+            self.worker.idle(threading.Event(),time.monotonic()+3)
+        issue=self.worker.download_issue
+        self.assertEqual((issue['operation'],issue['offset'],issue['sequence'],issue['frame_id']),
+                         ('jpeg',1024,9,row[4]))
+        self.assertEqual((issue['phase'],issue['cause'],issue['worker']),('response_body','TimeoutError','idle'))
+        journal.assert_called_once_with('original_download_failure',**issue)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT length(body) FROM original_download').fetchone(),(1024,))
+
+    def test_unknown_queue_head_and_wrapped_connect_timeout(self):
+        with patch.object(q,'request',side_effect=urllib.error.URLError(TimeoutError())),patch('lifecycle.lifecycle_event',side_effect=BrokenPipeError):
+            self.worker._while_settling(threading.Event(),time.monotonic())
+        issue=self.worker.download_issue
+        self.assertEqual((issue['error'],issue['cause'],issue['phase']),('URLError','TimeoutError','connect'))
+        self.assertEqual((issue['operation'],issue['sequence'],issue['offset']),('queue_head',None,0))
+        self.assertEqual(issue['worker'],'settling')
+
+    def test_expired_original_window_never_dispatches_or_reports_a_network_timeout(self):
+        with patch.object(self.camera.opener,'open') as opened,patch('lifecycle.lifecycle_event') as journal:
+            with self.assertRaises(q.OriginalWindowEnded):
+                self.worker.download(time.monotonic()-1)
+            for worker in ('settling','idle'):
+                with patch.object(self.worker,'download',side_effect=q.OriginalWindowEnded):
+                    if worker=='settling':self.worker._while_settling(threading.Event(),time.monotonic())
+                    else:self.worker.idle(threading.Event(),time.monotonic()+3)
+            opened.assert_not_called()
+            journal.assert_not_called()
+            self.assertIsNone(self.worker.download_issue)
+
     def test_deferred_anchor_keeps_original_drain_available_on_a_slow_link(self):
         self.collect('deferred')
         self.assertTrue(self.worker.original_pending)
@@ -190,9 +250,15 @@ class CompactTests(unittest.TestCase):
             other=q.CompactCapture(self.store,self.camera,self.rec)
             with self.store.connect() as db:self.assertEqual(db.execute('SELECT length(body) FROM original_download').fetchone(),(1024,))
             for _ in range((len(self.image)-1)//1024):other.download(time.monotonic()+2)
-            with self.assertRaises(TimeoutError):other.download(time.monotonic()+2)
+            with patch('lifecycle.lifecycle_event') as journal:
+                other.idle(threading.Event(),time.monotonic()+3)
+            issue=other.download_issue
+            self.assertEqual((issue['operation'],issue['path'],issue['method'],issue['sequence']),
+                             ('ack','/api/v1/original/ack','POST',9))
+            journal.assert_called_once_with('original_download_failure',**issue)
             self.assertEqual(self.store.image(source),self.image)
-            other.download(time.monotonic()+2)
+            other._while_settling(threading.Event(),time.monotonic())
+            self.assertIsNone(other.download_error)
             self.assertEqual(state['posts'],1)
         self.assertTrue(self.rec.once())
         self.assertEqual(self.rec.stored_event(1,source,self.reader.pipeline_id)['decision']['requested_mode'],'FULL')
