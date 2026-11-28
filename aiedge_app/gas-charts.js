@@ -1,6 +1,7 @@
 (() => {
 'use strict';
 const $ = id => document.getElementById(id);
+const chartRelease = document.documentElement?.dataset?.chartRelease;
 const svgNS = 'http://www.w3.org/2000/svg';
 const number = new Intl.NumberFormat(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 function svg(tag, attrs = {}, text) {
@@ -706,17 +707,17 @@ function afterPaint(callback){
   requestAnimationFrame(()=>setTimeout(callback,0));
 }
 function savedKey(scale){
-  return 'aiedge-chart-v10:'+JSON.stringify([location.pathname,scale]);
+  return 'aiedge-chart-window:'+JSON.stringify([location.pathname,scale]);
 }
 function rememberWindow(current,scale,start,end){
   const data=current.data,profile=data.registerProfile;
-  if(!current.identity||!profile?.points.length)return;
+  if(!chartRelease||!current.identity||!profile?.points.length)return;
   const from=completedTick(start-1,current.zone,rateMinutes(scale));
   const between=p=>p[0]>=from&&p[0]<=end;
   const overlaps=p=>p[1]>from&&p[0]<=end;
   const points=profile.points.filter(between);
   if(!points.length)return;
-  const saved={identity:current.identity,end:data.end,close:end,start,scale,zone:data.zone,midnight:data.midnight,
+  const saved={release:chartRelease,identity:current.identity,end:data.end,close:end,start,scale,zone:data.zone,midnight:data.midnight,
     hours:data.hours.filter(q=>q.end>=from&&q.start<=end).map(({start,end,bounds})=>({start,end,bounds})),
     registerProfile:{points,openings:profile.openings,gaps:profile.gaps.filter(overlaps),
       modeled:profile.modeled.filter(overlaps),conflicts:profile.conflicts.filter(overlaps),
@@ -731,10 +732,10 @@ function rememberWindow(current,scale,start,end){
   try{sessionStorage.setItem(savedKey(scale),JSON.stringify(saved));}catch{}
 }
 function savedWindow(current,scale){
-  if(!current.identity)return null;
+  if(!chartRelease||!current.identity)return null;
   try{
     const saved=JSON.parse(sessionStorage.getItem(savedKey(scale)));
-    if(saved?.scale===scale&&saved.identity===current.identity&&saved.zone===current.zone&&saved.midnight===current.midnight&&
+    if(saved?.release===chartRelease&&saved.scale===scale&&saved.identity===current.identity&&saved.zone===current.zone&&saved.midnight===current.midnight&&
        saved.end<=current.end&&saved.close<=(scale==='today'?current.end:completedTick(current.end,current.zone,rateMinutes(scale)))&&
        current.end-saved.close<2*rateMinutes(scale)*60000&&
        saved.registerProfile?.points.length)return saved;

@@ -1,3 +1,7 @@
+## 0.2.0-dev154
+
+- Rebuild saved gas charts on the first load after an add-on update. Server and browser caches still work across restarts of the same release.
+
 ## 0.2.0-dev153
 
 - Recover an hourly rate from saved dial photos when Home Assistant history cannot bracket the hour. The replay checks published meter readings and stops at recorded capture gaps.

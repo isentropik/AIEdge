@@ -4,6 +4,7 @@ from datetime import datetime, time, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from functools import lru_cache
 from http.client import HTTPException
+from pathlib import Path
 import re
 import math
 import hashlib
@@ -17,6 +18,9 @@ from gas_trend import recorder
 from meter_history import millis
 
 HOUR = 3600000
+# The packaged manifest contains the add-on version. The page uses the same
+# identity for session previews as the server uses for its persisted chart.
+CHART_RELEASE = hashlib.sha256(Path(__file__).with_name('config.yaml').read_bytes()).hexdigest()
 CENT = Decimal('.01')
 DAILY = {'range_midpoint_v1', 'observed_increments', 'nominal_meter_movement_v1'}
 REGISTER = {'photo_anchored_fine_dial', 'minimum_supported_forward_movement', 'photo_register_hundreds'}
@@ -694,7 +698,6 @@ class ChartHours:
 
 class BackgroundCharts:
     """Prepare one shared chart when a published meter reading closes a ten-minute interval."""
-    CACHE_VERSION = 12
     def __init__(self, hours, mqtt, reading_format, path):
         self.hours = hours
         self.mqtt = mqtt
@@ -719,8 +722,8 @@ class BackgroundCharts:
             checksum, payload = raw.split(b'\n', 1)
             if hashlib.sha256(payload).hexdigest().encode() != checksum:
                 return
-            version, meter, daily, key, data = json.loads(payload)
-            if (version, meter, daily) != (self.CACHE_VERSION, self.hours.meter, self.hours.daily):
+            release, meter, daily, key, data = json.loads(payload)
+            if (release, meter, daily) != (CHART_RELEASE, self.hours.meter, self.hours.daily):
                 return
             if not key or not data['registerProfile']['points'] or data['missing']:
                 return
@@ -758,7 +761,7 @@ class BackgroundCharts:
         if self.stop.is_set() or data['missing'] or not data.get('registerProfile',{}).get('points'):
             return
         from setup_store import Setup
-        payload = json.dumps([self.CACHE_VERSION,self.hours.meter,self.hours.daily,key,data],
+        payload = json.dumps([CHART_RELEASE,self.hours.meter,self.hours.daily,key,data],
                              allow_nan=False,separators=(',',':')).encode()
         Setup._atomic(self.path, hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
         if data['registerProfile']['points'][-1][0] >= tick:
