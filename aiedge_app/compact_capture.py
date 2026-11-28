@@ -30,6 +30,9 @@ REPLAY_CHUNK = 2048
 REPLAY_IDLE_SECONDS = 2
 COMPACT_CYCLE_SECONDS = 30
 EMPTY_QUEUE_RECHECK_SECONDS = 60
+# Leave room for the camera to commit its queue cursor before replying.
+# Both the idle and light-settling workers can offer this within their existing limits.
+ACK_MIN_SECONDS = 1.25
 
 
 def digest(data):
@@ -143,6 +146,8 @@ def request(camera,path,*,headers=None,body=None,deadline,limit,timing=None):
     req.aiedge_deadline = deadline
     req.aiedge_timing = timing
     remaining = deadline-time.monotonic()
+    if path=='/api/v1/original/ack' and remaining<ACK_MIN_SECONDS:
+        raise OriginalWindowEnded()
     if remaining <= 0:
         if path in ('/api/v1/original','/api/v1/original/ack'):
             raise OriginalWindowEnded()
@@ -267,6 +272,7 @@ class CompactCapture:
         self.store,self.camera,self.recognition=store,camera,recognition
         self.force_anchor=True
         self.download_issue=None
+        self.confirmed_ack_head=None
         self.nominal_slot=None
         self.timing=None
         self.previous_exchange_seconds=0
@@ -418,11 +424,15 @@ class CompactCapture:
                 phase='http_response'
             elif 'headers_at' in timing:
                 phase='response_body'
+            elif 'request_sent_at' in timing:
+                phase='waiting_for_headers'
             elif 'connected_at' in timing:
-                phase='request_or_headers'
+                phase='before_request_sent'
             error.original_request=dict(operation=operation,method='POST' if body is not None else 'GET',path=path,
                 phase=phase,sequence=row[0] if row else None,frame_id=row[4] if row else None,offset=offset,
                 budget_ms=round(max(0,deadline-start)*1000),elapsed_ms=round((time.monotonic()-start)*1000))
+            for field in ('connected_at','request_sent_at','headers_at'):
+                if field in timing:error.original_request[field.removesuffix('_at')+'_ms']=round((timing[field]-start)*1000)
             for field in ('response_sequence','response_frame_id'):
                 if field in timing:error.original_request[field]=timing[field]
             if isinstance(error,urllib.error.HTTPError):error.original_request['http_status']=error.code
@@ -433,9 +443,13 @@ class CompactCapture:
         issue=dict(at=now(),worker=worker,error=type(error).__name__,cause=type(cause).__name__,
                    **getattr(error,'original_request',{'operation':'local'}))
         self.download_issue=issue
+        self._log_original('original_download_failure',**issue)
+
+    @staticmethod
+    def _log_original(event,**fields):
         from lifecycle import lifecycle_event
         try:
-            lifecycle_event('original_download_failure',**issue)
+            lifecycle_event(event,**fields)
         except OSError:
             pass  # A closed journal must not affect capture or retry.
 
@@ -517,6 +531,44 @@ class CompactCapture:
                            (camera,seq,frame,source,total,packet_sha,match[0] if match else None))
         return True
 
+    def _acknowledge_saved(self,row,deadline):
+        seq,source,size,_,frame,proof=row
+        identity=(seq,source,size,frame,proof)
+        observed_seq=None
+        if self.confirmed_ack_head!=identity:
+            self.confirmed_ack_head=None
+            headers,_=self._original_request('receipt_head',deadline,row,offset=0,headers={'X-AIEdge-Offset':'0'})
+            if headers is None:
+                outcome='queue_empty_before_post'
+            else:
+                number=camera_header(headers,'X-AIEdge-Sequence')
+                if not re.fullmatch('[1-9][0-9]{0,18}',number) or int(number)>=2**63:
+                    raise ValueError('original_head_sequence_invalid')
+                observed_seq=int(number)
+                if observed_seq==seq:
+                    if tuple(camera_header(headers,'X-AIEdge-'+k) for k in ('Original','Frame-Id','Proof'))!=(source,frame,proof):
+                        raise ValueError('original_head_identity_changed')
+                    self.confirmed_ack_head=identity
+                else:
+                    outcome='queue_head_changed_before_post'
+        if self.confirmed_ack_head==identity:
+            # The camera also compares seq and digest atomically before removal.
+            # Cache the head only across a pre-dispatch yield. Every attempted POST
+            # consumes this check, including timeouts, conflicts and malformed replies.
+            self.confirmed_ack_head=None
+            try:
+                _,reply=self._original_request('ack',deadline,row,body=f'{seq} {source} 0'.encode())
+            except OriginalWindowEnded:
+                self.confirmed_ack_head=identity
+                raise
+            if reply!=b'OK':raise ValueError('original_receipt_unconfirmed')
+            outcome='camera_replied_ok'
+            observed_seq=seq
+        with self.store.connect() as db:
+            db.execute('DELETE FROM original_download WHERE camera=? AND sequence=? AND sha=?',(self.camera.origin,seq,source))
+        self._log_original('original_ack_resolution',at=now(),sequence=seq,frame_id=frame,
+                           outcome=outcome,observed_sequence=observed_seq)
+
     def download(self,deadline):
         camera=self.camera.origin
         with self.store.connect() as db:
@@ -524,17 +576,8 @@ class CompactCapture:
                            (camera,)).fetchone()
         offset=len(row[3]) if row else 0
         if row and offset==row[2]:
-            if not self._receipt(row,deadline):
-                return True
-            # The file and identity-bound receipt survive a lost acknowledgement.
-            headers,_=self._original_request('receipt_head',deadline,row,offset=0,headers={'X-AIEdge-Offset':'0'})
-            if headers is not None and camera_header(headers,'X-AIEdge-Sequence')==str(row[0]):
-                if tuple(camera_header(headers,'X-AIEdge-'+k) for k in ('Original','Frame-Id','Proof'))!=(row[1],row[4],row[5]):
-                    raise ValueError('original_head_identity_changed')
-                _,reply=self._original_request('ack',deadline,row,body=f'{row[0]} {row[1]} 0'.encode())
-                if reply!=b'OK':raise ValueError('original_receipt_unconfirmed')
-            with self.store.connect() as db:
-                db.execute('DELETE FROM original_download WHERE camera=? AND sequence=? AND sha=?',(camera,*row[:2]))
+            if self._receipt(row,deadline):
+                self._acknowledge_saved(row,deadline)
             return True
         hdr={'X-AIEdge-Offset':str(offset)}
         if row:hdr['X-AIEdge-Original']=row[1]
@@ -574,7 +617,10 @@ class CompactCapture:
                     if not self._advance_original(min(due-.25,time.monotonic()+1.5)):
                         break
             except OriginalWindowEnded:
-                break
+                # The per-step allowance can expire well before lighting is due.
+                # Start a fresh step if the already-checked ACK still fits.
+                if self.confirmed_ack_head is None or due-.25-time.monotonic()<ACK_MIN_SECONDS:
+                    break
             except (OSError,ValueError,sqlite3.Error,http.client.HTTPException) as error:
                 self._download_failed(error,'idle')
                 break

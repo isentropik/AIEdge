@@ -1,3 +1,8 @@
+## 0.2.0-dev158
+
+- Defer a saved-photo acknowledgement until at least 1.25 seconds remain in the download window. Keep the verified queue identity across a deferral and check the head again after any uncertain POST or add-on restart.
+- Record how each saved-photo acknowledgement was resolved and whether a failed request finished sending before its response timed out.
+
 ## 0.2.0-dev157
 
 - Clear the original-download warning on verified progress or a confirmed empty queue in either download worker. Keep capture failures separate.

@@ -78,7 +78,9 @@ class DeadlineStream:
     def __getattr__(self,name):return getattr(self.stream,name)
 
 class DeadlineResponse(http.client.HTTPResponse):
-    def __init__(self,sock,*args,deadline,**kwargs):
+    def __init__(self,sock,*args,deadline,timing=None,**kwargs):
+        # http.client constructs the response after sending the request body.
+        if timing is not None:timing['request_sent_at']=time.monotonic()
         super().__init__(sock,*args,**kwargs)
         self.fp=DeadlineStream(self.fp,sock,deadline)
 
@@ -89,13 +91,13 @@ class DeadlineConnection(http.client.HTTPConnection):
     def __init__(self,*args,deadline,timing=None,**kwargs):
         super().__init__(*args,**kwargs)
         self._create_connection=functools.partial(camera_connection,deadline=deadline,timing=timing)
-        self.response_class=functools.partial(DeadlineResponse,deadline=deadline)
+        self.response_class=functools.partial(DeadlineResponse,deadline=deadline,timing=timing)
 
 class DeadlineTLSConnection(http.client.HTTPSConnection):
     def __init__(self,*args,deadline,timing=None,**kwargs):
         super().__init__(*args,**kwargs)
         self._create_connection=functools.partial(camera_connection,deadline=deadline,timing=timing)
-        self.response_class=functools.partial(DeadlineResponse,deadline=deadline)
+        self.response_class=functools.partial(DeadlineResponse,deadline=deadline,timing=timing)
 
 class DeadlineHTTPHandler(urllib.request.HTTPHandler):
     def http_open(self,request):

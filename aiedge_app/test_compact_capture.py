@@ -231,6 +231,87 @@ class CompactTests(unittest.TestCase):
             self.assertEqual(db.execute('SELECT count(*) FROM original_receipts').fetchone(),(0,))
         with self.assertRaises(FileNotFoundError):self.store.image(source)
 
+    def test_ack_yields_before_post_and_rechecks_uncertain_post_or_restart(self):
+        self.collect('1')
+        source=q.digest(self.image)
+        frame='a'*32+'-3e8'
+        proof=q.digest(self.data)
+        row=(9,source,len(self.image),self.image,frame,proof)
+        with self.store.connect() as db:
+            db.execute('INSERT INTO original_download VALUES(?,?,?,?,?,?,?)',(self.camera.origin,*row))
+        head=headers({'X-AIEdge-Sequence':9,'X-AIEdge-Original':source,'X-AIEdge-Frame-Id':frame,'X-AIEdge-Proof':proof})
+        real_request=q.request
+        calls=[]
+        def fetch(camera,path,**kw):
+            if path.endswith('/ack'):
+                return real_request(camera,path,**kw)
+            calls.append('head')
+            return head,b'x'
+        with patch.object(q,'request',side_effect=fetch),patch.object(self.camera.opener,'open',side_effect=TimeoutError) as opened:
+            with self.assertRaises(q.OriginalWindowEnded):
+                self.worker.download(time.monotonic()+.745)
+            opened.assert_not_called()
+            self.assertEqual(self.store.image(source),self.image)
+            self.assertEqual(calls,['head'])
+            # A process restart must obtain a fresh full identity check.
+            other=q.CompactCapture(self.store,self.camera,self.rec)
+            with self.assertRaises(q.OriginalWindowEnded):
+                other.download(time.monotonic()+.745)
+            self.assertEqual(calls,['head','head'])
+            with self.assertRaises(TimeoutError) as failure:
+                other.download(time.monotonic()+1.5)
+            self.assertNotIsInstance(failure.exception,q.OriginalWindowEnded)
+            opened.assert_called_once()
+            self.assertEqual(calls,['head','head'])
+            # The timeout used up the confirmation. Identity changed at the head.
+            head.replace_header('X-AIEdge-Proof','b'*64)
+            with self.assertRaisesRegex(ValueError,'original_head_identity_changed'):
+                other.download(time.monotonic()+1.5)
+            opened.assert_called_once()
+            self.assertEqual(calls,['head','head','head'])
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT sequence FROM original_download').fetchall(),[(9,)])
+
+    def test_short_idle_step_can_use_remaining_slack_but_never_the_next_capture(self):
+        for due,expected in ((105,[101.5,102.255]),(102,[101.5])):
+            clock=[100.0]
+            deadlines=[]
+            def advance(deadline):
+                deadlines.append(deadline)
+                if len(deadlines)==1:
+                    clock[0]+=.755
+                    self.worker.confirmed_ack_head=(9,)
+                    raise q.OriginalWindowEnded()
+                return False
+            with patch.object(q.time,'monotonic',side_effect=lambda:clock[0]),patch.object(self.worker,'_advance_original',side_effect=advance):
+                self.worker.idle(threading.Event(),due)
+            self.assertEqual(len(deadlines),len(expected))
+            for actual,want in zip(deadlines,expected):
+                self.assertAlmostEqual(actual,want)
+
+    def test_ack_head_change_while_deferred_does_not_remove_new_photo(self):
+        self.collect('1')
+        src=q.digest(self.image);frame='a'*32+'-3e8';proof=q.digest(self.data)
+        row=(9,src,len(self.image),self.image,frame,proof)
+        with self.store.connect() as db:
+            db.execute('INSERT INTO original_download VALUES(?,?,?,?,?,?,?)',(self.camera.origin,*row))
+        first=headers({'X-AIEdge-Sequence':9,'X-AIEdge-Original':src,'X-AIEdge-Frame-Id':frame,'X-AIEdge-Proof':proof})
+        conflict=urllib.error.HTTPError(self.camera.origin,409,'wrong queue head',{},None)
+        with patch.object(self.worker,'_original_request',side_effect=[
+            (first,b'x'),q.OriginalWindowEnded(),conflict,(headers({'X-AIEdge-Sequence':10}),b'y')
+        ]) as request,patch('lifecycle.lifecycle_event') as journal:
+            with self.assertRaises(q.OriginalWindowEnded):self.worker.download(time.monotonic()+.745)
+            with self.assertRaises(urllib.error.HTTPError):self.worker.download(time.monotonic()+2)
+            self.worker.download(time.monotonic()+2)
+            self.assertEqual([c.args[0] for c in request.call_args_list],['receipt_head','ack','ack','receipt_head'])
+            self.assertEqual(request.call_args_list[2].kwargs['body'],f'9 {src} 0'.encode())
+            self.assertEqual(journal.call_args.args,('original_ack_resolution',))
+            self.assertEqual(journal.call_args.kwargs['outcome'],'queue_head_changed_before_post')
+            self.assertEqual(journal.call_args.kwargs['observed_sequence'],10)
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT seq FROM original_receipts').fetchall(),[(9,)])
+            self.assertIsNone(db.execute('SELECT 1 FROM original_download').fetchone())
+
     def test_restart_mid_original_and_ack_loss(self):
         self.collect('1')
         self.assertFalse(self.rec.once())  # Native fine observation is already committed.
