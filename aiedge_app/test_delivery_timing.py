@@ -56,6 +56,15 @@ class DeliveryTimingTests(unittest.TestCase):
         self.assertEqual((terminal['outcome'],terminal['event_id']),('committed',1))
     def test_scheduler_exact_deadline_does_not_count_overrun(self):
         starts,_,r,_=self.scheduled([6,6,6]);self.assertEqual(starts,[10,16,22]);self.assertEqual(r['schedule']['late_cycles'],0)
+    def test_overrun_journal_identifies_only_late_attempt_and_capture_survives_log_error(self):
+        with patch('lifecycle.lifecycle_event',side_effect=BrokenPipeError) as journal:
+            _,_,recovery,status=self.scheduled([6.86,3,3])
+        journal.assert_called_once()
+        args,fields=journal.call_args
+        self.assertEqual(args,('capture_overrun',))
+        self.assertEqual(fields['attempt_id'],recovery['schedule']['recent_overruns'][0]['attempt_id'])
+        self.assertEqual((fields['duration_s'],fields['missed_nominal_slots'],status['captures']),(6.86,1,3))
+        self.assertIn('readiness_s',fields)
     def test_scheduler_reanchors_after_late_wakeup(self):
         starts,_,_,_=self.scheduled([3,3,3],oversleep=.7)
         for a,b in zip(starts,starts[1:]):self.assertAlmostEqual(b-a,6.7)

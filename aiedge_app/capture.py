@@ -392,6 +392,7 @@ class Collector:
     def __init__(self,store,camera,interval,*,recovery_floor=1):
         self.store,self.camera,self.interval=store,camera,interval;self.stop=threading.Event();self.missed_slots=0;self.last_error=None;self.camera_state={'state':'not_checked'}
         self.schedule_lock=threading.Lock();self.late_cycles=0;self.overruns=[];self.last_cycle_attempt=None
+        self.cycle_phases={}
         self.control_lock=threading.RLock();self.shutdown=threading.Event();self.continuation_context=None
         if type(recovery_floor) is not int or recovery_floor<1:raise ValueError('invalid_recovery_floor')
         self.recovery_floor=recovery_floor;self.recovery_state='ready'
@@ -545,6 +546,7 @@ class Collector:
                 return
             # Only an actual ready response can admit the capture request.
             self.camera_state={'state':'checking','checked_at':now()}
+            ready_started=time.monotonic()
             try:
                 with self.store.performance.measure('camera_readiness'):
                     scheduled=getattr(self.camera,'scheduled_readiness',None)
@@ -553,6 +555,9 @@ class Collector:
                 self.camera_state={'state':'unavailable','checked_at':now()}
                 retry_readiness=isinstance(error,ReadinessTransportError)
                 raise
+            finally:
+                ready_elapsed=time.monotonic()-ready_started
+                self.cycle_phases['readiness_s']=round(ready_elapsed,3)
             self.camera_state=dict(readiness,checked_at=now())
             state=readiness.get('state')
             if state!='ready':
@@ -571,7 +576,10 @@ class Collector:
             self.store.active_capture_attempt=attempt
             compact=getattr(self,'compact',None)
             if compact and compact.available(readiness):
-                added=compact.collect(request_started)
+                from camera_status import FAST_HEADER_SECONDS
+                self.cycle_phases['admission_s']=round(time.monotonic()-ready_started-ready_elapsed,3)
+                added=compact.collect(request_started,reserve_link=ready_elapsed>=FAST_HEADER_SECONDS,
+                                      interval=self.interval,phases=self.cycle_phases)
             else:
                 blob,headers=self.camera.capture()
                 added=self.store.add(self.camera.origin,blob,headers,request_started=request_started)
@@ -727,6 +735,8 @@ class Collector:
             if self.transfer_attempt and self.transfer_not_before>time.monotonic():
                 if self.shutdown.wait(self.transfer_not_before-time.monotonic()):break
             started=time.monotonic()
+            self.cycle_phases={}
+            self.last_cycle_attempt=None
             compact=getattr(self,'compact',None)
             if compact:
                 from compact_capture import LIGHT_SETTLE_SECONDS
@@ -745,6 +755,12 @@ class Collector:
                     self.overruns.append({'cycle':self.late_cycles,'attempt_id':self.last_cycle_attempt,
                                           'duration_seconds':current-started,'missed_nominal_slots':missed})
                     self.overruns=self.overruns[-10:]
+                from lifecycle import lifecycle_event
+                try:
+                    lifecycle_event('capture_overrun',attempt_id=self.last_cycle_attempt,
+                                    duration_s=round(current-started,3),missed_nominal_slots=missed,**self.cycle_phases)
+                except OSError:
+                    pass  # A closed journal stream must not interrupt scheduled capture.
                 due=current
             due=max(due,started+self.readiness_retry_delay,self.transfer_not_before)
             # Re-anchor on the actual start, so a late cycle cannot cause a burst.

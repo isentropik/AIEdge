@@ -29,6 +29,7 @@ ORIGINAL_LIMIT = 262144
 REPLAY_CHUNK = 2048
 REPLAY_IDLE_SECONDS = 2
 COMPACT_CYCLE_SECONDS = 30
+EMPTY_QUEUE_RECHECK_SECONDS = 60
 
 
 def digest(data):
@@ -128,7 +129,7 @@ class PartialCompact(BodyTimeout):
         self.prefix = prefix
 
 
-def request(camera,path,*,headers=None,body=None,deadline,limit):
+def request(camera,path,*,headers=None,body=None,deadline,limit,timing=None):
     values = dict(headers or {})
     if camera.token:
         values['Authorization']='Bearer '+camera.token
@@ -136,10 +137,13 @@ def request(camera,path,*,headers=None,body=None,deadline,limit):
         values['Authorization']='Basic '+camera.basic
     req = urllib.request.Request(camera.origin+path,headers=values,data=body)
     req.aiedge_deadline = deadline
+    req.aiedge_timing = timing
     remaining = deadline-time.monotonic()
     if remaining <= 0:
         raise TimeoutError('compact_deadline')
     with camera.opener.open(req,timeout=remaining) as reply:
+        if timing is not None:
+            timing['headers_at']=time.monotonic()
         if reply.status == 204:
             return None,None
         n = camera_header(reply.headers,'Content-Length')
@@ -251,6 +255,9 @@ class CompactCapture:
         self.download_error=None
         self.nominal_slot=None
         self.timing=None
+        self.previous_exchange_seconds=0
+        self.queue_recheck_at=0
+        self.anchor_deferred=False
         self.original_pending=False
         with store.connect() as db:
             initialize(db)
@@ -272,25 +279,30 @@ class CompactCapture:
             try:
                 if not self.download(end):
                     self.original_pending=False
+                    self.queue_recheck_at=time.monotonic()+EMPTY_QUEUE_RECHECK_SECONDS
                     return
             except (OSError,ValueError,sqlite3.Error,http.client.HTTPException) as error:
                 self.download_error=type(error).__name__
                 return
 
-    def collect(self,started):
+    def collect(self,started,*,reserve_link=False,interval=None,phases=None):
         from capture_recovery import RequestTimeout,FreshnessRejected,TransientHTTPResponse,TRANSIENT_HTTP
         self.camera.require_capture()
         posted=time.monotonic()
         cancel=threading.Event()
         drain=None
         resumed_bytes=0
-        if self.original_pending:
+        reserve_link = reserve_link or (interval is not None and self.previous_exchange_seconds>=interval/2)
+        if self.original_pending and (not reserve_link or self.anchor_deferred):
             drain=threading.Thread(target=self._while_settling,args=(cancel,posted),name='aiedge-original-chunk')
             drain.start()
+        transport={}
+        if phases is not None:
+            phases['concurrent_original_worker']=drain is not None
         try:
             headers,data=request(self.camera,'/api/v1/compact',body=b'{}',
                 headers={'Content-Type':'application/json','X-AIEdge-Anchor':str(int(self.force_anchor))},
-                deadline=time.monotonic()+20,limit=PACKET_LIMIT)
+                deadline=time.monotonic()+20,limit=PACKET_LIMIT,timing=transport)
         except PartialCompact as partial:
             data = resume_compact(self.camera, partial, posted + COMPACT_CYCLE_SECONDS)
             headers = partial.headers
@@ -310,8 +322,19 @@ class CompactCapture:
         except (TimeoutError,ConnectionError,http.client.IncompleteRead) as e:
             raise RequestTimeout(reset=isinstance(e,ConnectionError)) from e
         finally:
+            packet_end=time.monotonic()
+            self.previous_exchange_seconds=packet_end-posted
             cancel.set()
             if drain is not None:drain.join()
+            joined=time.monotonic()
+            if phases is not None:
+                phases['compact_exchange_s']=round(packet_end-posted,3)
+                phases['original_join_s']=round(joined-packet_end,3)
+                if 'connected_at' in transport:
+                    phases['compact_tcp_ready_s']=round(transport['connected_at']-posted,3)
+                if 'headers_at' in transport:
+                    phases['compact_headers_s']=round(transport['headers_at']-posted,3)
+                    phases['compact_body_including_replay_s']=round(packet_end-transport['headers_at'],3)
         if headers is None or camera_header(headers,'Content-Type')!='application/x-aiedge-q25':
             raise ValueError('compact_response_type')
         anchor=camera_header(headers,'X-AIEdge-Anchor')
@@ -327,6 +350,7 @@ class CompactCapture:
             m,canvas=decode(data,packet_sha,reader=reader,fine_index=index)
             source=m['source_sha256']
             result=fine_read(reader,canvas,index,source,packet_sha)
+        recognized=time.monotonic()
         encoded=json.dumps(result,sort_keys=True,separators=(',',':'),allow_nan=False)
         stamp=datetime.fromisoformat(m['captured_at']).astimezone(timezone.utc).isoformat()
         key=(self.camera.origin,m['frame_id'])
@@ -342,13 +366,18 @@ class CompactCapture:
                        int(anchor=='1'),reader.pipeline_id,index,encoded,digest(encoded.encode())))
         self.store.performance.admit(eid,source,started)
         verified=time.monotonic()
+        if phases is not None:
+            phases.update(packet_bytes=len(data),replayed_bytes=resumed_bytes,
+                          join_end_to_recognition_s=round(recognized-joined,3),
+                          recognition_end_to_store_s=round(verified-recognized,3))
         self.timing={'request_to_observation_seconds':round(verified-posted,3),
                      'scheduled_slot_to_observation_seconds':round(verified-self.nominal_slot,3) if self.nominal_slot is not None else None,
                      'observed':result['state']=='estimated','original_retained':anchor=='1',
                      'compact_replay_available': replay_available}
         if resumed_bytes:
             self.timing['compact_bytes_recovered'] = resumed_bytes
-        self.original_pending=self.original_pending or anchor=='1'
+        self.anchor_deferred=anchor=='deferred'
+        self.original_pending=self.original_pending or anchor!='0'
         self.force_anchor=anchor=='deferred' or result['state']!='estimated'
         return True
 
@@ -473,11 +502,14 @@ class CompactCapture:
 
     def idle(self,stop,due):
         # Acquisition and repair share one collector. Never start a chunk in the next exposure slot.
+        if not self.original_pending and time.monotonic()<self.queue_recheck_at:
+            return
         while not stop.is_set() and due-time.monotonic()>1.25:
             try:
                 with self.camera.operation():
                     if not self.download(min(due-.25,time.monotonic()+1.5)):
                         self.original_pending=False
+                        self.queue_recheck_at=time.monotonic()+EMPTY_QUEUE_RECHECK_SECONDS
                         break
                     self.original_pending=True
                 self.download_error=None

@@ -156,9 +156,11 @@ class TransportTests(unittest.TestCase):
 
     def test_plain_and_tls_connections_use_the_same_socket_admission(self):
         for kind in (camera_transport.DeadlineConnection,camera_transport.DeadlineTLSConnection):
-            connection=kind('meter',deadline=123)
-            self.assertIs(connection._create_connection.func,camera_transport.camera_connection)
-            self.assertEqual(connection._create_connection.keywords,{'deadline':123})
+            for timing in (None,{}):
+                connection=kind('meter',deadline=123,timing=timing)
+                self.assertIs(connection._create_connection.func,camera_transport.camera_connection)
+                self.assertEqual(connection._create_connection.keywords['deadline'],123)
+                self.assertIs(connection._create_connection.keywords['timing'],timing)
 
     def test_body_pause_over_five_seconds_still_within_total_deadline(self):
         with fixture('delayed_body') as url:
