@@ -334,16 +334,17 @@ test('other meters use full status and a switch back to gas re-enables overview 
  assert.deepEqual(calls,['api/overview']);
 });
 
-function gasOverview(trend, date=Date) {
+function gasOverview(trend, date=Date, {release,storage}={}) {
  const elements = new Map();
  const get = id => {
    if (!elements.has(id)) elements.set(id, new Element());
    return elements.get(id);
  };
  get('usage-period').value='today';
- const document = {getElementById:get, createElement:()=>new Element(),createElementNS:()=>new Element()};
+ const document = {getElementById:get, createElement:()=>new Element(),createElementNS:()=>new Element(),
+                   documentElement:{dataset:{chartRelease:release}}};
  const window = {addEventListener(){}};
- const context={document,window,location:{hash:''},Intl,Date:date};
+ const context={document,window,location:{hash:'',pathname:'/'},sessionStorage:storage,Intl,Date:date};
  if(trend){
   for(const id of ['day-curve','usage-period','gas-previous']){
    get(id).clientWidth=500;
@@ -356,6 +357,21 @@ function gasOverview(trend, date=Date) {
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'integration.js'),'utf8'),context);
  return {get,charts:window.AIEdgeCharts,render:(usage,metadata={})=>window.AIEdgeIntegration.render({mqtt:{usage,...metadata}})};
 }
+
+test('first load only reuses a browser preview from the installed release',async()=>{
+ const end=Date.UTC(2026,10,26,13), stamp=new Date(end).toISOString();
+ const saved={identity:'meter',zone:'UTC',midnight:Date.UTC(2026,10,26),scale:'today',end,close:end,
+   registerProfile:{points:[[end,1,1,1]]}};
+ for(const release of [undefined,'old','installed']){
+   const calls=[];
+   const storage={getItem:key=>key.startsWith('aiedge-chart-window:')?JSON.stringify({...saved,release}):null};
+   const view=gasOverview(url=>{calls.push(url);return new Promise(()=>{});},Date,{release:'installed',storage});
+   view.charts.setCalendar('UTC',stamp,'meter');
+   await tick();
+   assert.equal(calls.length,1);
+   assert.equal(calls[0],release==='installed'?'api/chart-hours?end='+end+'&prepared=1':'api/chart-window?end='+end+'&window=today');
+ }
+});
 
 function ribbonSides(d){
  const sides=[[],[]];let side=0,last;

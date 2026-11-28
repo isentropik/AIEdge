@@ -455,12 +455,20 @@ class ChartHoursTests(unittest.TestCase):
             import json
             original=path.read_bytes()
             prior=json.loads(original.split(b'\n',1)[1])
-            prior[0]=5
-            payload=json.dumps(prior).encode()
-            path.write_bytes(hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
-            clean=ChartHours(self.meter,self.daily,offline)
-            BackgroundCharts(clean,mqtt,fmt,path).load()
-            self.assertIsNone(clean.last_profile)
+            from chart_hours import CHART_RELEASE
+            self.assertEqual(prior[0],CHART_RELEASE)
+            for release in (12, 'different-release'):
+                with self.subTest(release=release):
+                    prior[0]=release
+                    payload=json.dumps(prior).encode()
+                    path.write_bytes(hashlib.sha256(payload).hexdigest().encode()+b'\n'+payload)
+                    fetch_on_upgrade=Mock(wraps=fetch)
+                    clean=ChartHours(self.meter,self.daily,fetch_on_upgrade)
+                    BackgroundCharts(clean,mqtt,fmt,path).load()
+                    self.assertIsNone(clean.last_profile)
+                    first=clean.prepared(stamp+5000,'UTC',usage,doc,{})
+                    self.assertEqual(first['end'],stamp+5000)
+                    self.assertTrue(fetch_on_upgrade.called)
             path.write_bytes(original[:-4])
             clean=ChartHours(self.meter,self.daily,offline)
             BackgroundCharts(clean,mqtt,fmt,path).load()
