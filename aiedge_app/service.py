@@ -411,8 +411,12 @@ def create_reader(library,models,profile=None,calibration_file=None):
 def run_service(stop_signals):
     parser=argparse.ArgumentParser();parser.add_argument('--data',default='./data');parser.add_argument('--bind',default='127.0.0.1');parser.add_argument('--port',type=int,default=8099);parser.add_argument('--ingress',action='store_true');parser.add_argument('--native-library');parser.add_argument('--accounting-library');parser.add_argument('--models');group=parser.add_mutually_exclusive_group();group.add_argument('--calibration-profile');group.add_argument('--calibration-file')
     parser.add_argument('--event-selection-config',help='Explicit development opt-in; never enables capture or publication.')
+    parser.add_argument('--supervised-data',action='store_true',help='Use Supervisor backup and restore layout.')
     args=parser.parse_args()
     options,configuration=load_options(args.data)
+    if args.supervised_data:
+        from hot_backup import startup
+        args.data=str(startup(Path(args.data).absolute()))
     stop_signals.checkpoint()
     interval, options = split_capture_schedule(options)
     enabled = options['capture_enabled']

@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir --only-binary=:all: --require-hashes -r requireme
 COPY --from=native-build /build/libaiedge_native.so /build/libaiedge_accounting.so ./
 COPY assets ./assets
 COPY config.yaml ./
+COPY hot_backup.py ./
 COPY camera_control_snapshot.py camera_auto.py auto_capture.py auto_preview.py ./
 COPY retention_settings.py published_usage.py resumed_usage.py resumed_evidence.py photo_forward.py ha_gas_sensors.py nominal_daily.py nominal_motion.py optical_daily.py nominal_register.py absolute_motion.py photo_register.py dial_travel.py integration.js ./
 COPY capture_trial.py capture-trial.js ./
@@ -32,7 +33,7 @@ COPY gas_trend.py chart_coverage.py tracked_bounds.py chart_hours.py chart_gap_f
 COPY archive.py archive_copy.py archive.js camera_image.py camera-image.js camera_lighting.py camera-lighting.js camera_setup.py setup-flow.js parity.css service.py http_server.py durable_file.py diagnostics.py performance.py lifecycle.py options.py capture.py capture_recovery.py capture_clock.py camera_transport.py camera_status.py accounting_native.py consumption.py temporal_reading.py recognition.py review_store.py reader.py reading_format.py reading_bounds.py mqtt_output.py overview_history.py mqtt_consumption.py native.py calibration.py calibration_builder.py marker_suggestions.py setup_store.py saved_file.py editor-geometry.js reference-image.js setup.js reading-format.js dashboard.js capture-review.js app.css index.html favicon.svg package_assets.py verify_runtime.py ./
 RUN python verify_runtime.py --library /opt/aiedge/libaiedge_native.so --accounting-library /opt/aiedge/libaiedge_accounting.so
 ENV PYTHONUNBUFFERED=1
-CMD ["python", "service.py", "--data", "/data", "--bind", "0.0.0.0", "--ingress", "--native-library", "/opt/aiedge/libaiedge_native.so", "--accounting-library", "/opt/aiedge/libaiedge_accounting.so", "--models", "/opt/aiedge/assets/models"]
+CMD ["python", "service.py", "--supervised-data", "--data", "/data", "--bind", "0.0.0.0", "--ingress", "--native-library", "/opt/aiedge/libaiedge_native.so", "--accounting-library", "/opt/aiedge/libaiedge_accounting.so", "--models", "/opt/aiedge/assets/models"]
 
 
 

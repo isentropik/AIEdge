@@ -1,3 +1,7 @@
+## 0.2.0-dev159
+
+- Keep scheduled capture running during Supervisor backups. Each hot backup includes a verified snapshot of the capture ledger, meter and archive checkpoints, saved setup, and photo evidence.
+
 ## 0.2.0-dev158
 
 - Defer a saved-photo acknowledgement until at least 1.25 seconds remain in the download window. Keep the verified queue identity across a deferral and check the head again after any uncertain POST or add-on restart.
