@@ -570,8 +570,10 @@ class Collector:
                 raise ValueError(code)
             request_started=self.store.performance.clock()
             if self.shutdown.is_set():return
+            context_started=time.monotonic()
             if self.continuation_context is not None:context=self.continuation_context()
-            attempt,after=capture_recovery.begin(self.store,self.recovery_floor)
+            self.cycle_phases['capture_context_s']=round(time.monotonic()-context_started,3)
+            attempt,after=capture_recovery.begin(self.store,self.recovery_floor,self.cycle_phases)
             self.last_cycle_attempt=attempt
             self.store.active_capture_attempt=attempt
             compact=getattr(self,'compact',None)

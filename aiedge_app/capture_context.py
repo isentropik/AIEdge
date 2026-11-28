@@ -1,5 +1,6 @@
 """Identity of the capture operation used to review a missing photo."""
 import hashlib
+from contextlib import nullcontext
 from pathlib import Path
 
 from capture_recovery import digest
@@ -7,10 +8,14 @@ from capture_recovery import digest
 
 def capture_trial_context(setup, recognition, reading_format):
     calibration = setup.status()
-    with recognition.lock:
-        reader = recognition.reader
+    fixed_pipeline = getattr(recognition,'observation_pipeline_id',None)
+    # Event mode fixes the pipeline for the lifetime of the context. In mutable
+    # mode, calibration activation and this read still share the reader lock.
+    with nullcontext() if fixed_pipeline is not None else recognition.lock:
+        pipeline = fixed_pipeline if fixed_pipeline is not None else (
+            recognition.reader.pipeline_id if recognition.reader else None)
         context = dict(calibration_revision=calibration.get('revision'),
-                       pipeline_id=reader.pipeline_id if reader else None,
+                       pipeline_id=pipeline,
                        format_revision=reading_format.status()['revision'])
         if getattr(recognition, 'observation_context', None):
             context['observation_context'] = recognition.observation_context

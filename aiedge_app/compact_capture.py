@@ -144,6 +144,7 @@ def request(camera,path,*,headers=None,body=None,deadline,limit,timing=None):
     with camera.opener.open(req,timeout=remaining) as reply:
         if timing is not None:
             timing['headers_at']=time.monotonic()
+            timing['headers_utc']=now()
         if reply.status == 204:
             return None,None
         n = camera_header(reply.headers,'Content-Length')
@@ -370,6 +371,9 @@ class CompactCapture:
             phases.update(packet_bytes=len(data),replayed_bytes=resumed_bytes,
                           join_end_to_recognition_s=round(recognized-joined,3),
                           recognition_end_to_store_s=round(verified-recognized,3))
+            phases.update(event_id=eid,exposure_utc=stamp,original_retained=anchor=='1')
+            if 'headers_utc' in transport:
+                phases['compact_headers_utc']=transport['headers_utc']
         self.timing={'request_to_observation_seconds':round(verified-posted,3),
                      'scheduled_slot_to_observation_seconds':round(verified-self.nominal_slot,3) if self.nominal_slot is not None else None,
                      'observed':result['state']=='estimated','original_retained':anchor=='1',

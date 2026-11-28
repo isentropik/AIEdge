@@ -1,8 +1,11 @@
 """Fake reader, invented capture bytes/clocks and SQLite, never real inference."""
 import copy,hashlib,json,tempfile,unittest
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 from datetime import datetime,timedelta,timezone
 from unittest.mock import patch
 from capture import Store
+from capture_context import capture_trial_context
 from event_recognition import EventRecognition
 from event_selection import encoded,digest
 
@@ -81,6 +84,13 @@ class EventRecognitionTests(unittest.TestCase):
     def test_getter_while_recognition_lock_held_does_not_deadlock(self):
         e,s,_=self.complete(1000000)
         with self.worker.lock:self.assertIsNotNone(self.worker.accounting_result(e,s,PIPELINE))
+    def test_capture_identity_is_available_during_event_inference(self):
+        calibration=SimpleNamespace(status=lambda:{'revision':'calibration'})
+        reading_format=SimpleNamespace(status=lambda:{'revision':'current-format'})
+        with ThreadPoolExecutor(max_workers=1) as executor, self.worker.lock:
+            identity=executor.submit(capture_trial_context,calibration,self.worker,reading_format).result(timeout=3)
+        self.assertEqual(identity,{'calibration_revision':'calibration','pipeline_id':PIPELINE,
+                                   'format_revision':'current-format','observation_context':self.worker.observation_context})
     def test_restart_adopts_request_after_cache_commit_then_next_new_full(self):
         e,s=self.capture(1000000);original=self.worker._request;count=[0]
         def fail_final(db,event):

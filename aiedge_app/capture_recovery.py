@@ -5,7 +5,7 @@ Unclassified attempts hold; qualified startup interruptions retain unknown gaps.
 Typed response timeouts may
 resume a readiness-gated recovery with the original unknown gap intact.
 """
-import hashlib,json,re,sqlite3,uuid
+import hashlib,json,re,sqlite3,time,uuid
 from datetime import datetime,timezone
 
 # Only consecutive acknowledged freshness rejections consume this allowance.
@@ -172,6 +172,8 @@ def initialize(db):
     db.execute('CREATE TABLE IF NOT EXISTS capture_failure_boundaries(failure_id INTEGER PRIMARY KEY,after_event_id INTEGER NOT NULL,error TEXT NOT NULL,outcome TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS continuous_capture_attempts(attempt_id TEXT PRIMARY KEY,first_event INTEGER NOT NULL,after_event_id INTEGER NOT NULL,started_at TEXT NOT NULL)')
     db.execute('CREATE TABLE IF NOT EXISTS continuous_capture_outcomes(attempt_id TEXT PRIMARY KEY,outcome TEXT NOT NULL,event_id INTEGER,error TEXT,finished_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
+    db.execute("CREATE INDEX IF NOT EXISTS capture_exception_outcomes ON continuous_capture_outcomes(outcome,attempt_id) WHERE outcome='unknown' OR outcome='rejected'")
+    db.execute('CREATE INDEX IF NOT EXISTS capture_boundaries_after_event ON capture_failure_boundaries(after_event_id)')
     db.execute('CREATE TABLE IF NOT EXISTS capture_continuations(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,review_json TEXT NOT NULL,readiness_json TEXT NOT NULL,approval_reference TEXT NOT NULL,accepted_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS storage_continuations(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,review_json TEXT NOT NULL,readiness_json TEXT NOT NULL,approval_reference TEXT NOT NULL,accepted_at TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
     db.execute('CREATE TABLE IF NOT EXISTS capture_request_timeouts(attempt_id TEXT PRIMARY KEY,binding_sha256 TEXT NOT NULL,context_sha256 TEXT NOT NULL,FOREIGN KEY(attempt_id) REFERENCES continuous_capture_attempts(attempt_id))')
@@ -257,20 +259,35 @@ def rejection_streak(db,first,accepted=None):
             return count,'capture_recovery_ledger_invalid'
     return count,None
 
-def readiness(db,first):
-    unknown=unresolved(db)
-    count=db.execute("SELECT COUNT(*) FROM continuous_capture_attempts a JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.first_event=? AND o.outcome='rejected'",(first,)).fetchone()[0]
-    if unknown:return 'unknown_capture_outcome',count
-    consecutive,invalid=rejection_streak(db,first)
-    return (invalid or ('freshness_recovery_exhausted' if consecutive>=MAX_REJECTIONS else None)),count
+def admission_reason(db,first):
+    accepted=accepted_continuations(db)
+    if unresolved(db,accepted=accepted):
+        return 'unknown_capture_outcome'
+    consecutive,invalid=rejection_streak(db,first,accepted)
+    return invalid or ('freshness_recovery_exhausted' if consecutive>=MAX_REJECTIONS else None)
 
-def begin(store,first):
-    with store.lock,store.connect() as db:
-        db.execute('BEGIN IMMEDIATE');reason,count=readiness(db,first)
-        if reason:raise ValueError(reason)
-        after=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
-        ident=uuid.uuid4().hex;db.execute('INSERT INTO continuous_capture_attempts VALUES(?,?,?,?)',(ident,first,after,datetime.now(timezone.utc).isoformat()))
-        store.active_capture_attempt=ident
+def readiness(db,first):
+    reason=admission_reason(db,first)
+    count=db.execute("SELECT COUNT(*) FROM continuous_capture_attempts a JOIN continuous_capture_outcomes o USING(attempt_id) WHERE a.first_event=? AND o.outcome='rejected'",(first,)).fetchone()[0]
+    return reason,count
+
+def begin(store,first,phases=None):
+    started=time.monotonic()
+    with store.lock:
+        locked=time.monotonic()
+        with store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            writer=time.monotonic()
+            reason=admission_reason(db,first)
+            if reason:raise ValueError(reason)
+            checked=time.monotonic()
+            after=db.execute('SELECT COALESCE(MAX(event_id),0) FROM capture_events').fetchone()[0]
+            ident=uuid.uuid4().hex
+            db.execute('INSERT INTO continuous_capture_attempts VALUES(?,?,?,?)',(ident,first,after,datetime.now(timezone.utc).isoformat()))
+            store.active_capture_attempt=ident
+    if phases is not None:
+        phases.update(store_lock_wait_s=round(locked-started,3),sqlite_writer_wait_s=round(writer-locked,3),
+                      ledger_checks_s=round(checked-writer,3),intent_write_commit_s=round(time.monotonic()-checked,3))
     return ident,after
 
 def finish(store,ident,outcome,event=None,error=None):
@@ -336,12 +353,17 @@ def accepted_continuations(db):
     return result
 
 
-def unresolved(db,active_attempt=None):
-    accepted=accepted_continuations(db)
-    for ident,outcome in db.execute("SELECT a.attempt_id,o.outcome FROM continuous_capture_attempts a LEFT JOIN continuous_capture_outcomes o USING(attempt_id) WHERE o.attempt_id IS NULL OR o.outcome='unknown'"):
-        if outcome is None and ident!=active_attempt:return True
-        if outcome=='unknown' and ident not in accepted:return True
-    return False
+def unresolved(db,active_attempt=None,*,accepted=None):
+    accepted=accepted_continuations(db) if accepted is None else accepted
+    # Merge both ordered primary-key indexes. An unmatched intent can be anywhere
+    # in history, including before a later success or in another recovery context.
+    pending=db.execute('SELECT attempt_id FROM continuous_capture_attempts EXCEPT '
+                       'SELECT attempt_id FROM continuous_capture_outcomes WHERE attempt_id IS NOT NULL ORDER BY 1')
+    if any(ident!=active_attempt for ident, in pending):
+        return True
+    unknown=db.execute("SELECT o.attempt_id FROM continuous_capture_outcomes o JOIN continuous_capture_attempts a "
+                       "USING(attempt_id) WHERE o.outcome='unknown'")
+    return any(ident not in accepted for ident, in unknown)
 
 
 def continuation_record(db,ident):
